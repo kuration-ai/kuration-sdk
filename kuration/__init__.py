@@ -20,6 +20,7 @@ from .curate import CurateResult, curate
 from .dsl import compile_metric, register_compiled, register_metric
 from .experiment import Arm, run_experiment, union_define
 from .features import FeatureEngine
+from .io import exists, local_copy, read_text, write_bytes, write_text
 from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities
 from .output import (
@@ -36,6 +37,7 @@ from .output import (
     write_track,
 )
 from .schema import FieldSpec, SchemaSpec
+from .scoring import score_sources
 from .segment import Segment, Segmenter
 from .select import assign_splits
 from .strategy import Strategy, load_strategy, segment_priorities, select
@@ -50,9 +52,10 @@ __all__ = [
     "Segment", "Segmenter", "FeatureEngine",
     "bin_segments", "quantile_bins",
     "Strategy", "load_strategy", "select", "segment_priorities", "assign_splits",
-    "apply_filters", "method_priorities",
+    "apply_filters", "method_priorities", "score_sources",
     "curate", "CurateResult",
     "build_config", "dump_segment_manifest", "write_config",
+    "read_text", "write_text", "write_bytes", "exists", "local_copy",
     "OutputSpec", "Modality", "OutputEncoder", "PassthroughEncoder",
     "register_encoder", "get_encoder", "Track", "tracks_from_ticks", "write_track",
     "fill_to_hours", "write_dataset",

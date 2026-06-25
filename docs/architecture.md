@@ -147,13 +147,25 @@ together and writes `dataset_manifest.json` + `config.json`.
 
 ## Parallelism & scale
 
-The reference design processes a source at a time and amortizes one buffer per segment. The
-hot path (binning) is vectorized rather than parallelized because IPC would cost more than the
-compute. A parallel feature pass (process pool, workers rebuilding adapter + recompiling the
-schema-validated metrics by name) is the intended scaling path and is why adapters/metrics are
-reconstructable by name rather than pickled. Interfaces are iterator-shaped so a streaming
-segmenter can later consume a lazy tick iterator without changing callers; today's
-implementation materializes per source.
+The feature pass (`scoring.py::score_sources`, shared by curate / experiment / write_dataset)
+runs per-source over a `ProcessPoolExecutor` when `workers>1`. Each worker **rebuilds the
+FeatureEngine in-process** — the compiled DSL metrics are closures and can't be pickled, so
+they're recompiled from the JSON `define` + schema (both picklable); the adapter and segmenter
+ship as-is. Determinism is preserved by sorting the pooled segments by `(source_id, start_idx)`
+before binning/selection, so the result is independent of worker count and completion order.
+(Default start method on Linux is `fork`, so the metric registry is inherited; under `spawn`,
+custom `@register_metric` functions must be importable at module scope.)
+
+A source that raises during scoring is **skipped-and-logged** (`on_error="skip"`: stderr line
++ collected in the result's `errors` + a summary), never silently dropped; `on_error="raise"`
+restores fail-fast. `write_dataset(resume=True)` skips re-encoding any shard whose file already
+exists (chunk boundaries are deterministic, so the manifest entry is still recorded), so an
+interrupted run only does the missing work.
+
+The hot path (binning) stays vectorized rather than parallelized — IPC would cost more than the
+compute. Interfaces are iterator-shaped so a streaming segmenter can later consume a lazy tick
+iterator without changing callers; today's implementation materializes per source (the next
+scale step if corpora outgrow memory).
 
 ## Lineage: generalizing a domain-specific pipeline
 

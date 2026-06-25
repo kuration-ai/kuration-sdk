@@ -17,8 +17,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from .binning import bin_segments
-from .features import FeatureEngine
 from .schema import SchemaSpec
+from .scoring import score_sources
 from .strategy import Strategy, select
 
 
@@ -53,28 +53,21 @@ def _js(p: np.ndarray, q: np.ndarray) -> float:
 
 def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], segmenter,
                    target_size: int, seed: int = 0, baseline: str = None,
-                   group_of=None, tags_of=None) -> dict:
+                   group_of=None, tags_of=None, workers: int = 1, on_error: str = "skip") -> dict:
     union = union_define(arms)
     referenced: set = set()
     for arm in arms:
         referenced |= arm.strategy.referenced_metrics()
     registered = [r for r in referenced if r not in union]
-    engine = FeatureEngine(schema, define=union, registered=registered)
+    # Tags are derived once over the union of every arm's tag sources.
+    tag_froms = sorted({s for arm in arms for s in ((arm.strategy.tags or {}).get("from") or [])})
+    union_tags = {"from": tag_froms} if tag_froms else None
 
-    all_segments = []
-    for src in sources:
-        ticks = list(adapter.ticks(src))
-        segs = segmenter.segments(src, ticks)
-        if group_of:
-            g = group_of(src)
-            for s in segs:
-                s.group = g
-        engine.compute(ticks, segs)
-        if tags_of:
-            for s in segs:
-                s.tags = frozenset(tags_of(s))
-        all_segments.extend(segs)
-    all_segments.sort(key=lambda s: (s.source_id, s.start_idx))
+    # Score once over the union (parallel); each arm then bins + selects on the shared pool.
+    all_segments, _, _ = score_sources(
+        schema=schema, adapter=adapter, sources=sources, define=union, registered=registered,
+        segmenter=segmenter, tags_spec=union_tags, group_of=group_of, tags_of=tags_of,
+        workers=workers, on_error=on_error)
 
     tag_vocab = sorted({t for s in all_segments for t in s.tags}, key=str)
     selected: dict = {}

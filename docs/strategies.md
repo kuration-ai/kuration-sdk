@@ -105,10 +105,26 @@ and `per_group: true` scopes it within each `Segment.group` (avoids global dedup
 "slightly active" gets the same budget as "very active" (equal-width bins would pile most
 segments into one bucket). Vectorized; not parallelized.
 
+## Tags (declarative, for tag coverage)
+
+Tag coverage needs each segment's `tags` populated — derive them from data with a top-level
+`tags` block, no callback needed:
+
+```jsonc
+"tags": {"from": ["weapon", "grenade.type"]}   // categorical fields and/or event streams
+```
+
+A segment's tags become the distinct categorical values observed in its window
+(`"weapon:AK-47"`, `"grenade.type:Molotov"`, …). This feeds tag coverage in **both** paths: the
+count-based `curate` and the hours-based `write_dataset`. A `tags_of` callback remains as an
+escape hatch (and overrides the declarative tags).
+
 ## Post-passes
 
 - **tag coverage** — after the base pick, add segments until every categorical `tag` reaches a
-  floor count (preferring underrepresented bins), so a rare label isn't dropped.
+  floor count (preferring underrepresented bins), so a rare label isn't dropped. In
+  `write_dataset` this is a budget **reserve**: each tag's highest-priority track is admitted
+  first, bounded by `min_tag_frac` of the hour budget.
 - **group cap** — drop excess from any `group` exceeding its fair share × `max_group_overshoot`,
   cutting its most over-represented bins first. (`group`/`tags` are set via `group_of` / `tags_of`.)
 

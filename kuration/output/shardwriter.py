@@ -15,7 +15,7 @@ from typing import Optional
 import numpy as np
 
 from .base import OutputEncoder, PassthroughEncoder
-from .containers import write_shard
+from .containers import CONTAINER_EXT, write_shard
 from .spec import OutputSpec
 from .track import Track
 
@@ -61,18 +61,25 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
 
 def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
                 encoder: Optional[OutputEncoder] = None, schema=None,
-                split: str = "all") -> list[dict]:
-    """Write all shards for one track; returns manifest entries."""
+                split: str = "all", resume: bool = False) -> list[dict]:
+    """Write all shards for one track; returns manifest entries. With `resume=True`, a shard
+    whose file already exists is left as-is (no re-encode) but still recorded in the manifest —
+    chunk boundaries are deterministic, so the entry is reconstructable without rewriting."""
+    from ..io import exists as _exists
     encoder = encoder or PassthroughEncoder()
     ctx = {"schema": schema, "track": {**track.meta, "source_id": track.source_id,
                                        "entity_id": track.entity_id}}
     name = f"{track.source_id}_{track.entity_id}".replace("/", "_")
+    ext = CONTAINER_EXT[spec.container]
     entries: list[dict] = []
     for k, (piece, real_len, padded) in enumerate(
             _chunks(track.records, spec.shard_length, spec.short_policy)):
-        arrays = _build_arrays(piece, spec, encoder, ctx)
         base = f"{out_dir}/{split}/{name}_shard{k:04d}" + ("_padded" if padded else "")
-        path = write_shard(base, spec.container, arrays, real_len)
+        if resume and _exists(base + ext):
+            path = base + ext                       # already written — skip the re-encode
+        else:
+            path = write_shard(base, spec.container, _build_arrays(piece, spec, encoder, ctx),
+                               real_len)
         entries.append({"path": path, "source_id": track.source_id,
                         "entity_id": str(track.entity_id), "split": split,
                         "shard_index": k, "n_steps": real_len, "padded": padded,

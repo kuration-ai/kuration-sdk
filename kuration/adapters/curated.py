@@ -40,22 +40,25 @@ def schema_from_output(output_spec: dict, *, name: str = "curated",
 
 
 def _load_shard(path: str, container: str):
-    """Return (arrays: {modality -> (T, *shape)}, n_steps) for any output container."""
-    if container == "npz":
-        z = np.load(path)
-        return {k: z[k] for k in z.files if not k.startswith("_")}, int(z["_n_steps"])
+    """Return (arrays: {modality -> (T, *shape)}, n_steps) for any output container; remote
+    shards (gs://, s3://, …) are staged to a tempfile."""
+    from ..io import local_copy, read_text
     if container == "json":
-        data = json.loads(Path(path).read_text())
+        data = json.loads(read_text(path))
         return {k: np.asarray(v) for k, v in data["modalities"].items()}, int(data["_n_steps"])
-    if container == "hdf5":
-        import h5py
-        with h5py.File(path, "r") as f:
-            return {k: f[k][:] for k in f.keys()}, int(f.attrs["n_steps"])
-    if container == "parquet":
-        import pyarrow.parquet as pq
-        t = pq.read_table(path)
-        n = int((t.schema.metadata or {}).get(b"_n_steps", b"0"))
-        return {name: np.asarray(t.column(name).to_pylist()) for name in t.column_names}, n
+    with local_copy(path) as p:
+        if container == "npz":
+            z = np.load(p)
+            return {k: z[k] for k in z.files if not k.startswith("_")}, int(z["_n_steps"])
+        if container == "hdf5":
+            import h5py
+            with h5py.File(p, "r") as f:
+                return {k: f[k][:] for k in f.keys()}, int(f.attrs["n_steps"])
+        if container == "parquet":
+            import pyarrow.parquet as pq
+            t = pq.read_table(p)
+            n = int((t.schema.metadata or {}).get(b"_n_steps", b"0"))
+            return {name: np.asarray(t.column(name).to_pylist()) for name in t.column_names}, n
     raise ValueError(f"unknown container {container!r}")
 
 
@@ -67,12 +70,13 @@ class CuratedDatasetAdapter:
         self._container: dict = {}     # shard path -> container
         self.dataset_of: dict = {}     # shard path -> originating dataset dir
         self._shards: list = []
+        from ..io import read_text
         first_cfg = None
         for d in dirs:
-            cfg = json.loads((Path(d) / "config.json").read_text())
+            cfg = json.loads(read_text(f"{d}/config.json"))
             first_cfg = first_cfg or cfg
             container = cfg["output"]["container"]
-            man = json.loads((Path(d) / "dataset_manifest.json").read_text())
+            man = json.loads(read_text(f"{d}/dataset_manifest.json"))
             for e in man["shards"]:
                 self._shards.append(e["path"])
                 self._container[e["path"]] = container

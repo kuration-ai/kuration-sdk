@@ -13,8 +13,8 @@ from typing import Callable, Iterable, Optional
 
 from .adapters.base import InputAdapter
 from .binning import bin_segments
-from .features import FeatureEngine
 from .schema import SchemaSpec
+from .scoring import score_sources
 from .segment import Segment, Segmenter
 from .select import assign_splits
 from .strategy import Strategy, select
@@ -27,38 +27,27 @@ class CurateResult:
     schema: SchemaSpec
     strategy: Strategy
     splits: dict = field(default_factory=dict)   # source_id -> "train"/"test" (if test_frac>0)
+    errors: list = field(default_factory=list)   # [{source, error}] for skipped sources
 
 
 def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
            strategy: Strategy, segmenter: Segmenter, target_size: int, seed: int = 0,
            group_of: Optional[Callable[[str], object]] = None,
            tags_of: Optional[Callable[[Segment], Iterable]] = None,
-           test_frac: float = 0.0) -> CurateResult:
+           test_frac: float = 0.0, workers: int = 1, on_error: str = "skip") -> CurateResult:
     """Curate a target-count segment set from `sources`.
 
     group_of(source_id) -> group key (sets Segment.group for the group cap + split strata);
     tags_of(segment) -> tags (sets Segment.tags for tag coverage). Both optional.
+    `workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips a bad source.
     """
     referenced = strategy.referenced_metrics()
     registered = [r for r in referenced if r not in strategy.define]  # load_strategy verified these exist
-    engine = FeatureEngine(schema, define=strategy.define, registered=registered)
+    all_segments, errors, _ = score_sources(
+        schema=schema, adapter=adapter, sources=sources, define=strategy.define,
+        registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
+        group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error)
 
-    all_segments: list[Segment] = []
-    source_groups: dict = {}
-    for src in sources:
-        ticks = list(adapter.ticks(src))
-        segs = segmenter.segments(src, ticks)
-        g = group_of(src) if group_of else None
-        source_groups[src] = g
-        for s in segs:
-            s.group = g
-        engine.compute(ticks, segs)
-        if tags_of:
-            for s in segs:
-                s.tags = frozenset(tags_of(s))
-        all_segments.extend(segs)
-
-    all_segments.sort(key=lambda s: (s.source_id, s.start_idx))   # determinism
     pool = all_segments
     if strategy.filters:
         from .methods import apply_filters
@@ -69,6 +58,7 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
 
     splits: dict = {}
     if test_frac > 0:
+        source_groups = {s.source_id: s.group for s in all_segments}
         splits = assign_splits(source_groups, test_frac, seed)
     return CurateResult(selected=selected, all_segments=all_segments, schema=schema,
-                        strategy=strategy, splits=splits)
+                        strategy=strategy, splits=splits, errors=errors)

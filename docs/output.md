@@ -94,7 +94,13 @@ train and test **hour budgets** in descending priority. Properties:
 - **decoupled budgets** — sources are pre-partitioned into split pools so a spread-out priority
   can't starve the test budget;
 - **group cap in hours** — a group can't exceed `max_group_overshoot × (budget / n_groups)`;
+- **tag reserve** — with `selection.tag_coverage`, each tag's highest-priority track is admitted
+  first (bounded by `min_tag_frac` of the budget) so a rare label survives the cut;
 - budget honored to within one track.
+
+**`workers` / `on_error` / `resume`**: `write_dataset(..., workers=8)` parallelizes the feature
+pass; `on_error="skip"` (default) skips+logs an unreadable source; `resume=True` skips
+re-encoding shards that already exist.
 
 So the emitted N hours is the strategy's *best* N hours, not a random draw.
 
@@ -110,3 +116,8 @@ out/
 
 `config.json` is the reproducibility record — schema, strategy, and output spec together
 regenerate this dataset from the same sources.
+
+**Remote output.** `out_dir` may be a cloud URL — `write_dataset("gs://bucket/run1", …)` writes
+shards, manifest, and config straight to the bucket (needs the `[cloud]` extra + a backend like
+`gcsfs`/`s3fs`/`adlfs`). The dataset is then re-ingestable with
+`CuratedDatasetAdapter("gs://bucket/run1")`. Local paths need nothing.

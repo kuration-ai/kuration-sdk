@@ -37,7 +37,8 @@ class HDF5Adapter:
             import h5py
         except ImportError as e:
             raise ImportError("HDF5Adapter needs h5py: pip install -e '.[array]'") from e
-        with h5py.File(source_uri, "r") as f:
+        from ..io import local_copy
+        with local_copy(source_uri) as p, h5py.File(p, "r") as f:   # remote staged to tempfile
             arrs = {fn: f[ds][:] for fn, ds in self.fields.items()}
             gl = {gn: f[ds][:] for gn, ds in self.globals.items()}
         T = len(next(iter(arrs.values()))) if arrs else (len(next(iter(gl.values()))) if gl else 0)

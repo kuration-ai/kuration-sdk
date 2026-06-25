@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from .io import write_text
 from .schema import SchemaSpec
 from .segment import Segment
 from .strategy import Strategy
@@ -29,8 +30,7 @@ def segment_record(s: Segment) -> dict:
 
 def dump_segment_manifest(path: str, segments: list[Segment]) -> None:
     payload = {"count": len(segments), "segments": [segment_record(s) for s in segments]}
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(json.dumps(payload, indent=2, default=float))
+    write_text(path, json.dumps(payload, indent=2, default=float))
 
 
 def build_config(schema: SchemaSpec, strategy: Strategy, *, results: dict, seed: int,
@@ -46,5 +46,4 @@ def build_config(schema: SchemaSpec, strategy: Strategy, *, results: dict, seed:
 
 
 def write_config(path: str, config: dict) -> None:
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(json.dumps(config, indent=2, default=float))
+    write_text(path, json.dumps(config, indent=2, default=float))

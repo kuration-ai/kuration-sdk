@@ -89,16 +89,18 @@ class TimeseriesAdapter:
         return self._rows_to_ticks(list(rows))
 
     def ticks(self, source_uri: str) -> list[Tick]:
+        from ..io import local_copy, open_file
         if source_uri.endswith(".parquet"):
             try:
                 import pyarrow.parquet as pq  # optional [parquet] extra
             except ImportError as e:
                 raise ImportError("reading .parquet needs the optional extra: "
                                   "pip install -e '.[parquet]'") from e
-            rows = pq.read_table(source_uri).to_pylist()
+            with local_copy(source_uri) as p:     # gs://, s3://, … staged to a tempfile
+                rows = pq.read_table(p).to_pylist()
         else:
             import csv
-            with open(source_uri, newline="") as f:
+            with open_file(source_uri, "rt") as f:
                 rows = list(csv.DictReader(f))
         return self._rows_to_ticks(rows)
 

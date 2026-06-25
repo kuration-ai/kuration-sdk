@@ -80,6 +80,7 @@ class Strategy:
     feature_space: Optional[list] = None  # metric names spanning the vector space (methods.py)
     method_params: dict = None           # extra selection knobs (clusters/dsir_bins/knn_k/...)
     filters: list = None                 # pre-pass filters [{type: anomaly|dedup, ...}]
+    tags: Optional[dict] = None          # declarative tag derivation for tag_coverage ({"from": [...]})
 
     def referenced_metrics(self) -> set[str]:
         """Every metric name the strategy reads (axes/weights/target/predicates/feature_space/
@@ -125,6 +126,7 @@ def _resolve(spec: dict) -> Strategy:
 
     feature_space = spec.get("feature_space")
     filters = _resolve_filters(spec.get("filters"))
+    tags = spec.get("tags")
     _KNOWN_SEL = {"method", "weights", "normalize", "target", "tag_coverage", "group_cap",
                   "predicates"}
     method_params = {k: v for k, v in sel.items() if k not in _KNOWN_SEL}
@@ -134,6 +136,7 @@ def _resolve(spec: dict) -> Strategy:
         "define": define,
         "feature_space": feature_space,
         "filters": filters,
+        "tags": tags,
         "binning": {"axes": [{"metric": m, "bins": b} for m, b in axes]},
         "selection": {"method": method, "weights": weights, "normalize": normalize,
                       "target": target, "tag_coverage": tag_coverage, "group_cap": group_cap,
@@ -143,7 +146,7 @@ def _resolve(spec: dict) -> Strategy:
                     weights=weights, normalize=normalize, target=target,
                     tag_coverage=tag_coverage, group_cap=group_cap, resolved=resolved,
                     predicates=predicates, feature_space=feature_space,
-                    method_params=method_params, filters=filters)
+                    method_params=method_params, filters=filters, tags=tags)
 
 
 def load_strategy(name_or_spec, schema: SchemaSpec) -> Strategy:
@@ -166,6 +169,9 @@ def load_strategy(name_or_spec, schema: SchemaSpec) -> Strategy:
     strat = _resolve(spec)
     for nm, msp in strat.define.items():
         compile_metric(msp, schema)  # validate tokens now; discard the fn
+    if strat.tags:
+        from .tags import compile_tagger
+        compile_tagger(strat.tags, schema)  # validate tag sources at load
     missing = [m for m in strat.referenced_metrics() if m not in strat.define and m not in METRICS]
     if missing:
         raise ValueError(f"strategy {strat.name!r} references undefined metrics {sorted(missing)} "

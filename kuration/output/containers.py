@@ -12,44 +12,45 @@ from pathlib import Path
 
 import numpy as np
 
+from ..io import staged_write
+
+# Final extension per container — lets the writer check a shard's existence for resume.
+CONTAINER_EXT = {"npz": ".npz", "json": ".json", "hdf5": ".h5", "parquet": ".parquet"}
+
 
 def write_shard(path_no_ext: str, container: str, arrays: dict[str, np.ndarray],
                 n_steps: int) -> str:
-    """Write one shard's modality arrays; returns the written path."""
-    Path(path_no_ext).parent.mkdir(parents=True, exist_ok=True)
-    if container == "npz":
-        path = path_no_ext + ".npz"
-        np.savez(path, _n_steps=np.asarray(n_steps), **arrays)
-        return path
-    if container == "json":
-        path = path_no_ext + ".json"
-        Path(path).write_text(json.dumps(
-            {"_n_steps": int(n_steps), "modalities": {k: v.tolist() for k, v in arrays.items()}}))
-        return path
-    if container == "hdf5":
-        try:
-            import h5py
-        except ImportError as e:
-            raise ImportError("container 'hdf5' needs h5py: pip install -e '.[array]'") from e
-        path = path_no_ext + ".h5"
-        with h5py.File(path, "w") as f:
-            for k, v in arrays.items():
-                f.create_dataset(k, data=v, compression="gzip")
-            f.attrs["n_steps"] = int(n_steps)
-        return path
-    if container == "parquet":
-        try:
-            import pyarrow as pa
-            import pyarrow.parquet as pq
-        except ImportError as e:
-            raise ImportError("container 'parquet' needs pyarrow: pip install -e '.[parquet]'") from e
-        path = path_no_ext + ".parquet"
-        # scalar modality -> a column of values; tensor modality -> a column of flattened lists
-        # (reshape on read using the manifest's per-modality shape).
-        cols = {k: (pa.array(v) if v.ndim == 1
-                    else pa.array([row.reshape(-1).tolist() for row in v]))
-                for k, v in arrays.items()}
-        table = pa.table(cols).replace_schema_metadata({"_n_steps": str(int(n_steps))})
-        pq.write_table(table, path)
-        return path
-    raise ValueError(f"unknown container {container!r}")
+    """Write one shard's modality arrays; returns the written path (local or remote URL).
+    All formats stage through `staged_write`, so a `gs://`/`s3://`/… destination just works."""
+    if container not in CONTAINER_EXT:
+        raise ValueError(f"unknown container {container!r}")
+    path = path_no_ext + CONTAINER_EXT[container]
+    with staged_write(path) as local:    # real local path; uploaded on exit if `path` is remote
+        if container == "npz":
+            np.savez(local, _n_steps=np.asarray(n_steps), **arrays)
+        elif container == "json":
+            Path(local).write_text(json.dumps(
+                {"_n_steps": int(n_steps),
+                 "modalities": {k: v.tolist() for k, v in arrays.items()}}))
+        elif container == "hdf5":
+            try:
+                import h5py
+            except ImportError as e:
+                raise ImportError("container 'hdf5' needs h5py: pip install -e '.[array]'") from e
+            with h5py.File(local, "w") as f:
+                for k, v in arrays.items():
+                    f.create_dataset(k, data=v, compression="gzip")
+                f.attrs["n_steps"] = int(n_steps)
+        else:  # parquet
+            try:
+                import pyarrow as pa
+                import pyarrow.parquet as pq
+            except ImportError as e:
+                raise ImportError("container 'parquet' needs pyarrow: pip install -e '.[parquet]'") from e
+            # scalar modality -> column of values; tensor modality -> column of flattened lists.
+            cols = {k: (pa.array(v) if v.ndim == 1
+                        else pa.array([row.reshape(-1).tolist() for row in v]))
+                    for k, v in arrays.items()}
+            table = pa.table(cols).replace_schema_metadata({"_n_steps": str(int(n_steps))})
+            pq.write_table(table, local)
+    return path

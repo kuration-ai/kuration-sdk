@@ -56,6 +56,19 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | [docs/strategies.md](docs/strategies.md) | declarative strategies, selection methods, binning, splits |
 | [docs/output.md](docs/output.md) | output specs, encoders, containers, the hours-budget fill |
 
+## Scale & robustness
+
+- **Parallel feature pass** — `workers>1` on `curate` / `run_experiment` / `write_dataset`
+  scores sources over a process pool (workers recompile the DSL from schema + `define`),
+  deterministic regardless of worker count.
+- **Skip-and-log** — `on_error="skip"` (default) logs + skips a source that fails to read and
+  collects it in the result's `errors`; `on_error="raise"` is fail-fast.
+- **Resume** — `write_dataset(resume=True)` skips re-encoding shards that already exist, so an
+  interrupted run only does the missing work.
+- **Path-agnostic I/O** — any source/shard/manifest path may be local or a cloud URL
+  (`gs://`, `s3://`, `az://`, …) via fsspec (the `[cloud]` extra + a backend like `gcsfs`);
+  local needs nothing.
+
 ## Design invariants
 
 - **Closed grammar, loud validation** — every metric token is enumerated and checked against
@@ -84,8 +97,9 @@ binning, declarative strategies (uniform-bins / weighted / top-k / target-distri
 **filter** + feature-space **cluster-balanced / k-center / facility-location / dsir / rare /
 typical**, plus **anomaly/dedup pre-pass filters** — the `[methods]` extra), the output layer
 (specs, encoders, **npz / json / hdf5 / parquet** containers, hours-budget fill,
-`write_dataset`), a multi-arm **experiment/comparison** harness, and the `kur-*` CLIs. 98 tests
-(`pytest tests/`).
+`write_dataset`), **declarative tag-coverage**, a multi-arm **experiment/comparison** harness,
+**parallel/skip-and-log/resume** execution, and **path-agnostic I/O** (local + `gs://`/`s3://`/
+`az://` via fsspec), driven by the `kur-*` CLIs. 112 tests (`pytest tests/`).
 
 Planned: migration of the reference CS2 pipeline onto the SDK (Phase G). See
 `../kuration-sdk-plan.md`.
