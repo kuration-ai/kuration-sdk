@@ -61,15 +61,16 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
 
 def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
                 encoder: Optional[OutputEncoder] = None, schema=None,
-                split: str = "all", resume: bool = False) -> list[dict]:
+                split: str = "all", resume: bool = False, name_suffix: str = "") -> list[dict]:
     """Write all shards for one track; returns manifest entries. With `resume=True`, a shard
     whose file already exists is left as-is (no re-encode) but still recorded in the manifest —
-    chunk boundaries are deterministic, so the entry is reconstructable without rewriting."""
+    chunk boundaries are deterministic, so the entry is reconstructable without rewriting.
+    `name_suffix` disambiguates shard filenames across sub-track spans of one track."""
     from ..io import exists as _exists
     encoder = encoder or PassthroughEncoder()
     ctx = {"schema": schema, "track": {**track.meta, "source_id": track.source_id,
                                        "entity_id": track.entity_id}}
-    name = f"{track.source_id}_{track.entity_id}".replace("/", "_")
+    name = f"{track.source_id}_{track.entity_id}{name_suffix}".replace("/", "_")
     ext = CONTAINER_EXT[spec.container]
     entries: list[dict] = []
     for k, (piece, real_len, padded) in enumerate(

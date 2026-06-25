@@ -84,4 +84,4 @@ def test_tag_coverage_reserve_in_write_dataset(tmp_path):
     res = write_dataset(str(tmp_path / "out"), schema=SCHEMA, adapter=MemAdapter(SCHEMA, data),
                         sources=list(data), strategy=strat, segmenter=Segmenter(4, 4), spec=spec,
                         train_hours=24 / 3600, test_hours=0, seed=0)
-    assert ("s6", 0) in res["admitted"]   # the rare-tag source got reserved
+    assert ("s6", 0, 0) in res["admitted"]   # the rare-tag source got reserved (src, entity, span)

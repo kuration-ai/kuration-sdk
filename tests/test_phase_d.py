@@ -180,8 +180,8 @@ def test_write_dataset_end_to_end(tmp_path):
     res = write_dataset(str(tmp_path), schema=SCHEMA, adapter=adapter, sources=list(data),
                         strategy=strat, segmenter=Segmenter(4, 4), spec=spec,
                         train_hours=12 / 3600 * 2, test_hours=0, seed=0)  # ~2 tracks of 12s
-    # highest-activity source must be admitted (top-k by act)
-    assert ("s4", 0) in res["admitted"]
+    # highest-activity source must be admitted (top-k by act); id = (source, entity, span)
+    assert ("s4", 0, 0) in res["admitted"]
     manifest = json.loads((tmp_path / "dataset_manifest.json").read_text())
     assert manifest["count"] == len(res["shards"]) > 0
     cfg = json.loads((tmp_path / "config.json").read_text())

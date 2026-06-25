@@ -12,7 +12,7 @@ import numpy as np
 
 from ..buffer import Tick
 from ..schema import SchemaSpec
-from .base import register_adapter
+from .base import arrays_to_ticks, register_adapter
 
 
 class HDF5Adapter:
@@ -24,14 +24,6 @@ class HDF5Adapter:
             if f not in schema.fields:
                 raise ValueError(f"field map references undeclared schema field {f!r}")
 
-    def _value(self, fname: str, x):
-        fs = self.schema.fields[fname]
-        if fs.kind == "vector":
-            return tuple(float(v) for v in np.ravel(x))
-        if fs.kind == "categorical":
-            return x.decode() if isinstance(x, bytes) else str(x)
-        return float(np.ravel(x)[0]) if np.ndim(x) else float(x)
-
     def ticks(self, source_uri: str) -> list[Tick]:
         try:
             import h5py
@@ -41,13 +33,7 @@ class HDF5Adapter:
         with local_copy(source_uri) as p, h5py.File(p, "r") as f:   # remote staged to tempfile
             arrs = {fn: f[ds][:] for fn, ds in self.fields.items()}
             gl = {gn: f[ds][:] for gn, ds in self.globals.items()}
-        T = len(next(iter(arrs.values()))) if arrs else (len(next(iter(gl.values()))) if gl else 0)
-        out: list[Tick] = []
-        for t in range(T):
-            entities = {0: {fn: self._value(fn, arr[t]) for fn, arr in arrs.items()}}
-            g = {gn: float(np.ravel(arr[t])[0]) for gn, arr in gl.items()}
-            out.append(Tick(time=t, entities=entities, globals=g))
-        return out
+        return arrays_to_ticks(self.schema, arrs, gl)
 
 
 register_adapter("hdf5", HDF5Adapter)

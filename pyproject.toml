@@ -17,6 +17,7 @@ cloud = ["fsspec"]                # gs:// / s3:// / az:// I/O (plus a backend: g
 [project.scripts]
 kur-curate = "kuration.cli.curate:main"
 kur-experiment = "kuration.cli.experiment:main"
+kur-report = "kuration.cli.report:main"
 
 [build-system]
 requires = ["setuptools"]

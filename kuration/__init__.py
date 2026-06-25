@@ -9,6 +9,8 @@ from .adapters import (
     CuratedDatasetAdapter,
     HDF5Adapter,
     InputAdapter,
+    JsonlAdapter,
+    NpzAdapter,
     TimeseriesAdapter,
     get_adapter,
     register_adapter,
@@ -23,6 +25,7 @@ from .features import FeatureEngine
 from .io import exists, local_copy, read_text, write_bytes, write_text
 from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities
+from .report import dataset_report
 from .output import (
     Modality,
     OutputEncoder,
@@ -46,13 +49,13 @@ __all__ = [
     "SchemaSpec", "FieldSpec",
     "WindowBuffer", "Tick", "build_window", "empty_like",
     "compile_metric", "register_metric", "register_compiled",
-    "InputAdapter", "TimeseriesAdapter", "HDF5Adapter", "CuratedDatasetAdapter",
-    "schema_from_output", "register_adapter", "get_adapter",
+    "InputAdapter", "TimeseriesAdapter", "HDF5Adapter", "NpzAdapter", "JsonlAdapter",
+    "CuratedDatasetAdapter", "schema_from_output", "register_adapter", "get_adapter",
     "Arm", "run_experiment", "union_define",
     "Segment", "Segmenter", "FeatureEngine",
     "bin_segments", "quantile_bins",
     "Strategy", "load_strategy", "select", "segment_priorities", "assign_splits",
-    "apply_filters", "method_priorities", "score_sources",
+    "apply_filters", "method_priorities", "score_sources", "dataset_report",
     "curate", "CurateResult",
     "build_config", "dump_segment_manifest", "write_config",
     "read_text", "write_text", "write_bytes", "exists", "local_copy",
