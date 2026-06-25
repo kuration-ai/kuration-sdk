@@ -1,0 +1,26 @@
+[project]
+name = "kuration-sdk"
+version = "0.0.1"
+description = "Dataset-agnostic curation SDK: raw source -> curated subset -> training shards."
+requires-python = ">=3.11"
+dependencies = ["numpy"]
+
+# Domain knowledge never lives in the core; heavy capabilities are opt-in extras,
+# lazily imported and loud-on-missing (the asg2diamond convention).
+[project.optional-dependencies]
+methods = ["scikit-learn>=1.4"]   # feature-space selection methods
+parquet = ["pyarrow"]             # Parquet input adapter / output container
+array = ["h5py"]                  # tensor shard container
+analysis = ["opencv-python", "scikit-learn"]  # perceptual/codebook diversity
+
+[project.scripts]
+kur-curate = "kuration.cli.curate:main"
+kur-experiment = "kuration.cli.experiment:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kuration*"]

@@ -1,0 +1,135 @@
+# Strategies & selection
+
+A **strategy** is a small JSON document describing *how* to turn scored segments into a
+curated set: inline metric definitions, optional bin axes, and a selection method with its
+knobs. It is pure data, so the resolved strategy lands in `config.json` and a run reproduces
+from the artifact alone.
+
+```python
+from kuration import load_strategy
+strategy = load_strategy(spec_dict_or_path_or_name, schema)
+```
+
+`load_strategy` validates loudly at load: every `define` metric compiles against the schema,
+and every metric referenced by axes/weights/target must be defined or registered.
+
+## Anatomy
+
+```jsonc
+{
+  "name": "dynamic",
+  "define": {                                  // inline DSL metrics (see dsl.md)
+    "speed": {"source": "drone.pos", "map": "speed", "reduce": "mean"},
+    "turn":  {"source": "drone.att", "map": "angle_delta", "reduce": "mean"}
+  },
+  "binning": {"axes": [{"metric": "speed", "bins": 10},
+                       {"metric": "turn", "bins": 10}]},   // quantile bins per axis
+  "selection": {
+    "method": "top-k",                         // uniform-bins | weighted | top-k | target-distribution
+    "weights": {"speed": 1.0, "turn": 0.5},    // weighted / top-k
+    "normalize": "quantile",                   // quantile (default) | minmax | zscore
+    "target": "flat",                          // target-distribution: "flat" | {"metric": name}
+    "tag_coverage": {"min_tag_frac": 0.01},    // optional floor per categorical tag
+    "group_cap": {"max_group_overshoot": 1.5}  // optional: no group > 1.5× its fair share
+  }
+}
+```
+
+## Selection methods
+
+| method | picks | needs |
+|---|---|---|
+| `uniform-bins` | each occupied quantile bin uniformly (diversity) | `binning.axes` |
+| `weighted` | sampled without replacement ∝ weighted score | `weights` |
+| `top-k` | the highest weighted scores (deterministic) | `weights` |
+| `target-distribution` | per-bin quota, flat or ∝ a metric | `binning.axes` |
+| `filter` | exactly the segments matching DSL-metric predicates | `predicates` |
+
+The **`filter`** method selects clips by criteria rather than ranking — e.g. "every window
+where mean speed ≥ 10 and turn-rate ≤ 5":
+
+```jsonc
+"selection": {"method": "filter", "predicates": [
+  {"metric": "speed", "op": ">=", "value": 10},
+  {"metric": "turn",  "op": "<=", "value": 5}
+]}   // ops: > >= < <= == !=  (all predicates must hold)
+```
+
+Combined with the curated-dataset adapter ([adapters.md](adapters.md)), this is how you look
+*within* existing datasets for clips that match a spec — and `write_dataset` then emits only
+those (non-matching clips get `-inf` priority).
+
+Scores combine each metric's values, normalized (`quantile` rank by default — robust to
+outliers) and weighted.
+
+### Feature-space methods (optional, `[methods]` extra)
+
+Coverage- and representativeness-driven selection over the metric vectors (a `feature_space`
+metric-name list, or the binning axes). Knobs go directly in `selection`.
+
+| method | does | key knobs |
+|---|---|---|
+| `cluster-balanced` | k-means the joint space, round-robin across clusters (joint coverage) | `clusters` |
+| `k-center` | farthest-point cluster order → spreads to the extremes | `clusters` |
+| `facility-location` | submodular representativeness (best represents the whole) | `clusters` |
+| `dsir` | importance resampling toward a target (flat / `{"metric"}` / `{"anchor_metric","anchor_quantile"}`) | `dsir_bins`, `target` |
+| `rare` | kNN density-inverse (atypical footage first) | `knn_k` |
+| `typical` | kNN density (prototypical footage first) | `knn_k` |
+
+```jsonc
+{"name": "coverage", "feature_space": ["speed", "turn", "altitude"],
+ "selection": {"method": "k-center", "clusters": 512}}
+```
+
+`rare`/`typical` are contrast arms (difficulty-only selection underperforms coverage at high
+pruning). All are CPU-only, seeded, and deterministic.
+
+### Pre-pass filters (optional, `[methods]` extra)
+
+Run *before* selection to prune the pool. Each filter's knobs are its own kwargs:
+
+```jsonc
+"filters": [
+  {"type": "anomaly", "contamination": 0.02},              // Isolation-Forest outlier removal
+  {"type": "dedup", "threshold": 0.98, "per_group": true}  // feature-space SemDeDup, scoped per group
+]
+```
+
+A filter may carry its own `feature_space` (gate on a different vector space than the selector),
+and `per_group: true` scopes it within each `Segment.group` (avoids global dedup skewing the mix).
+
+## Binning
+
+`bin_segments(segments, axes)` assigns each segment an N-tuple bin via **equal-frequency
+(quantile)** edges per axis — so each occupied bin hosts the same share of segments and
+"slightly active" gets the same budget as "very active" (equal-width bins would pile most
+segments into one bucket). Vectorized; not parallelized.
+
+## Post-passes
+
+- **tag coverage** — after the base pick, add segments until every categorical `tag` reaches a
+  floor count (preferring underrepresented bins), so a rare label isn't dropped.
+- **group cap** — drop excess from any `group` exceeding its fair share × `max_group_overshoot`,
+  cutting its most over-represented bins first. (`group`/`tags` are set via `group_of` / `tags_of`.)
+
+## Two ways to run it
+
+**Count-based** — `curate(...)` returns a `CurateResult(selected, all_segments, splits, ...)`:
+
+```python
+from kuration import curate, Segmenter
+res = curate(schema=schema, adapter=adapter, sources=sources, strategy=strategy,
+             segmenter=Segmenter(64, 32), target_size=5000, seed=0,
+             group_of=lambda src: src.split("/")[0],   # optional grouping key
+             tags_of=None, test_frac=0.1)               # optional source-level split
+```
+
+**Hour-budget-based** — `write_dataset(...)` fills a train/test hour budget and writes shards
+(see [output.md](output.md)). This is the apples-to-apples way to compare strategies: the
+emitted N hours is the strategy's *best* N hours, not a random draw.
+
+## Determinism
+
+Segments are sorted by `(source_id, start_idx)` before binning/selection, and all RNGs are
+seeded — so results are identical regardless of the order sources were processed. Splits
+(`assign_splits`) are leakage-free (a whole source goes to one split) and seeded.

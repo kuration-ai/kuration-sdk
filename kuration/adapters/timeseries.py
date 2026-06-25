@@ -1,0 +1,106 @@
+"""Generic tabular adapter — the "any columns of numbers" case, with zero per-dataset code.
+
+A CSV/Parquet table (or an in-memory list of row dicts) becomes a canonical `Tick` stream:
+rows sharing a `time_column` value form one timestep; an optional `entity_column` splits a
+timestep into entities; declared `fields` map schema fields to column(s). This covers the
+common multivariate-timeseries dataset without anyone writing an adapter class.
+
+Bespoke formats (ROS bags, proprietary logs, the CS2 `data.json`) still implement their own
+`InputAdapter`, but they only owe the same tiny contract: yield `Tick`s.
+"""
+from __future__ import annotations
+
+from typing import Iterable, Optional
+
+from ..buffer import Tick
+from ..schema import SchemaSpec
+from .base import register_adapter
+
+
+def _num_time(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return v
+
+
+class TimeseriesAdapter:
+    """Configured by a column mapping over a `SchemaSpec`.
+
+    fields:        {schema_field -> column_name}  (vector field -> [col_per_dim, ...])
+    time_column:   groups rows into timesteps; None -> each row is its own timestep
+    entity_column: splits a timestep into entities; None -> a single entity per timestep
+    globals:       {global_name -> column_name}  (per-tick scalar, read from the tick's first row)
+    Rows must be ordered by time (timesteps are formed from runs of equal time values).
+    """
+
+    def __init__(self, schema: SchemaSpec, *, fields: dict,
+                 time_column: Optional[str] = None, entity_column: Optional[str] = None,
+                 globals: Optional[dict] = None):
+        self.schema = schema
+        self.fields = fields
+        self.time_column = time_column
+        self.entity_column = entity_column
+        self.globals = globals or {}
+        for f in fields:
+            if f not in schema.fields:
+                raise ValueError(f"field map references undeclared schema field {f!r}")
+        for g in self.globals:
+            if g not in schema.globals:
+                raise ValueError(f"global map references undeclared schema global {g!r}")
+
+    # ---- value extraction ---------------------------------------------------
+    def _value(self, row: dict, fname: str):
+        fs = self.schema.fields[fname]
+        col = self.fields[fname]
+        if fs.kind == "vector":
+            return tuple(float(row[c]) for c in col)
+        if fs.kind == "categorical":
+            return str(row[col])
+        return float(row[col])
+
+    def _mk_tick(self, time, rows: list[dict]) -> Tick:
+        entities: dict = {}
+        for row in rows:
+            eid = row[self.entity_column] if self.entity_column else 0
+            entities[eid] = {f: self._value(row, f) for f in self.fields}
+        glb = {g: float(rows[0][c]) for g, c in self.globals.items()} if rows else {}
+        return Tick(time=_num_time(time), entities=entities, globals=glb)
+
+    def _rows_to_ticks(self, rows: list[dict]) -> list[Tick]:
+        if self.time_column is None:
+            return [self._mk_tick(i, [row]) for i, row in enumerate(rows)]
+        ticks: list[Tick] = []
+        cur = None
+        group: list[dict] = []
+        for row in rows:
+            tv = row[self.time_column]
+            if group and tv != cur:
+                ticks.append(self._mk_tick(cur, group))
+                group = []
+            group.append(row)
+            cur = tv
+        if group:
+            ticks.append(self._mk_tick(cur, group))
+        return ticks
+
+    # ---- sources ------------------------------------------------------------
+    def from_rows(self, rows: Iterable[dict]) -> list[Tick]:
+        return self._rows_to_ticks(list(rows))
+
+    def ticks(self, source_uri: str) -> list[Tick]:
+        if source_uri.endswith(".parquet"):
+            try:
+                import pyarrow.parquet as pq  # optional [parquet] extra
+            except ImportError as e:
+                raise ImportError("reading .parquet needs the optional extra: "
+                                  "pip install -e '.[parquet]'") from e
+            rows = pq.read_table(source_uri).to_pylist()
+        else:
+            import csv
+            with open(source_uri, newline="") as f:
+                rows = list(csv.DictReader(f))
+        return self._rows_to_ticks(rows)
+
+
+register_adapter("timeseries", TimeseriesAdapter)

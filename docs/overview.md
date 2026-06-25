@@ -1,0 +1,117 @@
+# kuration — overview & end-to-end example
+
+`kuration` is a dataset-agnostic curation SDK: it turns a large time-series corpus into a
+curated, training-ready set of shards — *raw source → curated subset → encoded shards* — for
+**any** sequential dataset (game telemetry, robot trajectories, sensor logs, generic
+multivariate series). The core carries **no domain knowledge**; a dataset is described by a
+`SchemaSpec` (data) and reached through an `InputAdapter` / `OutputEncoder` (the only code
+seams).
+
+> **Status.** Phases A–D are implemented (schema + metric DSL, adapters, segmentation,
+> feature engine, binning, strategies, selection, output layer). Not yet shipped: feature-space
+> selection methods (`cluster`/`k-center`/…), the `kur-*` CLIs, and the multi-arm experiment
+> harness — the SDK is library-only for now. See `kuration-sdk-plan.md` for the roadmap.
+
+## The pipeline
+
+```
+ raw source ─[InputAdapter]→ canonical Tick stream
+   ─[Segmenter]→ overlapping windows (steps or seconds)
+   ─[FeatureEngine: closed-grammar DSL over the SchemaSpec]→ per-segment features
+   ─[bin_segments]→ quantile bin coordinates
+   ─[Strategy + selection / hours-budget fill]→ chosen segments / tracks
+   ─[OutputSpec + OutputEncoder + ShardWriter]→ shards + manifests + reproducible config
+```
+
+Two entry points sit on top:
+- **`curate(...)`** — score + select a target **count** of segments (returns a `CurateResult`).
+- **`write_dataset(...)`** — score + fill an **hour budget** (train/test) + write shards to disk.
+
+## Install
+
+```bash
+pip install -e .                 # core (numpy only)
+pip install -e '.[methods]'      # + scikit-learn (feature-space selection — Phase E)
+pip install -e '.[parquet]'      # + pyarrow (Parquet input/containers)
+```
+
+## End-to-end example (a generic dataset, zero domain code)
+
+Curating drone-flight logs (CSV) into 64-step position/attitude shards, preferring dynamic,
+high-turn-rate windows:
+
+```python
+from kuration import (SchemaSpec, TimeseriesAdapter, Segmenter,
+                      load_strategy, OutputSpec, write_dataset)
+
+# 1. Declare the dataset's observable vocabulary (data, not code).
+schema = SchemaSpec.from_dict({
+    "name": "drones", "entity_axis": "drone", "sample_hz": 20.0,
+    "fields": {
+        "pos": {"kind": "vector", "dims": ["x", "y", "z"],
+                "semantics": "position", "max_rate": 50},      # speed-clamp = 50 units/s
+        "att": {"kind": "vector", "dims": ["roll", "pitch", "yaw"], "semantics": "angular"},
+        "battery": {"kind": "scalar"},
+    },
+})
+
+# 2. Map raw columns to fields — the generic CSV adapter needs no per-dataset code.
+adapter = TimeseriesAdapter(
+    schema,
+    fields={"pos": ["x", "y", "z"], "att": ["roll", "pitch", "yaw"], "battery": "batt"},
+    time_column="t", entity_column="drone_id",
+)
+
+# 3. Curation strategy as data: rank windows by mean speed + attitude change.
+strategy = load_strategy({
+    "name": "dynamic",
+    "define": {
+        "speed": {"source": "drone.pos", "map": "speed", "reduce": "mean"},
+        "turn":  {"source": "drone.att", "map": "angle_delta", "reduce": "mean"},
+    },
+    "binning": {"axes": [{"metric": "speed", "bins": 10}, {"metric": "turn", "bins": 10}]},
+    "selection": {"method": "top-k", "weights": {"speed": 1.0, "turn": 0.5}},
+}, schema)
+
+# 4. Declare the output: each timestep is a 3-vector position + 3-vector attitude.
+spec = OutputSpec.from_dict({
+    "shard_length": 64, "container": "npz",
+    "modalities": {
+        "pos": {"dtype": "float32", "shape": [3], "source": "field:pos"},
+        "att": {"dtype": "float32", "shape": [3], "source": "field:att"},
+    },
+})
+
+# 5. Curate to an hour budget and write shards (the emitted set is the strategy's best 10h).
+write_dataset(
+    "out/", schema=schema, adapter=adapter,
+    sources=["flight1.csv", "flight2.csv", "flight3.csv"],
+    strategy=strategy,
+    segmenter=Segmenter(4, 2, unit="seconds", sample_hz=20),   # 4s windows, 2s stride
+    spec=spec, train_hours=10, test_hours=1, seed=0,
+)
+# -> out/train/<src>_<entity>_shard0000.npz, ..., out/dataset_manifest.json, out/config.json
+```
+
+`config.json` embeds the **resolved schema + strategy + output spec**, so the dataset
+reproduces from its own directory alone.
+
+## Reference docs
+
+- [architecture.md](architecture.md) — design deep-dive: layers, data contracts, decisions.
+- [schema.md](schema.md) — authoring a `SchemaSpec` (fields, kinds, semantics tags).
+- [dsl.md](dsl.md) — the closed metric grammar (`SOURCE→MAP→FILTER→REDUCE×SCOPE`).
+- [adapters.md](adapters.md) — input adapters; the generic timeseries adapter; writing your own.
+- [strategies.md](strategies.md) — declarative strategies, selection methods, binning, splits.
+- [output.md](output.md) — output specs, encoders, containers, the hours-budget fill.
+
+## Design invariants
+
+- **Closed grammar, loud validation.** Every metric token is enumerated and validated against
+  the schema at load; unknown tokens raise. No silent fallbacks.
+- **Reproducible from the artifact.** Resolved schema + strategy + output spec live in
+  `config.json`.
+- **Deterministic under parallelism.** Segments are sorted to a canonical order before
+  binning/selection, so seeded results are worker-count-independent.
+- **Domain code only at the seams.** `InputAdapter`, `OutputEncoder`, or a registered Python
+  metric — never in the core.

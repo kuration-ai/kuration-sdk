@@ -1,0 +1,16 @@
+"""The output layer: selected curation -> training shards (declared modalities, pluggable
+encoders/containers, hours-budget track fill)."""
+from .base import OutputEncoder, PassthroughEncoder, get_encoder, register_encoder
+from .dataset import write_dataset
+from .fill import aggregate_source_priorities, fill_to_hours
+from .shardwriter import write_track
+from .spec import Modality, OutputSpec
+from .track import Track, tracks_from_ticks
+
+__all__ = [
+    "OutputSpec", "Modality",
+    "OutputEncoder", "PassthroughEncoder", "register_encoder", "get_encoder",
+    "Track", "tracks_from_ticks", "write_track",
+    "fill_to_hours", "aggregate_source_priorities",
+    "write_dataset",
+]
