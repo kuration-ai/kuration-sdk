@@ -35,7 +35,8 @@ def main() -> None:
     segs, errors, _ = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
-        workers=job.get("workers", 1), on_error=job.get("on_error", "skip"))
+        workers=job.get("workers", 1), on_error=job.get("on_error", "skip"),
+        streaming=job.get("streaming", False))
 
     rep = dataset_report(segs)
     print(f"{rep['n_segments']} segments from {rep['n_sources']} sources "

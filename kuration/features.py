@@ -31,12 +31,18 @@ class FeatureEngine:
             self.fns[name] = METRICS[name]
         self.tagger = compile_tagger(tags_spec, schema) if tags_spec else None
 
+    def score_window(self, seg: Segment, window_ticks: list[Tick]) -> Segment:
+        """Score one already-extracted window (the streaming entry point). Builds the buffer for
+        just this window — no source-wide tick list needed."""
+        w = build_window(self.schema, window_ticks)
+        for name, fn in self.fns.items():
+            seg.features[name] = fn(w)
+        if self.tagger is not None:
+            seg.tags = self.tagger(w)
+        return seg
+
     def compute(self, ticks: list[Tick], segments: list[Segment]) -> list[Segment]:
         """Fill `seg.features` (and `seg.tags` if a tags spec was given) in place."""
         for seg in segments:
-            w = build_window(self.schema, ticks[seg.start_idx:seg.end_idx])
-            for name, fn in self.fns.items():
-                seg.features[name] = fn(w)
-            if self.tagger is not None:
-                seg.tags = self.tagger(w)
+            self.score_window(seg, ticks[seg.start_idx:seg.end_idx])
         return segments

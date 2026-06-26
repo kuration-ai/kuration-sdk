@@ -184,9 +184,18 @@ exists (chunk boundaries are deterministic, so the manifest entry is still recor
 interrupted run only does the missing work.
 
 The hot path (binning) stays vectorized rather than parallelized — IPC would cost more than the
-compute. Interfaces are iterator-shaped so a streaming segmenter can later consume a lazy tick
-iterator without changing callers; today's implementation materializes per source (the next
-scale step if corpora outgrow memory).
+compute.
+
+**Out-of-core (`streaming=True`).** A single source larger than RAM is handled by reading it as
+a lazy tick iterator on *both* passes: `Segmenter.stream` slides a `deque(maxlen=window)` (never
+more than one window resident) feeding `FeatureEngine.score_window`, and the writer
+(`output/stream.py`) flushes shards from the tick stream holding at most `shard_length` records
+per active (entity, span). The budget fill needs only counts, so admission happens between the
+two passes without holding data. The core contracts are unchanged — only the iteration drivers
+differ — so streaming is opt-in and the in-memory path stays the default. Two caveats: a
+`SegmentScorer(needs_buffers=True)` can't hold the whole pool's sequences (use a per-segment
+embedding feature instead), and a *total segment pool* exceeding RAM (distinct from a single
+big source) would need a further spill/external-sort tier, not yet built.
 
 ## Lineage: generalizing a domain-specific pipeline
 

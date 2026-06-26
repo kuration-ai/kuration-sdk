@@ -34,14 +34,37 @@ def _entities_in_order(ticks) -> list:
 def _score_one(args):
     """Worker: read one source, segment, compute features. Returns a status tuple so a
     failure is data (skipped in the parent), not a pool-killing exception."""
-    schema, define, registered, tags_spec, adapter, segmenter, source, group = args
+    schema, define, registered, tags_spec, adapter, segmenter, source, group, streaming = args
     try:
+        engine = FeatureEngine(schema, define=define, registered=registered, tags_spec=tags_spec)
+        if streaming:
+            # Stream windows from a lazy tick iterator: never hold more than one window. A
+            # wrapper observes every tick as it passes the deque, so total length + entity
+            # roster (for the output track fill) come from the SAME single pass.
+            n, order, seen = 0, [], set()
+
+            def tracked(it):
+                nonlocal n
+                for tk in it:
+                    n += 1
+                    for eid in tk.entities:
+                        if eid not in seen:
+                            seen.add(eid)
+                            order.append(eid)
+                    yield tk
+
+            segs = []
+            for seg, win in segmenter.stream(source, tracked(adapter.ticks(source))):
+                seg.group = group
+                engine.score_window(seg, win)
+                segs.append(seg)
+            return ("ok", source, segs, [(eid, n) for eid in order])
+
         ticks = list(adapter.ticks(source))
         segs = segmenter.segments(source, ticks)
         for s in segs:
             s.group = group
-        FeatureEngine(schema, define=define, registered=registered,
-                      tags_spec=tags_spec).compute(ticks, segs)
+        engine.compute(ticks, segs)
         track_lens = [(eid, len(ticks)) for eid in _entities_in_order(ticks)]
         return ("ok", source, segs, track_lens)
     except Exception as e:
@@ -50,7 +73,7 @@ def _score_one(args):
 
 def score_sources(*, schema, adapter, sources, define, registered, segmenter,
                   tags_spec=None, group_of=None, tags_of=None, workers: int = 1,
-                  on_error: str = "skip"):
+                  on_error: str = "skip", streaming: bool = False):
     """Return (all_segments_sorted, errors, source_tracks).
 
       errors:        [{"source", "error"}] for skipped sources (on_error='skip')
@@ -60,7 +83,7 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
     parent (callables needn't be picklable); `tags_of` is applied in the parent post-hoc.
     """
     items = [(schema, define, registered, tags_spec, adapter, segmenter, src,
-              (group_of(src) if group_of else None)) for src in sources]
+              (group_of(src) if group_of else None), streaming) for src in sources]
     if workers and workers > 1:
         with ProcessPoolExecutor(max_workers=workers) as ex:
             results = list(ex.map(_score_one, items))

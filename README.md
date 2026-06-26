@@ -67,6 +67,9 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
   collects it in the result's `errors`; `on_error="raise"` is fail-fast.
 - **Resume** — `write_dataset(resume=True)` skips re-encoding shards that already exist, so an
   interrupted run only does the missing work.
+- **Out-of-core** — `streaming=True` reads each source as a lazy tick stream on both the
+  feature pass and the shard write, so a *single source larger than RAM* is fine; opt-in, the
+  in-memory path stays default.
 - **Path-agnostic I/O** — any source/shard/manifest path may be local or a cloud URL
   (`gs://`, `s3://`, `az://`, …) via fsspec (the `[cloud]` extra + a backend like `gcsfs`);
   local needs nothing.
@@ -102,11 +105,12 @@ facility-location / dsir / rare / typical**, plus **anomaly/dedup pre-pass filte
 `[methods]` extra), the output layer (specs, encoders, **npz / json / hdf5 / parquet**
 containers, **sub-track spans**, hours-budget fill, `write_dataset`), **declarative
 tag-coverage**, a single-dataset **stats report**, a first-class **learned-scorer seam** (whole-pool/action-aware metrics), a multi-arm **experiment/comparison** harness,
-**parallel/skip-and-log/resume** execution, and **path-agnostic I/O** (local + `gs://`/`s3://`/
-`az://` via fsspec), driven by the `kur-*` CLIs. 122 tests (`pytest tests/`).
+**parallel / skip-and-log / resume / out-of-core** execution, and **path-agnostic I/O**
+(local + `gs://`/`s3://`/`az://` via fsspec), driven by the `kur-*` CLIs. 127 tests
+(`pytest tests/`).
 
-Planned: migration of the reference CS2 pipeline onto the SDK (Phase G). See
-`../kuration-sdk-plan.md`.
+Planned: migration of the reference CS2 pipeline onto the SDK (Phase G), and a spill/external
+tier for *total* segment pools larger than RAM. See `../kuration-sdk-plan.md`.
 
 ## Tests
 

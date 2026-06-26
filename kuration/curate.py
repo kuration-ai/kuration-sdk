@@ -34,19 +34,22 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
            strategy: Strategy, segmenter: Segmenter, target_size: int, seed: int = 0,
            group_of: Optional[Callable[[str], object]] = None,
            tags_of: Optional[Callable[[Segment], Iterable]] = None,
-           test_frac: float = 0.0, workers: int = 1, on_error: str = "skip") -> CurateResult:
+           test_frac: float = 0.0, workers: int = 1, on_error: str = "skip",
+           streaming: bool = False) -> CurateResult:
     """Curate a target-count segment set from `sources`.
 
     group_of(source_id) -> group key (sets Segment.group for the group cap + split strata);
     tags_of(segment) -> tags (sets Segment.tags for tag coverage). Both optional.
-    `workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips a bad source.
+    `workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips a bad source;
+    `streaming=True` scores each source out-of-core (single source larger than RAM is fine).
     """
     referenced = strategy.referenced_metrics()
     registered = [r for r in referenced if r not in strategy.define]  # load_strategy verified these exist
     all_segments, errors, _ = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
-        group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error)
+        group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error,
+        streaming=streaming)
 
     if strategy.scorers:   # whole-pool learned/action-aware scoring -> features
         from .scorers import apply_scorers

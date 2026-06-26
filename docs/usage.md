@@ -185,8 +185,12 @@ rep["tags"], rep["groups"]
 ```python
 write_dataset("out/run1", ..., workers=8,        # parallel feature pass (deterministic)
               on_error="skip",                    # log + skip a bad source (default); "raise" to fail fast
-              resume=True)                         # skip re-encoding shards that already exist
+              resume=True,                         # skip re-encoding shards that already exist
+              streaming=True)                      # out-of-core: a single source > RAM is fine
 ```
+`streaming=True` reads each source as a lazy tick stream on both the feature pass and the shard
+write (also available on `curate(...)` / `run_experiment(...)`). Needs a lazy adapter — CSV/JSONL
+stream naturally; whole-file formats (NPZ) materialize.
 
 ## 12 · Sub-track spans (keep the best *parts* of long sources)
 

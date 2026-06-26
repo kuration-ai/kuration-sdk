@@ -34,7 +34,8 @@ def main() -> None:
                         strategy=strategy, segmenter=segmenter, spec=spec,
                         train_hours=job["train_hours"], test_hours=job.get("test_hours", 0.0),
                         seed=job.get("seed", 0), workers=job.get("workers", 1),
-                        on_error=job.get("on_error", "skip"), resume=job.get("resume", False))
+                        on_error=job.get("on_error", "skip"), resume=job.get("resume", False),
+                        streaming=job.get("streaming", False))
     r = res["results"]
     print(f"wrote {r['shards']} shards from {r['tracks_admitted']}/{r['tracks_total']} tracks "
           f"({r['n_train']} train / {r['n_test']} test sources, "

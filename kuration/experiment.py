@@ -53,7 +53,8 @@ def _js(p: np.ndarray, q: np.ndarray) -> float:
 
 def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], segmenter,
                    target_size: int, seed: int = 0, baseline: str = None,
-                   group_of=None, tags_of=None, workers: int = 1, on_error: str = "skip") -> dict:
+                   group_of=None, tags_of=None, workers: int = 1, on_error: str = "skip",
+                   streaming: bool = False) -> dict:
     union = union_define(arms)
     referenced: set = set()
     for arm in arms:
@@ -67,7 +68,7 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
     all_segments, _, _ = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=union, registered=registered,
         segmenter=segmenter, tags_spec=union_tags, group_of=group_of, tags_of=tags_of,
-        workers=workers, on_error=on_error)
+        workers=workers, on_error=on_error, streaming=streaming)
 
     # Whole-pool scorers, unioned across arms (a shared output name must mean one scorer).
     union_scorers: dict = {}

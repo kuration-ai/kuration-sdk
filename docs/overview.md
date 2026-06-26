@@ -12,9 +12,10 @@ seams).
 > binning; strategies (base + feature-space methods + filter + anomaly/dedup pre-pass filters);
 > a learned-scorer seam; the output layer (npz/json/hdf5/parquet containers, sub-track spans,
 > hours-budget fill); declarative tag-coverage; a stats report and a multi-arm experiment
-> harness; parallel / skip-and-log / resume execution; path-agnostic local + cloud I/O; and the
-> `kur-curate` / `kur-experiment` / `kur-report` CLIs. The one open architectural item is
-> **streaming / out-of-core** (a single source larger than RAM). See `kuration-sdk-plan.md`.
+> harness; parallel / skip-and-log / resume / **out-of-core** execution (`streaming=True` handles
+> a single source larger than RAM); path-agnostic local + cloud I/O; and the
+> `kur-curate` / `kur-experiment` / `kur-report` CLIs. The remaining scale item is a
+> spill/external tier for a *total segment pool* larger than RAM. See `kuration-sdk-plan.md`.
 
 ## The pipeline
 

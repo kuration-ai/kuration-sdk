@@ -34,13 +34,16 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                   tags_of: Optional[Callable] = None,
                   clip_aggregate: str = "max", span_steps: Optional[int] = None,
                   span_seconds: Optional[float] = None, workers: int = 1,
-                  on_error: str = "skip", resume: bool = False) -> dict:
+                  on_error: str = "skip", resume: bool = False, streaming: bool = False) -> dict:
     """`workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips bad sources;
     `resume=True` skips re-writing shards whose files already exist.
 
     `span_steps` / `span_seconds` subdivide each track into independently-budgeted spans, so
     the fill can keep the *best parts* of a long source rather than the whole source or nothing.
-    Unset → one span per whole track (the default)."""
+    Unset → one span per whole track (the default).
+
+    `streaming=True` scores and writes out-of-core — each source is read as a lazy tick stream
+    on both the feature pass and the shard write, so a single source larger than RAM is fine."""
     sample_hz = sample_hz or schema.sample_hz
     if not sample_hz:
         raise ValueError("write_dataset needs sample_hz (schema.sample_hz or explicit) for the "
@@ -53,7 +56,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     all_segments, errors, source_tracks = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
-        group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error)
+        group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error,
+        streaming=streaming)
 
     if strategy.scorers:   # whole-pool learned/action-aware scoring -> features
         from ..scorers import apply_scorers
@@ -103,6 +107,16 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     for (src, eid, k) in admitted:
         by_source.setdefault(src, []).append((eid, k))
     for src in sorted(by_source):
+        suffix = lambda k: "" if span_len is None else f"_span{k:03d}"
+        if streaming:
+            from .stream import stream_source_shards
+            jobs = [{"eid": eid, "span_index": k, "start": span_index[(src, eid, k)][0],
+                     "end": span_index[(src, eid, k)][1], "split": split.get(src, "train"),
+                     "name_suffix": suffix(k), "group": group_of(src) if group_of else None}
+                    for (eid, k) in by_source[src]]
+            entries += stream_source_shards(out_dir, src, adapter.ticks(src), jobs,
+                                            schema=schema, spec=spec, encoder=encoder, resume=resume)
+            continue
         tracks = {t.entity_id: t for t in tracks_from_ticks(schema, list(adapter.ticks(src)), src)}
         for (eid, k) in by_source[src]:
             tr = tracks.get(eid)
@@ -112,10 +126,9 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             sub = tr if (start, end) == (0, tr.n_steps) else Track(
                 tr.source_id, tr.entity_id, tr.records[start:end], dict(tr.meta))
             sub.meta["group"] = group_of(src) if group_of else None
-            suffix = "" if span_len is None else f"_span{k:03d}"
             entries += write_track(out_dir, sub, spec, encoder=encoder, schema=schema,
                                    split=split.get(src, "train"), resume=resume,
-                                   name_suffix=suffix)
+                                   name_suffix=suffix(k))
 
     from ..io import write_text
     write_text(f"{out_dir}/dataset_manifest.json",

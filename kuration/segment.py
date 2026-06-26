@@ -4,14 +4,15 @@ Windows are expressed in steps, or in seconds when the schema declares `sample_h
 converts). `Segment` carries generic per-window state — `features` / `bin` / `tags` — keyed
 by name, so adding a metric never touches this dataclass (the malleability the registry buys).
 
-In-memory for now (operates on a materialized tick list); the interface takes the window
-count up front so a streaming segmenter can later yield windows from a lazy tick iterator
-without changing callers.
+`segments()` is the in-memory path (random-access over a materialized list); `stream()` is the
+out-of-core path — a sliding `deque` over a lazy tick iterator that never holds more than one
+window, so a single source larger than RAM is fine. Both emit identical windows.
 """
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from .buffer import Tick
 
@@ -53,3 +54,18 @@ class Segmenter:
             out.append(Segment(source_id=source_id, start_idx=start, end_idx=end,
                                time_range=(ticks[start].time, ticks[end - 1].time)))
         return out
+
+    def stream(self, source_id: str, ticks: Iterable[Tick]) -> Iterator[tuple[Segment, list[Tick]]]:
+        """Yield (Segment, window_ticks) from a lazy tick iterator, holding at most one window
+        (a `deque` of `window` ticks). Emits exactly the windows `segments()` would — a window
+        [start, start+W) once tick start+W-1 has arrived, for start on the stride grid."""
+        buf: deque = deque(maxlen=self.window)
+        idx = 0
+        for tk in ticks:
+            buf.append(tk)
+            idx += 1
+            if len(buf) == self.window and (idx - self.window) % self.stride == 0:
+                start = idx - self.window
+                win = list(buf)
+                yield (Segment(source_id=source_id, start_idx=start, end_idx=idx,
+                               time_range=(win[0].time, win[-1].time)), win)
