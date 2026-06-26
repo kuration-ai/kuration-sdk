@@ -112,7 +112,7 @@ tag-coverage**, a single-dataset **stats report**, a first-class **learned-score
 (`pytest tests/`).
 
 Planned: migration of the reference CS2 pipeline onto the SDK (Phase G), and a spill/external
-tier for *total* segment pools larger than RAM. See `../kuration-sdk-plan.md`.
+tier for *total* segment pools larger than RAM. See `PLAN.md`.
 
 ## Tests
 

@@ -15,7 +15,7 @@ seams).
 > harness; parallel / skip-and-log / resume / **out-of-core** execution (`streaming=True` handles
 > a single source larger than RAM); path-agnostic local + cloud I/O; and the
 > `kur-curate` / `kur-experiment` / `kur-report` CLIs. The remaining scale item is a
-> spill/external tier for a *total segment pool* larger than RAM. See `kuration-sdk-plan.md`.
+> spill/external tier for a *total segment pool* larger than RAM. See `../PLAN.md`.
 
 ## The pipeline
 

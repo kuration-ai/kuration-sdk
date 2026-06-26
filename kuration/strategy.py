@@ -5,10 +5,10 @@ set: inline metric definitions (`define`, DSL specs compiled against the schema)
 bin axes, and a selection method with its knobs. It is pure data, so the fully-resolved spec
 lands verbatim in `config.json` and any run reproduces from the artifact alone.
 
-Phase C ships the four base methods (uniform-bins / weighted / top-k / target-distribution)
-over a fixed target *count*. The feature-space methods (cluster/k-center/facility/dsir/…) and
-the hours-over-output-spans budget fill arrive in later phases (the latter needs the output
-unit defined — see kuration-sdk-plan.md).
+Base methods (uniform-bins / weighted / top-k / target-distribution / filter) live here;
+feature-space methods (cluster/k-center/facility/dsir/rare/typical) + pre-pass filters are in
+`methods.py`. Count selection is `select()`; the hours-over-output-spans budget fill lives in
+the output layer (`output/fill.py`), where the output unit (a track/span) is defined.
 """
 from __future__ import annotations
 

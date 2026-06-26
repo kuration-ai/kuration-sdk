@@ -1,9 +1,11 @@
 """kuration — a dataset-agnostic curation SDK.
 
-Phase A+B+C surface: the schema-driven metric engine, input adapters, segmentation, the
-feature engine, and the selection engine (binning + declarative strategies + set-based
-selection with tag-coverage/group-cap + source-level splits + reproducible config). The
-output layer (shards/encoders) arrives next — see `kuration-sdk-plan.md`.
+Full pipeline: schema-driven metric DSL, input adapters, segmentation, feature engine,
+binning, declarative strategies (base + feature-space + filter + pre-pass filters + a
+learned-scorer seam), the output layer (declared modalities, npz/json/hdf5/parquet shards,
+hours-budget fill, sub-track spans), tag-coverage, experiment + report, parallel /
+skip-and-log / resume / out-of-core execution, and path-agnostic local + cloud I/O.
+See README.md, docs/, and PLAN.md.
 """
 from .adapters import (
     CuratedDatasetAdapter,

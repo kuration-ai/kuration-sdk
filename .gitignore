@@ -24,3 +24,5 @@ out/
 *.npz
 *.h5
 *.parquet
+
+CLAUDE.md
