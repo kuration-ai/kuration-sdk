@@ -20,7 +20,9 @@ def dataset_report(segments: list[Segment], *, metrics: Optional[Sequence[str]] 
     """Distribution summary over `segments`. `metrics` defaults to every feature present."""
     n = len(segments)
     if n == 0:
-        return {"n_segments": 0, "metrics": {}, "groups": {}, "tags": {}}
+        # keep the key set identical to the populated case so consumers (e.g. the report CLI)
+        # don't KeyError on an empty pool.
+        return {"n_segments": 0, "n_sources": 0, "metrics": {}, "groups": {}, "tags": {}}
     names = list(metrics) if metrics is not None else sorted({k for s in segments for k in s.features})
 
     metric_rep: dict = {}

@@ -101,3 +101,7 @@ def test_dataset_report_summarizes():
     assert "am" in rep["metrics"] and rep["metrics"]["am"]["max"] == 5.0
     assert set(rep["tags"]) == {"kind:hot", "kind:cold"}
     assert len(rep["metrics"]["am"]["histogram"]["counts"]) == 10
+    # empty pool must expose the SAME key set (no KeyError downstream, e.g. the report CLI)
+    empty = dataset_report([])
+    assert empty["n_segments"] == 0
+    assert set(empty) >= {"n_segments", "n_sources", "metrics", "groups", "tags"}
