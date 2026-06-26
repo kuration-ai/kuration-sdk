@@ -70,6 +70,18 @@ def exists(path) -> bool:
     return Path(_local(path)).exists()
 
 
+def glob(pattern) -> list[str]:
+    """List paths matching a glob, local or remote (sorted). Remote results keep their scheme,
+    so each is a usable URL. `**` is recursive in both cases."""
+    if is_remote(pattern):
+        fs = _fs(pattern)
+        scheme = str(pattern).split("://", 1)[0]
+        return sorted(str(m) if "://" in str(m) else f"{scheme}://{m}"
+                      for m in fs.glob(str(pattern)))
+    from glob import glob as _g
+    return sorted(_g(_local(pattern), recursive=True))
+
+
 @contextmanager
 def local_copy(path):
     """Yield a real local path for reading; a remote object is downloaded to a tempfile."""

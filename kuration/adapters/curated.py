@@ -41,25 +41,10 @@ def schema_from_output(output_spec: dict, *, name: str = "curated",
 
 def _load_shard(path: str, container: str):
     """Return (arrays: {modality -> (T, *shape)}, n_steps) for any output container; remote
-    shards (gs://, s3://, …) are staged to a tempfile."""
-    from ..io import local_copy, read_text
-    if container == "json":
-        data = json.loads(read_text(path))
-        return {k: np.asarray(v) for k, v in data["modalities"].items()}, int(data["_n_steps"])
-    with local_copy(path) as p:
-        if container == "npz":
-            z = np.load(p)
-            return {k: z[k] for k in z.files if not k.startswith("_")}, int(z["_n_steps"])
-        if container == "hdf5":
-            import h5py
-            with h5py.File(p, "r") as f:
-                return {k: f[k][:] for k in f.keys()}, int(f.attrs["n_steps"])
-        if container == "parquet":
-            import pyarrow.parquet as pq
-            t = pq.read_table(p)
-            n = int((t.schema.metadata or {}).get(b"_n_steps", b"0"))
-            return {name: np.asarray(t.column(name).to_pylist()) for name in t.column_names}, n
-    raise ValueError(f"unknown container {container!r}")
+    shards (gs://, s3://, …) are staged to a tempfile. Delegates to the canonical reader so
+    the read path stays symmetric with `write_shard` (one source of truth)."""
+    from ..output.containers import read_shard   # lazy: avoids the adapters<->output cycle
+    return read_shard(path, container)
 
 
 class CuratedDatasetAdapter:

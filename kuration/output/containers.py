@@ -54,3 +54,35 @@ def write_shard(path_no_ext: str, container: str, arrays: dict[str, np.ndarray],
             table = pa.table(cols).replace_schema_metadata({"_n_steps": str(int(n_steps))})
             pq.write_table(table, local)
     return path
+
+
+def read_shard(path: str, container: str) -> tuple[dict[str, np.ndarray], int]:
+    """Inverse of `write_shard`: load a shard's modality arrays + real `n_steps` from any
+    container. Remote shards (gs://, s3://, …) are staged to a tempfile. Arrays come back
+    as stored — a tensor modality written to Parquet is flat `(L, prod(shape))`; reshape it
+    with the manifest's per-modality `shape` if you need the original rank (the loaders do)."""
+    if container not in CONTAINER_EXT:
+        raise ValueError(f"unknown container {container!r}")
+    from ..io import local_copy, read_text
+    if container == "json":
+        data = json.loads(read_text(path))
+        return {k: np.asarray(v) for k, v in data["modalities"].items()}, int(data["_n_steps"])
+    with local_copy(path) as p:
+        if container == "npz":
+            z = np.load(p)
+            return {k: z[k] for k in z.files if not k.startswith("_")}, int(z["_n_steps"])
+        if container == "hdf5":
+            try:
+                import h5py
+            except ImportError as e:
+                raise ImportError("reading hdf5 shards needs h5py: pip install -e '.[array]'") from e
+            with h5py.File(p, "r") as f:
+                return {k: f[k][:] for k in f.keys()}, int(f.attrs["n_steps"])
+        # parquet
+        try:
+            import pyarrow.parquet as pq
+        except ImportError as e:
+            raise ImportError("reading parquet shards needs pyarrow: pip install -e '.[parquet]'") from e
+        t = pq.read_table(p)
+        n = int((t.schema.metadata or {}).get(b"_n_steps", b"0"))
+        return {name: np.asarray(t.column(name).to_pylist()) for name in t.column_names}, n

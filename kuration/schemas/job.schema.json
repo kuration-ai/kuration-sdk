@@ -1,0 +1,169 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kuration.dev/schemas/job.schema.json",
+  "title": "kuration job spec",
+  "description": "One JSON document wiring a curation run: schema + adapter + sources + segmenter + strategy (+ output for curate, arms for experiment). Point your editor's $schema at this file for autocomplete; kur-validate runs the SDK's richer load-time validators.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "description": "A SchemaSpec (inline) or a path to one. Omit only when the adapter derives its own (e.g. the curated adapter).",
+      "oneOf": [
+        {"type": "string"},
+        {
+          "type": "object",
+          "required": ["name", "fields"],
+          "properties": {
+            "name": {"type": "string"},
+            "entity_axis": {"type": ["string", "null"]},
+            "sample_hz": {"type": ["number", "null"], "exclusiveMinimum": 0},
+            "fields": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "type": "object",
+                "required": ["kind"],
+                "properties": {
+                  "kind": {"enum": ["scalar", "vector", "categorical"]},
+                  "dims": {"type": "array", "items": {"type": "string"}},
+                  "semantics": {"enum": [null, "position", "angular", "bitmask"]},
+                  "bits": {"type": "object", "additionalProperties": {"type": "integer"}},
+                  "max_rate": {"type": ["number", "null"]}
+                }
+              }
+            },
+            "event_streams": {"type": "object"},
+            "globals": {"type": "object"}
+          }
+        }
+      ]
+    },
+    "adapter": {
+      "description": "The input adapter: {type, ...kwargs}. type is the registered adapter name.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {"type": "string",
+                 "examples": ["timeseries", "jsonl", "npz", "hdf5", "curated",
+                              "parquet-dataset", "huggingface", "zarr"]}
+      }
+    },
+    "sources": {
+      "description": "Explicit source URIs. Omit to use the adapter's own sources() (curated/parquet-dataset/huggingface can enumerate).",
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "segmenter": {
+      "type": "object",
+      "required": ["window", "stride"],
+      "properties": {
+        "window": {"type": "number", "exclusiveMinimum": 0},
+        "stride": {"type": "number", "exclusiveMinimum": 0},
+        "unit": {"enum": ["steps", "seconds"]},
+        "sample_hz": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "strategy": {"$ref": "#/$defs/strategy"},
+    "arms": {
+      "description": "Experiment mode: several strategies compared over the same sources.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "strategy"],
+        "properties": {
+          "name": {"type": "string"},
+          "strategy": {"$ref": "#/$defs/strategy"}
+        }
+      }
+    },
+    "baseline": {"type": "string", "description": "Experiment: arm name used as the JS-divergence reference."},
+    "target_size": {"type": "integer", "minimum": 1, "description": "Experiment/report: count to select per arm."},
+    "output": {
+      "description": "Curate mode: the OutputSpec for training shards.",
+      "type": "object",
+      "required": ["shard_length", "modalities"],
+      "properties": {
+        "shard_length": {"type": "integer", "minimum": 1},
+        "short_policy": {"enum": ["keep", "pad", "drop"]},
+        "container": {"enum": ["npz", "json", "hdf5", "parquet"]},
+        "modalities": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "required": ["dtype", "source"],
+            "properties": {
+              "dtype": {"type": "string"},
+              "shape": {"type": "array", "items": {"type": "integer"}},
+              "source": {"type": "string", "pattern": "^(field|segment|encoder):.+"}
+            }
+          }
+        }
+      }
+    },
+    "train_hours": {"type": "number", "minimum": 0, "description": "Curate: train budget in hours."},
+    "test_hours": {"type": "number", "minimum": 0},
+    "out": {"type": "string", "description": "Curate: output directory (local path or cloud URL)."},
+    "seed": {"type": "integer"},
+    "workers": {"type": "integer", "minimum": 1},
+    "on_error": {"enum": ["skip", "raise"]},
+    "resume": {"type": "boolean"},
+    "streaming": {"type": "boolean"}
+  },
+  "$defs": {
+    "strategy": {
+      "description": "A strategy: inline dict, a path to one, or a built-in name.",
+      "oneOf": [
+        {"type": "string"},
+        {
+          "type": "object",
+          "properties": {
+            "name": {"type": "string"},
+            "define": {"type": "object", "description": "name -> DSL metric spec {source, reduce, map?, filter?, scope?}"},
+            "binning": {
+              "type": "object",
+              "properties": {
+                "axes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["metric", "bins"],
+                    "properties": {"metric": {"type": "string"}, "bins": {"type": "integer", "minimum": 1}}
+                  }
+                }
+              }
+            },
+            "selection": {
+              "type": "object",
+              "properties": {
+                "method": {"enum": ["uniform-bins", "weighted", "top-k", "target-distribution",
+                                    "filter", "cluster-balanced", "k-center", "facility-location",
+                                    "dsir", "rare", "typical"]},
+                "weights": {"type": "object", "additionalProperties": {"type": "number"}},
+                "normalize": {"enum": ["quantile", "minmax", "zscore"]},
+                "target": {},
+                "tag_coverage": {"type": ["object", "null"]},
+                "group_cap": {"type": ["object", "null"]},
+                "predicates": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["metric", "op", "value"],
+                    "properties": {
+                      "metric": {"type": "string"},
+                      "op": {"enum": [">", ">=", "<", "<=", "==", "!="]},
+                      "value": {"type": "number"}
+                    }
+                  }
+                }
+              }
+            },
+            "feature_space": {"type": "array", "items": {"type": "string"}},
+            "filters": {"type": "array", "items": {"type": "object", "required": ["type"]}},
+            "tags": {},
+            "scorers": {"type": "array"}
+          }
+        }
+      ]
+    }
+  }
+}

@@ -123,6 +123,45 @@ out/
 `config.json` is the reproducibility record — schema, strategy, and output spec together
 regenerate this dataset from the same sources.
 
+## Reading a dataset back
+
+The write side produces shards + a manifest; the read side turns them back into arrays. This is
+**numpy-only** (`kuration.loaders`) so a JAX/TF/plain-numpy consumer needs no extra dependency;
+the PyTorch wrapper (`kuration.torch`, the `[torch]` extra) is a thin layer over it.
+
+```python
+from kuration import iter_shards
+
+for arr in iter_shards("out/", split="train"):
+    # arr = {modality -> np.ndarray (T, *shape)}, trimmed to the shard's real n_steps
+    obs, act = arr["obs"], arr["act"]
+```
+
+`iter_shards(dataset, *, split=None, modalities=None, trim=True, container=None, with_meta=False)`
+accepts a **dataset directory**, a path to its `dataset_manifest.json`, or an already-loaded
+manifest dict (pass `container=` for a bare dict — a directory reads it from `config.json`). It
+handles all four containers, stages remote shards (`gs://`/`s3://`/…) automatically, **trims pad
+rows** to each shard's real `n_steps`, and **reshapes** tensor modalities back to their declared
+rank (Parquet stores them flat). `with_meta=True` yields `(arrays, entry)` so you also get the
+shard's `source_id`/`entity_id`/`split`/`padded`. `shard_entries(dataset, split=...)` and
+`read_shard_arrays(entry, container)` are the building blocks if you want manifest entries or a
+single shard directly.
+
+**PyTorch.**
+
+```python
+from kuration.torch import ShardDataset            # pip install -e '.[torch]'
+from torch.utils.data import DataLoader
+
+ds = ShardDataset("out/", split="train")           # one shard = one item, modalities -> tensors
+loader = DataLoader(ds, batch_size=8)
+```
+
+`ShardDataset` is map-style (`__len__`/`__getitem__`) and works with `DataLoader` directly; pass
+`transform=fn` for per-item post-processing and `include_meta=True` to attach an `_meta` dict.
+With `short_policy="keep"` shards have **variable length** — supply a `collate_fn`, or write with
+`short_policy="pad"` (or an evenly-dividing `shard_length`) for default batching.
+
 **Remote output.** `out_dir` may be a cloud URL — `write_dataset("gs://bucket/run1", …)` writes
 shards, manifest, and config straight to the bucket (needs the `[cloud]` extra + a backend like
 `gcsfs`/`s3fs`/`adlfs`). The dataset is then re-ingestable with

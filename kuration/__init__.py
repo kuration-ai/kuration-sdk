@@ -10,10 +10,13 @@ See README.md, docs/, and PLAN.md.
 from .adapters import (
     CuratedDatasetAdapter,
     HDF5Adapter,
+    HuggingFaceAdapter,
     InputAdapter,
     JsonlAdapter,
     NpzAdapter,
+    ParquetDatasetAdapter,
     TimeseriesAdapter,
+    ZarrAdapter,
     get_adapter,
     register_adapter,
     schema_from_output,
@@ -25,6 +28,7 @@ from .dsl import compile_metric, register_compiled, register_metric
 from .experiment import Arm, run_experiment, union_define
 from .features import FeatureEngine
 from .io import exists, local_copy, read_text, write_bytes, write_text
+from .loaders import iter_shards, read_shard_arrays, shard_entries
 from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities
 from .report import dataset_report
@@ -53,7 +57,8 @@ __all__ = [
     "WindowBuffer", "Tick", "build_window", "empty_like",
     "compile_metric", "register_metric", "register_compiled",
     "InputAdapter", "TimeseriesAdapter", "HDF5Adapter", "NpzAdapter", "JsonlAdapter",
-    "CuratedDatasetAdapter", "schema_from_output", "register_adapter", "get_adapter",
+    "CuratedDatasetAdapter", "ParquetDatasetAdapter", "HuggingFaceAdapter", "ZarrAdapter",
+    "schema_from_output", "register_adapter", "get_adapter",
     "Arm", "run_experiment", "union_define",
     "Segment", "Segmenter", "FeatureEngine",
     "bin_segments", "quantile_bins",
@@ -66,4 +71,5 @@ __all__ = [
     "OutputSpec", "Modality", "OutputEncoder", "PassthroughEncoder",
     "register_encoder", "get_encoder", "Track", "tracks_from_ticks", "write_track",
     "fill_to_hours", "write_dataset",
+    "iter_shards", "read_shard_arrays", "shard_entries",
 ]

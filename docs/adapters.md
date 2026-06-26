@@ -68,6 +68,49 @@ from kuration import JsonlAdapter
 JsonlAdapter(schema, fields={"pos": ["x", "y"], "act": "act"}, time_column="t").ticks("log.jsonl")
 ```
 
+## Partitioned Parquet (a dataset of parts)
+
+`ParquetDatasetAdapter` generalizes the single-file Parquet read to a directory or glob of
+parts (e.g. Hive-style `date=*/part-*.parquet`), same column mapping. `source_per` decides the
+unit: `"part"` (default) makes **each file its own source** — the natural choice when each file
+is one trajectory/episode, and it keeps the per-source train/test split leakage-free; `"dataset"`
+treats **all parts as one source** (rows concatenated, sorted by `time_column` if set). Reuses the
+`[parquet]` extra — no new dependency. Remote globs (`gs://…/**/*.parquet`) work via `[cloud]`.
+
+```python
+from kuration import ParquetDatasetAdapter
+ad = ParquetDatasetAdapter(schema, path="gs://bucket/logs", source_per="part",
+                           fields={"pos": ["x", "y"], "act": "act"}, time_column="t")
+ad.sources()            # -> every part file (or [path] for source_per="dataset")
+```
+
+## HuggingFace datasets
+
+`HuggingFaceAdapter` loads a HF dataset/split (hub or local) as ticks, same mapping. One split is
+one source by default; set `source_column` to split it into **one source per distinct value**
+(e.g. per `episode_id`). Needs the `[hf]` extra (`datasets`).
+
+```python
+from kuration import HuggingFaceAdapter
+ad = HuggingFaceAdapter(schema, dataset="org/name", split="train",
+                        fields={"pos": ["x", "y"], "act": "act"},
+                        time_column="t", source_column="episode_id")
+```
+
+(Vector fields map one column per dim, as elsewhere — `pos: ["x", "y"]`, not a single
+list-valued column.)
+
+## Zarr array store
+
+`ZarrAdapter` mirrors HDF5/NPZ for chunked Zarr stores: one store = one source, one entity, each
+mapped array `(T, *shape)`. Needs the `[zarr]` extra; remote stores (`gs://`, `s3://`, …) open via
+fsspec (`[cloud]` + a backend).
+
+```python
+from kuration import ZarrAdapter
+ZarrAdapter(schema, fields={"pos": "px", "act": "a"}).ticks("s3://bucket/run.zarr")
+```
+
 ## Curated datasets as a source (composition & introspection)
 
 `CuratedDatasetAdapter` reads a dataset written by `write_dataset` back in — closing the loop

@@ -13,11 +13,15 @@ parquet = ["pyarrow"]             # Parquet input adapter / output container
 array = ["h5py"]                  # tensor shard container
 analysis = ["opencv-python", "scikit-learn"]  # perceptual/codebook diversity
 cloud = ["fsspec"]                # gs:// / s3:// / az:// I/O (plus a backend: gcsfs/s3fs/adlfs)
+torch = ["torch"]                 # PyTorch ShardDataset over a curated dataset (kuration.torch)
+hf = ["datasets"]                 # HuggingFace datasets input adapter
+zarr = ["zarr"]                   # Zarr array-store input adapter
 
 [project.scripts]
 kur-curate = "kuration.cli.curate:main"
 kur-experiment = "kuration.cli.experiment:main"
 kur-report = "kuration.cli.report:main"
+kur-validate = "kuration.cli.validate:main"
 
 [build-system]
 requires = ["setuptools"]
@@ -26,3 +30,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["kuration*"]
+
+[tool.setuptools.package-data]
+kuration = ["schemas/*.json"]   # shipped JSON Schema for job/strategy specs (kur-validate)
