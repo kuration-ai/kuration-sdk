@@ -8,22 +8,9 @@ instead of a fixed 64 Hz, `group` instead of `map`. Budget honored to within one
 """
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 
 from ..select import assign_splits
-
-
-def aggregate_source_priorities(all_segments, priorities, clip_aggregate: str = "max") -> dict:
-    """One priority per source = aggregate of its segments' priorities (whole-track spans
-    overlap all of a source's segments). `clip_aggregate`: max (inclusion) / mean / min
-    (avoidance) — same rationale as the reference fill."""
-    reduce = {"max": max, "min": min, "mean": lambda x: sum(x) / len(x)}.get(clip_aggregate)
-    if reduce is None:
-        raise ValueError(f"unknown clip_aggregate {clip_aggregate!r}; expected max/mean/min")
-    by_src: dict = defaultdict(list)
-    for i, s in enumerate(all_segments):
-        by_src[s.source_id].append(float(priorities[i]))
-    return {src: reduce(ps) for src, ps in by_src.items()}
 
 
 def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,

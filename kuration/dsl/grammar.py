@@ -40,6 +40,10 @@ from ..schema import FieldSpec, SchemaSpec
 
 _SCALAR_REDUCES = {"mean", "std", "var", "min", "max", "sum", "count",
                    "rate", "entropy", "nunique", "jerk"}  # plus p<q>
+# Reduces `_agg_1d` (+ jerk) actually implement over a numeric stream. `nunique` is
+# categorical-only; spatial reduces need a position plane — both excluded so an ill-typed
+# numeric/global reduce fails loudly at LOAD, not mid-run (closed-grammar contract).
+_NUMERIC_REDUCES = {"mean", "std", "var", "min", "max", "sum", "count", "rate", "entropy", "jerk"}
 _SPATIAL_REDUCES = {"dispersion", "min_pair_dist", "hull_area"}
 _CATEGORICAL_REDUCES = {"entropy", "nunique", "count"}
 _SCOPES = {"pooled", "per_entity_mean"}
@@ -216,6 +220,24 @@ def _validate_reduce(reduce: str) -> str:
         except ValueError:
             pass
     raise ValueError(f"unknown reduce {reduce!r}")
+
+
+def _validate_numeric_reduce(reduce: str) -> str:
+    """Reduce must be applicable to a numeric/global scalar stream. Catches `nunique`
+    (categorical-only), spatial reduces, and out-of-range percentiles at load time."""
+    if reduce in _NUMERIC_REDUCES:
+        return reduce
+    if reduce.startswith("p"):
+        try:
+            q = float(reduce[1:])
+        except ValueError:
+            pass
+        else:
+            if 0.0 <= q <= 100.0:
+                return reduce
+            raise ValueError(f"percentile reduce {reduce!r} out of range (need p0..p100)")
+    raise ValueError(f"reduce {reduce!r} not applicable to a numeric stream "
+                     f"(use {sorted(_NUMERIC_REDUCES)} or p<q>)")
 
 
 def _parse_filter(filt: str):
@@ -408,6 +430,8 @@ def _compile_entity(rest: str, spec: dict, schema: SchemaSpec) -> Callable[[Wind
         raise ValueError(
             f"reduce {reduce!r} needs a scalar stream; source {spec['source']!r} is a vector "
             f"— add a map (speed/angle_delta) or select a .<dim>")
+    if not is_cat:                       # numeric scalar stream — reject categorical/ill-typed reduces now
+        _validate_numeric_reduce(reduce)
 
     def fn(w: WindowBuffer) -> float:
         if is_cat:
@@ -438,7 +462,7 @@ def _compile_entity(rest: str, spec: dict, schema: SchemaSpec) -> Callable[[Wind
 def _compile_global(name: str, spec: dict, schema: SchemaSpec) -> Callable[[WindowBuffer], float]:
     if spec.get("map") or spec.get("filter"):
         raise ValueError(f"global source {name!r} takes no map/filter")
-    reduce = _validate_reduce(spec["reduce"])
+    reduce = _validate_numeric_reduce(spec["reduce"])   # a global is a 1-D scalar stream
 
     def fn(w: WindowBuffer) -> float:
         v = w.globals[name].astype(float)

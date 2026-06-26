@@ -58,6 +58,31 @@ def test_kur_curate_runs(tmp_path):
     assert (out / "config.json").exists()
 
 
+def test_kur_report_with_scorer(tmp_path):
+    """Regression: a strategy that references a scorer output (here in weights) must not push
+    that output into the report's feature-pass `registered` list — doing so makes the engine
+    raise 'unknown registered metric' and skip EVERY source, yielding a silent empty report."""
+    csv_path = _make_csv(tmp_path)
+    job = tmp_path / "rep.json"
+    spec = _job(csv_path, tmp_path / "unused")
+    # action_residual is registered at import, so the strategy loads in the subprocess; report
+    # runs no scorer stage, so its obs/action params are never exercised here.
+    spec["strategy"] = {
+        "name": "withscorer",
+        "define": {"am": {"source": "e.act", "reduce": "mean"}},
+        "scorers": [{"name": "action_residual", "as": "resid", "obs": "pos", "action": "act"}],
+        "selection": {"method": "top-k", "weights": {"resid": 1.0, "am": 0.5}},
+    }
+    out_json = tmp_path / "report.json"
+    job.write_text(json.dumps(spec))
+    p = _run(["kuration.cli.report", str(job), "--out", str(out_json)])
+    assert p.returncode == 0, p.stderr
+    assert "unknown registered metric" not in p.stderr
+    assert "segment pool is" not in p.stderr.replace("\n", " ")   # the all-skipped warning
+    rep = json.loads(out_json.read_text())
+    assert rep["n_segments"] > 0, f"empty report — sources were skipped:\n{p.stdout}\n{p.stderr}"
+
+
 def test_kur_experiment_runs(tmp_path):
     csv_path = _make_csv(tmp_path)
     job = tmp_path / "exp.json"

@@ -31,7 +31,10 @@ def main() -> None:
     segmenter = build_segmenter(job, schema)
     sources = resolve_sources(job, adapter)
 
-    registered = [r for r in strategy.referenced_metrics() if r not in strategy.define]
+    # scorer outputs are produced by the scorer stage, not the feature pass — exclude them
+    # (report runs no selection/scorers, so the output is simply absent from the profile).
+    registered = [r for r in strategy.referenced_metrics()
+                  if r not in strategy.define and r not in strategy.scorer_outputs()]
     segs, errors, _ = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,

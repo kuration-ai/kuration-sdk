@@ -102,6 +102,10 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
             errors.append({"source": src, "error": payload})
     if errors:
         print(f"  [skip] {len(errors)} source(s) skipped due to errors", file=sys.stderr)
+        if not all_segments:
+            print(f"  [WARNING] ALL {len(errors)} source(s) were skipped — the segment pool is "
+                  f"EMPTY. Downstream selection/output will produce nothing. First error: "
+                  f"{errors[0]['error']}", file=sys.stderr)
 
     if tags_of:
         for s in all_segments:

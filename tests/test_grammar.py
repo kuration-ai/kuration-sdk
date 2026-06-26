@@ -143,6 +143,10 @@ def test_max_rate_clamps_teleport():
     ({"source": "agent.ang", "reduce": "dispersion"}, "position"),   # spatial needs position
     ({"source": "agent.pos", "map": "speed", "reduce": "mean", "scope": "team"}, "scope"),
     ({"source": "ghost.x", "reduce": "mean"}, "namespace"),
+    ({"source": "agent.hp", "reduce": "nunique"}, "numeric stream"),   # categorical-only reduce
+    ({"source": "agent.hp", "reduce": "p150"}, "out of range"),        # percentile clamp
+    ({"source": "alive", "reduce": "hull_area"}, "numeric stream"),    # spatial reduce on a global
+    ({"source": "alive", "reduce": "nunique"}, "numeric stream"),
 ])
 def test_loud_failures(spec, msg):
     with pytest.raises(ValueError) as e:

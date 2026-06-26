@@ -87,9 +87,11 @@ def cluster_labels(X, n_clusters, *, seed=0, workers=1):
     k = max(1, min(n_clusters, n))
     if k < n_clusters:
         print(f"  [methods] clusters capped {n_clusters} -> {k} (only {n} segments)")
+    # batch_size is fixed (not a function of `workers`): it changes the clustering, and the
+    # selection must stay worker-count-independent (determinism invariant). `workers` only
+    # tunes sklearn's n_jobs elsewhere, which doesn't affect results.
     km = (KMeans(n_clusters=k, random_state=seed, n_init=3) if n <= 20000
-          else MiniBatchKMeans(n_clusters=k, random_state=seed, n_init=3,
-                               batch_size=max(1024, 256 * (workers or 1))))
+          else MiniBatchKMeans(n_clusters=k, random_state=seed, n_init=3, batch_size=1024))
     import warnings
     from sklearn.exceptions import ConvergenceWarning
     with warnings.catch_warnings():
@@ -136,7 +138,9 @@ def cluster_balanced_priorities(segments, names, *, n_clusters=_DEFAULT_CLUSTERS
     return _round_robin_priorities(labels, order, within)
 
 
-def _farthest_point_order(C, *, seed) -> list[int]:
+def _farthest_point_order(C) -> list[int]:
+    """Deterministic farthest-point traversal of the centroids (no RNG: the start is the
+    centroid nearest the mean, then greedily the farthest remaining)."""
     k = C.shape[0]
     if k == 0:
         return []
@@ -156,7 +160,7 @@ def kcenter_priorities(segments, names, *, n_clusters=_DEFAULT_CLUSTERS,
         return np.zeros(0)
     X = feature_matrix(segments, names, normalize=normalize)
     labels, centroids = cluster_labels(X, n_clusters, seed=seed, workers=workers)
-    order = {int(c): i for i, c in enumerate(_farthest_point_order(centroids, seed=seed))}
+    order = {int(c): i for i, c in enumerate(_farthest_point_order(centroids))}
     within = _within_cluster_rank(X, labels, centroids, seed=seed, shuffle=False)
     return _round_robin_priorities(labels, order, within)
 
