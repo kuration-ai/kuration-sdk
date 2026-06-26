@@ -50,6 +50,7 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | doc | covers |
 |---|---|
 | [docs/overview.md](docs/overview.md) | the pipeline, install, a full worked example |
+| [docs/usage.md](docs/usage.md) | **cookbook** — task-oriented recipes across every capability |
 | [docs/architecture.md](docs/architecture.md) | design deep-dive: layers, data contracts, decisions, extension points |
 | [docs/schema.md](docs/schema.md) | authoring a `SchemaSpec` (fields, kinds, semantics tags) |
 | [docs/dsl.md](docs/dsl.md) | the closed metric grammar (`SOURCE→MAP→FILTER→REDUCE×SCOPE`) |

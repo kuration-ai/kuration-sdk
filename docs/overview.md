@@ -103,6 +103,7 @@ reproduces from its own directory alone.
 
 ## Reference docs
 
+- [usage.md](usage.md) — cookbook: task-oriented recipes across every capability.
 - [architecture.md](architecture.md) — design deep-dive: layers, data contracts, decisions.
 - [schema.md](schema.md) — authoring a `SchemaSpec` (fields, kinds, semantics tags).
 - [dsl.md](dsl.md) — the closed metric grammar (`SOURCE→MAP→FILTER→REDUCE×SCOPE`).
