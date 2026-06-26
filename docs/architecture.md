@@ -32,6 +32,8 @@ are the architecture — each stage only knows the type before and after it.
                               │
         ──[FeatureEngine]─────┼──▶  Segment.features      (built on a per-window WindowBuffer)
                               │        via compile_metric(spec, schema): fn(WindowBuffer)->float
+        ──[SegmentScorer?]────┼──▶  Segment.features[…]   (optional whole-pool / learned / action-aware
+                              │        scoring — model-backed; outputs land as features)
         ──[bin_segments]──────┼──▶  Segment.bin           (quantile coordinates)
                               │
         ──[Strategy]──────────┼──▶  selected Segment[]    (count)   ── curate()
@@ -141,9 +143,28 @@ together and writes `dataset_manifest.json` + `config.json`.
 |---|---|---|
 | a new raw format | an `InputAdapter` (`ticks` → `Tick`s) | editing the engine |
 | a derived output tensor (frame, action) | an `OutputEncoder` (`timestep`) | core output code |
-| a metric the grammar can't express | `@register_metric` over a `WindowBuffer` | a grammar change |
+| a per-segment metric the grammar can't express | `@register_metric` over a `WindowBuffer` | a grammar change |
+| a **whole-pool / learned / influence** metric | a `SegmentScorer` (`score(segments, ctx)`) | the closed grammar |
 | a new on-disk container | a `containers.write_shard` branch (extra) | the writer |
 | a new dataset's fields | a `SchemaSpec` (data) | any code |
+
+### Two scoring seams, two shapes
+
+The closed-grammar DSL and `@register_metric` are both **per-segment, single-pass, stateless,
+model-free** — the right shape for geometric/statistical features. Learned estimators (obs→action
+mutual information, datamodel/validation-loss influence, learned quality — the signals the
+robotics-curation literature argues actually rank *trajectory quality*) are the opposite:
+**whole-pool, often two-stage, model-backed**. Those get the `SegmentScorer` seam instead — a
+distinct stage that sees the entire pool, may load a model/GPU/reference set, and writes a
+per-segment value into `seg.features`, after which the *existing* selection machinery consumes
+it like any other feature.
+
+This keeps two objectives orthogonal and **composable** rather than competing: geometric
+*coverage* (k-center / facility / DSIR — "is this region represented?") and learned *quality /
+influence* ("is this trajectory good/informative?"). You weight a scorer's output alongside a
+coverage priority; you don't choose one or the other. (`needs_buffers=True` asks the pipeline
+for each segment's raw obs+action sequences, re-extracted once per source — the honest cost of
+sequence-level scoring; feature-only scorers pay nothing.)
 
 ## Parallelism & scale
 

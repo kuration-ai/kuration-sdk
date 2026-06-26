@@ -105,6 +105,27 @@ and `per_group: true` scopes it within each `Segment.group` (avoids global dedup
 "slightly active" gets the same budget as "very active" (equal-width bins would pile most
 segments into one bucket). Vectorized; not parallelized.
 
+## Scorers (learned / whole-pool metrics)
+
+The DSL is per-segment and geometric. For **whole-pool, model-backed, action-aware** signals
+(obs→action mutual information, datamodel/validation-loss influence, learned quality) declare a
+`scorers` block. A scorer sees the entire pool at once, may load a model, and writes a value
+into each segment's features under its output name — which you then reference like any metric:
+
+```jsonc
+"scorers": [
+  {"name": "action_residual", "as": "informativeness", "obs": "obs", "action": "action", "k": 8}
+],
+"selection": {"method": "top-k", "weights": {"informativeness": 1.0}}
+```
+
+Bare names work too (`"scorers": ["my_scorer"]`, output = the name). This composes with
+coverage — e.g. `weights: {"informativeness": 1.0}` *and* a `feature_space` k-center arm — so
+quality and diversity are separate, weighted axes rather than an either/or. Register custom
+scorers with `register_scorer(name, factory)`; `action_residual` (an action-conditioned
+predictive-residual, needs `[methods]`) ships as a reference. Validated at load (scorer must be
+registered). Reproducibility holds *given the same pinned model*.
+
 ## Tags (declarative, for tag coverage)
 
 Tag coverage needs each segment's `tags` populated — derive them from data with a top-level

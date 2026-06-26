@@ -100,9 +100,9 @@ target-distribution / **filter** + feature-space **cluster-balanced / k-center /
 facility-location / dsir / rare / typical**, plus **anomaly/dedup pre-pass filters** — the
 `[methods]` extra), the output layer (specs, encoders, **npz / json / hdf5 / parquet**
 containers, **sub-track spans**, hours-budget fill, `write_dataset`), **declarative
-tag-coverage**, a single-dataset **stats report**, a multi-arm **experiment/comparison** harness,
+tag-coverage**, a single-dataset **stats report**, a first-class **learned-scorer seam** (whole-pool/action-aware metrics), a multi-arm **experiment/comparison** harness,
 **parallel/skip-and-log/resume** execution, and **path-agnostic I/O** (local + `gs://`/`s3://`/
-`az://` via fsspec), driven by the `kur-*` CLIs. 117 tests (`pytest tests/`).
+`az://` via fsspec), driven by the `kur-*` CLIs. 122 tests (`pytest tests/`).
 
 Planned: migration of the reference CS2 pipeline onto the SDK (Phase G). See
 `../kuration-sdk-plan.md`.

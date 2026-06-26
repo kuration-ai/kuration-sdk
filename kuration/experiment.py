@@ -69,6 +69,18 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
         segmenter=segmenter, tags_spec=union_tags, group_of=group_of, tags_of=tags_of,
         workers=workers, on_error=on_error)
 
+    # Whole-pool scorers, unioned across arms (a shared output name must mean one scorer).
+    union_scorers: dict = {}
+    for arm in arms:
+        for (name, out, params) in (arm.strategy.scorers or []):
+            if out in union_scorers and union_scorers[out][0] != name:
+                raise ValueError(f"arms disagree on scorer output {out!r}")
+            union_scorers[out] = (name, out, params)
+    if union_scorers:
+        from .scorers import apply_scorers
+        apply_scorers(list(union_scorers.values()), all_segments, schema=schema, adapter=adapter,
+                      seed=seed)
+
     tag_vocab = sorted({t for s in all_segments for t in s.tags}, key=str)
     selected: dict = {}
     for arm in arms:

@@ -81,6 +81,11 @@ class Strategy:
     method_params: dict = None           # extra selection knobs (clusters/dsir_bins/knn_k/...)
     filters: list = None                 # pre-pass filters [{type: anomaly|dedup, ...}]
     tags: Optional[dict] = None          # declarative tag derivation for tag_coverage ({"from": [...]})
+    scorers: list = None                 # parsed [(name, output, params)] — learned/whole-pool scorers
+
+    def scorer_outputs(self) -> set[str]:
+        """Feature names produced by the strategy's scorers (referenceable like any metric)."""
+        return {out for (_, out, _) in (self.scorers or [])}
 
     def referenced_metrics(self) -> set[str]:
         """Every metric name the strategy reads (axes/weights/target/predicates/feature_space/
@@ -127,6 +132,8 @@ def _resolve(spec: dict) -> Strategy:
     feature_space = spec.get("feature_space")
     filters = _resolve_filters(spec.get("filters"))
     tags = spec.get("tags")
+    from .scorers import parse_scorers
+    scorers = parse_scorers(spec.get("scorers"))
     _KNOWN_SEL = {"method", "weights", "normalize", "target", "tag_coverage", "group_cap",
                   "predicates"}
     method_params = {k: v for k, v in sel.items() if k not in _KNOWN_SEL}
@@ -137,6 +144,7 @@ def _resolve(spec: dict) -> Strategy:
         "feature_space": feature_space,
         "filters": filters,
         "tags": tags,
+        "scorers": spec.get("scorers"),
         "binning": {"axes": [{"metric": m, "bins": b} for m, b in axes]},
         "selection": {"method": method, "weights": weights, "normalize": normalize,
                       "target": target, "tag_coverage": tag_coverage, "group_cap": group_cap,
@@ -146,7 +154,7 @@ def _resolve(spec: dict) -> Strategy:
                     weights=weights, normalize=normalize, target=target,
                     tag_coverage=tag_coverage, group_cap=group_cap, resolved=resolved,
                     predicates=predicates, feature_space=feature_space,
-                    method_params=method_params, filters=filters, tags=tags)
+                    method_params=method_params, filters=filters, tags=tags, scorers=scorers)
 
 
 def load_strategy(name_or_spec, schema: SchemaSpec) -> Strategy:
@@ -172,10 +180,17 @@ def load_strategy(name_or_spec, schema: SchemaSpec) -> Strategy:
     if strat.tags:
         from .tags import compile_tagger
         compile_tagger(strat.tags, schema)  # validate tag sources at load
-    missing = [m for m in strat.referenced_metrics() if m not in strat.define and m not in METRICS]
+    if strat.scorers:
+        from .scorers import has_scorer
+        for name, _out, _p in strat.scorers:
+            if not has_scorer(name):
+                raise ValueError(f"strategy {strat.name!r} references unregistered scorer {name!r}")
+    # scorer outputs are produced at runtime, so they count as available metric references.
+    available = set(strat.define) | set(METRICS) | strat.scorer_outputs()
+    missing = [m for m in strat.referenced_metrics() if m not in available]
     if missing:
         raise ValueError(f"strategy {strat.name!r} references undefined metrics {sorted(missing)} "
-                         f"(not in 'define' nor registered)")
+                         f"(not in 'define', registered, nor a scorer output)")
     return strat
 
 

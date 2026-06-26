@@ -26,6 +26,7 @@ from .io import exists, local_copy, read_text, write_bytes, write_text
 from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities
 from .report import dataset_report
+from .scorers import SegmentScorer, apply_scorers, get_scorer, register_scorer
 from .output import (
     Modality,
     OutputEncoder,
@@ -56,6 +57,7 @@ __all__ = [
     "bin_segments", "quantile_bins",
     "Strategy", "load_strategy", "select", "segment_priorities", "assign_splits",
     "apply_filters", "method_priorities", "score_sources", "dataset_report",
+    "SegmentScorer", "register_scorer", "get_scorer", "apply_scorers",
     "curate", "CurateResult",
     "build_config", "dump_segment_manifest", "write_config",
     "read_text", "write_text", "write_bytes", "exists", "local_copy",

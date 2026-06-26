@@ -55,6 +55,10 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
         group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error)
 
+    if strategy.scorers:   # whole-pool learned/action-aware scoring -> features
+        from ..scorers import apply_scorers
+        apply_scorers(strategy.scorers, all_segments, schema=schema, adapter=adapter, seed=seed)
+
     pool = all_segments
     if strategy.filters:
         from ..methods import apply_filters
