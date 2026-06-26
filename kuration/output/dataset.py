@@ -49,7 +49,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         raise ValueError("write_dataset needs sample_hz (schema.sample_hz or explicit) for the "
                          "hours budget")
     span_len = span_steps if span_steps else (round(span_seconds * sample_hz) if span_seconds else None)
-    registered = [r for r in strategy.referenced_metrics() if r not in strategy.define]
+    registered = [r for r in strategy.referenced_metrics()
+                  if r not in strategy.define and r not in strategy.scorer_outputs()]
 
     # Parallel score pass: returns features + per-source track lengths (so the fill needs no
     # second read of the data). The data itself is re-read only for admitted sources, below.

@@ -34,7 +34,9 @@ write_dataset("out/", schema=schema, adapter=adapter, sources=[...],
               spec=spec, train_hours=10, test_hours=1, seed=0)
 ```
 
-See **[docs/overview.md](docs/overview.md)** for the full end-to-end example.
+See **[docs/overview.md](docs/overview.md)** for the full end-to-end example, the
+[docs/usage.md](docs/usage.md) cookbook for recipes, and **[examples/](examples/)** for
+runnable, self-contained demos (`python examples/01_timeseries_to_shards.py`).
 
 ## Pipeline
 

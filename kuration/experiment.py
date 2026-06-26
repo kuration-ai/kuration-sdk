@@ -59,7 +59,8 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
     referenced: set = set()
     for arm in arms:
         referenced |= arm.strategy.referenced_metrics()
-    registered = [r for r in referenced if r not in union]
+    scorer_outputs = {out for arm in arms for (_, out, _) in (arm.strategy.scorers or [])}
+    registered = [r for r in referenced if r not in union and r not in scorer_outputs]
     # Tags are derived once over the union of every arm's tag sources.
     tag_froms = sorted({s for arm in arms for s in ((arm.strategy.tags or {}).get("from") or [])})
     union_tags = {"from": tag_froms} if tag_froms else None

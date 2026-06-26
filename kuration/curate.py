@@ -44,7 +44,9 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     `streaming=True` scores each source out-of-core (single source larger than RAM is fine).
     """
     referenced = strategy.referenced_metrics()
-    registered = [r for r in referenced if r not in strategy.define]  # load_strategy verified these exist
+    # scorer outputs are produced by the scorer stage, not the feature pass — exclude them.
+    registered = [r for r in referenced
+                  if r not in strategy.define and r not in strategy.scorer_outputs()]
     all_segments, errors, _ = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,

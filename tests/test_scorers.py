@@ -60,7 +60,9 @@ def test_scorer_output_drives_selection():
         "scorers": [{"name": "rank_action", "as": "score"}],
         "selection": {"method": "top-k", "weights": {"score": 1.0}}}, SCHEMA)
     res = curate(schema=SCHEMA, adapter=MemAdapter(SCHEMA, data), sources=list(data),
-                 strategy=strat, segmenter=Segmenter(4, 4), target_size=3, seed=0)
+                 strategy=strat, segmenter=Segmenter(4, 4), target_size=3, seed=0, on_error="raise")
+    # non-empty pool (guards against vacuous pass if scoring silently skipped everything)
+    assert res.all_segments and res.selected
     # every segment got the scorer feature, and selection ranked by it
     assert all("score" in s.features for s in res.all_segments)
     # the highest-scored segments are exactly the selected ones (scorer feature drove top-k)
@@ -90,7 +92,8 @@ def test_action_residual_scorer_runs():
         "scorers": [{"name": "action_residual", "as": "resid", "obs": "obs", "action": "action", "k": 3}],
         "selection": {"method": "top-k", "weights": {"resid": 1.0}}}, SCHEMA)
     res = curate(schema=SCHEMA, adapter=MemAdapter(SCHEMA, data), sources=list(data),
-                 strategy=strat, segmenter=Segmenter(4, 4), target_size=3, seed=0)
+                 strategy=strat, segmenter=Segmenter(4, 4), target_size=3, seed=0, on_error="raise")
+    assert res.all_segments   # non-empty (the buffer-using scorer actually ran)
     assert all("resid" in s.features for s in res.all_segments)
     assert all(np.isfinite(s.features["resid"]) for s in res.all_segments)
 
