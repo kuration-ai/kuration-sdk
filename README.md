@@ -78,8 +78,8 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
   `config.json`.
 - **Deterministic under parallelism** — canonical segment ordering before binning/selection
   makes seeded results worker-count-independent.
-- **Domain code only at the seams** — `InputAdapter`, `OutputEncoder`, or a registered Python
-  metric; never in the core.
+- **Domain code only at the seams** — `InputAdapter`, `OutputEncoder`, a registered Python
+  metric, or a `SegmentScorer`; never in the core.
 
 ## CLIs
 

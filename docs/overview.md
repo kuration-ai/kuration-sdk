@@ -7,10 +7,14 @@ multivariate series). The core carries **no domain knowledge**; a dataset is des
 `SchemaSpec` (data) and reached through an `InputAdapter` / `OutputEncoder` (the only code
 seams).
 
-> **Status.** Phases A–D are implemented (schema + metric DSL, adapters, segmentation,
-> feature engine, binning, strategies, selection, output layer). Not yet shipped: feature-space
-> selection methods (`cluster`/`k-center`/…), the `kur-*` CLIs, and the multi-arm experiment
-> harness — the SDK is library-only for now. See `kuration-sdk-plan.md` for the roadmap.
+> **Status.** The full pipeline is implemented: schema + metric DSL; input adapters (timeseries
+> CSV/Parquet, HDF5, NPZ, JSONL, curated-dataset-as-source); segmentation; feature engine;
+> binning; strategies (base + feature-space methods + filter + anomaly/dedup pre-pass filters);
+> a learned-scorer seam; the output layer (npz/json/hdf5/parquet containers, sub-track spans,
+> hours-budget fill); declarative tag-coverage; a stats report and a multi-arm experiment
+> harness; parallel / skip-and-log / resume execution; path-agnostic local + cloud I/O; and the
+> `kur-curate` / `kur-experiment` / `kur-report` CLIs. The one open architectural item is
+> **streaming / out-of-core** (a single source larger than RAM). See `kuration-sdk-plan.md`.
 
 ## The pipeline
 
@@ -30,9 +34,10 @@ Two entry points sit on top:
 ## Install
 
 ```bash
-pip install -e .                 # core (numpy only)
-pip install -e '.[methods]'      # + scikit-learn (feature-space selection — Phase E)
-pip install -e '.[parquet]'      # + pyarrow (Parquet input/containers)
+pip install -e .                    # core (numpy only)
+pip install -e '.[methods]'         # + scikit-learn (feature-space selection, filters, scorers)
+pip install -e '.[parquet,array]'   # + pyarrow / h5py (Parquet & HDF5 containers/adapters)
+pip install -e '.[cloud]'           # + fsspec (gs:// / s3:// / az:// I/O; add a backend)
 ```
 
 ## End-to-end example (a generic dataset, zero domain code)
@@ -113,5 +118,5 @@ reproduces from its own directory alone.
   `config.json`.
 - **Deterministic under parallelism.** Segments are sorted to a canonical order before
   binning/selection, so seeded results are worker-count-independent.
-- **Domain code only at the seams.** `InputAdapter`, `OutputEncoder`, or a registered Python
-  metric — never in the core.
+- **Domain code only at the seams.** `InputAdapter`, `OutputEncoder`, a registered Python
+  metric, or a `SegmentScorer` — never in the core.

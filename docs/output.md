@@ -12,6 +12,12 @@ episode/clip). `tracks_from_ticks(schema, ticks, source_id)` produces one track 
 each record being that entity's fields at a timestep merged with the tick's globals. A
 **shard** is a fixed-length chunk of a track.
 
+**Sub-track spans.** By default a whole track is admitted (or not) as one unit. Pass
+`write_dataset(..., span_steps=N)` (or `span_seconds=`) to subdivide each track into
+independently-budgeted spans, so the fill keeps the *best parts* of a long source rather than
+all-or-nothing. Each span's priority and tags aggregate only the segments overlapping it, and
+admitted ids become `(source, entity, span_index)`. Unset → one whole-track span.
+
 ## OutputSpec
 
 ```python

@@ -46,15 +46,26 @@ ticks = adapter.from_rows(list_of_dicts)
 Rows must be ordered by time (timesteps are runs of equal `time_column` values). Numeric
 fields are coerced to float; categorical to str; vectors assembled from their listed columns.
 
-## HDF5 input
+## Array files: HDF5 and NPZ
 
-One file = one source, one entity; each mapped dataset holds `(T, *shape)`. Needs the
-`[array]` extra (h5py).
+One file = one source, one entity; each mapped key holds `(T, *shape)` (scalar → float,
+vector → tuple, categorical → str). `HDF5Adapter` needs the `[array]` extra (h5py); `NpzAdapter`
+is dependency-free (numpy `.npz`).
 
 ```python
-from kuration import HDF5Adapter
-adapter = HDF5Adapter(schema, fields={"pos": "xyz_dataset", "battery": "batt_dataset"})
-ticks = adapter.ticks("flight.h5")
+from kuration import HDF5Adapter, NpzAdapter
+HDF5Adapter(schema, fields={"pos": "xyz_dataset", "battery": "batt_dataset"}).ticks("flight.h5")
+NpzAdapter(schema, fields={"pos": "xyz", "battery": "batt"}).ticks("flight.npz")
+```
+
+## JSON Lines
+
+`JsonlAdapter` is the timeseries adapter over a `.jsonl` file — one JSON object per line is a
+row, with the same `fields` / `time_column` / `entity_column` mapping (stdlib only).
+
+```python
+from kuration import JsonlAdapter
+JsonlAdapter(schema, fields={"pos": ["x", "y"], "act": "act"}, time_column="t").ticks("log.jsonl")
 ```
 
 ## Curated datasets as a source (composition & introspection)
