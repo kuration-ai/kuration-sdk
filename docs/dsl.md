@@ -9,7 +9,10 @@ SOURCE  →  MAP (optional)  →  FILTER (optional)  →  REDUCE  [× SCOPE]
 `compile_metric(spec, schema)` validates every token against the `SchemaSpec` and returns
 `fn(WindowBuffer) -> float`. The grammar is **closed** — every token is enumerated — so a spec
 is safe, JSON-serializable, and reproducible. Validation is at compile time: unknown fields,
-ill-typed maps, vector-fed-to-scalar-reduce all raise immediately.
+ill-typed maps, vector-fed-to-scalar-reduce, and unknown spec keys (a typo'd `"fitler"` can't
+silently drop a constraint) all raise immediately. The only spec keys are
+`source` / `reduce` / `map` / `filter` / `scope` — and `map`/`filter`/`scope` are entity-source
+only (`scope` also raises on globals/events; spatial reduces take a `filter` but no `map`).
 
 ```python
 from kuration import compile_metric
@@ -48,6 +51,11 @@ A per-cell mask over an entity field:
 | `<field><op><value>` (`>`,`>=`,`<`,`<=`,`==`) | `"hp>0"`, `"battery<=20"`, `"item==AWP"` |
 | `<field>:bit:<NAME>` | `"btn:bit:FIRE"` |
 
+Comparison filters take **scalar** (or categorical, `==` only) fields — a vector field is
+rejected at compile time (there is no `.<dim>` filter syntax). Filters also apply to spatial
+reduces, narrowing which entities count as present (e.g. squad dispersion of the living:
+`{"source": "player.pos", "reduce": "dispersion", "filter": "hp>0"}`).
+
 ## REDUCE
 
 | group | reduces |
@@ -57,8 +65,13 @@ A per-cell mask over an entity field:
 | categorical / event | `entropy` `nunique` `count` (events also: `rate`) |
 
 `rate` = fraction of nonzero cells (pairs with `bit:` maps); `jerk` = mean abs consecutive
-change per entity (acceleration/jitter); `entropy` = Shannon over a 16-bin histogram (numeric)
-or category counts.
+change per entity (acceleration/jitter) — gaps break adjacency, so a value jump across an
+absent tick or a filtered-out cell is *not* counted as one step; `entropy` = Shannon over a
+16-bin histogram (numeric) or category counts.
+
+Event metrics count only events that **carry the referenced field** (an unrelated event in the
+same stream isn't a `None` category), and an `==<value>` filter matches numeric event values
+too (`"==5"` matches `code=5`).
 
 ## SCOPE (optional, default `pooled`)
 

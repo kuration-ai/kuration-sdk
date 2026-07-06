@@ -17,6 +17,8 @@ each record being that entity's fields at a timestep merged with the tick's glob
 independently-budgeted spans, so the fill keeps the *best parts* of a long source rather than
 all-or-nothing. Each span's priority and tags aggregate only the segments overlapping it, and
 admitted ids become `(source, entity, span_index)`. Unset → one whole-track span.
+(`span_steps < shard_length` with `short_policy: "drop"` is rejected at preflight — every span
+would chunk to zero shards while still consuming the hours budget.)
 
 ## OutputSpec
 
@@ -25,7 +27,7 @@ from kuration import OutputSpec
 spec = OutputSpec.from_dict({
     "shard_length": 64,             # timesteps per shard
     "short_policy": "keep",         # keep | pad | drop  (tail handling)
-    "container": "npz",             # npz | json
+    "container": "npz",             # npz | json | hdf5 | parquet
     "modalities": {
         "pos":    {"dtype": "float32", "shape": [3], "source": "field:pos"},
         "battery":{"dtype": "float32", "shape": [],  "source": "field:battery"},
@@ -104,9 +106,18 @@ train and test **hour budgets** in descending priority. Properties:
   first (bounded by `min_tag_frac` of the budget) so a rare label survives the cut;
 - budget honored to within one track.
 
+With the `filter` method, spans whose segments all fail the predicates get `-inf` priority and
+are **never admitted**, even when the budget has room — the fill emits only predicate-passing
+data (an under-filled budget is reported, not silently topped up with rejects).
+
 **`workers` / `on_error` / `resume`**: `write_dataset(..., workers=8)` parallelizes the feature
-pass; `on_error="skip"` (default) skips+logs an unreadable source; `resume=True` skips
-re-encoding shards that already exist.
+pass; `on_error="skip"` (default) skips+logs an unreadable source (but a *fully empty* segment
+pool raises — see the troubleshooting recipe); `resume=True` skips re-encoding shards that
+already exist. Resume is safe by construction: shards are written atomically (temp + rename,
+locally and remotely — an interrupted run never leaves a partial shard at its final path), and
+the resolved output spec is pinned in a `.kuration_output_spec.json` sidecar — resuming the
+same `out_dir` with a **different** spec raises rather than silently reusing stale shards under
+a fresh manifest.
 
 So the emitted N hours is the strategy's *best* N hours, not a random draw.
 
@@ -114,11 +125,18 @@ So the emitted N hours is the strategy's *best* N hours, not a random draw.
 
 ```
 out/
-  train/<source>_<entity>_shard0000.npz, ...
-  test/<source>_<entity>_shard0000.npz, ...
-  dataset_manifest.json     # {count, shards:[{path, source_id, entity_id, split, n_steps, padded, shape}]}
-  config.json               # resolved schema + strategy + output spec + results + seed
+  train/<source>_<entity>[_spanNNN]_<hash8>_shard0000.npz, ...
+  test/<source>_<entity>[_spanNNN]_<hash8>_shard0000.npz, ...
+  dataset_manifest.json         # {count, shards:[{path, source_id, entity_id, split,
+                                #                  shard_index, n_steps, padded, shape, dtype}]}
+  config.json                   # resolved schema + strategy + output spec + results + seed
+  .kuration_output_spec.json    # spec fingerprint checked by resume
 ```
+
+The readable filename prefix flattens `/` to `_`; the 8-char hash makes names collision-free
+across distinct `(source, entity)` pairs (path-like source ids can otherwise alias after
+flattening). Manifest entry order is deterministic (sorted by source/entity/span), so
+`ShardDataset[i]` is stable across runs and machines.
 
 `config.json` is the reproducibility record — schema, strategy, and output spec together
 regenerate this dataset from the same sources.
@@ -141,8 +159,12 @@ for arr in iter_shards("out/", split="train"):
 accepts a **dataset directory**, a path to its `dataset_manifest.json`, or an already-loaded
 manifest dict (pass `container=` for a bare dict — a directory reads it from `config.json`). It
 handles all four containers, stages remote shards (`gs://`/`s3://`/…) automatically, **trims pad
-rows** to each shard's real `n_steps`, and **reshapes** tensor modalities back to their declared
-rank (Parquet stores them flat). `with_meta=True` yields `(arrays, entry)` so you also get the
+rows** to each shard's real `n_steps`, **reshapes** tensor modalities back to their declared
+rank (Parquet stores them flat), and **restores the declared dtype** (the json/parquet
+round-trips widen to float64/int64 on disk; the loaders cast back, so a `uint8` frame comes
+back `uint8` from every container). A dataset directory that has been **moved or copied**
+still loads: when the manifest's recorded shard paths no longer exist, they are rebased onto
+the directory you passed. `with_meta=True` yields `(arrays, entry)` so you also get the
 shard's `source_id`/`entity_id`/`split`/`padded`. `shard_entries(dataset, split=...)` and
 `read_shard_arrays(entry, container)` are the building blocks if you want manifest entries or a
 single shard directly.

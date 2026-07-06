@@ -27,17 +27,28 @@ def group_by_bin(segments: list[Segment]) -> dict[tuple, list[Segment]]:
 
 def sample_uniform_bins(segments: list[Segment], *, target_size: int,
                         rng: random.Random) -> list[Segment]:
-    """Pick ~target_size segments by sampling each occupied bin uniformly."""
+    """Pick min(target_size, n) segments spread as evenly as possible across occupied bins:
+    one from every bin, then a second, ... — never over budget (a naive per-bin quota of
+    max(1, target//n_bins) selects one PER BIN, overshooting whenever bins outnumber the
+    target), and uneven bins spill their shortfall into fuller ones."""
     bins = group_by_bin(segments)
     if not bins:
         return []
-    target_per_bin = max(1, target_size // len(bins))
-    selected: list[Segment] = []
+    k = min(target_size, len(segments))
+    pools = []
     for members in bins.values():
-        if len(members) <= target_per_bin:
-            selected.extend(members)
-        else:
-            selected.extend(rng.sample(members, target_per_bin))
+        p = members[:]
+        rng.shuffle(p)
+        pools.append(p)
+    selected: list[Segment] = []
+    rank = 0
+    while len(selected) < k:
+        for p in pools:
+            if rank < len(p):
+                selected.append(p[rank])
+                if len(selected) >= k:
+                    break
+        rank += 1
     return selected
 
 

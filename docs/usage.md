@@ -2,7 +2,8 @@
 
 Task-oriented recipes spanning what the SDK can do. Each is a minimal, runnable snippet; see the
 per-layer references ([schema](schema.md), [dsl](dsl.md), [adapters](adapters.md),
-[strategies](strategies.md), [output](output.md)) for full options, and [overview](overview.md)
+[strategies](strategies.md), [output](output.md)) for full options, [api.md](api.md) for every
+public signature, [jobs.md](jobs.md) for the CLI job-spec keys, and [overview](overview.md)
 for the one-shot end-to-end example.
 
 Throughout, assume a schema and an adapter:
@@ -39,8 +40,9 @@ NpzAdapter(schema, fields={"pos": "xyz", "reward": "r"})                        
 JsonlAdapter(schema, fields={...}, time_column="t")                            # .jsonl
 CuratedDatasetAdapter("out/run1")                                              # re-read your own output
 ```
-Sources may be local paths or cloud URLs (`gs://…`, `s3://…`) — see recipe 14. Bespoke formats:
-recipe 12.
+Sources may be local paths or cloud URLs (`gs://…`, `s3://…`) — see recipe 13. Bespoke formats:
+recipe 14. Tabular sources must be time-ordered; unordered or duplicate `(time, entity)` rows
+raise (see recipe 16).
 
 ---
 
@@ -74,7 +76,7 @@ spec = OutputSpec.from_dict({
 write_dataset("out/run1", schema=schema, adapter=adapter, sources=[...],
               strategy=strategy, segmenter=seg, spec=spec,
               train_hours=10, test_hours=1, seed=0)
-# -> out/run1/{train,test}/<src>_<entity>_shardNNN.npz + dataset_manifest.json + config.json
+# -> out/run1/{train,test}/<src>_<entity>_<hash8>_shardNNNN.npz + dataset_manifest.json + config.json
 ```
 The emitted N hours is the strategy's *best* N hours (not a random draw). `config.json`
 regenerates the run.
@@ -192,6 +194,10 @@ write_dataset("out/run1", ..., workers=8,        # parallel feature pass (determ
 write (also available on `curate(...)` / `run_experiment(...)`). Needs a lazy adapter — CSV/JSONL
 stream naturally; whole-file formats (NPZ) materialize.
 
+`resume=True` is safe against crashes and drift: shards are written atomically (no partial
+file ever sits at the final path), and the output spec is pinned in a sidecar — resuming the
+same `out_dir` with a *changed* spec raises. To re-emit with a new spec, use a fresh `out_dir`.
+
 ## 12 · Sub-track spans (keep the best *parts* of long sources)
 
 ```python
@@ -275,3 +281,28 @@ kur-curate     job.json                  # sources -> hours-budget shards
 kur-experiment job.json --out cmp.json   # add "arms": [...] + "target_size" to compare strategies
 kur-report     job.json --out rep.json   # profile metric distributions (no selection)
 ```
+
+---
+
+## 16 · Troubleshooting — common loud failures
+
+The SDK fails loudly by design: a raised error at load or preflight beats a silently wrong
+dataset. The ones you're most likely to meet, and what they mean:
+
+| error (grep-able fragment) | cause | fix |
+|---|---|---|
+| `unknown metric spec key(s)` / `unknown selection key(s)` | a typo'd key in a `define` metric or the `selection` block (e.g. `"fitler"`, `"tag_covrage"`) — it would have silently dropped a constraint | fix the spelling; valid metric keys are `source/reduce/map/filter/scope` |
+| `references undefined metrics [...]` | axes/weights/target name a metric that isn't in `define`, registered, or a scorer output | define it, or check the name against `define` |
+| `rows are not ordered by '<col>'` | source rows sorted entity-major (all of entity A, then entity B) — grouping by runs of equal time would double-count duration | sort rows by the time column first |
+| `duplicate row for entity ... at time ...` | two rows for the same `(time, entity)` — the later one would silently win | dedupe upstream, or (parquet `"dataset"` mode) set `entity_column` so parts share ticks legitimately |
+| `filter '...': field ... is a vector` | comparison filters take scalar fields only | filter on a scalar field, or `define` a scalar metric from the vector first |
+| `segment pool is EMPTY` | every source was skipped (see the per-source stderr lines), or every source is shorter than the segment window | fix the first per-source error, or shrink `segmenter` window; rerun with `on_error="raise"` to see the full traceback |
+| `resume=True but ... different output spec` | the `out_dir` was started under another `OutputSpec`; its shards wouldn't match a new manifest | use a fresh `out_dir` for a changed spec (or restore the original spec) |
+| `span_steps=... < shard_length=... with short_policy='drop'` | every admitted span would chunk to zero shards while consuming the hours budget | raise `span_steps`, lower `shard_length`, or use `short_policy: "keep"/"pad"` |
+| `binning axis '...': N NaN feature value(s)` | a registered metric or scorer produced NaN on some window; NaN would poison the quantile edges | make the metric total (return 0.0 for degenerate windows), or drop those segments with a pre-pass filter |
+| `dataset ... lacks modalities [...]` | mixing curated datasets with different modalities under a schema derived from the first | pass an explicit `schema=` covering only the shared modalities |
+| `needs fsspec` / `needs h5py` / `needs pyarrow` / `needs zarr` | an optional capability was reached without its extra installed | install the named extra, e.g. `pip install -e '.[cloud]'` |
+
+Two habits keep runs debuggable: **`kur-validate job.json` before every CLI run** (all of the
+load-time errors above surface in milliseconds, before any data is read), and
+**`on_error="raise"` in tests/CI** so a skipped source can't quietly shrink the pool.

@@ -48,6 +48,14 @@ def _field_from_dict(name: str, d: dict) -> FieldSpec:
             f"or absent, got {semantics!r}")
     bits = {str(k): int(v) for k, v in (d.get("bits") or {}).items()}
     max_rate = d.get("max_rate")
+    if max_rate is not None:
+        try:
+            max_rate = float(max_rate)
+        except (TypeError, ValueError):
+            raise ValueError(f"field {name!r}: max_rate must be numeric, got {max_rate!r}")
+        if max_rate <= 0:
+            raise ValueError(f"field {name!r}: max_rate must be > 0 (it is an outlier clamp), "
+                             f"got {max_rate!r}")
 
     if kind == "vector" and not dims:
         raise ValueError(f"field {name!r}: vector fields need a non-empty 'dims' list")

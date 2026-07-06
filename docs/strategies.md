@@ -10,8 +10,13 @@ from kuration import load_strategy
 strategy = load_strategy(spec_dict_or_path_or_name, schema)
 ```
 
-`load_strategy` validates loudly at load: every `define` metric compiles against the schema,
-and every metric referenced by axes/weights/target must be defined or registered.
+`load_strategy` validates loudly at load: every `define` metric compiles against the schema;
+every metric referenced by axes/weights/target must be defined, registered, or a scorer
+output; unknown `selection` keys raise (a typo'd `"tag_covrage"` can't silently disable
+coverage — the known method params are `clusters`, `dsir_bins`, `knn_k`, `rare_sample`,
+`feature_normalize`); and a dict `target` must carry its metric key (`"metric"` for
+target-distribution; `"metric"` or `"anchor_metric"` for dsir) so it can't KeyError after the
+feature pass.
 
 ## Anatomy
 
@@ -45,6 +50,10 @@ and every metric referenced by axes/weights/target must be defined or registered
 | `target-distribution` | per-bin quota, flat or ∝ a metric | `binning.axes` |
 | `filter` | exactly the segments matching DSL-metric predicates | `predicates` |
 
+`uniform-bins` and `target-distribution` land on exactly `min(target_size, pool)` — bins spread
+the budget as evenly (or as proportionally) as possible, with uneven bins spilling their
+shortfall into fuller ones; they never overshoot when occupied bins outnumber the target.
+
 The **`filter`** method selects clips by criteria rather than ranking — e.g. "every window
 where mean speed ≥ 10 and turn-rate ≤ 5":
 
@@ -57,7 +66,8 @@ where mean speed ≥ 10 and turn-rate ≤ 5":
 
 Combined with the curated-dataset adapter ([adapters.md](adapters.md)), this is how you look
 *within* existing datasets for clips that match a spec — and `write_dataset` then emits only
-those (non-matching clips get `-inf` priority).
+those (non-matching clips get `-inf` priority and are **never** admitted to the hours budget,
+even when it has room to spare).
 
 Scores combine each metric's values, normalized (`quantile` rank by default — robust to
 outliers) and weighted.
@@ -103,7 +113,10 @@ and `per_group: true` scopes it within each `Segment.group` (avoids global dedup
 `bin_segments(segments, axes)` assigns each segment an N-tuple bin via **equal-frequency
 (quantile)** edges per axis — so each occupied bin hosts the same share of segments and
 "slightly active" gets the same budget as "very active" (equal-width bins would pile most
-segments into one bucket). Vectorized; not parallelized.
+segments into one bucket). Tie-robust: a heavily tied feature (say 90% zeros) keeps the tied
+mass in its own bin instead of absorbing everything above it. A NaN feature value on a bin
+axis raises (it would silently poison the quantile edges); a constant axis warns — it adds no
+selection signal. Vectorized; not parallelized.
 
 ## Scorers (learned / whole-pool metrics)
 
@@ -133,6 +146,7 @@ Tag coverage needs each segment's `tags` populated — derive them from data wit
 
 ```jsonc
 "tags": {"from": ["weapon", "grenade.type"]}   // categorical fields and/or event streams
+"tags": ["weapon", "grenade.type"]             // bare-list shorthand — normalized to the dict form
 ```
 
 A segment's tags become the distinct categorical values observed in its window

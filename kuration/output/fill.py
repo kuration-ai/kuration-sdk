@@ -8,6 +8,7 @@ instead of a fixed 64 Hz, `group` instead of `map`. Budget honored to within one
 """
 from __future__ import annotations
 
+import math
 from collections import Counter
 
 from ..select import assign_splits
@@ -38,6 +39,8 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
     admitted: set = set()
 
     def _try_admit(it) -> bool:
+        if not math.isfinite(it["priority"]):
+            return False   # -inf marks "never admit" (failed filter / no overlapping segments)
         if it["id"] in admitted:
             return False
         sp = split.get(it["source_id"])

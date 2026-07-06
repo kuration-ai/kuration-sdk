@@ -63,6 +63,9 @@ class TimeseriesAdapter:
         entities: dict = {}
         for row in rows:
             eid = row[self.entity_column] if self.entity_column else 0
+            if eid in entities:
+                raise ValueError(f"duplicate row for entity {eid!r} at time {time!r} — "
+                                 f"the later row would silently overwrite the earlier one")
             entities[eid] = {f: self._value(row, f) for f in self.fields}
         glb = {g: float(rows[0][c]) for g, c in self.globals.items()} if rows else {}
         return Tick(time=_num_time(time), entities=entities, globals=glb)
@@ -73,11 +76,17 @@ class TimeseriesAdapter:
         ticks: list[Tick] = []
         cur = None
         group: list[dict] = []
+        seen_times: set = set()
         for row in rows:
             tv = row[self.time_column]
             if group and tv != cur:
                 ticks.append(self._mk_tick(cur, group))
+                seen_times.add(cur)
                 group = []
+                if tv in seen_times:     # e.g. rows sorted entity-major, not by time
+                    raise ValueError(
+                        f"rows are not ordered by {self.time_column!r}: time {tv!r} reappears "
+                        f"after its timestep closed — sort rows by time first")
             group.append(row)
             cur = tv
         if group:

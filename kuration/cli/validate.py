@@ -70,10 +70,14 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
     summary = {"kind": kind, "schema": schema.name}
     if kind == "experiment":
         summary["arms"] = [a["name"] for a in job["arms"]]
-    try:                                              # resolution is cheap (no shard reads)
-        sources = resolve_sources(job, adapter)
-    except ValueError as e:                           # not fatal: sources may be supplied at run time
-        summary["sources"] = f"unresolved ({e})"
+    if job.get("sources"):
+        sources = list(job["sources"])
+    elif check_sources and hasattr(adapter, "sources"):
+        sources = list(adapter.sources())             # user opted into source I/O
+    else:
+        # Enumerating adapter-resolved sources can be arbitrarily expensive (the HF adapter
+        # materializes the whole dataset) — the no-data-read default must not touch them.
+        summary["sources"] = "implicit (adapter-resolved; --check-sources enumerates)"
         return summary
     summary["n_sources"] = len(sources)
     if check_sources:                                 # existence failure IS fatal (propagates)

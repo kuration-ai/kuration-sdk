@@ -55,6 +55,11 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
                    target_size: int, seed: int = 0, baseline: str = None,
                    group_of=None, tags_of=None, workers: int = 1, on_error: str = "skip",
                    streaming: bool = False) -> dict:
+    names = [a.name for a in arms]
+    if len(set(names)) != len(names):
+        raise ValueError(f"duplicate arm names "
+                         f"{sorted(n for n in set(names) if names.count(n) > 1)} — a later "
+                         f"arm would silently overwrite the earlier one's selection")
     union = union_define(arms)
     referenced: set = set()
     for arm in arms:
@@ -71,12 +76,14 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
         segmenter=segmenter, tags_spec=union_tags, group_of=group_of, tags_of=tags_of,
         workers=workers, on_error=on_error, streaming=streaming)
 
-    # Whole-pool scorers, unioned across arms (a shared output name must mean one scorer).
+    # Whole-pool scorers, unioned across arms (a shared output name must mean one scorer,
+    # with one parameterization — otherwise the last arm's params would silently win).
     union_scorers: dict = {}
     for arm in arms:
         for (name, out, params) in (arm.strategy.scorers or []):
-            if out in union_scorers and union_scorers[out][0] != name:
-                raise ValueError(f"arms disagree on scorer output {out!r}")
+            if out in union_scorers and union_scorers[out] != (name, out, params):
+                raise ValueError(f"arms disagree on scorer output {out!r}: "
+                                 f"{union_scorers[out]!r} vs {(name, out, params)!r}")
             union_scorers[out] = (name, out, params)
     if union_scorers:
         from .scorers import apply_scorers
@@ -105,7 +112,10 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
         total = c.sum()
         return c / total if total > 0 else np.ones(len(c)) / len(c)
 
-    base = baseline if baseline in selected else None
+    if baseline is not None and baseline not in selected:
+        raise ValueError(f"baseline {baseline!r} is not an arm name "
+                         f"(arms: {sorted(selected)})")
+    base = baseline
     base_hist = {m: hist(selected[base], m) for m in metrics} if base else None
 
     arms_out: dict = {}

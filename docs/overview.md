@@ -96,7 +96,7 @@ write_dataset(
     segmenter=Segmenter(4, 2, unit="seconds", sample_hz=20),   # 4s windows, 2s stride
     spec=spec, train_hours=10, test_hours=1, seed=0,
 )
-# -> out/train/<src>_<entity>_shard0000.npz, ..., out/dataset_manifest.json, out/config.json
+# -> out/train/<src>_<entity>_<hash8>_shard0000.npz, ..., dataset_manifest.json, config.json
 ```
 
 `config.json` embeds the **resolved schema + strategy + output spec**, so the dataset
@@ -111,6 +111,8 @@ reproduces from its own directory alone.
 - [adapters.md](adapters.md) — input adapters; the generic timeseries adapter; writing your own.
 - [strategies.md](strategies.md) — declarative strategies, selection methods, binning, splits.
 - [output.md](output.md) — output specs, encoders, containers, the hours-budget fill.
+- [api.md](api.md) — API reference: every public name with its real signature.
+- [jobs.md](jobs.md) — job-spec reference: every JSON key the `kur-*` CLIs accept.
 
 ## Design invariants
 

@@ -101,7 +101,9 @@ def local_copy(path):
 
 @contextmanager
 def staged_write(path):
-    """Yield a real local path to write to; on success upload it to the (possibly remote) dest."""
+    """Yield a real local path to write to; on success upload it to the (possibly remote) dest.
+    Local destinations are written all-or-nothing (tempfile + rename), matching the remote
+    branch — an interrupted write never leaves a partial file at the final path."""
     if is_remote(path):
         fs = _fs(path)
         suffix = os.path.splitext(str(path))[1]
@@ -115,4 +117,12 @@ def staged_write(path):
     else:
         p = _local(path)
         Path(p).parent.mkdir(parents=True, exist_ok=True)
-        yield p
+        # Keep the real extension on the temp name (np.savez appends '.npz' if missing).
+        root, ext = os.path.splitext(p)
+        tmp_p = f"{root}.__tmp__{ext}"
+        try:
+            yield tmp_p
+            os.replace(tmp_p, p)
+        finally:
+            if os.path.exists(tmp_p):
+                os.unlink(tmp_p)

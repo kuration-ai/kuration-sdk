@@ -102,10 +102,13 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
             errors.append({"source": src, "error": payload})
     if errors:
         print(f"  [skip] {len(errors)} source(s) skipped due to errors", file=sys.stderr)
-        if not all_segments:
-            print(f"  [WARNING] ALL {len(errors)} source(s) were skipped — the segment pool is "
-                  f"EMPTY. Downstream selection/output will produce nothing. First error: "
-                  f"{errors[0]['error']}", file=sys.stderr)
+    if items and not all_segments:
+        # An empty pool silently propagates into an empty-but-valid-looking dataset (the
+        # vacuous-success failure mode) — total failure must raise even under on_error='skip'.
+        raise RuntimeError(
+            f"segment pool is EMPTY: {len(items)} source(s) yielded no segments"
+            + (f" ({len(errors)} skipped; first error: {errors[0]['error']})" if errors
+               else " (no errors — is every source shorter than the segment window?)"))
 
     if tags_of:
         for s in all_segments:

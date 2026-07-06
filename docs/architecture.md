@@ -179,9 +179,15 @@ custom `@register_metric` functions must be importable at module scope.)
 
 A source that raises during scoring is **skipped-and-logged** (`on_error="skip"`: stderr line
 + collected in the result's `errors` + a summary), never silently dropped; `on_error="raise"`
-restores fail-fast. `write_dataset(resume=True)` skips re-encoding any shard whose file already
-exists (chunk boundaries are deterministic, so the manifest entry is still recorded), so an
-interrupted run only does the missing work.
+restores fail-fast. Total failure is still loud: if the pool ends up **empty** (every source
+skipped, or every source shorter than the window), scoring raises rather than letting an
+empty-but-valid-looking dataset propagate. `write_dataset(resume=True)` skips re-encoding any
+shard whose file already exists (chunk boundaries are deterministic, so the manifest entry is
+still recorded), so an interrupted run only does the missing work. Two guards make that sound:
+shards are written **atomically** (temp + rename locally, staged upload remotely — a crash
+never leaves a partial file at the final path), and the resolved output spec is fingerprinted
+in a `.kuration_output_spec.json` sidecar, so resuming with a different spec raises instead of
+mixing stale shards with a fresh manifest.
 
 The hot path (binning) stays vectorized rather than parallelized — IPC would cost more than the
 compute.

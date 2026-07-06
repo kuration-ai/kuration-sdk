@@ -22,8 +22,9 @@ import numpy as np
 from .io import read_text
 
 
-def _resolve(dataset, container: Optional[str]) -> tuple[dict, str]:
-    """Return (manifest_dict, container). Accepts a dir, a manifest .json path, or a dict."""
+def _resolve(dataset, container: Optional[str]) -> tuple[dict, str, Optional[str]]:
+    """Return (manifest_dict, container, dataset_dir). Accepts a dir, a manifest .json path,
+    or a dict (dataset_dir is None for a dict)."""
     if isinstance(dataset, dict):
         man, base = dataset, None
     else:
@@ -40,14 +41,31 @@ def _resolve(dataset, container: Optional[str]) -> tuple[dict, str]:
             container = (cfg.get("output") or {}).get("container")
         except Exception:
             container = None
-    return man, (container or "npz")
+    return man, (container or "npz"), base
+
+
+def rebase_entries(entries: list[dict], base: Optional[str]) -> list[dict]:
+    """Manifest entries record shard paths as written (out_dir-prefixed, possibly relative to
+    the writing machine's cwd). If the first recorded path is gone but the dataset dir is
+    known, rebase every path onto it via the fixed '{split}/{name}' layout — so a moved or
+    copied dataset still loads."""
+    if not entries or base is None:
+        return entries
+    from .io import exists
+    if exists(entries[0]["path"]):
+        return entries
+    def _rebase(p: str) -> str:
+        tail = "/".join(str(p).replace("\\", "/").split("/")[-2:])
+        return f"{base}/{tail}"
+    return [{**e, "path": _rebase(e["path"])} for e in entries]
 
 
 def shard_entries(dataset, *, split: Optional[str] = None,
                   container: Optional[str] = None) -> tuple[list[dict], str]:
-    """Return (manifest entries, container), optionally filtered to one split."""
-    man, cont = _resolve(dataset, container)
-    entries = list(man.get("shards", []))
+    """Return (manifest entries, container), optionally filtered to one split. Shard paths
+    are rebased onto the dataset dir when the recorded ones no longer exist."""
+    man, cont, base = _resolve(dataset, container)
+    entries = rebase_entries(list(man.get("shards", [])), base)
     if split is not None:
         entries = [e for e in entries if e.get("split") == split]
     return entries, cont
@@ -62,6 +80,7 @@ def read_shard_arrays(entry: dict, container: str, *,
     from .output.containers import read_shard
     arrays, n = read_shard(entry["path"], container)
     shapes = entry.get("shape", {})
+    dtypes = entry.get("dtype", {})
     names = modalities if modalities is not None else list(arrays)
     out: dict[str, np.ndarray] = {}
     for name in names:
@@ -71,6 +90,9 @@ def read_shard_arrays(entry: dict, container: str, *,
         shp = tuple(shapes.get(name, ()))
         if shp:                                  # restore (L, *shape) — a no-op unless flattened
             a = a.reshape((a.shape[0], *shp))
+        dt = dtypes.get(name)
+        if dt is not None and a.dtype != np.dtype(dt):
+            a = a.astype(dt)                     # json/parquet round-trips widen to float64/int64
         out[name] = a[:n] if trim else a
     return out
 

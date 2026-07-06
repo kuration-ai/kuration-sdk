@@ -51,8 +51,10 @@ stay type-safe without the grammar naming any field:
 | `bitmask` | scalar + `bits` map | `bit:<NAME>` map and `<field>:bit:<NAME>` filter |
 
 `max_rate` (any numeric field) is the per-field outlier clamp for `speed` (drops teleport-like
-spikes to NaN). Validation is loud: a vector without `dims`, `position` on a scalar, `bitmask`
-without `bits`, a namespace collision — all raise at `from_dict`.
+spikes to NaN); it must be a positive number. Validation is loud: a vector without `dims`,
+`position` on a scalar, `bitmask` without `bits`, a non-numeric `max_rate`, a namespace
+collision — all raise at `from_dict`. (Adapters are held to the schema too: supplying a scalar
+for a declared vector field raises instead of silently broadcasting across its dims.)
 
 ## Event streams & globals
 

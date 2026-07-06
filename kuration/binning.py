@@ -24,6 +24,23 @@ def quantile_bins(values: Sequence[float], n_bins: int) -> np.ndarray:
     return np.quantile(arr, qs)
 
 
+def bin_codes(vals: np.ndarray, n_bins: int, *, axis_name: str = "?") -> np.ndarray:
+    """Equal-frequency bin index per value, robust to ties. Skewed features produce duplicate
+    quantile edges; deduping them and putting edge-equal values in the LOWER bin keeps a tied
+    mass (e.g. 90% zeros) in its own bin instead of absorbing everything above it into one.
+    NaN would silently poison the edges (all-NaN quantiles -> one bin), so it raises."""
+    if np.isnan(vals).any():
+        raise ValueError(
+            f"binning axis {axis_name!r}: {int(np.isnan(vals).sum())} NaN feature value(s) — "
+            f"a registered metric or scorer produced NaN; fix it or filter those segments")
+    edges = np.unique(quantile_bins(vals, n_bins))
+    if vals.size > 1 and np.unique(vals).size == 1:
+        import warnings
+        warnings.warn(f"binning axis {axis_name!r} is constant — every segment lands in one "
+                      f"bin; the axis adds no selection signal", stacklevel=2)
+    return np.searchsorted(edges, vals, side="left")
+
+
 def bin_segments(segments: list[Segment], axes: Sequence[tuple[str, int]]) -> None:
     """Assign each segment an N-tuple `bin` over the axes (empty axes -> bin = ())."""
     n = len(segments)
@@ -35,6 +52,6 @@ def bin_segments(segments: list[Segment], axes: Sequence[tuple[str, int]]) -> No
     for name, nbins in axes:
         vals = np.fromiter((s.features.get(name, 0.0) for s in segments),
                            dtype=np.float64, count=n)
-        cols.append(np.searchsorted(quantile_bins(vals, nbins), vals, side="right"))
+        cols.append(bin_codes(vals, nbins, axis_name=name))
     for i, s in enumerate(segments):
         s.bin = tuple(int(c[i]) for c in cols)

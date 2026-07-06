@@ -26,7 +26,7 @@ from typing import Sequence
 
 import numpy as np
 
-from .binning import quantile_bins
+from .binning import bin_codes
 from .segment import Segment
 
 _DEFAULT_CLUSTERS = 2048
@@ -209,8 +209,7 @@ def dsir_priorities(segments, names, *, n_bins=_DSIR_BINS, target=None,
     base = 1
     for name in names:
         vals = np.fromiter((s.features.get(name, 0.0) for s in segments), dtype=np.float64, count=n)
-        edges = quantile_bins(vals, n_bins)
-        codes = codes + base * np.searchsorted(edges, vals, side="right")
+        codes = codes + base * bin_codes(vals, n_bins, axis_name=name)
         base *= (n_bins + 1)
     uniq, inv, counts = np.unique(codes, return_inverse=True, return_counts=True)
     q = counts[inv].astype(np.float64) / n
@@ -248,13 +247,20 @@ def rare_priorities(segments, names, *, k=10, normalize="zscore", seed=0, worker
     if n > sample:
         rng = np.random.default_rng(seed)
         ref = X[np.sort(rng.choice(n, size=sample, replace=False))]
-        fit_self = False
     else:
-        ref, fit_self = X, True
-    nn = NearestNeighbors(n_neighbors=min(k + (1 if fit_self else 0), ref.shape[0]),
+        ref = X
+    if ref.shape[0] < 2:
+        return np.zeros(n)
+    # Query k+1 and drop each point's zero-distance self-hit (points inside the reference
+    # sample would otherwise count themselves, deflating their rarity vs unsampled points).
+    nn = NearestNeighbors(n_neighbors=min(k + 1, ref.shape[0]),
                           n_jobs=(workers or 1)).fit(ref)
     d, _ = nn.kneighbors(X)
-    return (d[:, 1:] if fit_self else d).mean(axis=1)
+    self_hit = d[:, 0] == 0.0
+    out = np.empty(n)
+    out[self_hit] = d[self_hit, 1:].mean(axis=1)
+    out[~self_hit] = d[~self_hit, :-1].mean(axis=1)
+    return out
 
 
 def typical_priorities(segments, names, **kw) -> np.ndarray:

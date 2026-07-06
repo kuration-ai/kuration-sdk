@@ -70,7 +70,8 @@ def read_shard(path: str, container: str) -> tuple[dict[str, np.ndarray], int]:
     with local_copy(path) as p:
         if container == "npz":
             z = np.load(p)
-            return {k: z[k] for k in z.files if not k.startswith("_")}, int(z["_n_steps"])
+            # exclude exactly the in-band length key — a modality may legitimately start with '_'
+            return {k: z[k] for k in z.files if k != "_n_steps"}, int(z["_n_steps"])
         if container == "hdf5":
             try:
                 import h5py
@@ -84,5 +85,10 @@ def read_shard(path: str, container: str) -> tuple[dict[str, np.ndarray], int]:
         except ImportError as e:
             raise ImportError("reading parquet shards needs pyarrow: pip install -e '.[parquet]'") from e
         t = pq.read_table(p)
-        n = int((t.schema.metadata or {}).get(b"_n_steps", b"0"))
+        meta = t.schema.metadata or {}
+        if b"_n_steps" not in meta:
+            raise ValueError(
+                f"parquet shard {path!r} has no '_n_steps' schema metadata — not written by "
+                f"kuration, or rewritten by a tool that drops custom metadata")
+        n = int(meta[b"_n_steps"])
         return {name: np.asarray(t.column(name).to_pylist()) for name in t.column_names}, n

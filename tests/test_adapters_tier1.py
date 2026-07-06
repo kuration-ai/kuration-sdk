@@ -22,7 +22,8 @@ SCHEMA = SchemaSpec.from_dict({
 def _write_part(path, *, traj, n=6):
     import pyarrow as pa
     import pyarrow.parquet as pq
-    t = pa.table({"t": list(range(n)), "x": [float(i) for i in range(n)],
+    t = pa.table({"t": list(range(n)), "ep": [f"ep{traj}"] * n,
+                  "x": [float(i) for i in range(n)],
                   "y": [float(traj)] * n, "act": [float(traj)] * n})
     pq.write_table(t, str(path))
 
@@ -49,12 +50,23 @@ def test_parquet_dataset_source_per_part(tmp_path):
 def test_parquet_dataset_source_per_dataset(tmp_path):
     d = _pq_dataset(tmp_path, n_parts=3)
     ad = ParquetDatasetAdapter(SCHEMA, path=str(d), source_per="dataset",
-                               fields={"pos": ["x", "y"], "act": "act"}, time_column="t")
+                               fields={"pos": ["x", "y"], "act": "act"}, time_column="t",
+                               entity_column="ep")
     assert ad.sources() == [str(d)]
     ticks = ad.ticks(str(d))
     # 3 parts x 6 steps; rows sorted by time, equal-time rows from different parts share a tick
     assert len(ticks) == 6
-    assert len(ticks[0].entities) == 1                   # no entity_column -> single entity per tick
+    assert len(ticks[0].entities) == 3                   # one entity per part, sharing the tick
+
+
+def test_parquet_dataset_colliding_rows_raise(tmp_path):
+    # dataset mode without an entity_column: equal-time rows from different parts would
+    # silently last-write-win — must raise instead.
+    d = _pq_dataset(tmp_path, n_parts=2)
+    ad = ParquetDatasetAdapter(SCHEMA, path=str(d), source_per="dataset",
+                               fields={"pos": ["x", "y"], "act": "act"}, time_column="t")
+    with pytest.raises(ValueError, match="duplicate row"):
+        ad.ticks(str(d))
 
 
 def test_parquet_dataset_via_get_adapter_and_empty(tmp_path):

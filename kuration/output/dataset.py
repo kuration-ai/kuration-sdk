@@ -7,6 +7,7 @@ the strategy's *best* N hours rather than a random draw.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Callable, Iterable, Optional
@@ -23,6 +24,24 @@ from .fill import fill_to_hours
 from .shardwriter import write_track
 from .spec import OutputSpec
 from .track import Track, tracks_from_ticks
+
+
+def _check_resume_spec(out_dir: str, spec: OutputSpec, resume: bool) -> None:
+    """Shard bytes are a function of the OutputSpec, but `resume` skips by filename alone —
+    so pin the spec in a sidecar and refuse to resume under a different one (stale shards
+    would be silently reused while the fresh manifest/config claim the new shapes)."""
+    from ..io import exists, read_text, write_text
+    fp = hashlib.sha256(json.dumps(spec.to_dict(), sort_keys=True).encode()).hexdigest()
+    marker = f"{out_dir}/.kuration_output_spec.json"
+    if resume and exists(marker):
+        old = json.loads(read_text(marker))["fingerprint"]
+        if old != fp:
+            raise ValueError(
+                f"resume=True but {out_dir!r} was started with a different output spec "
+                f"(fingerprint {old[:12]} != {fp[:12]}); existing shards would not match the "
+                f"new manifest — use a fresh out_dir or restore the original spec")
+    if not (resume and exists(marker)):
+        write_text(marker, json.dumps({"fingerprint": fp, "output": spec.to_dict()}, indent=2))
 
 
 def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
@@ -49,6 +68,12 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         raise ValueError("write_dataset needs sample_hz (schema.sample_hz or explicit) for the "
                          "hours budget")
     span_len = span_steps if span_steps else (round(span_seconds * sample_hz) if span_seconds else None)
+    if span_len is not None and spec.short_policy == "drop" and span_len < spec.shard_length:
+        raise ValueError(
+            f"span_steps={span_len} < shard_length={spec.shard_length} with "
+            f"short_policy='drop': every admitted span would chunk to zero shards while "
+            f"still consuming the hours budget")
+    _check_resume_spec(out_dir, spec, resume)
     registered = [r for r in strategy.referenced_metrics()
                   if r not in strategy.define and r not in strategy.scorer_outputs()]
 
@@ -105,7 +130,9 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     # Re-read each admitted source once; write each admitted span as its own (sub-)track.
     entries = []
     by_source: dict = {}
-    for (src, eid, k) in admitted:
+    # `admitted` is a set — iterate in sorted order so manifest entry order (and thus
+    # ShardDataset indexing) is hash-seed-independent.
+    for (src, eid, k) in sorted(admitted, key=lambda t: (str(t[0]), str(t[1]), t[2])):
         by_source.setdefault(src, []).append((eid, k))
     for src in sorted(by_source):
         suffix = lambda k: "" if span_len is None else f"_span{k:03d}"

@@ -32,6 +32,10 @@ def arrays_to_ticks(schema: SchemaSpec, arrs: dict, gl: dict = None) -> list:
     NPZ adapters. Scalar -> float, vector -> tuple, categorical -> str (bytes decoded)."""
     gl = gl or {}
     n = len(next(iter(arrs.values()))) if arrs else (len(next(iter(gl.values()))) if gl else 0)
+    mismatched = {k: len(a) for k, a in {**arrs, **gl}.items() if len(a) != n}
+    if mismatched:                       # silent truncation to the first field's length is worse
+        raise ValueError(f"arrays_to_ticks: length mismatch — expected {n} steps, got "
+                         f"{mismatched}")
     out = []
     for t in range(n):
         ent = {}

@@ -7,7 +7,8 @@ That enables composition (mix/split several curated datasets) and DSL-driven int
 Each shard is treated as one source (so segmentation looks *within* a clip), and each output
 modality becomes a schema field — so the DSL runs over the modalities. Higher-rank tensor
 modalities (e.g. images) aren't representable as DSL fields and are skipped; pass an explicit
-`schema` to override the derived one. Containers: npz / json (HDF5 shard containers later).
+`schema` to override the derived one. All four containers (npz/json/hdf5/parquet) re-ingest;
+a moved/copied dataset dir works (stale manifest paths are rebased onto the given dir).
 """
 from __future__ import annotations
 
@@ -52,38 +53,52 @@ class CuratedDatasetAdapter:
 
     def __init__(self, dataset_dir: Union[str, list], schema: Optional[SchemaSpec] = None):
         dirs = [dataset_dir] if isinstance(dataset_dir, str) else list(dataset_dir)
+        if not dirs:
+            raise ValueError("CuratedDatasetAdapter needs at least one dataset dir")
         self._container: dict = {}     # shard path -> container
         self.dataset_of: dict = {}     # shard path -> originating dataset dir
         self._shards: list = []
         from ..io import read_text
-        first_cfg = None
-        for d in dirs:
-            cfg = json.loads(read_text(f"{d}/config.json"))
-            first_cfg = first_cfg or cfg
-            container = cfg["output"]["container"]
-            man = json.loads(read_text(f"{d}/dataset_manifest.json"))
-            for e in man["shards"]:
-                self._shards.append(e["path"])
-                self._container[e["path"]] = container
-                self.dataset_of[e["path"]] = d
+        from ..loaders import rebase_entries
+        loaded = [(d, json.loads(read_text(f"{d}/config.json")),
+                   json.loads(read_text(f"{d}/dataset_manifest.json"))) for d in dirs]
+        first_cfg = loaded[0][1]
         self.schema = schema or schema_from_output(
             first_cfg["output"], sample_hz=(first_cfg.get("schema") or {}).get("sample_hz"))
         self._fields = list(self.schema.fields)
+        for d, cfg, man in loaded:
+            missing = [f for f in self._fields
+                       if f not in (cfg["output"].get("modalities") or {})]
+            if missing:
+                raise ValueError(
+                    f"dataset {d!r} lacks modalities {missing} required by the schema "
+                    f"(derived from {dirs[0]!r}); pass an explicit common schema=")
+            # Rebase manifest paths onto the dir the caller gave us — a moved/copied
+            # dataset's recorded (write-time) paths would otherwise dangle.
+            for e in rebase_entries(man["shards"], d):
+                self._shards.append(e["path"])
+                self._container[e["path"]] = cfg["output"]["container"]
+                self.dataset_of[e["path"]] = d
 
     def sources(self) -> list:
         return list(self._shards)
 
     def ticks(self, shard_path: str) -> list[Tick]:
-        arrays, n = _load_shard(shard_path, self._container.get(shard_path, "npz"))
+        if shard_path not in self._container:
+            raise KeyError(f"unknown shard {shard_path!r} — not in this adapter's manifests")
+        arrays, n = _load_shard(shard_path, self._container[shard_path])
+        missing = [f for f in self._fields if f not in arrays]
+        if missing:
+            raise KeyError(f"shard {shard_path!r} lacks modalities {missing} required by "
+                           f"the schema")
         out: list[Tick] = []
         for t in range(n):
             ent: dict = {}
             for fn in self._fields:
-                if fn in arrays:
-                    fs = self.schema.fields[fn]
-                    x = arrays[fn][t]
-                    ent[fn] = (tuple(float(v) for v in np.ravel(x)) if fs.kind == "vector"
-                               else float(np.ravel(x)[0]) if np.ndim(x) else float(x))
+                fs = self.schema.fields[fn]
+                x = arrays[fn][t]
+                ent[fn] = (tuple(float(v) for v in np.ravel(x)) if fs.kind == "vector"
+                           else float(np.ravel(x)[0]) if np.ndim(x) else float(x))
             out.append(Tick(time=t, entities={0: ent}))
         return out
 

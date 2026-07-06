@@ -11,7 +11,6 @@ dependencies = ["numpy"]
 methods = ["scikit-learn>=1.4"]   # feature-space selection methods
 parquet = ["pyarrow"]             # Parquet input adapter / output container
 array = ["h5py"]                  # tensor shard container
-analysis = ["opencv-python", "scikit-learn"]  # perceptual/codebook diversity
 cloud = ["fsspec"]                # gs:// / s3:// / az:// I/O (plus a backend: gcsfs/s3fs/adlfs)
 torch = ["torch"]                 # PyTorch ShardDataset over a curated dataset (kuration.torch)
 hf = ["datasets"]                 # HuggingFace datasets input adapter

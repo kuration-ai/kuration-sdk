@@ -12,7 +12,7 @@ from __future__ import annotations
 from ..io import exists as _exists
 from .base import PassthroughEncoder
 from .containers import CONTAINER_EXT, write_shard
-from .shardwriter import _build_arrays
+from .shardwriter import _build_arrays, track_name
 
 
 def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dict], *,
@@ -21,6 +21,7 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
     encoder = encoder or PassthroughEncoder()
     ext = CONTAINER_EXT[spec.container]
     shape = {m.name: list(m.shape) for m in spec.modalities}
+    dtype = {m.name: m.dtype for m in spec.modalities}
     st: dict = {}
     for j in jobs:
         st[(j["eid"], j["span_index"])] = {
@@ -38,7 +39,7 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
             piece, padded = s["buf"] + [None] * (pad_to - real_len), True
         ctx = {"schema": schema, "track": {"group": s["group"], "source_id": source_id,
                                            "entity_id": s["eid"]}}
-        name = f"{source_id}_{s['eid']}{s['suffix']}".replace("/", "_")
+        name = track_name(source_id, s["eid"], s["suffix"])
         base = f"{out_dir}/{s['split']}/{name}_shard{s['shard']:04d}" + ("_padded" if padded else "")
         if resume and _exists(base + ext):
             path = base + ext
@@ -46,7 +47,7 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
             path = write_shard(base, spec.container, _build_arrays(piece, spec, encoder, ctx), real_len)
         s["entries"].append({"path": path, "source_id": source_id, "entity_id": str(s["eid"]),
                              "split": s["split"], "shard_index": s["shard"], "n_steps": real_len,
-                             "padded": padded, "shape": shape})
+                             "padded": padded, "shape": shape, "dtype": dtype})
         s["shard"] += 1
         s["buf"] = []
 

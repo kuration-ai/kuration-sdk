@@ -34,7 +34,8 @@ def main() -> None:
     out = run_experiment(schema=schema, adapter=adapter, sources=sources, arms=arms,
                          segmenter=segmenter, target_size=job["target_size"],
                          baseline=job.get("baseline"), seed=job.get("seed", 0),
-                         workers=job.get("workers", 1), streaming=job.get("streaming", False))
+                         workers=job.get("workers", 1), on_error=job.get("on_error", "skip"),
+                         streaming=job.get("streaming", False))
 
     base = out["baseline"]
     print(f"baseline={base}  ({out['n_total_segments']} segments)\n")

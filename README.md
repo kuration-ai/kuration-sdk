@@ -66,6 +66,11 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | [docs/adapters.md](docs/adapters.md) | input adapters; the generic timeseries adapter; writing your own |
 | [docs/strategies.md](docs/strategies.md) | declarative strategies, selection methods, binning, splits |
 | [docs/output.md](docs/output.md) | output specs, encoders, containers, the hours-budget fill |
+| [docs/api.md](docs/api.md) | **API reference** — every public name with its real signature |
+| [docs/jobs.md](docs/jobs.md) | **job-spec reference** — every JSON key the `kur-*` CLIs accept |
+
+Hitting a loud validation error? [docs/usage.md § Troubleshooting](docs/usage.md#16--troubleshooting--common-loud-failures)
+maps the common ones to causes and fixes.
 
 ## Scale & robustness
 
@@ -75,7 +80,9 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 - **Skip-and-log** — `on_error="skip"` (default) logs + skips a source that fails to read and
   collects it in the result's `errors`; `on_error="raise"` is fail-fast.
 - **Resume** — `write_dataset(resume=True)` skips re-encoding shards that already exist, so an
-  interrupted run only does the missing work.
+  interrupted run only does the missing work. Safe by construction: shards are written
+  atomically (a crash never leaves a partial file at the final path), and resuming with a
+  *different* output spec raises instead of silently mixing old shards with a new manifest.
 - **Out-of-core** — `streaming=True` reads each source as a lazy tick stream on both the
   feature pass and the shard write, so a *single source larger than RAM* is fine; opt-in, the
   in-memory path stays default.
@@ -126,7 +133,7 @@ tag-coverage**, a single-dataset **stats report**, a first-class **learned-score
 (whole-pool/action-aware metrics), a multi-arm **experiment/comparison** harness,
 **parallel / skip-and-log / resume / out-of-core** execution, **path-agnostic I/O**
 (local + `gs://`/`s3://`/`az://` via fsspec), and a **`kur-validate`** preflight (+ shipped JSON
-Schema), driven by the `kur-*` CLIs. 156 tests (`pytest tests/`).
+Schema), driven by the `kur-*` CLIs. 192 tests (`pytest tests/`).
 
 Planned: migration of the reference CS2 pipeline onto the SDK (Phase G), and a spill/external
 tier for *total* segment pools larger than RAM. See `PLAN.md`.

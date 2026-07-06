@@ -119,16 +119,17 @@ def _reduce_scalar(name: str, grid: np.ndarray, scope: str, mask: Optional[np.nd
 
 def _reduce_jerk(grid: np.ndarray, mask: Optional[np.ndarray]) -> float:
     """Mean over entities of the mean absolute consecutive change — acceleration/jitter.
-    Inherently per-entity temporal, so it ignores scope."""
+    Inherently per-entity temporal, so it ignores scope. Diff BEFORE dropping NaN: a gap
+    (absent tick / filtered cell) must break adjacency, not splice its neighbors together."""
     g = grid.astype(float)
     if mask is not None:
         g = np.where(mask, g, np.nan)
     out = []
     for j in range(g.shape[1]):
-        col = g[:, j]
-        col = col[~np.isnan(col)]
-        if col.size >= 2:
-            out.append(float(np.mean(np.abs(np.diff(col)))))
+        d = np.diff(g[:, j])
+        d = d[~np.isnan(d)]
+        if d.size:
+            out.append(float(np.mean(np.abs(d))))
     return float(np.mean(out)) if out else 0.0
 
 
@@ -386,6 +387,10 @@ def _validate_filter(filt: str, schema: SchemaSpec) -> None:
             if op != "==":
                 raise ValueError(f"filter '{filt}': categorical field {field!r} supports only ==")
         else:
+            if fs.kind == "vector":
+                raise ValueError(
+                    f"filter '{filt}': field {field!r} is a vector — comparison filters take "
+                    f"scalar fields only (there is no .<dim> filter syntax)")
             try:
                 float(val)
             except ValueError:
@@ -401,14 +406,22 @@ def _compile_entity(rest: str, spec: dict, schema: SchemaSpec) -> Callable[[Wind
     if scope not in _SCOPES:
         raise ValueError(f"unknown scope {scope!r} (expected {sorted(_SCOPES)})")
 
-    # Spatial reduces consume the position plane directly.
+    # Spatial reduces consume the position plane directly (no map); a filter narrows which
+    # (tick, entity) cells count as present.
     if reduce in _SPATIAL_REDUCES:
         if not (fs.kind == "vector" and fs.semantics == "position" and dim_idx is None):
             raise ValueError(f"reduce {reduce!r} requires a whole 'position' vector source")
+        if mapop is not None:
+            raise ValueError(f"spatial reduce {reduce!r} takes no map (got {mapop!r})")
+        if filt is not None:
+            _validate_filter(filt, schema)
         field = fs.name
 
         def fn_spatial(w: WindowBuffer) -> float:
-            return _spatial_reduce(reduce, w.numeric_field(field)[..., :2], w.valid)
+            valid = w.valid
+            if filt is not None:
+                valid = valid & _filter_mask(filt, w, schema, 0)
+            return _spatial_reduce(reduce, w.numeric_field(field)[..., :2], valid)
         return fn_spatial
 
     field = fs.name
@@ -462,14 +475,17 @@ def _compile_entity(rest: str, spec: dict, schema: SchemaSpec) -> Callable[[Wind
 def _compile_global(name: str, spec: dict, schema: SchemaSpec) -> Callable[[WindowBuffer], float]:
     if spec.get("map") or spec.get("filter"):
         raise ValueError(f"global source {name!r} takes no map/filter")
+    if "scope" in spec:
+        raise ValueError(f"global source {name!r} takes no scope (a global is a single stream)")
     reduce = _validate_numeric_reduce(spec["reduce"])   # a global is a 1-D scalar stream
 
     def fn(w: WindowBuffer) -> float:
         v = w.globals[name].astype(float)
-        v = v[~np.isnan(v)]
-        if reduce == "jerk":
-            return float(np.mean(np.abs(np.diff(v)))) if v.size >= 2 else 0.0
-        return _agg_1d(reduce, v)
+        if reduce == "jerk":                     # diff first: a NaN gap breaks adjacency
+            d = np.diff(v)
+            d = d[~np.isnan(d)]
+            return float(np.mean(np.abs(d))) if d.size else 0.0
+        return _agg_1d(reduce, v[~np.isnan(v)])
     return fn
 
 
@@ -480,6 +496,8 @@ def _compile_event(stream: str, rest: str, spec: dict, schema: SchemaSpec) -> Ca
         raise ValueError(f"unknown event field {stream}.{field!r}")
     if spec.get("map"):
         raise ValueError("event sources take no map")
+    if "scope" in spec:
+        raise ValueError("event sources take no scope")
     reduce = spec["reduce"]
     if reduce not in _CATEGORICAL_REDUCES and reduce != "rate":
         raise ValueError(f"event reduce must be rate/{sorted(_CATEGORICAL_REDUCES)}, got {reduce!r}")
@@ -494,7 +512,12 @@ def _compile_event(stream: str, rest: str, spec: dict, schema: SchemaSpec) -> Ca
             raise ValueError(f"event filter must be '==<value>', got {filt!r}")
 
     def matches(ev: dict) -> bool:
-        return want is None or ev.get(field) == want
+        v = ev.get(field)
+        if v is None:                    # an event without this field is not a category value
+            return False
+        # The filter literal is a string; compare its str form too so a numeric event value
+        # still matches ('==5' vs code=5) instead of silently counting zero.
+        return want is None or v == want or str(v) == want
 
     def fn(w: WindowBuffer) -> float:
         per_tick = w.events.get(stream, [])
@@ -511,11 +534,18 @@ def _compile_event(stream: str, rest: str, spec: dict, schema: SchemaSpec) -> Ca
     return fn
 
 
+_SPEC_KEYS = {"source", "reduce", "map", "filter", "scope"}
+
+
 def compile_metric(spec: dict, schema: SchemaSpec) -> Callable[[WindowBuffer], float]:
     """Compile a metric spec to `fn(WindowBuffer) -> float` against `schema`. Raises
     ValueError on any unknown token (loud failure — no silent fallbacks)."""
     if "source" not in spec or "reduce" not in spec:
         raise ValueError(f"metric spec needs 'source' and 'reduce': {spec!r}")
+    unknown = set(spec) - _SPEC_KEYS
+    if unknown:                                   # a typo'd key must not drop a constraint
+        raise ValueError(f"unknown metric spec key(s) {sorted(unknown)}; "
+                         f"expected {sorted(_SPEC_KEYS)}")
     src = spec["source"]
     if "." not in src:
         if src in schema.globals:

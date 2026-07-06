@@ -30,7 +30,12 @@ class ZarrAdapter:
             raise ImportError("ZarrAdapter needs zarr: pip install -e '.[zarr]'") from e
         from ..io import is_remote
         if is_remote(source_uri):
-            import fsspec
+            try:
+                import fsspec
+            except ImportError as e:
+                raise ImportError(
+                    f"remote zarr store {source_uri!r} needs fsspec: pip install -e '.[cloud]' "
+                    f"(plus the backend, e.g. gcsfs for gs://)") from e
             store = fsspec.get_mapper(str(source_uri))   # remote store via the fsspec backend
         else:
             store = str(source_uri)

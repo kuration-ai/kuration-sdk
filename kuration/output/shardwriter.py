@@ -9,6 +9,7 @@ short_policy generalizes the reference chunker:
 """
 from __future__ import annotations
 
+import hashlib
 import math
 from typing import Optional
 
@@ -37,6 +38,15 @@ def _chunks(records: list[dict], shard_length: int, short_policy: str):
         yield tail + [None] * (shard_length - rem), rem, True
     else:  # keep
         yield tail, rem, False
+
+
+def track_name(source_id, entity_id, name_suffix: str = "") -> str:
+    """Filesystem-safe, collision-free shard basename for one (source, entity, span).
+    The readable prefix flattens '/' to '_', which can alias distinct pairs
+    (('runs/a','b') vs ('runs','a_b')) — the content hash disambiguates."""
+    safe = f"{source_id}_{entity_id}{name_suffix}".replace("/", "_")
+    h = hashlib.sha1(f"{source_id}\x00{entity_id}\x00{name_suffix}".encode()).hexdigest()[:8]
+    return f"{safe}_{h}"
 
 
 def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: dict) -> dict:
@@ -70,7 +80,7 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
     encoder = encoder or PassthroughEncoder()
     ctx = {"schema": schema, "track": {**track.meta, "source_id": track.source_id,
                                        "entity_id": track.entity_id}}
-    name = f"{track.source_id}_{track.entity_id}{name_suffix}".replace("/", "_")
+    name = track_name(track.source_id, track.entity_id, name_suffix)
     ext = CONTAINER_EXT[spec.container]
     entries: list[dict] = []
     for k, (piece, real_len, padded) in enumerate(
@@ -84,5 +94,6 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
         entries.append({"path": path, "source_id": track.source_id,
                         "entity_id": str(track.entity_id), "split": split,
                         "shard_index": k, "n_steps": real_len, "padded": padded,
-                        "shape": {m.name: list(m.shape) for m in spec.modalities}})
+                        "shape": {m.name: list(m.shape) for m in spec.modalities},
+                        "dtype": {m.name: m.dtype for m in spec.modalities}})
     return entries

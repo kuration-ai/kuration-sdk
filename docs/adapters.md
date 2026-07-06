@@ -43,8 +43,11 @@ ticks = adapter.ticks("flight.csv")     # or adapter.ticks("flight.parquet")  ([
 ticks = adapter.from_rows(list_of_dicts)
 ```
 
-Rows must be ordered by time (timesteps are runs of equal `time_column` values). Numeric
-fields are coerced to float; categorical to str; vectors assembled from their listed columns.
+Rows must be ordered by time (timesteps are runs of equal `time_column` values) — **enforced**:
+a time value reappearing after its timestep closed (e.g. rows sorted entity-major) raises, as
+does a duplicate `(time, entity)` row (the later row would otherwise silently overwrite the
+earlier one). Sort by time first. Numeric fields are coerced to float; categorical to str;
+vectors assembled from their listed columns.
 
 ## Array files: HDF5 and NPZ
 
@@ -74,7 +77,9 @@ JsonlAdapter(schema, fields={"pos": ["x", "y"], "act": "act"}, time_column="t").
 parts (e.g. Hive-style `date=*/part-*.parquet`), same column mapping. `source_per` decides the
 unit: `"part"` (default) makes **each file its own source** — the natural choice when each file
 is one trajectory/episode, and it keeps the per-source train/test split leakage-free; `"dataset"`
-treats **all parts as one source** (rows concatenated, sorted by `time_column` if set). Reuses the
+treats **all parts as one source** (rows concatenated, sorted by `time_column` if set). In
+`"dataset"` mode, parts that overlap in time need an `entity_column` distinguishing their rows —
+same-time rows for the same entity raise rather than silently last-write-win. Reuses the
 `[parquet]` extra — no new dependency. Remote globs (`gs://…/**/*.parquet`) work via `[cloud]`.
 
 ```python
@@ -131,7 +136,12 @@ split = assign_splits({s: adapter.dataset_of[s] for s in sources}, test_frac=0.2
 ```
 
 Higher-rank tensor modalities (e.g. images) aren't DSL-addressable and are skipped from the
-derived schema; pass an explicit `schema=` to override. Containers: npz / json.
+derived schema; pass an explicit `schema=` to override. All four containers
+(npz/json/hdf5/parquet) re-ingest. A dataset directory that has been **moved or copied** still
+loads (shard paths are rebased onto the dir you pass when the recorded ones no longer exist).
+With multiple datasets, each must carry the modalities the schema requires — a missing
+modality raises at construction instead of silently yielding NaN features; pass an explicit
+narrower `schema=` to mix heterogeneous datasets.
 
 ## Writing your own adapter
 

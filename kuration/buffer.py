@@ -109,6 +109,10 @@ def build_window(schema: SchemaSpec, ticks: list[Tick]) -> WindowBuffer:
                     voc = cat_codes[fname]
                     w.codes[fname][ti, j] = voc.setdefault(str(val), len(voc))
                 elif fs.kind == "vector":
+                    if np.ndim(val) == 0:        # a scalar would silently broadcast across D
+                        raise ValueError(
+                            f"field {fname!r} is a {fs.width}-dim vector but entity {eid!r} "
+                            f"supplied scalar {val!r} at tick {ti}")
                     w.numeric[fname][ti, j, :] = val
                 else:
                     w.numeric[fname][ti, j, 0] = float(val)

@@ -13,8 +13,8 @@ def _make_csv(tmp_path):
     with p.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["t", "id", "x", "y", "act"])
         w.writeheader()
-        for L in range(1, 5):
-            for i in range(8):
+        for i in range(8):                    # time-major: the adapter's documented row order
+            for L in range(1, 5):
                 w.writerow({"t": i, "id": f"e{L}", "x": i, "y": L, "act": L})
     return p
 

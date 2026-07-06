@@ -116,6 +116,15 @@ def _resolve(spec: dict) -> Strategy:
         raise ValueError(f"method {method!r} requires selection.weights")
     normalize = sel.get("normalize", "quantile")
     target = sel.get("target", "flat")
+    if method in ("target-distribution", "dsir"):
+        # A dict target missing its metric key would otherwise KeyError only at selection
+        # time — after the full (potentially hours-long) feature pass.
+        if not (target is None or target == "flat" or isinstance(target, dict)):
+            raise ValueError(f"method {method!r}: target must be 'flat' or a dict, got {target!r}")
+        want = {"metric"} if method == "target-distribution" else {"metric", "anchor_metric"}
+        if isinstance(target, dict) and not (set(target) & want):
+            raise ValueError(f"method {method!r}: dict target needs one of {sorted(want)} "
+                             f"(got keys {sorted(target)})")
     tag_coverage = sel.get("tag_coverage", None)
     group_cap = sel.get("group_cap", None)
     define = dict(spec.get("define") or {})
@@ -132,11 +141,25 @@ def _resolve(spec: dict) -> Strategy:
     feature_space = spec.get("feature_space")
     filters = _resolve_filters(spec.get("filters"))
     tags = spec.get("tags")
+    if tags is not None:
+        # Accept {"from": [...]} or a bare list, but normalize so every consumer
+        # (compile_tagger, experiment's union over arms) sees the dict form.
+        froms = tags.get("from") if isinstance(tags, dict) else tags
+        if not (isinstance(froms, (list, tuple)) and froms
+                and all(isinstance(t, str) for t in froms)):
+            raise ValueError(f"strategy 'tags' must be a list of sources or "
+                             f"{{'from': [...]}}; got {tags!r}")
+        tags = {"from": list(froms)}
     from .scorers import parse_scorers
     scorers = parse_scorers(spec.get("scorers"))
     _KNOWN_SEL = {"method", "weights", "normalize", "target", "tag_coverage", "group_cap",
                   "predicates"}
+    _KNOWN_PARAMS = {"feature_normalize", "dsir_bins", "knn_k", "rare_sample", "clusters"}
     method_params = {k: v for k, v in sel.items() if k not in _KNOWN_SEL}
+    unknown = set(method_params) - _KNOWN_PARAMS
+    if unknown:                                   # a typo'd knob must not be silently ignored
+        raise ValueError(f"unknown selection key(s) {sorted(unknown)}; expected "
+                         f"{sorted(_KNOWN_SEL)} or method params {sorted(_KNOWN_PARAMS)}")
 
     resolved = {
         "name": spec.get("name", "unnamed"),
@@ -292,11 +315,30 @@ def _select_target_distribution(segments, *, target, target_size, py_rng) -> lis
         name = target["metric"]
         w = {k: max(0.0, sum(s.features.get(name, 0.0) for s in bins[k])) for k in keys}
     total = sum(w.values()) or 1.0
+    # Proportional quotas capped by bin population, largest-remainder for the residue, then
+    # spill capped bins' shortfall into bins with room — lands on exactly min(target, n)
+    # (the old max(1, round(...)) per bin overshot whenever bins outnumbered the target).
+    k_total = min(target_size, len(segments))
+    exact = {k: k_total * w[k] / total for k in keys}
+    quota = {k: min(int(exact[k]), len(bins[k])) for k in keys}
+    n_sel = sum(quota.values())
+    for k in sorted(keys, key=lambda b: (-(exact[b] - int(exact[b])), str(b))):
+        if n_sel >= k_total:
+            break
+        if quota[k] < len(bins[k]):
+            quota[k] += 1
+            n_sel += 1
+    while n_sel < k_total:                        # spill (k_total <= n, so this terminates)
+        for k in keys:
+            if n_sel >= k_total:
+                break
+            if quota[k] < len(bins[k]):
+                quota[k] += 1
+                n_sel += 1
     selected: list[Segment] = []
     for k in keys:
-        quota = max(1, int(round(target_size * w[k] / total)))
-        members = bins[k]
-        selected.extend(members if len(members) <= quota else py_rng.sample(members, quota))
+        members, q = bins[k], quota[k]
+        selected.extend(members if len(members) <= q else py_rng.sample(members, q))
     return selected
 
 

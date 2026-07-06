@@ -26,6 +26,9 @@ class FeatureEngine:
         for name, spec in (define or {}).items():
             self.fns[name] = compile_metric(spec, schema)   # validates at construction (loud)
         for name in (registered or []):
+            if name in self.fns:
+                raise ValueError(f"metric {name!r} is both DSL-defined and registered — the "
+                                 f"registered fn would silently shadow the define; rename one")
             if name not in METRICS:
                 raise ValueError(f"unknown registered metric {name!r}; known: {sorted(METRICS)}")
             self.fns[name] = METRICS[name]
