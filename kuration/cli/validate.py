@@ -6,7 +6,9 @@ Runs every load-time validator the real run would — SchemaSpec parsing, adapte
 checks, the strategy's DSL/tags/scorers/referenced-metric resolution, the segmenter, and (for
 a curate job) the OutputSpec — and reports the first failure with a non-zero exit. A typo fails
 in milliseconds instead of after a parallel feature pass. No source data is read unless
-`--check-sources` is given (which only stats existence, never parses).
+`--check-sources` is given, which stats existence and — for adapters exposing `check_source`
+(the timeseries adapter sniffs the CSV header / Parquet file schema) — verifies each source can
+serve the adapter's column map, still without reading data rows.
 
 `--print-schema` dumps the shipped JSON Schema (point your editor's `$schema` at it for
 autocomplete); `--json-schema` additionally validates the job against it (needs `jsonschema`).
@@ -20,7 +22,7 @@ from pathlib import Path
 
 from ..output import OutputSpec
 from ..strategy import load_strategy
-from ._common import build_adapter, build_schema, build_segmenter, resolve_sources
+from ._common import build_adapter, build_schema, build_segmenter, read_job, resolve_sources
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "job.schema.json"
 
@@ -86,6 +88,11 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
         if missing:
             raise ValueError(f"{len(missing)} source(s) do not exist, e.g. {missing[0]!r}")
         summary["sources_exist"] = True
+        check = getattr(adapter, "check_source", None)
+        if check is not None:                         # header/metadata sniff, no data rows read
+            for s in sources:
+                check(s)
+            summary["sources_checked"] = True
     return summary
 
 
@@ -93,7 +100,8 @@ def _json_schema_check(job: dict) -> None:
     try:
         import jsonschema
     except ImportError as e:
-        raise ImportError("--json-schema needs jsonschema: pip install jsonschema") from e
+        raise ImportError("--json-schema needs the optional extra: "
+                          "pip install -e '.[cli]'  (or: pip install jsonschema)") from e
     jsonschema.validate(job, json.loads(SCHEMA_PATH.read_text()))
 
 
@@ -101,11 +109,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Preflight a kuration job spec (no data read).")
     ap.add_argument("job", nargs="?", help="Path to the job JSON.")
     ap.add_argument("--check-sources", action="store_true",
-                    help="Also verify each resolved source exists (stat only, no read).")
+                    help="Also verify each resolved source exists, and (adapters with "
+                         "check_source) that its header/schema serves the column map — "
+                         "no data rows read.")
     ap.add_argument("--json-schema", action="store_true",
                     help="Also validate the job against the shipped JSON Schema (needs jsonschema).")
     ap.add_argument("--print-schema", action="store_true",
                     help="Print the shipped JSON Schema and exit.")
+    ap.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
     args = ap.parse_args()
 
     if args.print_schema:
@@ -114,12 +125,20 @@ def main() -> None:
     if not args.job:
         ap.error("a job path is required (or use --print-schema)")
 
-    job = json.loads(Path(args.job).read_text())
     try:
+        job = read_job(args.job)
         if args.json_schema:
             _json_schema_check(job)
         summary = validate_job(job, check_sources=args.check_sources)
+    except ImportError as e:
+        if args.debug:
+            raise
+        # a missing optional dependency is an environment problem, not an invalid spec
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
+        if args.debug:
+            raise
         print(f"INVALID: {type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -128,7 +147,8 @@ def main() -> None:
         bits.append(f"arms={summary['arms']}")
     if "n_sources" in summary:
         bits.append(f"sources={summary['n_sources']}"
-                    + ("✓" if summary.get("sources_exist") else ""))
+                    + ("✓ (exist + column maps)" if summary.get("sources_checked")
+                       else "✓" if summary.get("sources_exist") else ""))
     elif "sources" in summary:
         bits.append(summary["sources"])
     print("OK: " + "  ".join(bits))

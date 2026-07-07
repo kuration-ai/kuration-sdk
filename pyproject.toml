@@ -1,9 +1,25 @@
 [project]
 name = "kuration-sdk"
-version = "0.0.1"
+version = "0.1.0"
 description = "Dataset-agnostic curation SDK: raw source -> curated subset -> training shards."
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["numpy"]
+keywords = ["dataset", "curation", "time-series", "data-selection", "shards", "training-data"]
+# license / authors: pending the corporate decision — add `license` + a License classifier
+# (and LICENSE file) before any public release or PyPI upload.
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+]
 
 # Domain knowledge never lives in the core; heavy capabilities are opt-in extras,
 # lazily imported and loud-on-missing (the asg2diamond convention).
@@ -15,6 +31,8 @@ cloud = ["fsspec"]                # gs:// / s3:// / az:// I/O (plus a backend: g
 torch = ["torch"]                 # PyTorch ShardDataset over a curated dataset (kuration.torch)
 hf = ["datasets"]                 # HuggingFace datasets input adapter
 zarr = ["zarr"]                   # Zarr array-store input adapter
+cli = ["jsonschema"]              # kur-validate --json-schema (JSON Schema cross-check)
+dev = ["pytest", "jsonschema"]    # test suite + everything the CLIs can exercise
 
 [project.scripts]
 kur-curate = "kuration.cli.curate:main"
@@ -31,4 +49,4 @@ where = ["."]
 include = ["kuration*"]
 
 [tool.setuptools.package-data]
-kuration = ["schemas/*.json"]   # shipped JSON Schema for job/strategy specs (kur-validate)
+kuration = ["schemas/*.json", "py.typed"]   # shipped JSON Schema (kur-validate) + PEP 561 marker

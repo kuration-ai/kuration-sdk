@@ -82,6 +82,45 @@ def test_check_sources_flags_missing(tmp_path):
         validate_job(job, check_sources=True)
 
 
+def test_check_sources_sniffs_csv_header(tmp_path):
+    """A column typo in the adapter map must fail at preflight, not as N skipped sources."""
+    job = _curate_job(_csv(tmp_path), tmp_path / "out")
+    job["adapter"]["fields"]["act"] = "activity"                 # column doesn't exist
+    import pytest
+    with pytest.raises(ValueError, match=r"missing mapped column\(s\).*activity"):
+        validate_job(job, check_sources=True)
+    assert validate_job(job)["kind"] == "curate"                 # without the flag: no data I/O
+
+
+def test_check_sources_sniffs_parquet_schema(tmp_path):
+    import pytest
+    pytest.importorskip("pyarrow")
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    p = tmp_path / "d.parquet"
+    pq.write_table(pa.table({"t": [0, 1], "id": ["e1", "e1"], "x": [0.0, 1.0],
+                             "y": [1.0, 1.0], "act": [1.0, 1.0]}), p)
+    job = _curate_job(p, tmp_path / "out")
+    assert validate_job(job, check_sources=True)["sources_checked"]
+    job["adapter"]["entity_column"] = "entity"                   # column doesn't exist
+    with pytest.raises(ValueError, match=r"missing mapped column\(s\).*entity"):
+        validate_job(job, check_sources=True)
+
+
+def test_cli_missing_dep_is_error_not_invalid(tmp_path, monkeypatch):
+    """--json-schema without jsonschema: an environment problem, labeled `error:` not INVALID."""
+    import pytest
+    try:
+        import jsonschema  # noqa: F401
+        pytest.skip("jsonschema installed — the missing-dep path is unreachable")
+    except ImportError:
+        pass
+    good = tmp_path / "good.json"
+    good.write_text(json.dumps(_curate_job(_csv(tmp_path), tmp_path / "out")))
+    p = _run([str(good), "--json-schema"])
+    assert p.returncode == 1 and p.stderr.startswith("error:") and "INVALID" not in p.stderr
+
+
 # ---- CLI wiring -------------------------------------------------------------
 def _run(args):
     return subprocess.run([sys.executable, "-m", "kuration.cli.validate"] + args,

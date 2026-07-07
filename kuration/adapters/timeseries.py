@@ -93,6 +93,43 @@ class TimeseriesAdapter:
             ticks.append(self._mk_tick(cur, group))
         return ticks
 
+    # ---- preflight ----------------------------------------------------------
+    def _required_columns(self) -> set:
+        need = set()
+        if self.time_column:
+            need.add(self.time_column)
+        if self.entity_column:
+            need.add(self.entity_column)
+        for f, col in self.fields.items():
+            need.update(col if isinstance(col, (list, tuple)) else [col])
+        need.update(self.globals.values())
+        return need
+
+    def check_source(self, source_uri: str) -> None:
+        """Preflight one source without reading data rows: sniff the CSV header (or the
+        Parquet file schema) and verify every mapped column exists — so a column typo fails
+        at `kur-validate --check-sources` time, not after a full feature pass."""
+        from ..io import local_copy, open_file
+        if source_uri.endswith(".parquet"):
+            try:
+                import pyarrow.parquet as pq
+            except ImportError as e:
+                raise ImportError("checking .parquet needs the optional extra: "
+                                  "pip install -e '.[parquet]'") from e
+            with local_copy(source_uri) as p:
+                cols = set(pq.ParquetFile(p).schema_arrow.names)
+        else:
+            import csv
+            with open_file(source_uri, "rt") as f:
+                header = next(csv.reader(f), None)
+            if header is None:
+                raise ValueError(f"source {source_uri!r} is empty — no header row")
+            cols = set(header)
+        missing = sorted(self._required_columns() - cols)
+        if missing:
+            raise ValueError(f"source {source_uri!r} is missing mapped column(s) {missing}; "
+                             f"available: {sorted(cols)}")
+
     # ---- sources ------------------------------------------------------------
     def from_rows(self, rows: Iterable[dict]) -> list[Tick]:
         return self._rows_to_ticks(list(rows))

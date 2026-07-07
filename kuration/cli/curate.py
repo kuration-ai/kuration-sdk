@@ -8,20 +8,23 @@ strategy(inline/path/name), output(OutputSpec), train_hours, test_hours?, out, s
 from __future__ import annotations
 
 import argparse
-import json
-from pathlib import Path
 
 from ..output import OutputSpec, write_dataset
 from ..strategy import load_strategy
-from ._common import build_adapter, build_schema, build_segmenter, resolve_sources
+from ._common import (build_adapter, build_schema, build_segmenter, cli_run, read_job,
+                      resolve_sources)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Curate a dataset from a JSON job spec.")
     ap.add_argument("job", help="Path to the job JSON.")
+    ap.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
     args = ap.parse_args()
-    job = json.loads(Path(args.job).read_text())
+    cli_run(lambda: _run(args), debug=args.debug)
 
+
+def _run(args) -> None:
+    job = read_job(args.job)
     schema = build_schema(job)
     adapter = build_adapter(job, schema)
     schema = schema or adapter.schema           # curated adapter derives its own

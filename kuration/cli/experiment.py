@@ -14,16 +14,21 @@ from pathlib import Path
 
 from ..experiment import Arm, run_experiment
 from ..strategy import load_strategy
-from ._common import build_adapter, build_schema, build_segmenter, resolve_sources
+from ._common import (build_adapter, build_schema, build_segmenter, cli_run, read_job,
+                      resolve_sources)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Multi-arm curation comparison from a JSON job spec.")
     ap.add_argument("job", help="Path to the job JSON.")
     ap.add_argument("--out", default=None, help="Write the full comparison JSON here.")
+    ap.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
     args = ap.parse_args()
-    job = json.loads(Path(args.job).read_text())
+    cli_run(lambda: _run(args), debug=args.debug)
 
+
+def _run(args) -> None:
+    job = read_job(args.job)
     schema = build_schema(job)
     adapter = build_adapter(job, schema)
     schema = schema or adapter.schema

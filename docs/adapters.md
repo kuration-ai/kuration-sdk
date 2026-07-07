@@ -49,6 +49,12 @@ does a duplicate `(time, entity)` row (the later row would otherwise silently ov
 earlier one). Sort by time first. Numeric fields are coerced to float; categorical to str;
 vectors assembled from their listed columns.
 
+The adapter also implements the optional **`check_source(uri)`** preflight hook:
+`kur-validate --check-sources` calls it per source to sniff the CSV header (or Parquet file
+schema) and verify every mapped column — time, entity, field, and global columns — exists,
+without reading any data rows. A column typo therefore fails at preflight instead of
+surfacing as every source skipped at run time.
+
 ## Array files: HDF5 and NPZ
 
 One file = one source, one entity; each mapped key holds `(T, *shape)` (scalar → float,
@@ -165,6 +171,11 @@ from kuration import register_adapter, get_adapter
 register_adapter("mine", MyAdapter)
 adapter = get_adapter("mine", schema=schema)
 ```
+
+Optionally implement **`check_source(uri)`** — a cheap metadata-only preflight (header,
+dataset keys, array shapes; never data rows) that raises if the source can't serve the
+adapter's mapping. `kur-validate --check-sources` calls it when present, so config mistakes
+fail before a run instead of as skipped sources during one.
 
 ## Segmentation
 

@@ -12,6 +12,9 @@ kur-experiment job.json [--out cmp.json]   # experiment job -> per-arm JS-vs-bas
 kur-report     job.json [--out rep.json]   # report job -> metric distribution profile
 ```
 
+Every CLI accepts `--debug`: failures normally print a one-line `error: ...` and exit 1;
+`--debug` re-raises for the full traceback.
+
 The job **kind** is inferred: `arms` present → experiment; `output`/`train_hours` present →
 curate; otherwise → report.
 
@@ -83,5 +86,7 @@ No extra keys — the shared keys above. Scores every segment and prints/writes 
 
 Habit: `kur-validate job.json` first — every load-time error (schema, adapter field maps,
 strategy DSL/tags/scorers/references, segmenter, output spec) surfaces before any data is
-read. `--check-sources` additionally stats that each source exists (this is the only mode that
-touches adapters whose source enumeration is expensive, e.g. HuggingFace).
+read. `--check-sources` additionally stats that each source exists and, for adapters exposing
+`check_source` (the timeseries adapter sniffs the CSV header / Parquet file schema), verifies
+every mapped column is present — still without reading data rows. (This is the only mode that
+touches adapters whose source enumeration is expensive, e.g. HuggingFace.)

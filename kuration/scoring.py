@@ -9,9 +9,12 @@ errors), never silently dropped. Determinism holds: the parent sorts the pooled 
 `(source_id, start_idx)`, so the result is identical regardless of worker count or completion
 order.
 
-Note: the default process start method on Linux is `fork`, so the metric registry (built-ins
-and any `@register_metric` defined before the call) is inherited by workers. Under `spawn`,
-custom metrics must be importable at module scope.
+Note: on Linux ≤3.13 the default process start method is `fork`, so the metric registry
+(built-ins and any `@register_metric` defined before the call) is inherited by workers. Under
+`spawn`/`forkserver` — the macOS/Windows default, and the Linux default from Python 3.14 —
+custom metrics must be importable at module scope: one registered only in `__main__` is
+invisible to workers and fails loudly ("unknown registered metric" per source, then the
+empty-pool error).
 """
 from __future__ import annotations
 

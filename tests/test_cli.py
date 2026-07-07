@@ -46,6 +46,28 @@ def test_kur_curate_help():
     assert p.returncode == 0 and "job" in p.stdout
 
 
+def test_cli_failure_is_one_line_no_traceback(tmp_path):
+    """A run-time failure prints one `error:` line (exit 1), never a raw traceback."""
+    csv_path = _make_csv(tmp_path)
+    spec = _job(csv_path, tmp_path / "out")
+    spec["adapter"]["fields"]["act"] = "activity"       # column doesn't exist -> empty pool
+    job = tmp_path / "job.json"
+    job.write_text(json.dumps(spec))
+    p = _run(["kuration.cli.curate", str(job)])
+    assert p.returncode == 1
+    assert "Traceback" not in p.stderr, p.stderr
+    assert "error: RuntimeError: segment pool is EMPTY" in p.stderr
+
+    p = _run(["kuration.cli.curate", str(job), "--debug"])          # --debug re-raises
+    assert p.returncode != 0 and "Traceback" in p.stderr
+
+
+def test_cli_missing_job_file_is_one_line(tmp_path):
+    p = _run(["kuration.cli.curate", str(tmp_path / "nope.json")])
+    assert p.returncode == 1
+    assert "Traceback" not in p.stderr and "error:" in p.stderr and "not found" in p.stderr
+
+
 def test_kur_curate_runs(tmp_path):
     csv_path = _make_csv(tmp_path)
     out = tmp_path / "out"

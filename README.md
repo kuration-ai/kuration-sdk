@@ -115,8 +115,11 @@ kur-report job.json --out report.json     # profile a dataset's metric distribut
 `kur-validate` runs every load-time validator the real run would (schema, adapter field maps,
 strategy DSL/tags/scorers/metric references, segmenter, output spec) and fails loudly on the
 first problem — so a typo fails instantly instead of after a parallel pass. `--check-sources`
-also stats that each source exists; `--print-schema` emits the shipped JSON Schema (point your
+also stats that each source exists **and sniffs its header/schema against the column map**
+(CSV header / Parquet file schema for the timeseries adapter — a column typo fails at
+preflight, no data rows read); `--print-schema` emits the shipped JSON Schema (point your
 editor's `$schema` at it for autocomplete), and `--json-schema` cross-checks against it.
+Every CLI prints a one-line `error:` on failure and exits 1; `--debug` shows the traceback.
 
 ## Status
 
@@ -133,7 +136,7 @@ tag-coverage**, a single-dataset **stats report**, a first-class **learned-score
 (whole-pool/action-aware metrics), a multi-arm **experiment/comparison** harness,
 **parallel / skip-and-log / resume / out-of-core** execution, **path-agnostic I/O**
 (local + `gs://`/`s3://`/`az://` via fsspec), and a **`kur-validate`** preflight (+ shipped JSON
-Schema), driven by the `kur-*` CLIs. 192 tests (`pytest tests/`).
+Schema), driven by the `kur-*` CLIs. 197 tests (`pytest tests/`).
 
 Planned: migration of the reference CS2 pipeline onto the SDK (Phase G), and a spill/external
 tier for *total* segment pools larger than RAM. See `PLAN.md`.

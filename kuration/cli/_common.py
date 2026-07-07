@@ -7,12 +7,35 @@ whole curation run is a single reproducible file.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Optional
 
 from ..adapters import get_adapter
 from ..schema import SchemaSpec
 from ..segment import Segmenter
+
+
+def read_job(path: str) -> dict:
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"job spec not found: {path}")
+    try:
+        return json.loads(p.read_text())
+    except json.JSONDecodeError as e:
+        raise ValueError(f"job spec {path} is not valid JSON: {e}") from e
+
+
+def cli_run(body, *, debug: bool = False) -> None:
+    """Error surface shared by the kur-* mains: a failure prints one `error:` line to stderr
+    and exits 1; `--debug` re-raises so the full traceback is available on demand."""
+    try:
+        body()
+    except Exception as e:
+        if debug:
+            raise
+        print(f"error: {type(e).__name__}: {e}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 def _maybe_path(value):

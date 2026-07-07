@@ -174,8 +174,13 @@ FeatureEngine in-process** — the compiled DSL metrics are closures and can't b
 they're recompiled from the JSON `define` + schema (both picklable); the adapter and segmenter
 ship as-is. Determinism is preserved by sorting the pooled segments by `(source_id, start_idx)`
 before binning/selection, so the result is independent of worker count and completion order.
-(Default start method on Linux is `fork`, so the metric registry is inherited; under `spawn`,
-custom `@register_metric` functions must be importable at module scope.)
+(Start-method caveat: on Linux ≤3.13 the default is `fork`, so the metric registry — built-ins
+plus any `@register_metric` defined before the call, even in `__main__` — is inherited by
+workers. Under `spawn`/`forkserver` — the macOS/Windows default, and **Python 3.14 makes
+`forkserver` the Linux default too** — workers rebuild the registry at import, so custom
+metrics must be importable at module scope; one registered only in `__main__` raises "unknown
+registered metric" in every worker, which surfaces as all sources skipped + the loud
+empty-pool error. Rule of thumb: put `@register_metric` functions in an importable module.)
 
 A source that raises during scoring is **skipped-and-logged** (`on_error="skip"`: stderr line
 + collected in the result's `errors` + a summary), never silently dropped; `on_error="raise"`

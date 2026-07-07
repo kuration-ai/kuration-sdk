@@ -8,13 +8,16 @@ multivariate series). The core carries **no domain knowledge**; a dataset is des
 seams).
 
 > **Status.** The full pipeline is implemented: schema + metric DSL; input adapters (timeseries
-> CSV/Parquet, HDF5, NPZ, JSONL, curated-dataset-as-source); segmentation; feature engine;
+> CSV/Parquet, HDF5, NPZ, JSONL, curated-dataset-as-source, partitioned Parquet, HuggingFace
+> datasets, Zarr); segmentation; feature engine;
 > binning; strategies (base + feature-space methods + filter + anomaly/dedup pre-pass filters);
 > a learned-scorer seam; the output layer (npz/json/hdf5/parquet containers, sub-track spans,
-> hours-budget fill); declarative tag-coverage; a stats report and a multi-arm experiment
+> hours-budget fill); the read side (`iter_shards` numpy-only, `kuration.torch.ShardDataset`
+> for PyTorch); declarative tag-coverage; a stats report and a multi-arm experiment
 > harness; parallel / skip-and-log / resume / **out-of-core** execution (`streaming=True` handles
 > a single source larger than RAM); path-agnostic local + cloud I/O; and the
-> `kur-curate` / `kur-experiment` / `kur-report` CLIs. The remaining scale item is a
+> `kur-validate` / `kur-curate` / `kur-experiment` / `kur-report` CLIs (+ a shipped JSON
+> Schema). The remaining scale item is a
 > spill/external tier for a *total segment pool* larger than RAM. See `../PLAN.md`.
 
 ## The pipeline
