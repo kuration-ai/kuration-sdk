@@ -11,7 +11,7 @@ from typing import Optional
 
 from ..buffer import Tick
 from ..schema import SchemaSpec
-from .base import arrays_to_ticks, register_adapter
+from .base import arrays_to_ticks, check_mapped_arrays, register_adapter
 
 
 class ZarrAdapter:
@@ -23,7 +23,7 @@ class ZarrAdapter:
             if f not in schema.fields:
                 raise ValueError(f"field map references undeclared schema field {f!r}")
 
-    def ticks(self, source_uri: str) -> list[Tick]:
+    def _open_group(self, source_uri: str):
         try:
             import zarr
         except ImportError as e:
@@ -39,10 +39,21 @@ class ZarrAdapter:
             store = fsspec.get_mapper(str(source_uri))   # remote store via the fsspec backend
         else:
             store = str(source_uri)
-        g = zarr.open(store, mode="r")
+        return zarr.open(store, mode="r")
+
+    def ticks(self, source_uri: str) -> list[Tick]:
+        g = self._open_group(source_uri)
         arrs = {fn: g[key][:] for fn, key in self.fields.items()}
         gl = {gn: g[key][:] for gn, key in self.globals.items()}
         return arrays_to_ticks(self.schema, arrs, gl)
+
+    def check_source(self, source_uri: str) -> None:
+        """Preflight one store from metadata only (array keys + shapes are store metadata —
+        no chunk data read): every mapped key exists, first dims agree, widths match the
+        schema. Works for local and remote (fsspec) stores alike."""
+        g = self._open_group(source_uri)
+        check_mapped_arrays(self.schema, self.fields, self.globals, source_uri,
+                            lambda key: g[key].shape if key in g else None)
 
 
 register_adapter("zarr", ZarrAdapter)

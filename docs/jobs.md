@@ -86,7 +86,9 @@ No extra keys — the shared keys above. Scores every segment and prints/writes 
 
 Habit: `kur-validate job.json` first — every load-time error (schema, adapter field maps,
 strategy DSL/tags/scorers/references, segmenter, output spec) surfaces before any data is
-read. `--check-sources` additionally stats that each source exists and, for adapters exposing
-`check_source` (the timeseries adapter sniffs the CSV header / Parquet file schema), verifies
-every mapped column is present — still without reading data rows. (This is the only mode that
-touches adapters whose source enumeration is expensive, e.g. HuggingFace.)
+read. `--check-sources` additionally stats that each source exists and runs the adapter's
+`check_source` preflight — every built-in adapter has one: CSV/JSONL header sniff,
+Parquet footer / HDF5 / NPZ-header / Zarr metadata (keys, step counts, and per-step widths
+checked against the schema), HuggingFace builder features, curated-manifest membership —
+still without reading data rows. (This is the only mode that touches adapters whose source
+enumeration is expensive, e.g. HuggingFace.)

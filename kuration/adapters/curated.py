@@ -83,6 +83,18 @@ class CuratedDatasetAdapter:
     def sources(self) -> list:
         return list(self._shards)
 
+    def check_source(self, shard_path: str) -> None:
+        """Preflight one shard: it must come from this adapter's manifests and still exist on
+        disk (catches a dataset dir that moved after the manifest was read). Modalities were
+        already validated against each dataset's config at construction; shard contents are
+        kuration's own writes, so no data read here."""
+        if shard_path not in self._container:
+            raise KeyError(f"unknown shard {shard_path!r} — not in this adapter's manifests")
+        from ..io import exists
+        if not exists(shard_path):
+            raise ValueError(f"manifest shard {shard_path!r} does not exist — was the dataset "
+                             f"dir moved or partially deleted?")
+
     def ticks(self, shard_path: str) -> list[Tick]:
         if shard_path not in self._container:
             raise KeyError(f"unknown shard {shard_path!r} — not in this adapter's manifests")

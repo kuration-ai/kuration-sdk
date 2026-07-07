@@ -49,7 +49,9 @@ or `"raise"`; `streaming=True` is the out-of-core path.
 
 ## Input adapters
 
-All take `schema` first and expose `.ticks(source_uri)`; see [adapters.md](adapters.md).
+All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
+`.check_source(source_uri)` preflight (used by `kur-validate --check-sources`); see
+[adapters.md](adapters.md).
 
 | name | key kwargs | reads |
 |---|---|---|
@@ -63,7 +65,7 @@ All take `schema` first and expose `.ticks(source_uri)`; see [adapters.md](adapt
 | `CuratedDatasetAdapter` | `(dataset_dir_or_list, schema=None)`; `.sources()`, `.dataset_of` | kuration's own output, re-curatable |
 | `schema_from_output` | `(output_spec_dict, *, name="curated", sample_hz=None, entity_axis="e") -> SchemaSpec` | derive a schema from a dataset's `config.json` output block |
 | `register_adapter` / `get_adapter` | `(name, factory)` / `(name, **kwargs)` | registry (workers rebuild adapters by name) |
-| `InputAdapter` | Protocol: `schema` + `ticks(uri)` | the seam to implement for bespoke formats |
+| `InputAdapter` | Protocol: `schema` + `ticks(uri)`; optional `check_source(uri)` + `sources_are_paths` | the seam to implement for bespoke formats |
 
 ## Selection
 

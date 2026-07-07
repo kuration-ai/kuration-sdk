@@ -57,6 +57,25 @@ class ParquetDatasetAdapter(TimeseriesAdapter):
             raise ValueError(f"no .parquet parts found under {self.path!r}")
         return parts if self.source_per == "part" else [self.path]
 
+    @property
+    def sources_are_paths(self) -> bool:
+        """In "dataset" mode the single source URI is the root path/glob itself — a plain
+        existence stat on it is meaningless (and false for a glob); `check_source` resolves
+        the parts instead."""
+        return self.source_per == "part"
+
+    def check_source(self, source_uri: str) -> None:
+        """Preflight: in "part" mode the source is one .parquet file (inherited footer-schema
+        sniff); in "dataset" mode the source is the whole tree — resolve the parts and sniff
+        each footer (schema metadata only, no row data)."""
+        if source_uri.endswith(".parquet"):
+            return super().check_source(source_uri)
+        parts = self._parts()
+        if not parts:
+            raise ValueError(f"no .parquet parts found under {self.path!r}")
+        for part in parts:
+            super().check_source(part)
+
     def ticks(self, source_uri: str) -> list[Tick]:
         if self.source_per == "part":
             return self._rows_to_ticks(self._read_rows(source_uri))

@@ -175,7 +175,13 @@ adapter = get_adapter("mine", schema=schema)
 Optionally implement **`check_source(uri)`** — a cheap metadata-only preflight (header,
 dataset keys, array shapes; never data rows) that raises if the source can't serve the
 adapter's mapping. `kur-validate --check-sources` calls it when present, so config mistakes
-fail before a run instead of as skipped sources during one.
+fail before a run instead of as skipped sources during one. Every built-in adapter implements
+it: CSV/JSONL sniff the header/first row; Parquet reads the footer schema; HDF5/NPZ/Zarr check
+mapped keys, step-count agreement, and per-step widths against the schema from store metadata;
+HuggingFace checks the builder's declared features (no download); curated checks manifest
+membership + shard existence. If your adapter's sources aren't filesystem paths (like the HF
+dataset names), also set `sources_are_paths = False` so `--check-sources` skips the existence
+stat and relies on your `check_source`.
 
 ## Segmentation
 

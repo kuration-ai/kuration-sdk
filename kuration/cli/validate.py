@@ -6,9 +6,10 @@ Runs every load-time validator the real run would — SchemaSpec parsing, adapte
 checks, the strategy's DSL/tags/scorers/referenced-metric resolution, the segmenter, and (for
 a curate job) the OutputSpec — and reports the first failure with a non-zero exit. A typo fails
 in milliseconds instead of after a parallel feature pass. No source data is read unless
-`--check-sources` is given, which stats existence and — for adapters exposing `check_source`
-(the timeseries adapter sniffs the CSV header / Parquet file schema) — verifies each source can
-serve the adapter's column map, still without reading data rows.
+`--check-sources` is given, which stats existence and calls the adapter's `check_source`
+preflight — every built-in adapter implements it (CSV/JSONL headers, Parquet/HDF5/NPZ/Zarr
+schema metadata, HF builder features, curated manifests) — verifying each source can serve
+the adapter's mapping, still without reading data rows.
 
 `--print-schema` dumps the shipped JSON Schema (point your editor's `$schema` at it for
 autocomplete); `--json-schema` additionally validates the job against it (needs `jsonschema`).
@@ -83,11 +84,12 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
         return summary
     summary["n_sources"] = len(sources)
     if check_sources:                                 # existence failure IS fatal (propagates)
-        from ..io import exists
-        missing = [s for s in sources if not exists(s)]
-        if missing:
-            raise ValueError(f"{len(missing)} source(s) do not exist, e.g. {missing[0]!r}")
-        summary["sources_exist"] = True
+        if getattr(adapter, "sources_are_paths", True):   # HF names / dataset-mode globs
+            from ..io import exists                       # aren't statable paths
+            missing = [s for s in sources if not exists(s)]
+            if missing:
+                raise ValueError(f"{len(missing)} source(s) do not exist, e.g. {missing[0]!r}")
+            summary["sources_exist"] = True
         check = getattr(adapter, "check_source", None)
         if check is not None:                         # header/metadata sniff, no data rows read
             for s in sources:
