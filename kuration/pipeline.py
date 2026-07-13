@@ -792,10 +792,14 @@ class Pipeline:
         if normalize is not None and normalize not in {"quantile", "minmax", "zscore"}:
             raise ValueError("curate normalize must be quantile, minmax, or zscore")
         if isinstance(target, dict):
-            target_metrics = [target[k] for k in ("metric", "anchor_metric") if k in target]
-            if not all(isinstance(metric, str) for metric in target_metrics):
-                raise ValueError("curate target metric references must be strings")
-            target_metrics = set(target_metrics)
+            target_metrics: set[str] = set()
+            for key in ("metric", "anchor_metric"):
+                if key not in target:
+                    continue
+                metric = target[key]
+                if not isinstance(metric, str):
+                    raise ValueError("curate target metric references must be strings")
+                target_metrics.add(metric)
             unknown_target = sorted(target_metrics - known_metrics)
             if unknown_target:
                 raise ValueError(f"curate target references undeclared metrics {unknown_target}; "
