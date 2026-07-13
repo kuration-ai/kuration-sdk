@@ -290,8 +290,10 @@ def test_curate_no_method_resolvable_loud():
     ("weighted", "weighted"), ("filter", "filter"),
 ])
 def test_curate_method_aliases(alias, canon):
-    p = _pipe().measure("hp").organize("hp", bins=2) \
-        .curate(alias, n=5, weights={"hp": 1.0})
+    p = _pipe().measure("hp")
+    if canon == "filter":
+        p = p.filter("hp", ">=", 0)
+    p = p.organize("hp", bins=2).curate(alias, n=5, weights={"hp": 1.0})
     assert p.describe()["strategy"]["selection"]["method"] == canon
 
 
