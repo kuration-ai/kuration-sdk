@@ -65,6 +65,9 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
         if spec.presence_mask:
             arrays["_present"][t] = present
         enc_out = encoder.timestep(clean, ctx) if enc_mods else {}
+        if not isinstance(enc_out, dict):
+            raise ValueError(f"output encoder must return a dict, got {type(enc_out).__name__} "
+                             f"for source {ctx['track'].get('source_id')!r} at row {t}")
         for m in spec.modalities:
             if m.src_kind == "field":
                 val = clean.get(m.src_arg)
@@ -72,8 +75,24 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
                 val = ctx["track"].get(m.src_arg)
             else:
                 val = enc_out.get(m.src_arg)
-            if val is not None:
+            if val is None:
+                is_global = bool(ctx.get("schema") and m.src_arg in ctx["schema"].globals)
+                required = (m.src_kind == "segment" or is_global or present)
+                if required:
+                    raise ValueError(
+                        f"missing value for output modality {m.name!r} "
+                        f"({m.src_kind}:{m.src_arg}) in source "
+                        f"{ctx['track'].get('source_id')!r}, entity "
+                        f"{ctx['track'].get('entity_id')!r}, row {t}")
+                continue
+            try:
                 arrays[m.name][t] = val
+            except (TypeError, ValueError) as e:
+                raise ValueError(
+                    f"bad value for output modality {m.name!r} ({m.src_kind}:{m.src_arg}) "
+                    f"at source {ctx['track'].get('source_id')!r}, entity "
+                    f"{ctx['track'].get('entity_id')!r}, row {t}: expected dtype={m.dtype}, "
+                    f"shape={m.shape}, got {val!r}") from e
     return arrays
 
 

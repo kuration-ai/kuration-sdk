@@ -13,8 +13,9 @@ the output layer (`output/fill.py`), where the output unit (a track/span) is def
 from __future__ import annotations
 
 import json
+import math
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -38,6 +39,14 @@ _FILTER_KEYS = {
     "anomaly": {"type", "feature_space", "per_group", "contamination", "normalize"},
     "dedup": {"type", "feature_space", "per_group", "threshold", "n_clusters", "normalize"},
 }
+
+
+def validate_target_size(target_size: int) -> int:
+    """Return a positive integer selection count; reject bools and lossy coercions."""
+    if (not isinstance(target_size, int) or isinstance(target_size, bool)
+            or target_size < 1):
+        raise ValueError(f"target_size must be a positive integer, got {target_size!r}")
+    return target_size
 
 
 def _resolve_filters(raw) -> list:
@@ -82,11 +91,12 @@ def _cmp(a: float, op: str, b: float) -> bool:
             "==": a == b, "!=": a != b}[op]
 
 
-def _passes(seg, predicates: list) -> bool:
+def _passes(seg, predicates: Optional[list]) -> bool:
     """True iff a segment satisfies every DSL-metric predicate. Predicates are a universal
     pre-filter: with `method: filter` they ARE the selection; with any other method the
     failing segments are dropped from the pool (set path) / priced -inf (hours path)."""
-    return all(_cmp(seg.features.get(p["metric"], 0.0), p["op"], p["value"]) for p in predicates)
+    return all(_cmp(seg.features.get(p["metric"], 0.0), p["op"], p["value"])
+               for p in (predicates or []))
 
 
 @dataclass
@@ -101,12 +111,12 @@ class Strategy:
     tag_coverage: Optional[dict]
     group_cap: Optional[dict]
     resolved: dict
-    predicates: list = None              # universal pre-filter: [{metric, op, value}, ...]
+    predicates: Optional[list] = None    # universal pre-filter: [{metric, op, value}, ...]
     feature_space: Optional[list] = None  # metric names spanning the vector space (methods.py)
-    method_params: dict = None           # extra selection knobs (clusters/dsir_bins/knn_k/...)
-    filters: list = None                 # pre-pass filters [{type: anomaly|dedup, ...}]
+    method_params: Optional[dict] = None # extra selection knobs (clusters/dsir_bins/knn_k/...)
+    filters: Optional[list] = None       # pre-pass filters [{type: anomaly|dedup, ...}]
     tags: Optional[dict] = None          # declarative tag derivation for tag_coverage ({"from": [...]})
-    scorers: list = None                 # parsed [(name, output, params)] — learned/whole-pool scorers
+    scorers: Optional[list] = None       # parsed [(name, output, params)] — learned/whole-pool scorers
 
     def scorer_outputs(self) -> set[str]:
         """Feature names produced by the strategy's scorers (referenceable like any metric)."""
@@ -145,6 +155,8 @@ def _resolve(spec: dict) -> Strategy:
         raise ValueError(f"method {method!r} requires binning.axes")
 
     weights = {k: float(v) for k, v in (sel.get("weights") or {}).items()}
+    if any(not math.isfinite(v) for v in weights.values()):
+        raise ValueError("selection.weights values must be finite numbers")
     if method in ("weighted", "top-k") and not weights:
         raise ValueError(f"method {method!r} requires selection.weights")
     normalize = sel.get("normalize", "quantile")
@@ -179,8 +191,9 @@ def _resolve(spec: dict) -> Strategy:
         if unknown:
             raise ValueError(f"selection.group_cap: unknown key(s) {sorted(unknown)}")
         cap = group_cap.get("max_group_overshoot", 1.5)
-        if not isinstance(cap, (int, float)) or cap <= 0:
-            raise ValueError("selection.group_cap.max_group_overshoot must be > 0")
+        if (not isinstance(cap, (int, float)) or isinstance(cap, bool)
+                or not math.isfinite(cap) or cap <= 0):
+            raise ValueError("selection.group_cap.max_group_overshoot must be finite and > 0")
     define = dict(spec.get("define") or {})
 
     predicates = list(sel.get("predicates") or [])
@@ -191,6 +204,9 @@ def _resolve(spec: dict) -> Strategy:
             raise ValueError(f"predicate needs metric/op/value: {p!r}")
         if p["op"] not in _PRED_OPS:
             raise ValueError(f"predicate op must be one of {sorted(_PRED_OPS)}, got {p['op']!r}")
+        if (not isinstance(p["value"], (int, float)) or isinstance(p["value"], bool)
+                or not math.isfinite(p["value"])):
+            raise ValueError(f"predicate value must be a finite number, got {p['value']!r}")
 
     feature_space = spec.get("feature_space")
     filters = _resolve_filters(spec.get("filters"))
@@ -344,7 +360,7 @@ def _raw_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
         w = score - score.min() + 1e-9
         return np.log(w) + (-np.log(-np.log(rng.random(n))))
     # bin-based: rare-bin round-robin (take the 1st of every bin, then 2nd, ...)
-    rng = random.Random(seed)
+    py_rng = random.Random(seed)
     bins: dict[tuple, list[int]] = {}
     for i, s in enumerate(segments):
         bins.setdefault(s.bin, []).append(i)
@@ -357,7 +373,7 @@ def _raw_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
     prio = np.empty(n, dtype=np.float64)
     for b, idxs in bins.items():
         order = idxs[:]
-        rng.shuffle(order)
+        py_rng.shuffle(order)
         w = binw[b]
         for rank, i in enumerate(order):
             prio[i] = -(rank + 1) / w
@@ -426,6 +442,7 @@ def select(segments: list[Segment], strategy: Strategy, *, target_size: int,
     """Run the strategy's method, then its enabled post-passes (tag coverage, group cap).
     Callers pre-sort `segments` by (source_id, start_idx) so seeded RNGs are
     worker-count-independent."""
+    target_size = validate_target_size(target_size)
     if not segments:
         return []
     if strategy.predicates and strategy.method != "filter":

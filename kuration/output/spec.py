@@ -52,6 +52,10 @@ class OutputSpec:
             raise ValueError("output spec needs at least one modality")
         mods = []
         for name, m in raw.items():
+            if not isinstance(name, str) or not name:
+                raise ValueError("modality names must be non-empty strings")
+            if not isinstance(m, dict):
+                raise ValueError(f"modality {name!r} must be an object")
             src = m.get("source", "")
             if ":" not in src:
                 raise ValueError(f"modality {name!r}: source must be '<kind>:<arg>', got {src!r}")
@@ -62,16 +66,17 @@ class OutputSpec:
                 raise ValueError(f"modality {name!r}: source argument must not be empty")
             try:
                 np.dtype(m["dtype"])
-            except TypeError as e:
+            except (KeyError, TypeError) as e:
                 raise ValueError(f"modality {name!r}: bad dtype {m.get('dtype')!r}") from e
             shape = tuple(m.get("shape") or ())
             if any(not isinstance(x, int) or isinstance(x, bool) or x < 1 for x in shape):
                 raise ValueError(f"modality {name!r}: shape dimensions must be positive integers")
             mods.append(Modality(name=name, dtype=m["dtype"], shape=shape,
                                  src_kind=kind, src_arg=arg))
-        shard_length = int(d.get("shard_length", 0))
-        if shard_length < 1:
-            raise ValueError("output spec needs shard_length >= 1")
+        shard_length = d.get("shard_length", 0)
+        if (not isinstance(shard_length, int) or isinstance(shard_length, bool)
+                or shard_length < 1):
+            raise ValueError("output spec needs an integer shard_length >= 1")
         short_policy = d.get("short_policy", "keep")
         if short_policy not in _SHORT_POLICIES:
             raise ValueError(f"short_policy must be {sorted(_SHORT_POLICIES)}")

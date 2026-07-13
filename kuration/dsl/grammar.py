@@ -140,7 +140,7 @@ def _convex_hull_area(pts: np.ndarray) -> float:
     P = pts[np.lexsort((pts[:, 1], pts[:, 0]))]
 
     def half(points):
-        h = []
+        h: list[np.ndarray] = []
         for p in points:
             while len(h) >= 2 and (h[-1][0] - h[-2][0]) * (p[1] - h[-2][1]) - \
                     (h[-1][1] - h[-2][1]) * (p[0] - h[-2][0]) <= 0:

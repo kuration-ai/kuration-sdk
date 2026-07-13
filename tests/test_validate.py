@@ -146,3 +146,24 @@ def test_cli_print_schema():
     assert p.returncode == 0
     doc = json.loads(p.stdout)
     assert doc["title"] == "kuration job spec" and "strategy" in doc["properties"]
+
+
+def test_validate_rejects_invalid_execution_numbers(tmp_path):
+    import pytest
+    base = _curate_job(_csv(tmp_path), tmp_path / "out")
+    for key, value in (("workers", 0), ("seed", True), ("train_hours", float("nan"))):
+        job = {**base, key: value}
+        with pytest.raises(ValueError, match=key):
+            validate_job(job)
+
+
+def test_validate_rejects_invalid_experiment_target(tmp_path):
+    import pytest
+    job = _curate_job(_csv(tmp_path), tmp_path / "out")
+    job.pop("output")
+    job.pop("train_hours")
+    job.pop("out")
+    job["arms"] = [{"name": "a", "strategy": job.pop("strategy")}]
+    job["target_size"] = -1
+    with pytest.raises(ValueError, match="target_size"):
+        validate_job(job)

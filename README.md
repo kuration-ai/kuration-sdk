@@ -167,7 +167,7 @@ tag-coverage**, a single-dataset **stats report**, a first-class **learned-score
 Schema), driven by the `kur-*` CLIs, **schema inference** (`kuration.infer`) and a **fluent
 `input(...).operator(...)` pipeline** over it with universal pre-filter predicates (any
 selection method, count or hours path), complete resume provenance, default presence masks,
-budget accounting, plugin discovery, and structured progress. 346 passed / 2 optional-Zarr
+budget accounting, plugin discovery, and structured progress. 375 passed / 2 optional-Zarr
 skipped in the development environment (`pytest tests/`).
 
 Planned: migration of the reference CS2 pipeline onto the SDK (Phase G), and a spill/external

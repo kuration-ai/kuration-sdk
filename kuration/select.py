@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import random
 from collections import Counter, defaultdict
-from typing import Iterable, Optional
+from typing import Iterable
 
 from .segment import Segment
 

@@ -74,7 +74,7 @@ def build_adapter(job: dict, schema: Optional[SchemaSpec]):
 
 def build_segmenter(job: dict, schema: Optional[SchemaSpec]) -> Segmenter:
     sg = job["segmenter"]
-    hz = sg.get("sample_hz") or (schema.sample_hz if schema else None)
+    hz = sg.get("sample_hz") if "sample_hz" in sg else (schema.sample_hz if schema else None)
     return Segmenter(sg["window"], sg["stride"], unit=sg.get("unit", "steps"), sample_hz=hz)
 
 

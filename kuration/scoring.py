@@ -19,6 +19,7 @@ from __future__ import annotations
 import multiprocessing as mp
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Any
 
 from .features import FeatureEngine
 
@@ -94,6 +95,10 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
                          "use an uncompressed array store such as HDF5/Zarr or streaming=False")
     if on_error not in ("skip", "raise"):
         raise ValueError(f"on_error must be 'skip' or 'raise', got {on_error!r}")
+    if not isinstance(workers, int) or isinstance(workers, bool) or workers < 1:
+        raise ValueError(f"workers must be a positive integer, got {workers!r}")
+    if not isinstance(streaming, bool):
+        raise ValueError("streaming must be true or false")
     from .dsl.registry import METRICS
     from .plugins import loaded_plugin_modules
     metric_modules = {METRICS[r].__module__ for r in registered if r in METRICS}
@@ -106,7 +111,7 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
     if workers and workers > 1:
         context = mp.get_context("spawn")
         with ProcessPoolExecutor(max_workers=workers, mp_context=context) as ex:
-            results = [None] * len(items)
+            results: list[Any] = [None] * len(items)
             futures = {ex.submit(_score_one, item): i for i, item in enumerate(items)}
             done = 0
             for future in as_completed(futures):

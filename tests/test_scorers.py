@@ -112,3 +112,22 @@ def test_apply_scorers_validates_length():
     segs = [Segment("s", 0, 4, (0, 3)), Segment("s", 4, 8, (4, 7))]
     with pytest.raises(ValueError):
         apply_scorers([("wrong_len", "w", {})], segs, schema=SCHEMA, adapter=MemAdapter(SCHEMA, data))
+
+
+@pytest.mark.parametrize("name,value", [
+    ("wrong_scalar", np.asarray(1.0)),
+    ("wrong_matrix", np.zeros((2, 1))),
+    ("wrong_nan", np.asarray([0.0, np.nan])),
+])
+def test_apply_scorers_requires_finite_vector(name, value):
+    class WrongShape:
+        needs_buffers = False
+        def score(self, segments, ctx):
+            return value
+
+    register_scorer(name, WrongShape)
+    from kuration import Segment
+    segs = [Segment("s", 0, 4, (0, 3)), Segment("s", 4, 8, (4, 7))]
+    with pytest.raises(ValueError, match="finite 1-D vector"):
+        apply_scorers([(name, "w", {})], segs, schema=SCHEMA,
+                      adapter=MemAdapter(SCHEMA, _data([1, 2])))

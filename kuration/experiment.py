@@ -55,6 +55,10 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
                    target_size: int, seed: int = 0, baseline: str = None,
                    group_of=None, tags_of=None, workers: int = 1, on_error: str = "skip",
                    streaming: bool = False, progress=None) -> dict:
+    from .strategy import validate_target_size
+    target_size = validate_target_size(target_size)
+    if not arms:
+        raise ValueError("run_experiment needs at least one arm")
     names = [a.name for a in arms]
     if len(set(names)) != len(names):
         raise ValueError(f"duplicate arm names "

@@ -15,7 +15,7 @@ manifest's per-modality `shape` is what restores `(T, *shape)`.
 from __future__ import annotations
 
 import json
-from typing import Iterator, Optional, Sequence
+from typing import Any, Iterator, Optional, Sequence
 
 import numpy as np
 
@@ -100,7 +100,7 @@ def read_shard_arrays(entry: dict, container: str, *,
 def iter_shards(dataset, *, split: Optional[str] = None,
                 modalities: Optional[Sequence[str]] = None, trim: bool = True,
                 container: Optional[str] = None,
-                with_meta: bool = False) -> Iterator[dict]:
+                with_meta: bool = False) -> Iterator[Any]:
     """Iterate a written dataset's shards as numpy arrays.
 
     Yields `{modality -> (T, *shape)}` per shard (or `(arrays, entry)` when `with_meta=True`,

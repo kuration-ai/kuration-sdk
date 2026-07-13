@@ -23,7 +23,7 @@ Reproducibility note: a model-backed scorer is only as deterministic as its pinn
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Callable, Protocol, runtime_checkable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -63,7 +63,7 @@ def has_scorer(name: str) -> bool:
 
 def parse_scorers(raw) -> list[tuple]:
     """Normalize a strategy `scorers` block to [(name, output_feature, params)]."""
-    out = []
+    out: list[tuple[str, str, dict]] = []
     for e in raw or []:
         if isinstance(e, str):
             if not e:
@@ -87,7 +87,7 @@ def _materialize_buffers(segments, schema, adapter) -> list:
     by_src: dict = defaultdict(list)
     for i, s in enumerate(segments):
         by_src[s.source_id].append(i)
-    bufs = [None] * len(segments)
+    bufs: list[Any] = [None] * len(segments)
     for src, idxs in by_src.items():
         ticks = list(adapter.ticks(src))
         for i in idxs:
@@ -113,9 +113,11 @@ def apply_scorers(entries: list[tuple], segments: list, *, schema, adapter, seed
                 buffers = _materialize_buffers(segments, schema, adapter)
             ctx["buffers"] = buffers
         vals = np.asarray(scorer.score(segments, ctx), dtype=np.float64)
-        if vals.shape[0] != len(segments):
-            raise ValueError(f"scorer {name!r} returned {vals.shape[0]} values for "
-                             f"{len(segments)} segments")
+        if vals.shape != (len(segments),) or not np.isfinite(vals).all():
+            raise ValueError(
+                f"scorer {name!r} must return a finite 1-D vector with shape "
+                f"({len(segments)},), got shape {vals.shape}"
+                + (" containing non-finite values" if not np.isfinite(vals).all() else ""))
         for s, v in zip(segments, vals):
             s.features[output] = float(v)
         emit(progress, "scorers", "advance", current=scorer_i,

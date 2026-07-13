@@ -87,8 +87,7 @@ def test_kur_report_with_scorer(tmp_path):
     csv_path = _make_csv(tmp_path)
     job = tmp_path / "rep.json"
     spec = _job(csv_path, tmp_path / "unused")
-    # action_residual is registered at import, so the strategy loads in the subprocess; report
-    # runs no scorer stage, so its obs/action params are never exercised here.
+    # action_residual is registered at import and the report includes its computed output.
     spec["strategy"] = {
         "name": "withscorer",
         "define": {"am": {"source": "e.act", "reduce": "mean"}},
@@ -103,6 +102,7 @@ def test_kur_report_with_scorer(tmp_path):
     assert "segment pool is" not in p.stderr.replace("\n", " ")   # the all-skipped warning
     rep = json.loads(out_json.read_text())
     assert rep["n_segments"] > 0, f"empty report — sources were skipped:\n{p.stdout}\n{p.stderr}"
+    assert "resid" in rep["metrics"]
 
 
 def test_kur_experiment_runs(tmp_path):

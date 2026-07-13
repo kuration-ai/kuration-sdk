@@ -15,7 +15,7 @@ import numpy as np
 from .segment import Segment
 
 
-def quantile_bins(values: Sequence[float], n_bins: int) -> np.ndarray:
+def quantile_bins(values: Sequence[float] | np.ndarray, n_bins: int) -> np.ndarray:
     """n_bins-1 edge values defining n_bins equal-frequency bins."""
     arr = np.asarray(values, dtype=np.float64)
     if arr.size == 0:

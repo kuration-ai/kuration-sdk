@@ -16,7 +16,9 @@ each record being that entity's fields at a timestep merged with the tick's glob
 `write_dataset(..., span_steps=N)` (or `span_seconds=`) to subdivide each track into
 independently-budgeted spans, so the fill keeps the *best parts* of a long source rather than
 all-or-nothing. Each span's priority and tags aggregate only the segments overlapping it, and
-admitted ids become `(source, entity, span_index)`. Unset → one whole-track span.
+the same `clip_aggregate` (`max`/`mean`/`min`) aggregates every segment feature into the span's
+`track.meta`; this is what `segment:<feature>` modalities read. Admitted ids become
+`(source, entity, span_index)`. Unset → one whole-track span.
 (`span_steps < shard_length` with `short_policy: "drop"` is rejected at preflight — every span
 would chunk to zero shards while still consuming the hours budget.)
 
@@ -43,7 +45,7 @@ spec = OutputSpec.from_dict({
 | kind | pulls from |
 |---|---|
 | `field:<name>` | the track entity's schema field at that timestep |
-| `segment:<attr>` | a per-track scalar in `track.meta` (e.g. a precomputed numeric label) |
+| `segment:<attr>` | a selected segment feature (count path) or span-aggregated feature (hours path); low-level `write_track` reads the same key from `track.meta` |
 | `encoder:<hook>` | an `OutputEncoder` — domain code |
 
 **`short_policy`:** `keep` → last shard is its (shorter) real tail; `pad` → last shard padded
@@ -53,6 +55,10 @@ to `shard_length` with zero rows (real length recorded); `drop` → short tail d
 track entity is absent at a real timestep, so zero-filled modality values remain distinguishable
 from genuine zeros. Set `presence_mask: false` only when a legacy consumer cannot accept the
 auxiliary array.
+
+**Missing modality values are errors:** for a present entity, every declared `field:` and
+`encoder:` source must return a value, and every `segment:` attribute must exist. A missing hook,
+field, or segment feature raises with source/entity/row context instead of silently writing zero.
 
 **Containers:** `npz` (numpy-native, tensor default) and `json` (human-readable) are
 dependency-free; `hdf5` needs the `[array]` extra and `parquet` the `[parquet]` extra. All four

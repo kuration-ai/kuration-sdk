@@ -14,7 +14,7 @@ write with `short_policy="pad"`/a fixed `shard_length`) before batching.
 """
 from __future__ import annotations
 
-from typing import Callable, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 
@@ -47,7 +47,8 @@ class ShardDataset:
     def __getitem__(self, i: int) -> dict:
         entry = self.entries[i]
         arrays = read_shard_arrays(entry, self.container, modalities=self.modalities, trim=self.trim)
-        item = {k: self._torch.from_numpy(np.ascontiguousarray(v)) for k, v in arrays.items()}
+        item: dict[str, Any] = {
+            k: self._torch.from_numpy(np.ascontiguousarray(v)) for k, v in arrays.items()}
         if self.include_meta:
             item["_meta"] = {"source_id": entry.get("source_id"), "entity_id": entry.get("entity_id"),
                              "split": entry.get("split"), "n_steps": entry.get("n_steps"),

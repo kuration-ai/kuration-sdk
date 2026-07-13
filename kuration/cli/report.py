@@ -37,16 +37,22 @@ def _run(args) -> None:
     strategy = load_strategy(job["strategy"], schema)
     segmenter = build_segmenter(job, schema)
     sources = resolve_sources(job, adapter)
+    progress = cli_progress_for(quiet=args.quiet)
 
-    # scorer outputs are produced by the scorer stage, not the feature pass — exclude them
-    # (report runs no selection/scorers, so the output is simply absent from the profile).
+    # Scorer outputs are produced by the scorer stage, not the feature pass — exclude them
+    # here, then apply the configured scorers over the complete pool below.
     registered = [r for r in strategy.referenced_metrics()
                   if r not in strategy.define and r not in strategy.scorer_outputs()]
     segs, errors, _ = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
         workers=job.get("workers", 1), on_error=job.get("on_error", "skip"),
-        streaming=job.get("streaming", False), progress=cli_progress_for(quiet=args.quiet))
+        streaming=job.get("streaming", False), progress=progress)
+
+    if strategy.scorers:
+        from ..scorers import apply_scorers
+        apply_scorers(strategy.scorers, segs, schema=schema, adapter=adapter,
+                      seed=job.get("seed", 0), progress=progress)
 
     rep = dataset_report(segs)
     print(f"{rep['n_segments']} segments from {rep['n_sources']} sources "

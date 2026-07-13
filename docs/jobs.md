@@ -67,7 +67,8 @@ shared pool. Output (stdout, and `--out` JSON): per-arm `n_selected` + per-metri
 ## Report jobs (`kur-report`)
 
 No extra keys — the shared keys above. Scores every segment and prints/writes per-metric
-`mean/std/p50/p95/min/max` + histogram, plus tag and group counts. No selection, no scorers.
+`mean/std/p50/p95/min/max` + histogram, plus tag and group counts. No selection is run;
+configured whole-pool scorers are executed and included like other metrics.
 
 ## A complete curate job
 

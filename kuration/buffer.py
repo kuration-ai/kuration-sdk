@@ -76,7 +76,8 @@ def empty_like(schema: SchemaSpec, T: int, E: int) -> WindowBuffer:
         else:
             numeric[name] = np.full((T, E, f.width), np.nan, dtype=np.float64)
     globals_ = {g: np.full(T, np.nan, dtype=np.float64) for g in schema.globals}
-    events = {s: [[] for _ in range(T)] for s in schema.event_streams}
+    events: dict[str, list[list[dict]]] = {
+        s: [[] for _ in range(T)] for s in schema.event_streams}
     return WindowBuffer(schema=schema, T=T, E=E, numeric=numeric, codes=codes,
                         vocabs=vocabs, valid=np.zeros((T, E), dtype=bool),
                         events=events, globals=globals_)

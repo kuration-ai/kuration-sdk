@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+import math
 from typing import Any, Iterable, Iterator, Optional
 
 from .buffer import Tick
@@ -35,10 +36,18 @@ class Segmenter:
         if unit not in ("steps", "seconds"):
             raise ValueError(f"unit must be 'steps' or 'seconds', got {unit!r}")
         if unit == "seconds":
-            if not sample_hz:
+            if (not isinstance(sample_hz, (int, float)) or isinstance(sample_hz, bool)
+                    or not math.isfinite(sample_hz) or sample_hz <= 0):
                 raise ValueError("unit='seconds' needs the schema's sample_hz")
+            for name, value in (("window", window), ("stride", stride)):
+                if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                        or not math.isfinite(value) or value <= 0):
+                    raise ValueError(f"{name} must be a finite positive number")
             window = round(window * sample_hz)
             stride = round(stride * sample_hz)
+        elif (not isinstance(window, int) or isinstance(window, bool)
+              or not isinstance(stride, int) or isinstance(stride, bool)):
+            raise ValueError("step-unit window/stride must be positive integers")
         self.window = int(window)
         self.stride = int(stride)
         if self.window < 1 or self.stride < 1:

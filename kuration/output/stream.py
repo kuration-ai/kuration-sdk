@@ -31,7 +31,7 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
         st[(j["eid"], j["span_index"])] = {
             "buf": [], "shard": 0, "entries": [], "start": j["start"], "end": j["end"],
             "split": j["split"], "eid": j["eid"], "suffix": j.get("name_suffix", ""),
-            "group": j.get("group")}
+            "group": j.get("group"), "meta": dict(j.get("meta") or {})}
 
     def _flush(key, pad_to=None):
         s = st[key]
@@ -41,8 +41,9 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
         piece, padded = s["buf"], False
         if pad_to and real_len < pad_to:
             piece, padded = s["buf"] + [None] * (pad_to - real_len), True
-        ctx = {"schema": schema, "track": {"group": s["group"], "source_id": source_id,
-                                           "entity_id": s["eid"]}}
+        ctx = {"schema": schema, "track": {**s["meta"], "group": s["group"],
+                                             "source_id": source_id,
+                                             "entity_id": s["eid"]}}
         name = track_name(source_id, s["eid"], s["suffix"])
         base = f"{out_dir}/{s['split']}/{name}_shard{s['shard']:04d}" + ("_padded" if padded else "")
         if resume and _exists(base + ext):

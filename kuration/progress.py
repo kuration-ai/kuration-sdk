@@ -32,7 +32,8 @@ def cli_progress(*, file=None):
                 print(f"[{phase}] {current}/{total}{detail}", file=file)
                 last[phase] = current
         elif event == "complete":
-            detail = e.get("detail")
-            print(f"[{phase}] complete" + (f" ({detail})" if detail else ""), file=file)
+            completion_detail = e.get("detail")
+            print(f"[{phase}] complete" + (f" ({completion_detail})" if completion_detail else ""),
+                  file=file)
 
     return report

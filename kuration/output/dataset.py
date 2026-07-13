@@ -8,6 +8,7 @@ the strategy's *best* N hours rather than a random draw.
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from typing import Callable, Iterable, Optional
 
@@ -74,14 +75,37 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     tick iterator. Adapters that cannot honor that contract reject the option loudly."""
     started = datetime.now(timezone.utc).isoformat()
     sources = list(sources)
-    sample_hz = sample_hz or schema.sample_hz
-    if not sample_hz:
+    sample_hz = schema.sample_hz if sample_hz is None else sample_hz
+    if sample_hz is None:
         raise ValueError("write_dataset needs sample_hz (schema.sample_hz or explicit) for the "
                          "hours budget")
-    if train_hours < 0 or test_hours < 0:
-        raise ValueError("train_hours and test_hours must be >= 0")
+    if (not isinstance(sample_hz, (int, float)) or isinstance(sample_hz, bool)
+            or not math.isfinite(sample_hz) or sample_hz <= 0):
+        raise ValueError(f"sample_hz must be a finite positive number, got {sample_hz!r}")
+    for name, value in (("train_hours", train_hours), ("test_hours", test_hours)):
+        if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                or not math.isfinite(value) or value < 0):
+            raise ValueError(f"{name} must be a finite non-negative number, got {value!r}")
+    if clip_aggregate not in {"max", "min", "mean"}:
+        raise ValueError("clip_aggregate must be 'max', 'min', or 'mean'")
+    if span_steps is not None and span_seconds is not None:
+        raise ValueError("pass only one of span_steps or span_seconds")
+    if span_steps is not None and (not isinstance(span_steps, int)
+                                   or isinstance(span_steps, bool) or span_steps < 1):
+        raise ValueError("span_steps must be a positive integer")
+    if span_seconds is not None and (
+            not isinstance(span_seconds, (int, float)) or isinstance(span_seconds, bool)
+            or not math.isfinite(span_seconds) or span_seconds <= 0):
+        raise ValueError("span_seconds must be a finite positive number")
+    if not isinstance(workers, int) or isinstance(workers, bool) or workers < 1:
+        raise ValueError("workers must be a positive integer")
+    if not isinstance(resume, bool) or not isinstance(streaming, bool):
+        raise ValueError("resume and streaming must be true or false")
     spec.validate_schema(schema)
-    span_len = span_steps if span_steps else (round(span_seconds * sample_hz) if span_seconds else None)
+    span_len = span_steps if span_steps is not None else (
+        round(span_seconds * sample_hz) if span_seconds is not None else None)
+    if span_len is not None and span_len < 1:
+        raise ValueError("span_seconds is shorter than one sample at the effective sample_hz")
     if span_len is not None and spec.short_policy == "drop" and span_len < spec.shard_length:
         raise ValueError(
             f"span_steps={span_len} < shard_length={spec.shard_length} with "
@@ -122,33 +146,46 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     bin_segments(pool, strategy.axes)
     prio = segment_priorities(pool, strategy, seed=seed)
 
-    # Per-source segment (start, end, priority, tags) so a span's priority/tags aggregate only
-    # the segments overlapping THAT span (not the whole source).
+    # Per-source segment data so a span's priority/tags/features aggregate only the segments
+    # overlapping THAT span (not the whole source). Aggregated features populate Track.meta,
+    # which makes documented `segment:<feature>` output modalities work end to end.
     segs_by_src: dict = {}
     for i, s in enumerate(pool):
-        segs_by_src.setdefault(s.source_id, []).append((s.start_idx, s.end_idx, float(prio[i]), s.tags))
-    _reduce = {"max": max, "min": min, "mean": lambda x: sum(x) / len(x)}[clip_aggregate]
+        segs_by_src.setdefault(s.source_id, []).append(
+            (s.start_idx, s.end_idx, float(prio[i]), s.tags, dict(s.features)))
+    def _reduce(values: list[float]) -> float:
+        if clip_aggregate == "max":
+            return max(values)
+        if clip_aggregate == "min":
+            return min(values)
+        return sum(values) / len(values)
 
-    def _span_prio_tags(src, start, end):
-        prios, tags = [], set()
-        for st, en, p, tg in segs_by_src.get(src, ()):
+    def _span_summary(src, start, end):
+        prios: list[float] = []
+        tags: set = set()
+        feature_values: dict[str, list[float]] = {}
+        for st, en, p, tg, features in segs_by_src.get(src, ()):
             if st < end and en > start:
                 prios.append(p)
                 tags |= tg
-        return (_reduce(prios) if prios else float("-inf")), frozenset(tags)
+                for name, value in features.items():
+                    feature_values.setdefault(name, []).append(float(value))
+        meta = {name: _reduce(values) for name, values in feature_values.items()}
+        return ((_reduce(prios) if prios else float("-inf")), frozenset(tags), meta)
 
     # Build span items: (source, entity, span_index) -> {priority, seconds, group, tags}.
-    items, span_index = [], {}
+    items, span_index, span_meta = [], {}, {}
     for src, tlist in source_tracks.items():
         g = group_of(src) if group_of else None
         for (eid, n) in tlist:
             bounds = ([(s, min(s + span_len, n)) for s in range(0, n, span_len)]
                       if span_len else [(0, n)])
             for k, (start, end) in enumerate(bounds):
-                p, tg = _span_prio_tags(src, start, end)
+                p, tg, meta = _span_summary(src, start, end)
                 items.append({"id": (src, eid, k), "source_id": src, "priority": p,
                               "seconds": (end - start) / sample_hz, "group": g, "tags": tg})
                 span_index[(src, eid, k)] = (start, end)
+                span_meta[(src, eid, k)] = meta
     n_tracks = sum(len(t) for t in source_tracks.values())
     group_overshoot = (strategy.group_cap or {}).get("max_group_overshoot") \
         if strategy.group_cap else None
@@ -173,7 +210,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             from .stream import stream_source_shards
             jobs = [{"eid": eid, "span_index": k, "start": span_index[(src, eid, k)][0],
                      "end": span_index[(src, eid, k)][1], "split": split.get(src, "train"),
-                     "name_suffix": suffix(k), "group": group_of(src) if group_of else None}
+                     "name_suffix": suffix(k), "group": group_of(src) if group_of else None,
+                     "meta": span_meta[(src, eid, k)]}
                     for (eid, k) in by_source[src]]
             tick_iter = (adapter.iter_ticks(src) if hasattr(adapter, "iter_ticks")
                          else adapter.ticks(src))
@@ -190,6 +228,7 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             start, end = span_index[(src, eid, k)]
             sub = tr if (start, end) == (0, tr.n_steps) else Track(
                 tr.source_id, tr.entity_id, tr.records[start:end], dict(tr.meta))
+            sub.meta.update(span_meta[(src, eid, k)])
             sub.meta["group"] = group_of(src) if group_of else None
             entries += write_track(out_dir, sub, spec, encoder=encoder, schema=schema,
                                    split=split.get(src, "train"), resume=resume,

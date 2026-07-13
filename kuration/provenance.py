@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import marshal
 import pickle
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -17,20 +18,45 @@ def _code_hash(obj) -> str | None:
     try:
         return _sha(inspect.getsource(obj).encode())
     except (OSError, TypeError):
-        return None
+        code = getattr(obj, "__code__", None)
+        return _sha(marshal.dumps(code)) if code is not None else None
+
+
+def _state_hash(value) -> str:
+    """Best-effort stable state hash. Repr is a conservative fallback for unpicklable plugin
+    state; it is preferable to omitting state and incorrectly approving a stale resume."""
+    try:
+        return _sha(pickle.dumps(value, protocol=5))
+    except Exception:
+        return _sha(repr(value).encode())
+
+
+def _function_state(fn) -> dict:
+    closure = []
+    for cell in fn.__closure__ or ():
+        try:
+            closure.append(cell.cell_contents)
+        except ValueError:                     # empty closure cell
+            closure.append("<empty closure cell>")
+    return {"defaults": fn.__defaults__, "kwdefaults": fn.__kwdefaults__,
+            "closure": tuple(closure)}
 
 
 def component_identity(obj) -> dict | None:
     """Stable-enough identity for configured adapters, encoders, and callbacks."""
     if obj is None:
         return None
-    target = obj if inspect.isfunction(obj) else type(obj)
+    is_fn = inspect.isfunction(obj)
+    is_method = inspect.ismethod(obj)
+    target = obj if is_fn else obj.__func__ if is_method else type(obj)
     out = {"type": f"{target.__module__}.{target.__qualname__}", "code_sha256": _code_hash(target)}
-    if not inspect.isfunction(obj):
-        try:
-            out["state_sha256"] = _sha(pickle.dumps(obj, protocol=5))
-        except Exception:
-            out["state_sha256"] = _sha(repr(vars(obj) if hasattr(obj, "__dict__") else obj).encode())
+    if is_fn:
+        out["state_sha256"] = _state_hash(_function_state(obj))
+    elif is_method:
+        out["state_sha256"] = _state_hash(
+            {"function": _function_state(obj.__func__), "self": obj.__self__})
+    else:
+        out["state_sha256"] = _state_hash(obj)
     return out
 
 

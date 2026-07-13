@@ -13,7 +13,6 @@ a moved/copied dataset dir works (stale manifest paths are rebased onto the give
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Optional, Union
 
 import numpy as np

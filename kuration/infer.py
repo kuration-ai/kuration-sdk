@@ -279,6 +279,7 @@ def _infer_rows(rows: list, *, name, time, entity, hz, kinds) -> tuple[SchemaSpe
         else:
             kind, veclen = _classify_column(col, vals)
         if kind == "vector":
+            assert veclen is not None
             fields_spec[col] = {"kind": "vector", "dims": [f"d{i}" for i in range(veclen)]}
             hints_fields[col] = [f"{col}.{i}" for i in range(veclen)]
             list_columns[col] = veclen
@@ -338,6 +339,7 @@ def _infer_ticks(ticks: list, *, name, hz) -> tuple[SchemaSpec, dict]:
     for fname, vals in per_field.items():
         kind, veclen = _classify_column(fname, vals)
         if kind == "vector":
+            assert veclen is not None
             fields_spec[fname] = {"kind": "vector", "dims": [f"d{i}" for i in range(veclen)]}
         else:
             fields_spec[fname] = {"kind": kind}

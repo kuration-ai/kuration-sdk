@@ -154,7 +154,9 @@ coverage — e.g. `weights: {"informativeness": 1.0}` *and* a `feature_space` k-
 quality and diversity are separate, weighted axes rather than an either/or. Register custom
 scorers with `register_scorer(name, factory)`; `action_residual` (an action-conditioned
 predictive-residual, needs `[methods]`) ships as a reference. Validated at load (scorer must be
-registered). Reproducibility holds *given the same pinned model*.
+registered). A scorer must return exactly one finite scalar per segment (`shape == (n,)`);
+malformed or non-finite output is rejected before selection. Reproducibility holds *given the
+same pinned model*.
 
 ## Tags (declarative, for tag coverage)
 

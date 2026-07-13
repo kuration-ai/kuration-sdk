@@ -20,7 +20,7 @@ def compile_tagger(spec, schema: SchemaSpec):
     froms = spec.get("from") if isinstance(spec, dict) else spec
     if not froms:
         raise ValueError("tags spec needs a non-empty 'from' list")
-    plan = []
+    plan: list[tuple[str, ...]] = []
     for src in froms:
         if "." in src:
             stream, field = src.split(".", 1)

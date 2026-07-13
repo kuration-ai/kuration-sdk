@@ -199,7 +199,8 @@ the option because they cannot guarantee bounded memory.
 `resume=True` is safe against crashes and drift: shards are written atomically (no partial
 file ever sits at the final path), and a complete run fingerprint is pinned in a sidecar.
 Changes to sources, schema, strategy, segmentation, budgets, adapter/encoder code or state,
-callbacks, seed, or output spec reject resume. To change a run, use a fresh `out_dir`.
+callbacks (including captured closure/default values), seed, or output spec reject resume. To
+change a run, use a fresh `out_dir`.
 
 Custom registry extensions can be loaded from a job with `"plugins": ["my_package.plugin"]`,
 or from Python with `load_plugins(...)`. Installed packages may expose a `kuration.plugins`

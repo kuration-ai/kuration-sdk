@@ -94,7 +94,7 @@
             "required": ["dtype", "source"],
             "properties": {
               "dtype": {"type": "string"},
-              "shape": {"type": "array", "items": {"type": "integer"}},
+              "shape": {"type": "array", "items": {"type": "integer", "minimum": 1}},
               "source": {"type": "string", "pattern": "^(field|segment|encoder):.+"}
             }
           }

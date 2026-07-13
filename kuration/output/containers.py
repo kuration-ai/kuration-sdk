@@ -27,7 +27,7 @@ def write_shard(path_no_ext: str, container: str, arrays: dict[str, np.ndarray],
     path = path_no_ext + CONTAINER_EXT[container]
     with staged_write(path) as local:    # real local path; uploaded on exit if `path` is remote
         if container == "npz":
-            np.savez(local, _n_steps=np.asarray(n_steps), **arrays)
+            np.savez(local, _n_steps=np.asarray(n_steps), **arrays)  # type: ignore[arg-type]
         elif container == "json":
             Path(local).write_text(json.dumps(
                 {"_n_steps": int(n_steps),

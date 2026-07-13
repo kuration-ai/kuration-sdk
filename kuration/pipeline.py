@@ -15,6 +15,7 @@ The factory intentionally shadows `builtins.input` inside this module.
 from __future__ import annotations
 
 import json
+import math
 import os
 from itertools import islice
 from typing import Any, Callable, Optional
@@ -355,6 +356,7 @@ def _input_files(src, op, *, schema, fields, time, entity, hz, kinds, sample, gl
     schema, fmap, tc, ec = _infer_or_explicit(
         sample_data, schema=schema, fields=fields, time=time, entity=entity, hz=hz,
         kinds=kinds, tabular=kind in _TABULAR_KINDS)
+    ad: Any
     if kind == "timeseries":
         ad = TimeseriesAdapter(schema, fields=fmap, time_column=tc, entity_column=ec,
                                globals=globals, **adapter_kw)
@@ -435,8 +437,9 @@ class Pipeline:
         self._test_hours_explicit = False
         self._split_test: Optional[float] = None
         self._group_of: Optional[Callable] = None
-        self._options = {"workers": 1, "on_error": "skip", "seed": 0, "streaming": False,
-                         "resume": False, "sample_hz": None, "progress": None}
+        self._options: dict[str, Any] = {
+            "workers": 1, "on_error": "skip", "seed": 0, "streaming": False,
+            "resume": False, "sample_hz": None, "progress": None}
 
     # ---- immutability plumbing -------------------------------------------------------
     def _clone(self) -> "Pipeline":
@@ -555,9 +558,9 @@ class Pipeline:
             else:
                 raise ValueError(f"organize(): unsupported positional form {args!r}; use "
                                  f"organize(metric, bins=n) or organize(metric, 'bin', n)")
-        bins = int(bins) if bins is not None else 4
-        if bins < 1:
-            raise ValueError(f"organize(): bins must be >= 1, got {bins}")
+        bins = bins if bins is not None else 4
+        if not isinstance(bins, int) or isinstance(bins, bool) or bins < 1:
+            raise ValueError(f"organize(): bins must be a positive integer, got {bins!r}")
         p = self._next("organize", metric, bins=bins)
         p._axes.append((metric, bins))
         return p
@@ -615,6 +618,19 @@ class Pipeline:
                              f"expected {sorted(_OPTION_KEYS)}")
         if "on_error" in kw and kw["on_error"] not in ("skip", "raise"):
             raise ValueError(f"on_error must be 'skip' or 'raise', got {kw['on_error']!r}")
+        if "workers" in kw and (not isinstance(kw["workers"], int)
+                                or isinstance(kw["workers"], bool) or kw["workers"] < 1):
+            raise ValueError("workers must be a positive integer")
+        if "seed" in kw and (not isinstance(kw["seed"], int) or isinstance(kw["seed"], bool)):
+            raise ValueError("seed must be an integer")
+        for flag in ("streaming", "resume"):
+            if flag in kw and not isinstance(kw[flag], bool):
+                raise ValueError(f"{flag} must be true or false")
+        if "sample_hz" in kw and kw["sample_hz"] is not None:
+            hz = kw["sample_hz"]
+            if (not isinstance(hz, (int, float)) or isinstance(hz, bool)
+                    or not math.isfinite(hz) or hz <= 0):
+                raise ValueError("sample_hz must be a finite positive number")
         if "progress" in kw and kw["progress"] is not None and not callable(kw["progress"]):
             raise ValueError("progress must be callable or None")
         p = self._next("options", **kw)
@@ -630,6 +646,16 @@ class Pipeline:
         top-k when weights are given; otherwise it must be named."""
         if (n is None) == (hours is None):
             raise ValueError("curate() needs exactly one of n= (count) or hours= (budget)")
+        if n is not None and (not isinstance(n, int) or isinstance(n, bool) or n < 1):
+            raise ValueError("curate(n=...) needs a positive integer")
+        if hours is not None and (not isinstance(hours, (int, float))
+                                  or isinstance(hours, bool) or not math.isfinite(hours)
+                                  or hours <= 0):
+            raise ValueError("curate(hours=...) needs a finite positive number")
+        if test_hours is not None and (not isinstance(test_hours, (int, float))
+                                       or isinstance(test_hours, bool)
+                                       or not math.isfinite(test_hours) or test_hours < 0):
+            raise ValueError("test_hours must be a finite non-negative number")
         if method is not None:
             canon = _METHOD_ALIASES.get(str(method).lower())
             if canon is None:
@@ -749,12 +775,14 @@ class Pipeline:
                     if self._hours is not None else "")
             raise ValueError(f"collect() needs a count: pass n= or call .curate(n=...) "
                              f"first{hint}")
+        from .strategy import validate_target_size
+        n = validate_target_size(n)
         self._check_exec()
         strategy = self._compile()
         from .curate import curate as _curate
         return _curate(schema=self.schema, adapter=self.adapter, sources=self.sources,
                        strategy=strategy, segmenter=self._segmenter_or_default(),
-                       target_size=int(n), seed=self._options["seed"],
+                       target_size=n, seed=self._options["seed"],
                        group_of=self._group_of, tags_of=None,
                        test_frac=self._split_test or 0.0, workers=self._options["workers"],
                        on_error=self._options["on_error"],
@@ -787,6 +815,8 @@ class Pipeline:
     def experiment(self, arms: dict, n: int, baseline: Optional[str] = None) -> dict:
         """Multi-arm comparison over THIS pipeline's sources. `arms` maps name ->
         Pipeline (its compiled strategy) or raw strategy dict."""
+        from .strategy import validate_target_size
+        n = validate_target_size(n)
         self._check_exec()
         from .experiment import Arm, run_experiment
         from .strategy import load_strategy
@@ -801,7 +831,7 @@ class Pipeline:
                                  f"got {type(arm).__name__}")
         return run_experiment(schema=self.schema, adapter=self.adapter,
                               sources=self.sources, arms=built,
-                              segmenter=self._segmenter_or_default(), target_size=int(n),
+                              segmenter=self._segmenter_or_default(), target_size=n,
                               seed=self._options["seed"], baseline=baseline,
                               group_of=self._group_of, workers=self._options["workers"],
                               on_error=self._options["on_error"],
@@ -849,7 +879,7 @@ class Pipeline:
         if not mods:
             raise ValueError("output(): include/exclude left no modalities")
         from .output.spec import OutputSpec
-        spec = OutputSpec.from_dict({"modalities": mods, "shard_length": int(shard_length),
+        spec = OutputSpec.from_dict({"modalities": mods, "shard_length": shard_length,
                                      "short_policy": short_policy, "container": container})
         if isinstance(encoder, str):
             from .output.base import get_encoder
@@ -915,6 +945,7 @@ class Pipeline:
                     if not recs:
                         continue
                     sub = Track(tr.source_id, tr.entity_id, recs, dict(tr.meta))
+                    sub.meta.update(seg.features)
                     sub.meta["group"] = seg.group
                     entries += write_track(out_dir, sub, spec, encoder=encoder,
                                            schema=self.schema, split=split,

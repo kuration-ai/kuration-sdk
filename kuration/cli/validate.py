@@ -18,13 +18,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
 from ..output import OutputSpec
 from ..strategy import load_strategy
-from ._common import (build_adapter, build_schema, build_segmenter, load_job_plugins, read_job,
-                      resolve_sources)
+from ._common import build_adapter, build_schema, build_segmenter, load_job_plugins, read_job
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "job.schema.json"
 
@@ -41,6 +41,17 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
     """Run the SDK's load-time validators. Raises ValueError/etc on the first problem;
     returns a summary dict on success."""
     kind = job_kind(job)
+    workers = job.get("workers", 1)
+    if not isinstance(workers, int) or isinstance(workers, bool) or workers < 1:
+        raise ValueError("workers must be a positive integer")
+    seed = job.get("seed", 0)
+    if not isinstance(seed, int) or isinstance(seed, bool):
+        raise ValueError("seed must be an integer")
+    if job.get("on_error", "skip") not in {"skip", "raise"}:
+        raise ValueError("on_error must be 'skip' or 'raise'")
+    for flag in ("resume", "streaming"):
+        if flag in job and not isinstance(job[flag], bool):
+            raise ValueError(f"{flag} must be true or false")
     load_job_plugins(job)
     schema = build_schema(job)
     adapter = build_adapter(job, schema)
@@ -56,8 +67,13 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
             if "name" not in a or "strategy" not in a:
                 raise ValueError(f"each arm needs 'name' and 'strategy' (offending: {a!r})")
             load_strategy(a["strategy"], schema)      # compiles DSL, validates tags/scorers/refs
+        names = [a["name"] for a in job["arms"]]
+        if len(set(names)) != len(names):
+            raise ValueError("experiment arm names must be unique")
         if "target_size" not in job:
             raise ValueError("experiment job needs 'target_size'")
+        from ..strategy import validate_target_size
+        validate_target_size(job["target_size"])
     else:
         if "strategy" not in job:
             raise ValueError("job needs a 'strategy'")
@@ -70,6 +86,11 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
         output.validate_schema(schema)
         if "train_hours" not in job:
             raise ValueError("curate job needs 'train_hours'")
+        for name in ("train_hours", "test_hours"):
+            value = job.get(name, 0.0)
+            if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                    or not math.isfinite(value) or value < 0):
+                raise ValueError(f"{name} must be a finite non-negative number")
         if "out" not in job:
             raise ValueError("curate job needs an 'out' directory")
 

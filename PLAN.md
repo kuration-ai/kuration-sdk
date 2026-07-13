@@ -71,7 +71,7 @@ Selected segments → training shards, no format baked in. Mirrors the input sid
 `OutputSpec` + pluggable `OutputEncoder` + generic `ShardWriter`.
 
 - **`OutputSpec`** declares modalities; each routes via `field:<name>` (straight from the
-  record), `segment:<attr>` (per-track scalar), or `encoder:<hook>` (an `OutputEncoder` — where
+  record), `segment:<attr>` (selected/aggregated segment feature), or `encoder:<hook>` (an `OutputEncoder` — where
   domain logic like video-decode lives, never in core). Plus `shard_length`, `short_policy`
   (keep/pad/drop), `container`.
 - **Containers** (`output/containers.py`): `npz` + `json` (dep-free), `hdf5` (`[array]`),
@@ -87,7 +87,8 @@ Selected segments → training shards, no format baked in. Mirrors the input sid
 
 ## 5. What shipped (phase log)
 
-The original A–F phasing, plus work added beyond the initial plan. **127 tests.**
+The original A–F phasing, plus work added beyond the initial plan. The canonical count is kept
+in `README.md` and verified by CI rather than duplicated here.
 
 | phase | delivered |
 |---|---|
@@ -132,7 +133,8 @@ it to *consume* this SDK ("Phase G") is possible future work but **out of scope*
   unreferenced features, ~10× headroom) vs. true disk-external (multi-pass streaming
   binning/selection; feature-space methods can't go external) vs. both. **Deferred** — current
   scale (single-source streaming + parallel) judged "good enough" for now.
-- **Repo hygiene** — LICENSE, CI, packaging metadata, `py.typed`, lint. **Parked.**
+- **Public-release metadata** — LICENSE remains pending the corporate decision. Packaging
+  metadata, `py.typed`, CI, lint, and type-check configuration are complete.
 
 ## 8. Decisions settled during the build
 
@@ -140,4 +142,5 @@ it to *consume* this SDK ("Phase G") is possible future work but **out of scope*
 - Dist `kuration-sdk`, import `kuration`, console scripts `kur-*`.
 - Output model = declared modalities + encoder hooks + container (the chosen altitude).
 - Streaming shipped as **opt-in** (`streaming=True`); in-memory stays the default.
-- Tensor containers: HDF5 + NPZ (npz dep-free); Parquet for tabular; zarr not pursued.
+- Tensor containers: HDF5 + NPZ (npz dep-free); Parquet for tabular; Zarr is available as an
+  optional input adapter.

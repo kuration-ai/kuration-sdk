@@ -43,6 +43,8 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     `workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips a bad source;
     `streaming=True` scores each source out-of-core with a streaming-capable adapter.
     """
+    from .strategy import validate_target_size
+    target_size = validate_target_size(target_size)
     referenced = strategy.referenced_metrics()
     # scorer outputs are produced by the scorer stage, not the feature pass — exclude them.
     registered = [r for r in referenced

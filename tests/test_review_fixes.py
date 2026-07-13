@@ -524,3 +524,133 @@ def test_budget_accounting_reports_emitted_underfill(tmp_path):
     assert budget["emission_loss_seconds"]["train"] == 2
     manifest = json.loads((tmp_path / "budget" / "dataset_manifest.json").read_text())
     assert manifest["budget"] == budget
+
+
+# ---- 2026-07 full review: correctness, provenance, and loud output contracts ---------
+@pytest.mark.parametrize("target", [0, -1, 1.5, True])
+def test_select_rejects_invalid_target_size(target):
+    from kuration import Segment, select
+    segs = [Segment("s", i, i + 1, (i, i + 1), features={"am": float(i)})
+            for i in range(3)]
+    with pytest.raises(ValueError, match="target_size"):
+        select(segs, _strategy(), target_size=target)
+
+
+@pytest.mark.parametrize("train,test", [
+    (float("nan"), 0), (float("inf"), 0), (-1, 0), (0, float("nan")),
+])
+def test_fill_rejects_invalid_budgets(train, test):
+    items = [{"id": 0, "source_id": "s", "priority": 1.0,
+              "seconds": 1.0, "group": None}]
+    with pytest.raises(ValueError, match="hours"):
+        fill_to_hours(items, train_hours=train, test_hours=test)
+
+
+@pytest.mark.parametrize("seconds", [0, -1, float("nan"), float("inf")])
+def test_fill_rejects_invalid_item_seconds(seconds):
+    items = [{"id": 0, "source_id": "s", "priority": 1.0,
+              "seconds": seconds, "group": None}]
+    with pytest.raises(ValueError, match="seconds"):
+        fill_to_hours(items, train_hours=1, test_hours=0)
+
+
+@pytest.mark.parametrize("kwargs,match", [
+    ({"sample_hz": float("nan")}, "sample_hz"),
+    ({"span_steps": -1}, "span_steps"),
+    ({"span_seconds": float("inf")}, "span_seconds"),
+    ({"span_steps": 4, "span_seconds": 4}, "only one"),
+    ({"clip_aggregate": "median"}, "clip_aggregate"),
+])
+def test_write_dataset_rejects_invalid_numeric_options(tmp_path, kwargs, match):
+    data = _data()
+    with pytest.raises(ValueError, match=match):
+        write_dataset(str(tmp_path / "bad"), schema=SCHEMA,
+                      adapter=MemAdapter(SCHEMA, data), sources=list(data),
+                      strategy=_strategy(), segmenter=Segmenter(4, 4), spec=SPEC,
+                      train_hours=1, **kwargs)
+
+
+def test_callable_provenance_includes_closure_state():
+    from kuration.provenance import component_identity
+
+    def make(value):
+        return lambda source: (source, value)
+
+    assert component_identity(make(1)) == component_identity(make(1))
+    assert component_identity(make(1)) != component_identity(make(2))
+
+
+def test_filter_uses_its_own_feature_space_without_strategy_default(monkeypatch):
+    from types import SimpleNamespace
+    import kuration.methods as methods
+    from kuration import Segment
+
+    seen = []
+    monkeypatch.setitem(methods._FILTERS, "anomaly",
+                        lambda segs, names, **kw: seen.append(names) or segs)
+    strategy = SimpleNamespace(
+        filters=[{"type": "anomaly", "feature_space": ["am"]}],
+        feature_space=None, axes=[], method="top-k")
+    segs = [Segment("s", 0, 1, (0, 1), features={"am": 1.0})]
+    assert methods.apply_filters(segs, strategy) == segs
+    assert seen == [["am"]]
+
+
+def test_per_group_filter_accepts_heterogeneous_group_keys(monkeypatch):
+    from types import SimpleNamespace
+    import kuration.methods as methods
+    from kuration import Segment
+
+    monkeypatch.setitem(methods._FILTERS, "anomaly", lambda segs, names, **kw: segs)
+    strategy = SimpleNamespace(
+        filters=[{"type": "anomaly", "feature_space": ["am"], "per_group": True}],
+        feature_space=None, axes=[], method="top-k")
+    segs = [Segment("a", 0, 1, (0, 1), features={"am": 1.0}, group=1),
+            Segment("b", 0, 1, (0, 1), features={"am": 2.0}, group="g")]
+    assert methods.apply_filters(segs, strategy) == segs
+
+
+def test_write_track_rejects_missing_present_field(tmp_path):
+    entries_spec = OutputSpec.from_dict({"shard_length": 2, "modalities": {
+        "act": {"dtype": "float32", "shape": [], "source": "field:act"}}})
+    track = Track("s", 0, [{"pos": (0.0, 0.0)}])
+    with pytest.raises(ValueError, match="missing value.*act"):
+        write_track(str(tmp_path), track, entries_spec, schema=SCHEMA)
+
+
+def test_write_track_rejects_missing_encoder_output(tmp_path):
+    class MissingEncoder:
+        def timestep(self, record, ctx):
+            return {}
+
+    spec = OutputSpec.from_dict({"shard_length": 2, "modalities": {
+        "encoded": {"dtype": "float32", "shape": [], "source": "encoder:typo"}}})
+    with pytest.raises(ValueError, match="missing value.*encoded"):
+        write_track(str(tmp_path), Track("s", 0, [{"act": 1.0}]), spec,
+                    encoder=MissingEncoder(), schema=SCHEMA)
+
+
+def test_count_output_propagates_segment_features(tmp_path):
+    from kuration import input
+    rows = [{"t": i, "act": float(i), "pos": [float(i), 0.0]} for i in range(8)]
+    result = (input(rows, time="t", hz=1)
+              .window(4)
+              .measure("am", "mean", of="act")
+              .curate("top-k", n=1, weights={"am": 1.0})
+              .output(tmp_path / "count", modalities={
+                  "score": {"dtype": "float32", "shape": [], "source": "segment:am"}}))
+    score = np.load(result["shards"][0]["path"])["score"]
+    assert np.all(score == pytest.approx(5.5))
+
+
+def test_hours_output_aggregates_segment_features_into_span_meta(tmp_path):
+    data = _data(n_sources=1, n_ticks=8, n_entities=1)
+    spec = OutputSpec.from_dict({"shard_length": 4, "modalities": {
+        "score": {"dtype": "float32", "shape": [], "source": "segment:am"}}})
+    out = write_dataset(str(tmp_path / "hours"), schema=SCHEMA,
+                        adapter=MemAdapter(SCHEMA, data), sources=list(data),
+                        strategy=_strategy(), segmenter=Segmenter(4, 4), spec=spec,
+                        train_hours=1, span_steps=4, clip_aggregate="mean")
+    assert out["shards"]
+    for entry in out["shards"]:
+        assert np.load(entry["path"])["score"].tolist() == [1.0] * entry["n_steps"]

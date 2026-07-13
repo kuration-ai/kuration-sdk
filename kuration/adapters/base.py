@@ -35,7 +35,7 @@ def iter_arrays_to_ticks(schema: SchemaSpec, arrs: dict, gl: dict = None):
         raise ValueError(f"arrays_to_ticks: length mismatch — expected {n} steps, got "
                          f"{mismatched}")
     for t in range(n):
-        ent = {}
+        ent: dict[str, object] = {}
         for fn, arr in arrs.items():
             fs = schema.fields[fn]
             x = arr[t]

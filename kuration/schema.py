@@ -15,6 +15,7 @@ per-field outlier clamp (the generalization of CS2's `sv_maxvelocity` teleport g
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Optional
 
 _KINDS = {"scalar", "vector", "categorical"}
@@ -100,8 +101,10 @@ class SchemaSpec:
 
         entity_axis = d.get("entity_axis")
         sample_hz = d.get("sample_hz")
-        if sample_hz is not None and not (isinstance(sample_hz, (int, float)) and sample_hz > 0):
-            raise ValueError(f"schema {name!r}: sample_hz must be a positive number")
+        if sample_hz is not None and not (
+                isinstance(sample_hz, (int, float)) and not isinstance(sample_hz, bool)
+                and math.isfinite(sample_hz) and sample_hz > 0):
+            raise ValueError(f"schema {name!r}: sample_hz must be a finite positive number")
 
         event_streams: dict[str, dict] = {}
         for sn, sd in (d.get("event_streams") or {}).items():
@@ -133,7 +136,7 @@ class SchemaSpec:
     def to_dict(self) -> dict:
         """Round-trippable plain dict for embedding in config.json."""
         def fd(f: FieldSpec) -> dict:
-            out = {"kind": f.kind}
+            out: dict[str, object] = {"kind": f.kind}
             if f.dims:
                 out["dims"] = list(f.dims)
             if f.semantics:

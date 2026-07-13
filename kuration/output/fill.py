@@ -26,10 +26,35 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
     tag (bounded by f x total budget) so a rare label isn't dropped by the priority cut.
     Returns `(admitted_ids, source->split)`. With `return_stats=True`, appends a third budget
     accounting dict without changing the long-standing default return shape."""
-    if train_hours < 0 or test_hours < 0:
-        raise ValueError("train_hours and test_hours must be >= 0")
-    if max_group_overshoot is not None and max_group_overshoot <= 0:
-        raise ValueError("max_group_overshoot must be > 0 or None")
+    for name, value in (("train_hours", train_hours), ("test_hours", test_hours)):
+        if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                or not math.isfinite(value) or value < 0):
+            raise ValueError(f"{name} must be a finite non-negative number, got {value!r}")
+    if max_group_overshoot is not None and (
+            not isinstance(max_group_overshoot, (int, float))
+            or isinstance(max_group_overshoot, bool)
+            or not math.isfinite(max_group_overshoot) or max_group_overshoot <= 0):
+        raise ValueError("max_group_overshoot must be a finite positive number or None")
+    if tag_coverage is not None:
+        frac = tag_coverage.get("min_tag_frac", 0.005)
+        if (not isinstance(frac, (int, float)) or isinstance(frac, bool)
+                or not math.isfinite(frac) or not 0 <= frac <= 1):
+            raise ValueError("tag_coverage.min_tag_frac must be finite and in [0, 1]")
+    required = {"id", "source_id", "priority", "seconds", "group"}
+    for i, it in enumerate(items):
+        if not isinstance(it, dict) or not required <= set(it):
+            missing = sorted(required - set(it)) if isinstance(it, dict) else sorted(required)
+            raise ValueError(f"item {i} is missing required key(s) {missing}")
+        seconds = it["seconds"]
+        if (not isinstance(seconds, (int, float)) or isinstance(seconds, bool)
+                or not math.isfinite(seconds) or seconds <= 0):
+            raise ValueError(f"item {i} seconds must be a finite positive number, "
+                             f"got {seconds!r}")
+        try:
+            float(it["priority"])
+            hash(it["id"])
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"item {i} needs a numeric priority and hashable id") from e
     train_t, test_t = train_hours * 3600.0, test_hours * 3600.0
     total = train_t + test_t
     source_groups = {it["source_id"]: it["group"] for it in items}

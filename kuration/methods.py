@@ -22,7 +22,7 @@ worker-count-independent. Scale caps are logged, never silent.
 """
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -63,6 +63,9 @@ def feature_matrix(segments: list[Segment], names: Sequence[str], *,
     X = np.empty((n, d), dtype=np.float64)
     for j, name in enumerate(names):
         X[:, j] = np.fromiter((s.features.get(name, 0.0) for s in segments), dtype=np.float64, count=n)
+    if not np.isfinite(X).all():
+        raise ValueError("feature_space contains non-finite metric values; metrics/scorers must "
+                         "return finite scalars")
     if normalize == "none" or n <= 1:
         return X
     if normalize == "quantile":
@@ -268,7 +271,7 @@ def typical_priorities(segments, names, **kw) -> np.ndarray:
     return -rare_priorities(segments, names, **kw)
 
 
-PRIORITY_METHODS = {
+PRIORITY_METHODS: dict[str, Any] = {
     "cluster-balanced": cluster_balanced_priorities,
     "k-center": kcenter_priorities,
     "facility-location": facility_location_priorities,
@@ -343,7 +346,7 @@ def dedup_filter(segments, names, *, threshold=0.98, n_clusters=_DEFAULT_CLUSTER
     return kept
 
 
-_FILTERS = {"anomaly": anomaly_filter, "dedup": dedup_filter}
+_FILTERS: dict[str, Any] = {"anomaly": anomaly_filter, "dedup": dedup_filter}
 
 
 def apply_filters(segments: list[Segment], strategy, *, seed=0, workers=1) -> list[Segment]:
@@ -355,13 +358,17 @@ def apply_filters(segments: list[Segment], strategy, *, seed=0, workers=1) -> li
     filters = getattr(strategy, "filters", None) or []
     if not filters:
         return segments
-    default_names = resolve_feature_space(strategy)
+    default_names = None
     out = segments
     for spec in filters:
         ftype = spec.get("type")
         if ftype not in _FILTERS:
             raise ValueError(f"unknown filter type {ftype!r}; expected {sorted(_FILTERS)}")
-        names = spec.get("feature_space") or default_names
+        names = spec.get("feature_space")
+        if not names:
+            if default_names is None:
+                default_names = resolve_feature_space(strategy)
+            names = default_names
         knobs = {k: v for k, v in spec.items() if k not in ("type", "feature_space", "per_group")}
         if spec.get("per_group"):
             from collections import defaultdict
@@ -369,7 +376,7 @@ def apply_filters(segments: list[Segment], strategy, *, seed=0, workers=1) -> li
             for s in out:
                 groups[s.group].append(s)
             kept_ids = set()
-            for g in sorted(groups, key=lambda x: (x is None, x)):
+            for g in sorted(groups, key=lambda x: (x is None, str(type(x)), str(x))):
                 for s in _FILTERS[ftype](groups[g], names, seed=seed, workers=workers, **knobs):
                     kept_ids.add(id(s))
             out = [s for s in out if id(s) in kept_ids]

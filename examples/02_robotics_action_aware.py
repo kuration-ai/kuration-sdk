@@ -11,6 +11,7 @@ plus coverage of every motion phase. Quality and diversity as composable axes, n
 """
 import math
 import random
+import tempfile
 
 from kuration import SchemaSpec, Segmenter, Tick, load_strategy, OutputSpec, write_dataset
 
@@ -71,12 +72,11 @@ spec = OutputSpec.from_dict({
                    "action": {"dtype": "float32", "shape": [3], "source": "field:action"}},
 })
 
-import tempfile
 out = tempfile.mkdtemp(prefix="kuration_ex02_")
 res = write_dataset(out, schema=schema, adapter=MemAdapter(data), sources=list(data),
                     strategy=strategy, segmenter=Segmenter(1.0, 0.5, unit="seconds", sample_hz=50),
                     spec=spec, train_hours=0.05, test_hours=0.0, seed=0)
 print(f"wrote {res['results']['shards']} shards from {res['results']['tracks_admitted']} "
       f"admitted spans")
-print(f"  (learned action-residual score composed with geometric ee-speed + phase coverage)")
+print("  (learned action-residual score composed with geometric ee-speed + phase coverage)")
 print(f"output dir: {out}")
