@@ -6,6 +6,8 @@ from .fill import fill_to_hours
 from .shardwriter import write_track
 from .spec import Modality, OutputSpec
 from .track import Track, tracks_from_ticks
+from .presets import output_preset
+from .containers import Container, register_container
 
 __all__ = [
     "OutputSpec", "Modality",
@@ -13,4 +15,6 @@ __all__ = [
     "Track", "tracks_from_ticks", "write_track",
     "fill_to_hours",
     "write_dataset",
+    "output_preset",
+    "Container", "register_container",
 ]

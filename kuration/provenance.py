@@ -92,7 +92,20 @@ def build_run_signature(*, schema, strategy, spec, segmenter, sources, adapter, 
                         seed, sample_hz, train_hours, test_hours, span_len, clip_aggregate,
                         group_of=None, tags_of=None) -> dict:
     from .plugins import plugin_provenance
+    from .registry import default_registry
+    from .versioning import ARTIFACT_FORMAT_VERSION
+    registry = strategy.registry or default_registry
+    refs = [("method", strategy.method), ("container", spec.container)]
+    refs += [("filter", f["type"]) for f in (strategy.filters or [])]
+    refs += [("scorer", name) for name, _out, _params in (strategy.scorers or [])]
+    extensions = []
+    for kind, name in refs:
+        try:
+            extensions.append(registry.descriptor(kind, name).to_dict())
+        except ValueError:
+            pass
     payload = {
+        "artifact_format_version": ARTIFACT_FORMAT_VERSION,
         "sdk_version": sdk_version(),
         "schema": schema.to_dict(),
         "strategy": strategy.resolved,
@@ -108,6 +121,7 @@ def build_run_signature(*, schema, strategy, spec, segmenter, sources, adapter, 
         "group_of": component_identity(group_of),
         "tags_of": component_identity(tags_of),
         "plugins": plugin_provenance(),
+        "extensions": extensions,
         "sources": sorted((source_descriptor(s, adapter) for s in sources),
                           key=lambda d: d["source"]),
     }

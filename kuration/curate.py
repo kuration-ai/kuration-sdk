@@ -58,7 +58,7 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     if strategy.scorers:   # whole-pool learned/action-aware scoring -> features
         from .scorers import apply_scorers
         apply_scorers(strategy.scorers, all_segments, schema=schema, adapter=adapter, seed=seed,
-                      progress=progress)
+                      progress=progress, registry=strategy.registry)
 
     from .progress import emit
     emit(progress, "selection", "start", total=len(all_segments))

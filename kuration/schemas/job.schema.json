@@ -5,6 +5,7 @@
   "description": "One JSON document wiring a curation run: schema + adapter + sources + segmenter + strategy (+ output for curate, arms for experiment). Point your editor's $schema at this file for autocomplete; kur-validate runs the SDK's richer load-time validators.",
   "type": "object",
   "properties": {
+    "job_schema_version": {"type": "string", "default": "1.0"},
     "schema": {
       "description": "A SchemaSpec (inline) or a path to one. Omit only when the adapter derives its own (e.g. the curated adapter).",
       "oneOf": [
@@ -84,7 +85,7 @@
       "properties": {
         "shard_length": {"type": "integer", "minimum": 1},
         "short_policy": {"enum": ["keep", "pad", "drop"]},
-        "container": {"enum": ["npz", "json", "hdf5", "parquet"]},
+        "container": {"type": "string", "description": "Built-in or registered container name."},
         "presence_mask": {"type": "boolean", "default": true},
         "modalities": {
           "type": "object",
@@ -95,11 +96,20 @@
             "properties": {
               "dtype": {"type": "string"},
               "shape": {"type": "array", "items": {"type": "integer", "minimum": 1}},
-              "source": {"type": "string", "pattern": "^(field|segment|encoder):.+"}
+              "source": {"type": "string", "pattern": "^(field|segment|encoder|vocab):.+"}
             }
           }
-        }
+        },
+        "vocabs": {"type": "object"}
       }
+    },
+    "output_preset": {
+      "description": "Registered preset name or {name, ...parameters}.",
+      "oneOf": [{"type": "string"}, {"type": "object", "required": ["name"]}]
+    },
+    "encoder": {
+      "type": "object", "required": ["name"],
+      "properties": {"name": {"type": "string"}, "params": {"type": "object"}}
     },
     "train_hours": {"type": "number", "minimum": 0, "description": "Curate: train budget in hours."},
     "test_hours": {"type": "number", "minimum": 0},
@@ -110,6 +120,10 @@
     "on_error": {"enum": ["skip", "raise"]},
     "resume": {"type": "boolean"},
     "streaming": {"type": "boolean"}
+    ,"mode": {"enum": ["explore", "strict"]}
+    ,"span_steps": {"type": "integer", "minimum": 1}
+    ,"span_seconds": {"type": "number", "exclusiveMinimum": 0}
+    ,"clip_aggregate": {"enum": ["max", "min", "mean"]}
   },
   "$defs": {
     "strategy": {
@@ -137,9 +151,7 @@
             "selection": {
               "type": "object",
               "properties": {
-                "method": {"enum": ["uniform-bins", "weighted", "top-k", "target-distribution",
-                                    "filter", "cluster-balanced", "k-center", "facility-location",
-                                    "dsir", "rare", "typical"]},
+                "method": {"type": "string", "description": "Built-in or registered method name."},
                 "weights": {"type": "object", "additionalProperties": {"type": "number"}},
                 "normalize": {"enum": ["quantile", "minmax", "zscore"]},
                 "target": {},

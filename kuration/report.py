@@ -13,6 +13,7 @@ from typing import Optional, Sequence
 import numpy as np
 
 from .segment import Segment
+from .results import DatasetReport
 
 
 def dataset_report(segments: list[Segment], *, metrics: Optional[Sequence[str]] = None,
@@ -22,7 +23,7 @@ def dataset_report(segments: list[Segment], *, metrics: Optional[Sequence[str]] 
     if n == 0:
         # keep the key set identical to the populated case so consumers (e.g. the report CLI)
         # don't KeyError on an empty pool.
-        return {"n_segments": 0, "n_sources": 0, "metrics": {}, "groups": {}, "tags": {}}
+        return DatasetReport(n_segments=0, n_sources=0, metrics={}, groups={}, tags={})
     names = list(metrics) if metrics is not None else sorted({k for s in segments for k in s.features})
 
     metric_rep: dict = {}
@@ -46,4 +47,4 @@ def dataset_report(segments: list[Segment], *, metrics: Optional[Sequence[str]] 
     if any(s.bin for s in segments):
         bc = Counter(s.bin for s in segments)
         rep["bins"] = {"occupied": len(bc), "max_count": max(bc.values()), "min_count": min(bc.values())}
-    return rep
+    return DatasetReport(rep)

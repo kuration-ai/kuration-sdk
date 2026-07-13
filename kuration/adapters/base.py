@@ -89,13 +89,17 @@ def check_mapped_arrays(schema: SchemaSpec, fields: dict, globals_: dict, source
 _ADAPTERS: dict[str, Callable[..., InputAdapter]] = {}
 
 
-def register_adapter(name: str, factory: Callable[..., InputAdapter]) -> None:
+def register_adapter(name: str, factory: Callable[..., InputAdapter], **metadata) -> None:
     if name in _ADAPTERS:
         raise ValueError(f"adapter {name!r} already registered")
     _ADAPTERS[name] = factory
+    from ..registry import default_registry
+    default_registry.register("adapter", name, factory, **metadata)
 
 
-def get_adapter(name: str, **kwargs) -> InputAdapter:
+def get_adapter(name: str, *, registry=None, **kwargs) -> InputAdapter:
+    if registry is not None:
+        return registry.get("adapter", name)(**kwargs)
     if name not in _ADAPTERS:
         from ..plugins import load_plugins
         load_plugins()

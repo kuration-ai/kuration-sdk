@@ -54,12 +54,15 @@ chainable `Pipeline` — every operator validates itself loudly and returns a ne
 from kuration import input
 
 (input("logs/*.csv", time="t", entity="agent")
+    .as_position("pos", dims=["x", "y", "z"], max_rate=20)
+    .at_rate(20)
     .window(4, unit="seconds")
     .measure("speed", "mean", of="pos")
     .filter("speed", ">=", 1.0)              # universal predicate, any selection method
     .organize("speed", bins=8)
     .curate("equal", n=5000)
-    .output("out/run1"))
+    .options(mode="strict")
+    .output("out/run1", preset="numpy-timeseries", categorical="omit"))
 ```
 
 See **[docs/pipeline.md](docs/pipeline.md)** for the full operator reference and
@@ -91,6 +94,7 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | [docs/output.md](docs/output.md) | output specs, encoders, containers, the hours-budget fill |
 | [docs/api.md](docs/api.md) | **API reference** — every public name with its real signature |
 | [docs/jobs.md](docs/jobs.md) | **job-spec reference** — every JSON key the `kur-*` CLIs accept |
+| [docs/customization.md](docs/customization.md) | registries, descriptors, presets, versioning, and extension authoring |
 
 Hitting a loud validation error? [docs/usage.md § Troubleshooting](docs/usage.md#17--troubleshooting--common-loud-failures)
 maps the common ones to causes and fixes.
@@ -137,6 +141,10 @@ kur-validate job.json                     # preflight a job spec in ms — no da
 kur-curate job.json                       # sources -> hours-budget shards
 kur-experiment job.json --out cmp.json    # compare several strategy "arms" over the same sources
 kur-report job.json --out report.json     # profile a dataset's metric distributions (no selection)
+kur-list methods                          # discover built-ins and installed plugins
+kur-describe scorer action_residual       # parameter schema, capabilities, origin
+kur-explain job.json --json               # structured execution plan, no row reads
+kur-migrate old-job.json --out job.json   # deterministic format migration
 ```
 
 `kur-validate` runs every load-time validator the real run would (schema, adapter field maps,
@@ -167,11 +175,13 @@ tag-coverage**, a single-dataset **stats report**, a first-class **learned-score
 Schema), driven by the `kur-*` CLIs, **schema inference** (`kuration.infer`) and a **fluent
 `input(...).operator(...)` pipeline** over it with universal pre-filter predicates (any
 selection method, count or hours path), complete resume provenance, default presence masks,
-budget accounting, plugin discovery, and structured progress. 375 passed / 2 optional-Zarr
+budget accounting, discoverable/isolated registries, semantic hints, output presets,
+strict/explore modes, structured execution plans, versioned artifacts/jobs, typed-compatible
+results, and structured progress. 381 passed / 2 optional-Zarr
 skipped in the development environment (`pytest tests/`).
 
-Planned: migration of the reference CS2 pipeline onto the SDK (Phase G), and a spill/external
-tier for *total* segment pools larger than RAM. See `PLAN.md`.
+Deferred: a spill/external tier for *total* segment pools larger than RAM and count-path resume.
+See `PLAN.md`.
 
 ## Tests
 

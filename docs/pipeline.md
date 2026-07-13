@@ -97,6 +97,10 @@ concepts: [schema.md](schema.md)):
 | `.group` | `(fn)` | `group_of(source_id) -> key` (group cap + stratified splits) |
 | `.options` | `(workers=, on_error=, seed=, streaming=, resume=, sample_hz=, progress=)` | execution kwargs passed to the terminal |
 | `.curate` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params)` | `selection.method` + knobs; exactly one of `n=`/`hours=` |
+| `.semantic` | `(field, "position"|"angular"|"bitmask", **metadata)` | a new validated `SchemaSpec` |
+| `.as_position/.as_angular/.as_bitmask` | semantic convenience wrappers | `.semantic(...)` |
+| `.at_rate` | `(hz)` | `SchemaSpec.sample_hz` |
+| `.using` | `(Registry)` | explicit component-resolution overlay |
 
 `.measure`'s four forms:
 ```python
@@ -126,13 +130,15 @@ hours paths — see [strategies.md](strategies.md).
 - `.describe()` — `{"schema", "strategy", "output": None, "segmenter", "options", "sources"}`:
   the pipeline's fully resolved state, without running anything. `"strategy"` is the same raw
   dict a terminal would compile and load.
+- `.explain()` — a typed, mapping-compatible `ExecutionPlan` with stages, streaming/full-pool
+  requirements, implicit choices, and actionable warnings. `.render()` gives concise text.
 
 ## Terminals
 
 | terminal | signature | routes to |
 |---|---|---|
 | `.collect` | `(n=None)` | `curate()` — count-path selection → `CurateResult` |
-| `.output` | `(path, *, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None)` | `.curate(hours=...)` → `write_dataset`; `.curate(n=...)` → select then write each segment as a sub-track |
+| `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None)` | preset/direct spec → ordinary `OutputSpec`, then the existing writer |
 | `.report` | `(**kw)` | feature pass only (no selection) → `dataset_report` |
 | `.experiment` | `(arms, n, baseline=None)` | `run_experiment`; `arms` maps name → `Pipeline` (its compiled strategy) or a raw strategy dict |
 
@@ -145,6 +151,10 @@ hours paths — see [strategies.md](strategies.md).
 - `config.json` gains a `"pipeline"` key: the operator chain (`_ops`) as a JSON list of
   `{"op", "args", "kwargs"}`, in order — so a written dataset records how it was *asked for*,
   not just what was resolved into `"strategy"`.
+- Presets are `numpy-timeseries`, `pytorch-sequences`, and `tabular`. Categorical policy is
+  explicit: `error`, `omit`, `integer-vocab` (with `categorical_vocabs`), or `encoder`.
+- `.options(mode="explore"|"strict")` resolves named bundles into ordinary options. Explicit
+  options win; strict mode raises on source errors and implicit categorical omission.
 - The count path rewrites its selection deterministically per run, so `resume=True` on it
   raises (hours path only).
 

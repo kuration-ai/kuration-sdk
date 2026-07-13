@@ -35,9 +35,12 @@ def _resolve(dataset, container: Optional[str]) -> tuple[dict, str, Optional[str
         else:
             base = s
             man = json.loads(read_text(f"{base}/dataset_manifest.json"))
+    from .versioning import check_version
+    check_version(man.get("artifact_format_version"), kind="artifact")
     if container is None and base is not None:
         try:                                     # container lives in the run's config.json
             cfg = json.loads(read_text(f"{base}/config.json"))
+            check_version(cfg.get("artifact_format_version"), kind="artifact")
             container = (cfg.get("output") or {}).get("container")
         except Exception:
             container = None

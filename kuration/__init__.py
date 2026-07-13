@@ -32,13 +32,14 @@ from .infer import infer_schema
 from .io import exists, local_copy, read_text, write_bytes, write_text
 from .loaders import iter_shards, read_shard_arrays, shard_entries
 from .manifest import build_config, dump_segment_manifest, write_config
-from .methods import apply_filters, method_priorities
+from .methods import apply_filters, method_priorities, register_filter
 from .pipeline import Pipeline, input
 from .plugins import load_plugins, loaded_plugin_modules, plugin_provenance
 from .progress import ProgressCallback
 from .report import dataset_report
 from .scorers import SegmentScorer, apply_scorers, get_scorer, register_scorer
 from .output import (
+    Container,
     Modality,
     OutputEncoder,
     OutputSpec,
@@ -47,6 +48,8 @@ from .output import (
     fill_to_hours,
     get_encoder,
     register_encoder,
+    register_container,
+    output_preset,
     tracks_from_ticks,
     write_dataset,
     write_track,
@@ -56,6 +59,12 @@ from .scoring import score_sources
 from .segment import Segment, Segmenter
 from .select import assign_splits
 from .strategy import Strategy, load_strategy, segment_priorities, select
+from .registry import (ComponentDescriptor, Registry, default_registry, describe_component,
+                       list_components, register_method, register_preset)
+from .results import (DatasetReport, DatasetWriteResult, ExecutionPlan, ExperimentResult,
+                      ValidationResult)
+from .versioning import (ARTIFACT_FORMAT_VERSION, JOB_SCHEMA_VERSION, migrate,
+                         migrate_config, migrate_job)
 
 __all__ = [
     "SchemaSpec", "FieldSpec",
@@ -69,6 +78,7 @@ __all__ = [
     "bin_segments", "quantile_bins",
     "Strategy", "load_strategy", "select", "segment_priorities", "assign_splits",
     "apply_filters", "method_priorities", "score_sources", "dataset_report",
+    "register_method", "register_filter",
     "SegmentScorer", "register_scorer", "get_scorer", "apply_scorers",
     "curate", "CurateResult",
     "build_config", "dump_segment_manifest", "write_config",
@@ -76,7 +86,12 @@ __all__ = [
     "OutputSpec", "Modality", "OutputEncoder", "PassthroughEncoder",
     "register_encoder", "get_encoder", "Track", "tracks_from_ticks", "write_track",
     "fill_to_hours", "write_dataset",
+    "Container", "register_container", "output_preset", "register_preset",
     "iter_shards", "read_shard_arrays", "shard_entries",
     "infer_schema", "Pipeline", "input",
     "load_plugins", "loaded_plugin_modules", "plugin_provenance", "ProgressCallback",
+    "Registry", "default_registry", "ComponentDescriptor", "list_components",
+    "describe_component", "ExecutionPlan", "ARTIFACT_FORMAT_VERSION",
+    "DatasetWriteResult", "ExperimentResult", "DatasetReport", "ValidationResult",
+    "JOB_SCHEMA_VERSION", "migrate", "migrate_job", "migrate_config",
 ]

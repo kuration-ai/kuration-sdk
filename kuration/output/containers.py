@@ -13,9 +13,35 @@ from pathlib import Path
 import numpy as np
 
 from ..io import staged_write
+from ..registry import default_registry as _default_registry
 
 # Final extension per container — lets the writer check a shard's existence for resume.
 CONTAINER_EXT = {"npz": ".npz", "json": ".json", "hdf5": ".h5", "parquet": ".parquet"}
+
+
+class Container:
+    """Third-party container contract: extension plus write/read callables."""
+    def __init__(self, extension, writer, reader):
+        if not isinstance(extension, str) or not extension.startswith("."):
+            raise ValueError("container extension must start with '.'")
+        self.extension, self.writer, self.reader = extension, writer, reader
+
+
+def register_container(name, container=None, *, extension=None, writer=None, reader=None,
+                       **metadata):
+    """Register a namespaced shard container without editing SDK dispatch code."""
+    from ..registry import register_container as _register
+    obj = container or Container(extension, writer, reader)
+    if not all(callable(getattr(obj, x, None)) for x in ("writer", "reader")):
+        raise ValueError("container needs callable writer and reader")
+    _register(name, obj, **metadata)
+
+
+def container_extension(name: str) -> str:
+    if name in CONTAINER_EXT:
+        return CONTAINER_EXT[name]
+    from ..registry import default_registry
+    return default_registry.get("container", name).extension
 
 
 def write_shard(path_no_ext: str, container: str, arrays: dict[str, np.ndarray],
@@ -23,7 +49,11 @@ def write_shard(path_no_ext: str, container: str, arrays: dict[str, np.ndarray],
     """Write one shard's modality arrays; returns the written path (local or remote URL).
     All formats stage through `staged_write`, so a `gs://`/`s3://`/… destination just works."""
     if container not in CONTAINER_EXT:
-        raise ValueError(f"unknown container {container!r}")
+        from ..registry import default_registry
+        handler = default_registry.get("container", container)
+        path = path_no_ext + handler.extension
+        handler.writer(path, arrays, n_steps)
+        return path
     path = path_no_ext + CONTAINER_EXT[container]
     with staged_write(path) as local:    # real local path; uploaded on exit if `path` is remote
         if container == "npz":
@@ -62,7 +92,8 @@ def read_shard(path: str, container: str) -> tuple[dict[str, np.ndarray], int]:
     as stored — a tensor modality written to Parquet is flat `(L, prod(shape))`; reshape it
     with the manifest's per-modality `shape` if you need the original rank (the loaders do)."""
     if container not in CONTAINER_EXT:
-        raise ValueError(f"unknown container {container!r}")
+        from ..registry import default_registry
+        return default_registry.get("container", container).reader(path)
     from ..io import local_copy, read_text
     if container == "json":
         data = json.loads(read_text(path))
@@ -92,3 +123,9 @@ def read_shard(path: str, container: str) -> tuple[dict[str, np.ndarray], int]:
                 f"kuration, or rewritten by a tool that drops custom metadata")
         n = int(meta[b"_n_steps"])
         return {name: np.asarray(t.column(name).to_pylist()) for name in t.column_names}, n
+
+
+for _name in CONTAINER_EXT:
+    if _name not in _default_registry.names("container"):
+        _default_registry.register("container", _name, write_shard,
+                                   capabilities={"remote_paths": True, "streaming": True})

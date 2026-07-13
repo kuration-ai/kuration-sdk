@@ -20,13 +20,15 @@ WindowMetric = Callable[[object], float]
 METRICS: dict[str, WindowMetric] = {}
 
 
-def register_metric(name: str) -> Callable[[WindowMetric], WindowMetric]:
+def register_metric(name: str, **metadata) -> Callable[[WindowMetric], WindowMetric]:
     """Decorator: register a hand-written Python metric (the escape hatch for anything the
     closed grammar can't express). Duplicate names are a programmer error — fail loudly."""
     def deco(fn: WindowMetric) -> WindowMetric:
         if name in METRICS:
             raise ValueError(f"metric {name!r} already registered")
         METRICS[name] = fn
+        from ..registry import default_registry
+        default_registry.register("metric", name, fn, replace=True, **metadata)
         return fn
     return deco
 

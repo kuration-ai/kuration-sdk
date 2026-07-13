@@ -139,5 +139,6 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
             per_metric[m] = entry
         arms_out[name] = {"n_selected": len(segs), "metrics": per_metric}
 
-    return {"baseline": base, "n_total_segments": len(all_segments),
-            "metrics": metrics, "arms": arms_out}
+    from .results import ExperimentResult
+    return ExperimentResult(baseline=base, n_total_segments=len(all_segments),
+                            metrics=metrics, arms=arms_out)

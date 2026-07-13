@@ -14,6 +14,7 @@ from .io import write_text
 from .schema import SchemaSpec
 from .segment import Segment
 from .strategy import Strategy
+from .versioning import ARTIFACT_FORMAT_VERSION
 
 
 def segment_record(s: Segment) -> dict:
@@ -28,19 +29,22 @@ def segment_record(s: Segment) -> dict:
 
 
 def dump_segment_manifest(path: str, segments: list[Segment]) -> None:
-    payload = {"count": len(segments), "segments": [segment_record(s) for s in segments]}
+    payload = {"artifact_format_version": ARTIFACT_FORMAT_VERSION,
+               "count": len(segments), "segments": [segment_record(s) for s in segments]}
     write_text(path, json.dumps(payload, indent=2, default=float))
 
 
 def build_config(schema: SchemaSpec, strategy: Strategy, *, results: dict, seed: int,
                  started: Optional[str] = None, ended: Optional[str] = None) -> dict:
     return {
+        "artifact_format_version": ARTIFACT_FORMAT_VERSION,
         "schema": schema.to_dict(),
         "strategy": strategy.resolved,
         "seed": seed,
         "started": started,
         "ended": ended,
         "results": results,
+        "plugins": __import__("kuration.plugins", fromlist=["plugin_provenance"]).plugin_provenance(),
     }
 
 

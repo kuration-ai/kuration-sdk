@@ -21,7 +21,10 @@ def read_job(path: str) -> dict:
     if not p.exists():
         raise FileNotFoundError(f"job spec not found: {path}")
     try:
-        return json.loads(p.read_text())
+        job = json.loads(p.read_text())
+        from ..versioning import check_version
+        check_version(job.get("job_schema_version"), kind="job")
+        return job
     except json.JSONDecodeError as e:
         raise ValueError(f"job spec {path} is not valid JSON: {e}") from e
 

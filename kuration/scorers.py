@@ -39,13 +39,17 @@ class SegmentScorer(Protocol):
 _SCORERS: dict[str, Callable[..., SegmentScorer]] = {}
 
 
-def register_scorer(name: str, factory: Callable[..., SegmentScorer]) -> None:
+def register_scorer(name: str, factory: Callable[..., SegmentScorer], **metadata) -> None:
     if name in _SCORERS:
         raise ValueError(f"scorer {name!r} already registered")
     _SCORERS[name] = factory
+    from .registry import default_registry
+    default_registry.register("scorer", name, factory, replace=True, **metadata)
 
 
-def get_scorer(name: str, **kwargs) -> SegmentScorer:
+def get_scorer(name: str, *, registry=None, **kwargs) -> SegmentScorer:
+    if registry is not None:
+        return registry.get("scorer", name)(**kwargs)
     if name not in _SCORERS:
         from .plugins import load_plugins
         load_plugins()
@@ -97,7 +101,7 @@ def _materialize_buffers(segments, schema, adapter) -> list:
 
 
 def apply_scorers(entries: list[tuple], segments: list, *, schema, adapter, seed: int = 0,
-                  progress=None) -> None:
+                  progress=None, registry=None) -> None:
     """Run each scorer over the whole pool and write its output into `seg.features[output]`.
     Buffers are materialized once and shared across buffer-needing scorers."""
     if not entries or not segments:
@@ -106,7 +110,7 @@ def apply_scorers(entries: list[tuple], segments: list, *, schema, adapter, seed
     emit(progress, "scorers", "start", total=len(entries))
     buffers = None
     for scorer_i, (name, output, params) in enumerate(entries, 1):
-        scorer = get_scorer(name, **params)
+        scorer = get_scorer(name, registry=registry, **params)
         ctx = {"schema": schema, "seed": seed}
         if getattr(scorer, "needs_buffers", False):
             if buffers is None:

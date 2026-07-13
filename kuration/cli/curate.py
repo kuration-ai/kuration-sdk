@@ -33,14 +33,28 @@ def _run(args) -> None:
     strategy = load_strategy(job["strategy"], schema)
     segmenter = build_segmenter(job, schema)
     sources = resolve_sources(job, adapter)
-    spec = OutputSpec.from_dict(job["output"])
+    if "output_preset" in job:
+        from ..output import output_preset
+        raw = job["output_preset"]
+        raw = {"name": raw} if isinstance(raw, str) else dict(raw)
+        spec = output_preset(raw.pop("name"), schema=schema, **raw)
+    else:
+        spec = OutputSpec.from_dict(job["output"])
+    encoder = job.get("encoder")
+    if isinstance(encoder, dict):
+        from ..output import get_encoder
+        encoder = get_encoder(encoder["name"], **dict(encoder.get("params") or {}))
+    mode = job.get("mode")
+    on_error = job.get("on_error", "raise" if mode == "strict" else "skip")
 
     res = write_dataset(job["out"], schema=schema, adapter=adapter, sources=sources,
-                        strategy=strategy, segmenter=segmenter, spec=spec,
+                        strategy=strategy, segmenter=segmenter, spec=spec, encoder=encoder,
                         train_hours=job["train_hours"], test_hours=job.get("test_hours", 0.0),
                         seed=job.get("seed", 0), workers=job.get("workers", 1),
-                        on_error=job.get("on_error", "skip"), resume=job.get("resume", False),
+                        on_error=on_error, resume=job.get("resume", False),
                         streaming=job.get("streaming", False),
+                        span_steps=job.get("span_steps"), span_seconds=job.get("span_seconds"),
+                        clip_aggregate=job.get("clip_aggregate", "max"),
                         progress=cli_progress_for(quiet=args.quiet))
     r = res["results"]
     b = r["budget"]

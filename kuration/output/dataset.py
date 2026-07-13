@@ -24,6 +24,7 @@ from .fill import fill_to_hours
 from .shardwriter import write_track
 from .spec import OutputSpec
 from .track import Track, tracks_from_ticks
+from ..versioning import ARTIFACT_FORMAT_VERSION
 
 
 def _check_resume_run(out_dir: str, signature: dict, resume: bool) -> None:
@@ -49,7 +50,8 @@ def _check_resume_run(out_dir: str, signature: dict, resume: bool) -> None:
                 f"configuration ({old_fp[:12]} != {signature['fingerprint'][:12]}); use a "
                 f"fresh out_dir or restore the original job")
     if not (resume and exists(marker)):
-        write_text(marker, json.dumps({"run_fingerprint": signature["fingerprint"],
+        write_text(marker, json.dumps({"artifact_format_version": ARTIFACT_FORMAT_VERSION,
+                                       "run_fingerprint": signature["fingerprint"],
                                        "output": signature["payload"]["output"]}, indent=2))
 
 
@@ -136,7 +138,7 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     if strategy.scorers:   # whole-pool learned/action-aware scoring -> features
         from ..scorers import apply_scorers
         apply_scorers(strategy.scorers, all_segments, schema=schema, adapter=adapter, seed=seed,
-                      progress=progress)
+                      progress=progress, registry=strategy.registry)
 
     emit(progress, "selection", "start", total=len(all_segments))
     pool = all_segments
@@ -250,7 +252,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
 
     from ..io import write_text
     write_text(f"{out_dir}/dataset_manifest.json",
-               json.dumps({"count": len(entries), "shards": entries, "budget": budget}, indent=2))
+               json.dumps({"artifact_format_version": ARTIFACT_FORMAT_VERSION,
+                           "count": len(entries), "shards": entries, "budget": budget}, indent=2))
     results = {"shards": len(entries), "tracks_admitted": len(admitted),
                "tracks_total": n_tracks, "sources_skipped": len(errors),
                "n_train": sum(1 for v in split.values() if v == "train"),
@@ -261,5 +264,6 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     cfg["output"] = spec.to_dict()
     cfg["provenance"] = signature
     write_config(f"{out_dir}/config.json", cfg)
-    return {"shards": entries, "split": split, "admitted": admitted, "results": results,
-            "errors": errors}
+    from ..results import DatasetWriteResult
+    return DatasetWriteResult(shards=entries, split=split, admitted=admitted, results=results,
+                              errors=errors)

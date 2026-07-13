@@ -28,6 +28,7 @@ import numpy as np
 
 from .binning import bin_codes
 from .segment import Segment
+from .registry import default_registry as _default_registry
 
 _DEFAULT_CLUSTERS = 2048
 _DSIR_BINS = 8
@@ -349,6 +350,11 @@ def dedup_filter(segments, names, *, threshold=0.98, n_clusters=_DEFAULT_CLUSTER
 _FILTERS: dict[str, Any] = {"anomaly": anomaly_filter, "dedup": dedup_filter}
 
 
+def register_filter(name, fn, **metadata):
+    from .registry import register_filter as _register
+    _register(name, fn, **metadata)
+
+
 def apply_filters(segments: list[Segment], strategy, *, seed=0, workers=1) -> list[Segment]:
     """Chain `strategy.filters` ([{type: anomaly|dedup, ...knobs, feature_space?, per_group?}])
     over the pool before binning/selection. A filter may carry its own `feature_space` to gate
@@ -363,7 +369,11 @@ def apply_filters(segments: list[Segment], strategy, *, seed=0, workers=1) -> li
     for spec in filters:
         ftype = spec.get("type")
         if ftype not in _FILTERS:
-            raise ValueError(f"unknown filter type {ftype!r}; expected {sorted(_FILTERS)}")
+            from .registry import default_registry
+            registry = getattr(strategy, "registry", None) or default_registry
+            fn = registry.get("filter", ftype)
+        else:
+            fn = _FILTERS[ftype]
         names = spec.get("feature_space")
         if not names:
             if default_names is None:
@@ -377,9 +387,19 @@ def apply_filters(segments: list[Segment], strategy, *, seed=0, workers=1) -> li
                 groups[s.group].append(s)
             kept_ids = set()
             for g in sorted(groups, key=lambda x: (x is None, str(type(x)), str(x))):
-                for s in _FILTERS[ftype](groups[g], names, seed=seed, workers=workers, **knobs):
+                for s in fn(groups[g], names, seed=seed, workers=workers, **knobs):
                     kept_ids.add(id(s))
             out = [s for s in out if id(s) in kept_ids]
         else:
-            out = _FILTERS[ftype](out, names, seed=seed, workers=workers, **knobs)
+            out = fn(out, names, seed=seed, workers=workers, **knobs)
     return out
+
+
+for _name, _fn in PRIORITY_METHODS.items():
+    if _name not in _default_registry.names("method"):
+        _default_registry.register("method", _name, _fn, capabilities={"whole_pool": True},
+                                   extra="methods")
+for _name, _fn in _FILTERS.items():
+    if _name not in _default_registry.names("filter"):
+        _default_registry.register("filter", _name, _fn, capabilities={"whole_pool": True},
+                                   extra="methods")

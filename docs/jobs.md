@@ -22,6 +22,7 @@ curate; otherwise → report.
 
 | key | required | value |
 |---|---|---|
+| `job_schema_version` | no (legacy accepted) | serialized job contract version; current `1.0` |
 | `schema` | unless the adapter derives one | inline `SchemaSpec` dict **or a path** to a JSON file ([schema.md](schema.md)). The curated adapter derives its own — omit there. |
 | `adapter` | yes | `{"type": <registered name>, ...kwargs}` — type is `timeseries`, `jsonl`, `hdf5`, `npz`, `parquet-dataset`, `huggingface`, `zarr`, `curated`, or your own `register_adapter` name; the remaining keys are that adapter's constructor kwargs ([adapters.md](adapters.md)) |
 | `sources` | no | explicit list of source URIs (local paths or `gs://`/`s3://`/`az://`). Omit to use the adapter's own `sources()` (curated / parquet-dataset / huggingface enumerate) |
@@ -32,6 +33,7 @@ curate; otherwise → report.
 | `workers` | no (1) | parallel feature pass over a process pool |
 | `on_error` | no (`"skip"`) | `"skip"` logs + skips an unreadable source; `"raise"` fails fast. Either way an **empty** pool raises |
 | `streaming` | no (false) | out-of-core for streaming-capable adapters; NPZ and partitioned-Parquet dataset mode reject it |
+| `mode` | no | `"explore"` or `"strict"`; explicit options override mode defaults |
 
 Run CLIs show throttled phase progress when stderr is an interactive terminal. Redirected output
 stays clean; pass `--quiet` to suppress interactive progress explicitly.
@@ -40,15 +42,17 @@ stays clean; pass `--quiet` to suppress interactive progress explicitly.
 
 | key | required | value |
 |---|---|---|
-| `output` | yes | an `OutputSpec` dict: `{"shard_length", "short_policy"?, "container"?, "presence_mask"?, "modalities": {...}}` ([output.md](output.md)) |
+| `output` / `output_preset` | one | an explicit `OutputSpec`, or a registered preset name / `{name, ...parameters}` |
 | `train_hours` | yes | train budget in hours (the emitted set is the strategy's *best* N hours) |
 | `test_hours` | no (0) | test budget; sources split leakage-free |
 | `out` | yes | output directory — local path or cloud URL |
 | `resume` | no (false) | skip existing shards only when the complete run/source provenance fingerprint matches |
+| `encoder` | no | `{"name": registered_name, "params": {...}}` |
+| `span_steps` / `span_seconds` | no | declarative sub-track spans (mutually exclusive) |
+| `clip_aggregate` | no (`"max"`) | `max`, `min`, or `mean` |
 
-**Python-API-only knobs** (not JSON-expressible or not wired into the job spec):
-`group_of` / `tags_of` (callables), `clip_aggregate`, `span_steps` / `span_seconds` (sub-track
-spans), `encoder=` instances, and `sample_hz` override. If you need those, call
+**Python-API-only knobs:** arbitrary `group_of` / `tags_of` callables and encoder instances.
+Registered/data-defined equivalents use names plus parameters. If you need arbitrary code, call
 `write_dataset(...)` directly — every job-spec key maps 1:1 onto its kwargs, so graduating
 from a job file to Python is mechanical.
 

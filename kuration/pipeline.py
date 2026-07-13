@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import copy
 from itertools import islice
 from typing import Any, Callable, Optional
 
@@ -38,7 +39,8 @@ __all__ = ["Pipeline", "input"]
 
 _GLOB_CHARS = set("*?[")
 _FILTER_TYPES = {"anomaly", "dedup"}
-_OPTION_KEYS = {"workers", "on_error", "seed", "streaming", "resume", "sample_hz", "progress"}
+_OPTION_KEYS = {"workers", "on_error", "seed", "streaming", "resume", "sample_hz", "progress",
+                "mode"}
 _TABULAR_KINDS = {"timeseries", "jsonl", "json-rows", "parquet-dataset"}
 _SUFFIX_CONTAINER = {".hdf5": "hdf5", ".h5": "hdf5", ".npz": "npz",
                      ".parquet": "parquet", ".json": "json"}
@@ -440,6 +442,10 @@ class Pipeline:
         self._options: dict[str, Any] = {
             "workers": 1, "on_error": "skip", "seed": 0, "streaming": False,
             "resume": False, "sample_hz": None, "progress": None}
+        self._mode: Optional[str] = None
+        self._explicit_options: set[str] = set()
+        from .registry import default_registry
+        self._registry = default_registry
 
     # ---- immutability plumbing -------------------------------------------------------
     def _clone(self) -> "Pipeline":
@@ -449,6 +455,7 @@ class Pipeline:
                      "_tags", "_scorers", "_method_params", "_options", "_window_desc"):
             cur = getattr(self, attr)
             setattr(p, attr, type(cur)(cur))
+        p._explicit_options = set(self._explicit_options)
         return p
 
     def _next(self, opname: str, *args, **kwargs) -> "Pipeline":
@@ -460,6 +467,86 @@ class Pipeline:
 
     def _metric_names(self) -> set:
         return set(self._define) | set(self._callables) | {s["as"] for s in self._scorers}
+
+    def using(self, registry) -> "Pipeline":
+        """Return a pipeline resolving extension names through an explicit overlay registry."""
+        from .registry import Registry
+        if not isinstance(registry, Registry):
+            raise ValueError("using() needs a Registry")
+        p = self._next("using", "<registry>")
+        p._registry = registry
+        return p
+
+    def _with_schema(self, schema: SchemaSpec, opname: str, *args, **kwargs) -> "Pipeline":
+        p = self._next(opname, *args, **kwargs)
+        p.schema = schema
+        p.adapter = copy.copy(self.adapter)
+        p.adapter.schema = schema
+        return p
+
+    def semantic(self, field: str, semantics: str, *, dims=None, bits=None,
+                 max_rate=None) -> "Pipeline":
+        """Refine inferred fields with a load-bearing core semantic."""
+        if semantics not in {"position", "angular", "bitmask"}:
+            raise ValueError("semantic kind must be position, angular, or bitmask")
+        raw = self.schema.to_dict()
+        fields = raw["fields"]
+        if field in fields:
+            if fields[field].get("semantics") is not None:
+                raise ValueError(f"field {field!r} already has a semantic hint")
+            fd = dict(fields[field])
+            if dims is not None:
+                if fd["kind"] != "vector":
+                    raise ValueError(f"dims can only refine an existing vector field, got {field!r}")
+                fd["dims"] = list(dims)
+        elif semantics == "position" and dims:
+            missing = [d for d in dims if d not in fields]
+            if missing:
+                raise ValueError(f"position {field!r} references unknown component fields {missing}")
+            bad = [d for d in dims if fields[d]["kind"] != "scalar"]
+            if bad:
+                raise ValueError(f"position components must be scalar fields, got {bad}")
+            fd = {"kind": "vector", "dims": list(dims)}
+            for d in dims:
+                fields.pop(d)
+            if hasattr(self.adapter, "fields"):
+                mapped = []
+                for d in dims:
+                    value = self.adapter.fields[d]
+                    if isinstance(value, (list, tuple)):
+                        raise ValueError(f"position component {d!r} is already vector-mapped")
+                    mapped.append(value)
+        else:
+            raise ValueError(f"semantic field {field!r} is not in schema")
+        fd["semantics"] = semantics
+        if bits is not None:
+            fd["bits"] = dict(bits)
+        if max_rate is not None:
+            fd["max_rate"] = max_rate
+        fields[field] = fd
+        schema = SchemaSpec.from_dict(raw)
+        p = self._with_schema(schema, "semantic", field, semantics, dims=dims, bits=bits,
+                              max_rate=max_rate)
+        if field not in self.schema.fields and hasattr(p.adapter, "fields"):
+            p.adapter.fields = {k: v for k, v in p.adapter.fields.items() if k not in set(dims)}
+            p.adapter.fields[field] = mapped
+        return p
+
+    def as_position(self, field: str, *, dims=None, max_rate=None) -> "Pipeline":
+        return self.semantic(field, "position", dims=dims, max_rate=max_rate)
+
+    def as_angular(self, field: str, *, max_rate=None) -> "Pipeline":
+        return self.semantic(field, "angular", max_rate=max_rate)
+
+    def as_bitmask(self, field: str, *, bits) -> "Pipeline":
+        return self.semantic(field, "bitmask", bits=bits)
+
+    def at_rate(self, hz: float) -> "Pipeline":
+        if self.schema.sample_hz is not None:
+            raise ValueError(f"schema already has sample_hz={self.schema.sample_hz}; repeated hints fail")
+        raw = self.schema.to_dict()
+        raw["sample_hz"] = hz
+        return self._with_schema(SchemaSpec.from_dict(raw), "at_rate", hz)
 
     # ---- operators ---------------------------------------------------------------------
     def window(self, window, stride=None, unit: str = "steps") -> "Pipeline":
@@ -513,7 +600,10 @@ class Pipeline:
     def filter(self, what, op=None, value=None, **kw) -> "Pipeline":
         """`.filter("anomaly"/"dedup", **knobs)` adds a pre-pass filter; `.filter(metric,
         op, value)` adds a universal predicate (applies under every selection method)."""
-        if isinstance(what, str) and what in _FILTER_TYPES and op is None and value is None:
+        is_registered_filter = (isinstance(what, str) and
+                                what in self._registry.names("filter"))
+        if isinstance(what, str) and (what in _FILTER_TYPES or is_registered_filter) \
+                and op is None and value is None:
             p = self._next("filter", what, **kw)
             p._prepass.append({"type": what, **kw})
             return p
@@ -616,6 +706,9 @@ class Pipeline:
         if unknown:
             raise ValueError(f"unknown option(s) {sorted(unknown)}; "
                              f"expected {sorted(_OPTION_KEYS)}")
+        mode = kw.pop("mode", None)
+        if mode is not None and mode not in {"explore", "strict"}:
+            raise ValueError("mode must be 'explore' or 'strict'")
         if "on_error" in kw and kw["on_error"] not in ("skip", "raise"):
             raise ValueError(f"on_error must be 'skip' or 'raise', got {kw['on_error']!r}")
         if "workers" in kw and (not isinstance(kw["workers"], int)
@@ -633,8 +726,15 @@ class Pipeline:
                 raise ValueError("sample_hz must be a finite positive number")
         if "progress" in kw and kw["progress"] is not None and not callable(kw["progress"]):
             raise ValueError("progress must be callable or None")
-        p = self._next("options", **kw)
+        p = self._next("options", mode=mode, **kw)
+        if mode is not None:
+            p._mode = mode
+            defaults = {"on_error": "raise"} if mode == "strict" else {"on_error": "skip"}
+            for key, value in defaults.items():
+                if key not in self._explicit_options and key not in kw:
+                    p._options[key] = value
         p._options.update(kw)
+        p._explicit_options.update(kw)
         return p
 
     def curate(self, method: Optional[str] = None, *, n: Optional[int] = None,
@@ -659,8 +759,12 @@ class Pipeline:
         if method is not None:
             canon = _METHOD_ALIASES.get(str(method).lower())
             if canon is None:
-                raise ValueError(f"unknown curation method {method!r}; known aliases: "
-                                 f"{sorted(_METHOD_ALIASES)}")
+                from .plugins import load_plugins
+                load_plugins()
+                if method not in self._registry.names("method"):
+                    raise ValueError(f"unknown curation method {method!r}; registered: "
+                                     f"{self._registry.names('method')}")
+                canon = method
         elif self._axes:
             canon = "uniform-bins"
         elif weights:
@@ -739,7 +843,7 @@ class Pipeline:
         from .strategy import load_strategy
         for nm, fn in self._callables.items():
             register_compiled(nm, fn)
-        return load_strategy(self._raw_strategy(), self.schema)
+        return load_strategy(self._raw_strategy(), self.schema, registry=self._registry)
 
     def _segmenter_or_default(self) -> Segmenter:
         return self._segmenter if self._segmenter is not None else Segmenter(64, 64)
@@ -762,8 +866,42 @@ class Pipeline:
                 "strategy": self._raw_strategy(require_method=False),
                 "output": None,
                 "segmenter": dict(self._window_desc),
-                "options": {k: _jsonable(v) for k, v in self._options.items()},
+                "options": {**{k: _jsonable(v) for k, v in self._options.items()},
+                            "mode": self._mode,
+                            "overrides": sorted(self._explicit_options)},
                 "sources": [str(s) for s in self.sources]}
+
+    def explain(self, *, inspect_sources: bool = False):
+        """Return a stable, structured execution plan without reading rows by default."""
+        from .results import ExecutionPlan
+        warnings = []
+        categorical = [n for n, f in self.schema.fields.items() if f.kind == "categorical"]
+        if categorical:
+            warnings.append({"code": "categorical-output-policy", "message":
+                             f"categorical fields {categorical} need an explicit output policy"})
+        if self._options["on_error"] == "skip":
+            warnings.append({"code": "source-errors-skipped", "message":
+                             "source errors will be skipped and reported"})
+        if inspect_sources and hasattr(self.adapter, "check_source"):
+            for source in self.sources:
+                self.adapter.check_source(source)
+        strategy = self._raw_strategy(require_method=False)
+        full_pool = bool(strategy.get("filters") or strategy.get("scorers") or
+                         strategy.get("selection", {}).get("method") in
+                         {"cluster-balanced", "k-center", "facility-location", "dsir",
+                          "rare", "typical"})
+        stages = ({"name": "input", "streaming": hasattr(self.adapter, "iter_ticks"),
+                   "materializes_total_pool": False},
+                  {"name": "selection", "streaming": not full_pool,
+                   "materializes_total_pool": full_pool},
+                  {"name": "output", "streaming": True, "materializes_total_pool": False})
+        return ExecutionPlan(source={"kind": type(self.adapter).__name__,
+                                     "count": len(self.sources),
+                                     "sources": [str(s) for s in self.sources]},
+                             schema=self.schema.to_dict(), window=dict(self._window_desc),
+                             strategy=strategy, output=None,
+                             options=self.describe()["options"], stages=stages,
+                             warnings=tuple(warnings))
 
     # ---- terminals -----------------------------------------------------------------------
     def collect(self, n: Optional[int] = None):
@@ -809,7 +947,8 @@ class Pipeline:
             from .scorers import apply_scorers, parse_scorers
             apply_scorers(parse_scorers([dict(s) for s in self._scorers]), segments,
                           schema=self.schema, adapter=self.adapter,
-                          seed=self._options["seed"], progress=self._options["progress"])
+                          seed=self._options["seed"], progress=self._options["progress"],
+                          registry=self._registry)
         return dataset_report(segments, **kw)
 
     def experiment(self, arms: dict, n: int, baseline: Optional[str] = None) -> dict:
@@ -838,21 +977,62 @@ class Pipeline:
                               streaming=self._options["streaming"],
                               progress=self._options["progress"])
 
-    def output(self, path, *, container: Optional[str] = None, shard_length: int = 64,
+    def output(self, path, *, preset: Optional[str] = None, spec=None,
+               container: Optional[str] = None, shard_length: int = 64,
                short_policy: str = "keep", modalities: Optional[dict] = None,
                include=None, exclude=None, encoder=None, span_steps: Optional[int] = None,
-               span_seconds: Optional[float] = None) -> dict:
+               span_seconds: Optional[float] = None, categorical: Optional[str] = None,
+               preset_params: Optional[dict] = None) -> dict:
         """Write shards + manifests + config.json. `.curate(hours=...)` routes through the
         hours-budget `write_dataset`; `.curate(n=...)` selects then writes each chosen
         segment as a sub-track. config.json gains a 'pipeline' key: the operator chain."""
         self._check_exec()
         path = str(path)
-        if container is None:
-            container = _SUFFIX_CONTAINER.get(os.path.splitext(path)[1].lower(), "npz")
-        if modalities is None:
+        if spec is not None and (preset is not None or modalities is not None or include is not None
+                                 or exclude is not None or preset_params):
+            raise ValueError("output(spec=...) is the direct escape hatch and cannot be combined "
+                             "with preset/modalities/include/exclude/preset_params")
+        preset_resolution = None
+        from .output.spec import OutputSpec
+        if spec is not None:
+            if isinstance(spec, dict):
+                spec = OutputSpec.from_dict(spec)
+            if not isinstance(spec, OutputSpec):
+                raise ValueError("spec must be an OutputSpec or output-spec dict")
+        elif preset is not None:
+            from .output.presets import output_preset
+            params = dict(preset_params or {})
+            if categorical is not None:
+                params["categorical"] = categorical
+            if container is not None:
+                params["container"] = container
+            if shard_length != 64:
+                params["shard_length"] = shard_length
+            if short_policy != "keep":
+                params["short_policy"] = short_policy
+            categorical_fields = [n for n, f in self.schema.fields.items()
+                                  if f.kind == "categorical"]
+            if self._mode == "strict" and categorical_fields and "categorical" not in params:
+                raise ValueError("strict mode requires an explicit categorical policy for "
+                                 f"fields {categorical_fields}")
+            spec = output_preset(preset, schema=self.schema, **params)
+            preset_resolution = {"name": preset, "version": 1, "parameters": params,
+                                 "resolved": spec.to_dict()}
+        else:
+            if container is None:
+                container = _SUFFIX_CONTAINER.get(os.path.splitext(path)[1].lower(), "npz")
+            if categorical is None:
+                categorical = "error" if self._mode == "strict" else "omit"
+            if categorical not in {"omit", "error"}:
+                raise ValueError("default output categorical policy must be 'omit' or 'error'; "
+                                 "use a preset for encoder policies")
+        if spec is None and modalities is None:
             mods: dict = {}
             for fname, fs in self.schema.fields.items():
                 if fs.kind == "categorical":
+                    if categorical == "error":
+                        raise ValueError(f"output(): categorical field {fname!r} would be omitted; "
+                                         "strict/error policy requires explicit modalities")
                     print(f"  [output] categorical field {fname!r} skipped from default "
                           f"modalities (pass modalities= to encode it)")
                     continue
@@ -862,28 +1042,35 @@ class Pipeline:
             if not mods:
                 raise ValueError("output(): no numeric schema fields for default modalities "
                                  "— pass modalities= explicitly")
-        else:
+        elif spec is None:
+            assert modalities is not None
             mods = {k: dict(v) for k, v in modalities.items()}
-        if include is not None:
+        if spec is None and include is not None:
             unknown = sorted(set(include) - set(mods))
             if unknown:
                 raise ValueError(f"output(): include names unknown modalities {unknown} "
                                  f"(have: {sorted(mods)})")
             mods = {k: v for k, v in mods.items() if k in set(include)}
-        if exclude is not None:
+        if spec is None and exclude is not None:
             unknown = sorted(set(exclude) - set(mods))
             if unknown:
                 raise ValueError(f"output(): exclude names unknown modalities {unknown} "
                                  f"(have: {sorted(mods)})")
             mods = {k: v for k, v in mods.items() if k not in set(exclude)}
-        if not mods:
+        if spec is None and not mods:
             raise ValueError("output(): include/exclude left no modalities")
-        from .output.spec import OutputSpec
-        spec = OutputSpec.from_dict({"modalities": mods, "shard_length": shard_length,
-                                     "short_policy": short_policy, "container": container})
+        if spec is None:
+            spec = OutputSpec.from_dict({"modalities": mods, "shard_length": shard_length,
+                                         "short_policy": short_policy, "container": container})
+        spec.validate_schema(self.schema)
+        output_op = {"op": "output", "args": [path], "kwargs": {
+            "preset": preset, "spec": spec.to_dict(), "categorical": categorical}}
         if isinstance(encoder, str):
             from .output.base import get_encoder
             encoder = get_encoder(encoder)
+        elif isinstance(encoder, dict):
+            from .output.base import get_encoder
+            encoder = get_encoder(encoder["name"], **dict(encoder.get("params") or {}))
         strategy = self._compile()
         opt = self._options
 
@@ -906,6 +1093,11 @@ class Pipeline:
             from .manifest import write_config
             cfg = json.loads(read_text(f"{path}/config.json"))
             cfg["pipeline"] = list(self._ops)
+            cfg["output_request"] = output_op
+            if preset_resolution:
+                cfg["output_preset"] = preset_resolution
+            cfg["mode"] = {"name": self._mode, "resolved": self.describe()["options"]}
+            cfg["warnings"] = [dict(w) for w in self.explain().warnings]
             write_config(f"{path}/config.json", cfg)
             return result
 
@@ -920,7 +1112,18 @@ class Pipeline:
         if not result.selected:
             raise ValueError("selection is empty — nothing to write (check "
                              "filters/predicates and the segment window)")
-        return self._write_selected(path, result, spec, encoder, opt["seed"], opt["progress"])
+        written = self._write_selected(path, result, spec, encoder, opt["seed"], opt["progress"])
+        from .io import read_text
+        from .manifest import write_config
+        cfg = json.loads(read_text(f"{path}/config.json"))
+        cfg["pipeline"] = list(self._ops)
+        cfg["output_request"] = output_op
+        if preset_resolution:
+            cfg["output_preset"] = preset_resolution
+        cfg["mode"] = {"name": self._mode, "resolved": self.describe()["options"]}
+        cfg["warnings"] = [dict(w) for w in self.explain().warnings]
+        write_config(f"{path}/config.json", cfg)
+        return written
 
     def _write_selected(self, out_dir: str, result, spec, encoder, seed: int, progress=None) -> dict:
         """Count-path write: each selected segment becomes a sub-track per entity, written
@@ -955,7 +1158,9 @@ class Pipeline:
         emit(progress, "writing", "complete", current=len(by_source), total=len(by_source),
              detail=f"{len(entries)} shards")
         write_text(f"{out_dir}/dataset_manifest.json",
-                   json.dumps({"count": len(entries), "shards": entries}, indent=2))
+                   json.dumps({"artifact_format_version":
+                               __import__("kuration.versioning", fromlist=["ARTIFACT_FORMAT_VERSION"]).ARTIFACT_FORMAT_VERSION,
+                               "count": len(entries), "shards": entries}, indent=2))
         results = {"shards": len(entries), "selected": len(result.selected),
                    "segments_total": len(result.all_segments),
                    "sources_skipped": len(result.errors),
@@ -965,5 +1170,6 @@ class Pipeline:
         cfg["output"] = spec.to_dict()
         cfg["pipeline"] = list(self._ops)
         write_config(f"{out_dir}/config.json", cfg)
-        return {"shards": entries, "selected": len(result.selected), "results": results,
-                "errors": result.errors}
+        from .results import DatasetWriteResult
+        return DatasetWriteResult(shards=entries, selected=len(result.selected), results=results,
+                                  errors=result.errors)

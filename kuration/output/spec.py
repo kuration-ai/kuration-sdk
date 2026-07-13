@@ -16,13 +16,14 @@ is just one app encoder + (npz/hdf5) container, not something the SDK knows abou
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 
 _SHORT_POLICIES = {"keep", "pad", "drop"}
 # npz/json are dep-free; hdf5 needs [array], parquet needs [parquet].
 _CONTAINERS = {"npz", "json", "hdf5", "parquet"}
-_SRC_KINDS = {"field", "segment", "encoder"}
+_SRC_KINDS = {"field", "segment", "encoder", "vocab"}
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ class OutputSpec:
     short_policy: str = "keep"
     container: str = "npz"
     presence_mask: bool = True
+    vocabs: Optional[dict] = None
 
     @staticmethod
     def from_dict(d: dict) -> "OutputSpec":
@@ -82,18 +84,33 @@ class OutputSpec:
             raise ValueError(f"short_policy must be {sorted(_SHORT_POLICIES)}")
         container = d.get("container", "npz")
         if container not in _CONTAINERS:
-            raise ValueError(f"container must be {sorted(_CONTAINERS)}")
+            from ..plugins import load_plugins
+            from ..registry import default_registry
+            load_plugins()
+            if container not in default_registry.names("container"):
+                raise ValueError(f"unknown container {container!r}; registered: "
+                                 f"{default_registry.names('container')}")
         presence_mask = d.get("presence_mask", True)
         if not isinstance(presence_mask, bool):
             raise ValueError("presence_mask must be true or false")
+        vocabs = {str(k): {str(label): int(i) for label, i in value.items()}
+                  for k, value in (d.get("vocabs") or {}).items()}
         return OutputSpec(modalities=tuple(mods), shard_length=shard_length,
                           short_policy=short_policy, container=container,
-                          presence_mask=presence_mask)
+                          presence_mask=presence_mask, vocabs=vocabs)
 
     def validate_schema(self, schema) -> None:
         """Validate schema-backed modality sources before any data is read or written."""
         available = {**schema.fields, **schema.globals}
         for m in self.modalities:
+            if m.src_kind == "vocab":
+                fs = available.get(m.src_arg)
+                if fs is None or fs.kind != "categorical":
+                    raise ValueError(f"modality {m.name!r}: vocab source {m.src_arg!r} must be "
+                                     "a categorical schema field")
+                if m.src_arg not in (self.vocabs or {}):
+                    raise ValueError(f"modality {m.name!r}: missing vocabs[{m.src_arg!r}]")
+                continue
             if m.src_kind != "field":
                 continue
             fs = available.get(m.src_arg)
@@ -108,7 +125,7 @@ class OutputSpec:
                     f"{m.src_arg!r} ({fs.kind}, expected {expected})")
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "shard_length": self.shard_length,
             "short_policy": self.short_policy,
             "container": self.container,
@@ -116,3 +133,6 @@ class OutputSpec:
             "modalities": {m.name: {"dtype": m.dtype, "shape": list(m.shape),
                                     "source": f"{m.src_kind}:{m.src_arg}"} for m in self.modalities},
         }
+        if self.vocabs:
+            out["vocabs"] = self.vocabs
+        return out

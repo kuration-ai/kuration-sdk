@@ -28,13 +28,17 @@ class PassthroughEncoder:
 _ENCODERS: dict[str, Callable[..., OutputEncoder]] = {}
 
 
-def register_encoder(name: str, factory: Callable[..., OutputEncoder]) -> None:
+def register_encoder(name: str, factory: Callable[..., OutputEncoder], **metadata) -> None:
     if name in _ENCODERS:
         raise ValueError(f"encoder {name!r} already registered")
     _ENCODERS[name] = factory
+    from ..registry import default_registry
+    default_registry.register("encoder", name, factory, replace=True, **metadata)
 
 
-def get_encoder(name: str, **kwargs) -> OutputEncoder:
+def get_encoder(name: str, *, registry=None, **kwargs) -> OutputEncoder:
+    if registry is not None:
+        return registry.get("encoder", name)(**kwargs)
     if name not in _ENCODERS:
         from ..plugins import load_plugins
         load_plugins()

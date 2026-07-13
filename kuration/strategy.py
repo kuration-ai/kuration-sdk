@@ -26,6 +26,7 @@ from .dsl.registry import METRICS
 from .schema import SchemaSpec
 from .segment import Segment
 from .select import enforce_group_cap, enforce_tag_coverage, group_by_bin, sample_uniform_bins
+from .registry import default_registry as _default_registry
 
 # Feature-space methods live in methods.py (optional scikit-learn), dispatched from here.
 _METHOD_MODULE_METHODS = {"cluster-balanced", "k-center", "facility-location",
@@ -49,7 +50,7 @@ def validate_target_size(target_size: int) -> int:
     return target_size
 
 
-def _resolve_filters(raw) -> list:
+def _resolve_filters(raw, registry=None) -> list:
     """Validate the optional `filters` block (list of {type, ...knobs}) at load time."""
     if not raw:
         return []
@@ -59,8 +60,19 @@ def _resolve_filters(raw) -> list:
     for f in raw:
         if not isinstance(f, dict) or "type" not in f:
             raise ValueError(f"each filter needs a 'type' (offending: {f!r})")
+        from .plugins import load_plugins
+        from .registry import default_registry, validate_parameters
+        registry = registry or default_registry
+        load_plugins()
         if f["type"] not in _FILTER_TYPES:
-            raise ValueError(f"unknown filter type {f['type']!r}; expected {sorted(_FILTER_TYPES)}")
+            if f["type"] not in registry.names("filter"):
+                raise ValueError(f"unknown filter type {f['type']!r}; registered: "
+                                 f"{registry.names('filter')}")
+            validate_parameters(registry.descriptor("filter", f["type"]),
+                                {k: v for k, v in f.items() if k not in {"type", "feature_space",
+                                                                         "per_group"}})
+            out.append(dict(f))
+            continue
         fs = f.get("feature_space")
         if fs is not None and not (isinstance(fs, list) and all(isinstance(m, str) for m in fs)):
             raise ValueError(f"filter 'feature_space' must be a list of metric names (got {fs!r})")
@@ -117,6 +129,7 @@ class Strategy:
     filters: Optional[list] = None       # pre-pass filters [{type: anomaly|dedup, ...}]
     tags: Optional[dict] = None          # declarative tag derivation for tag_coverage ({"from": [...]})
     scorers: Optional[list] = None       # parsed [(name, output, params)] — learned/whole-pool scorers
+    registry: Any = None                 # explicit overlay registry (not serialized)
 
     def scorer_outputs(self) -> set[str]:
         """Feature names produced by the strategy's scorers (referenceable like any metric)."""
@@ -135,11 +148,16 @@ class Strategy:
         return names
 
 
-def _resolve(spec: dict) -> Strategy:
+def _resolve(spec: dict, registry=None) -> Strategy:
     sel = dict(spec.get("selection") or {})
     method = sel.get("method", "uniform-bins")
-    if method not in _METHODS:
-        raise ValueError(f"unknown selection method {method!r}; expected {sorted(_METHODS)}")
+    from .plugins import load_plugins
+    from .registry import default_registry
+    registry = registry or default_registry
+    load_plugins()
+    if method not in _METHODS and method not in registry.names("method"):
+        raise ValueError(f"unknown selection method {method!r}; registered: "
+                         f"{sorted(set(_METHODS) | set(registry.names('method')))}")
 
     raw_axes = (spec.get("binning") or {}).get("axes") or []
     axes = []
@@ -209,7 +227,7 @@ def _resolve(spec: dict) -> Strategy:
             raise ValueError(f"predicate value must be a finite number, got {p['value']!r}")
 
     feature_space = spec.get("feature_space")
-    filters = _resolve_filters(spec.get("filters"))
+    filters = _resolve_filters(spec.get("filters"), registry)
     tags = spec.get("tags")
     if tags is not None:
         # Accept {"from": [...]} or a bare list, but normalize so every consumer
@@ -234,6 +252,10 @@ def _resolve(spec: dict) -> Strategy:
     _KNOWN_PARAMS = {"feature_normalize", "dsir_bins", "knn_k", "rare_sample", "clusters"}
     method_params = {k: v for k, v in sel.items() if k not in _KNOWN_SEL}
     unknown = set(method_params) - _KNOWN_PARAMS
+    if method not in _METHODS:
+        from .registry import validate_parameters
+        validate_parameters(registry.descriptor("method", method), method_params)
+        unknown = set()
     if unknown:                                   # a typo'd knob must not be silently ignored
         raise ValueError(f"unknown selection key(s) {sorted(unknown)}; expected "
                          f"{sorted(_KNOWN_SEL)} or method params {sorted(_KNOWN_PARAMS)}")
@@ -262,10 +284,11 @@ def _resolve(spec: dict) -> Strategy:
                     weights=weights, normalize=normalize, target=target,
                     tag_coverage=tag_coverage, group_cap=group_cap, resolved=resolved,
                     predicates=predicates, feature_space=feature_space,
-                    method_params=method_params, filters=filters, tags=tags, scorers=scorers)
+                    method_params=method_params, filters=filters, tags=tags, scorers=scorers,
+                    registry=registry)
 
 
-def load_strategy(name_or_spec, schema: SchemaSpec) -> Strategy:
+def load_strategy(name_or_spec, schema: SchemaSpec, *, registry=None) -> Strategy:
     """Load a strategy from a dict or JSON file path.
     Validates `define` (compiles each DSL metric against `schema`) and that every referenced
     metric is either defined or registered — all loudly, before any data is read."""
@@ -281,7 +304,7 @@ def load_strategy(name_or_spec, schema: SchemaSpec) -> Strategy:
             raise ValueError(f"strategy file must have a .json suffix, got {str(p)!r}")
         spec = json.loads(p.read_text())
 
-    strat = _resolve(spec)
+    strat = _resolve(spec, registry)
     for nm, msp in strat.define.items():
         compile_metric(msp, schema)  # validate tokens now; discard the fn
     if strat.tags:
@@ -289,8 +312,10 @@ def load_strategy(name_or_spec, schema: SchemaSpec) -> Strategy:
         compile_tagger(strat.tags, schema)  # validate tag sources at load
     if strat.scorers:
         from .scorers import has_scorer
+        from .registry import default_registry
+        active_registry = strat.registry or default_registry
         for name, _out, _p in strat.scorers:
-            if not has_scorer(name):
+            if name not in active_registry.names("scorer") and not has_scorer(name):
                 raise ValueError(f"strategy {strat.name!r} references unregistered scorer {name!r}")
     # scorer outputs are produced at runtime, so they count as available metric references.
     available = set(strat.define) | set(METRICS) | strat.scorer_outputs()
@@ -348,6 +373,16 @@ def _raw_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
     if strategy.method in _METHOD_MODULE_METHODS:
         from .methods import method_priorities
         return method_priorities(segments, strategy, seed=seed, workers=workers)
+    if strategy.method not in _BASE_METHODS:
+        from .registry import default_registry
+        registry = strategy.registry or default_registry
+        values = registry.get("method", strategy.method)(
+            segments, strategy, seed=seed, workers=workers)
+        out = np.asarray(values, dtype=np.float64)
+        if out.shape != (n,) or not np.isfinite(out).all():
+            raise ValueError(f"method {strategy.method!r} must return {n} finite priorities; "
+                             f"got shape {out.shape}")
+        return out
     if strategy.method == "filter":
         # passing clips share one priority; failing clips are excluded from any budget fill.
         return np.array([0.0 if _passes(s, strategy.predicates) else float("-inf")
@@ -452,7 +487,7 @@ def select(segments: list[Segment], strategy: Strategy, *, target_size: int,
     py_rng = random.Random(seed)
     np_rng = np.random.default_rng(seed)
 
-    if strategy.method in _METHOD_MODULE_METHODS:
+    if strategy.method in _METHOD_MODULE_METHODS or strategy.method not in _BASE_METHODS:
         # feature-space methods: take the top target_size of the same priority the hours fill
         # uses, so set- and hours-selection agree by construction.
         prio = segment_priorities(segments, strategy, seed=seed, workers=workers)
@@ -483,3 +518,9 @@ def select(segments: list[Segment], strategy: Strategy, *, target_size: int,
         selected = enforce_group_cap(
             selected, max_group_overshoot=strategy.group_cap.get("max_group_overshoot", 1.5))
     return selected
+
+
+for _name in _BASE_METHODS:
+    if _name not in _default_registry.names("method"):
+        _default_registry.register("method", _name, _raw_priorities,
+                                   capabilities={"streaming": True})

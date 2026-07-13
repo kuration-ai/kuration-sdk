@@ -16,7 +16,7 @@ from typing import Optional
 import numpy as np
 
 from .base import OutputEncoder, PassthroughEncoder
-from .containers import CONTAINER_EXT, write_shard
+from .containers import container_extension, write_shard
 from .spec import OutputSpec
 from .track import PRESENT_KEY, Track
 
@@ -71,6 +71,10 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
         for m in spec.modalities:
             if m.src_kind == "field":
                 val = clean.get(m.src_arg)
+            elif m.src_kind == "vocab":
+                raw = clean.get(m.src_arg)
+                vocab = (spec.vocabs or {}).get(m.src_arg, {})
+                val = vocab.get(str(raw)) if raw is not None else None
             elif m.src_kind == "segment":
                 val = ctx["track"].get(m.src_arg)
             else:
@@ -112,7 +116,7 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
     ctx = {"schema": schema, "track": {**track.meta, "source_id": track.source_id,
                                        "entity_id": track.entity_id}}
     name = track_name(track.source_id, track.entity_id, name_suffix)
-    ext = CONTAINER_EXT[spec.container]
+    ext = container_extension(spec.container)
     entries: list[dict] = []
     shape = {m.name: list(m.shape) for m in spec.modalities}
     dtype = {m.name: m.dtype for m in spec.modalities}

@@ -61,6 +61,10 @@ class CuratedDatasetAdapter:
         from ..loaders import rebase_entries
         loaded = [(d, json.loads(read_text(f"{d}/config.json")),
                    json.loads(read_text(f"{d}/dataset_manifest.json"))) for d in dirs]
+        from ..versioning import check_version
+        for _d, cfg, manifest in loaded:
+            check_version(cfg.get("artifact_format_version"), kind="artifact")
+            check_version(manifest.get("artifact_format_version"), kind="artifact")
         first_cfg = loaded[0][1]
         self.schema = schema or schema_from_output(
             first_cfg["output"], sample_hz=(first_cfg.get("schema") or {}).get("sample_hz"))

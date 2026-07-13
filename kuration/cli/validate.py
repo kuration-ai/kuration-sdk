@@ -80,9 +80,15 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
         load_strategy(job["strategy"], schema)
 
     if kind == "curate":
-        if "output" not in job:
-            raise ValueError("curate job needs an 'output' spec")
-        output = OutputSpec.from_dict(job["output"])
+        if "output" not in job and "output_preset" not in job:
+            raise ValueError("curate job needs 'output' or 'output_preset'")
+        if "output_preset" in job:
+            from ..output.presets import output_preset
+            raw = job["output_preset"]
+            raw = {"name": raw} if isinstance(raw, str) else dict(raw)
+            output = output_preset(raw.pop("name"), schema=schema, **raw)
+        else:
+            output = OutputSpec.from_dict(job["output"])
         output.validate_schema(schema)
         if "train_hours" not in job:
             raise ValueError("curate job needs 'train_hours'")
@@ -93,6 +99,8 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
                 raise ValueError(f"{name} must be a finite non-negative number")
         if "out" not in job:
             raise ValueError("curate job needs an 'out' directory")
+        if job.get("mode") not in {None, "explore", "strict"}:
+            raise ValueError("mode must be 'explore' or 'strict'")
 
     summary = {"kind": kind, "schema": schema.name}
     if kind == "experiment":
@@ -105,7 +113,8 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
         # Enumerating adapter-resolved sources can be arbitrarily expensive (the HF adapter
         # materializes the whole dataset) — the no-data-read default must not touch them.
         summary["sources"] = "implicit (adapter-resolved; --check-sources enumerates)"
-        return summary
+        from ..results import ValidationResult
+        return ValidationResult(summary)
     summary["n_sources"] = len(sources)
     if check_sources:                                 # existence failure IS fatal (propagates)
         if getattr(adapter, "sources_are_paths", True):   # HF names / dataset-mode globs
@@ -119,7 +128,8 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
             for s in sources:
                 check(s)
             summary["sources_checked"] = True
-    return summary
+    from ..results import ValidationResult
+    return ValidationResult(summary)
 
 
 def _json_schema_check(job: dict) -> None:
