@@ -7,9 +7,8 @@ the strategy's *best* N hours rather than a random draw.
 """
 from __future__ import annotations
 
-import hashlib
 import json
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Callable, Iterable, Optional
 
 from ..adapters.base import InputAdapter
@@ -19,29 +18,38 @@ from ..schema import SchemaSpec
 from ..scoring import score_sources
 from ..segment import Segmenter
 from ..strategy import Strategy, segment_priorities
-from .base import OutputEncoder
+from .base import OutputEncoder, PassthroughEncoder
 from .fill import fill_to_hours
 from .shardwriter import write_track
 from .spec import OutputSpec
 from .track import Track, tracks_from_ticks
 
 
-def _check_resume_spec(out_dir: str, spec: OutputSpec, resume: bool) -> None:
-    """Shard bytes are a function of the OutputSpec, but `resume` skips by filename alone —
-    so pin the spec in a sidecar and refuse to resume under a different one (stale shards
-    would be silently reused while the fresh manifest/config claim the new shapes)."""
+def _check_resume_run(out_dir: str, signature: dict, resume: bool) -> None:
+    """Pin the complete effective run because resume skips existing files by name."""
     from ..io import exists, read_text, write_text
-    fp = hashlib.sha256(json.dumps(spec.to_dict(), sort_keys=True).encode()).hexdigest()
     marker = f"{out_dir}/.kuration_output_spec.json"
     if resume and exists(marker):
-        old = json.loads(read_text(marker))["fingerprint"]
-        if old != fp:
+        old = json.loads(read_text(marker))
+        old_output = old.get("output")
+        new_output = signature["payload"]["output"]
+        if old_output != new_output:
             raise ValueError(
                 f"resume=True but {out_dir!r} was started with a different output spec "
-                f"(fingerprint {old[:12]} != {fp[:12]}); existing shards would not match the "
+                f"(fingerprint mismatch); existing shards would not match the "
                 f"new manifest — use a fresh out_dir or restore the original spec")
+        old_fp = old.get("run_fingerprint")
+        if old_fp is None:
+            raise ValueError("resume=True found a legacy output-only marker; complete run "
+                             "provenance is unavailable, so reusing its shards is unsafe")
+        if old_fp != signature["fingerprint"]:
+            raise ValueError(
+                f"resume=True but {out_dir!r} was started with different inputs or run "
+                f"configuration ({old_fp[:12]} != {signature['fingerprint'][:12]}); use a "
+                f"fresh out_dir or restore the original job")
     if not (resume and exists(marker)):
-        write_text(marker, json.dumps({"fingerprint": fp, "output": spec.to_dict()}, indent=2))
+        write_text(marker, json.dumps({"run_fingerprint": signature["fingerprint"],
+                                       "output": signature["payload"]["output"]}, indent=2))
 
 
 def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
@@ -63,6 +71,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
 
     `streaming=True` scores and writes out-of-core when the adapter provides a bounded-memory
     tick iterator. Adapters that cannot honor that contract reject the option loudly."""
+    started = datetime.now(timezone.utc).isoformat()
+    sources = list(sources)
     sample_hz = sample_hz or schema.sample_hz
     if not sample_hz:
         raise ValueError("write_dataset needs sample_hz (schema.sample_hz or explicit) for the "
@@ -76,7 +86,13 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             f"span_steps={span_len} < shard_length={spec.shard_length} with "
             f"short_policy='drop': every admitted span would chunk to zero shards while "
             f"still consuming the hours budget")
-    _check_resume_spec(out_dir, spec, resume)
+    from ..provenance import build_run_signature
+    signature = build_run_signature(
+        schema=schema, strategy=strategy, spec=spec, segmenter=segmenter, sources=sources,
+        adapter=adapter, encoder=(encoder or PassthroughEncoder()), seed=seed, sample_hz=sample_hz,
+        train_hours=train_hours, test_hours=test_hours, span_len=span_len,
+        clip_aggregate=clip_aggregate, group_of=group_of, tags_of=tags_of)
+    _check_resume_run(out_dir, signature, resume)
     registered = [r for r in strategy.referenced_metrics()
                   if r not in strategy.define and r not in strategy.scorer_outputs()]
 
@@ -129,9 +145,10 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     n_tracks = sum(len(t) for t in source_tracks.values())
     group_overshoot = (strategy.group_cap or {}).get("max_group_overshoot") \
         if strategy.group_cap else None
-    admitted, split = fill_to_hours(
+    admitted, split, budget = fill_to_hours(
         items, train_hours=train_hours, test_hours=test_hours,
-        max_group_overshoot=group_overshoot, tag_coverage=strategy.tag_coverage, seed=seed)
+        max_group_overshoot=group_overshoot, tag_coverage=strategy.tag_coverage, seed=seed,
+        return_stats=True)
 
     # Re-read each admitted source once; write each admitted span as its own (sub-)track.
     entries = []
@@ -166,15 +183,28 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                                    split=split.get(src, "train"), resume=resume,
                                    name_suffix=suffix(k))
 
+    emitted = {sp: sum(e["n_steps"] for e in entries if e["split"] == sp) / sample_hz
+               for sp in ("train", "test")}
+    budget["emitted_seconds"] = emitted
+    budget["emission_loss_seconds"] = {
+        sp: max(0.0, budget["admitted_seconds"][sp] - emitted[sp])
+        for sp in ("train", "test")}
+    budget["emitted_underfill_seconds"] = {
+        sp: max(0.0, budget["requested_seconds"][sp] - emitted[sp])
+        for sp in ("train", "test")}
+
     from ..io import write_text
     write_text(f"{out_dir}/dataset_manifest.json",
-               json.dumps({"count": len(entries), "shards": entries}, indent=2))
+               json.dumps({"count": len(entries), "shards": entries, "budget": budget}, indent=2))
     results = {"shards": len(entries), "tracks_admitted": len(admitted),
                "tracks_total": n_tracks, "sources_skipped": len(errors),
                "n_train": sum(1 for v in split.values() if v == "train"),
-               "n_test": sum(1 for v in split.values() if v == "test")}
-    cfg = build_config(schema, strategy, results=results, seed=seed)
+               "n_test": sum(1 for v in split.values() if v == "test"),
+               "budget": budget}
+    ended = datetime.now(timezone.utc).isoformat()
+    cfg = build_config(schema, strategy, results=results, seed=seed, started=started, ended=ended)
     cfg["output"] = spec.to_dict()
+    cfg["provenance"] = signature
     write_config(f"{out_dir}/config.json", cfg)
     return {"shards": entries, "split": split, "admitted": admitted, "results": results,
             "errors": errors}

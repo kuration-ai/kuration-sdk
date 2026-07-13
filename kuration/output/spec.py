@@ -43,6 +43,7 @@ class OutputSpec:
     shard_length: int
     short_policy: str = "keep"
     container: str = "npz"
+    presence_mask: bool = True
 
     @staticmethod
     def from_dict(d: dict) -> "OutputSpec":
@@ -77,8 +78,12 @@ class OutputSpec:
         container = d.get("container", "npz")
         if container not in _CONTAINERS:
             raise ValueError(f"container must be {sorted(_CONTAINERS)}")
+        presence_mask = d.get("presence_mask", True)
+        if not isinstance(presence_mask, bool):
+            raise ValueError("presence_mask must be true or false")
         return OutputSpec(modalities=tuple(mods), shard_length=shard_length,
-                          short_policy=short_policy, container=container)
+                          short_policy=short_policy, container=container,
+                          presence_mask=presence_mask)
 
     def validate_schema(self, schema) -> None:
         """Validate schema-backed modality sources before any data is read or written."""
@@ -102,6 +107,7 @@ class OutputSpec:
             "shard_length": self.shard_length,
             "short_policy": self.short_policy,
             "container": self.container,
+            "presence_mask": self.presence_mask,
             "modalities": {m.name: {"dtype": m.dtype, "shape": list(m.shape),
                                     "source": f"{m.src_kind}:{m.src_arg}"} for m in self.modalities},
         }

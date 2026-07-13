@@ -85,6 +85,7 @@
         "shard_length": {"type": "integer", "minimum": 1},
         "short_policy": {"enum": ["keep", "pad", "drop"]},
         "container": {"enum": ["npz", "json", "hdf5", "parquet"]},
+        "presence_mask": {"type": "boolean", "default": true},
         "modalities": {
           "type": "object",
           "minProperties": 1,
@@ -111,7 +112,7 @@
   },
   "$defs": {
     "strategy": {
-      "description": "A strategy: inline dict, a path to one, or a built-in name.",
+      "description": "A strategy: inline dict or a path to a JSON file.",
       "oneOf": [
         {"type": "string"},
         {

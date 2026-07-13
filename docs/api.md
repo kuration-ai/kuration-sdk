@@ -90,8 +90,8 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `ZarrAdapter` | `fields, globals=None` | a Zarr store (`[zarr]`; remote via `[cloud]`) |
 | `CuratedDatasetAdapter` | `(dataset_dir_or_list, schema=None)`; `.sources()`, `.dataset_of` | kuration's own output, re-curatable |
 | `schema_from_output` | `(output_spec_dict, *, name="curated", sample_hz=None, entity_axis="e") -> SchemaSpec` | derive a schema from a dataset's `config.json` output block |
-| `register_adapter` / `get_adapter` | `(name, factory)` / `(name, **kwargs)` | registry (workers rebuild adapters by name) |
-| `InputAdapter` | Protocol: `schema` + `ticks(uri)`; optional `check_source(uri)` + `sources_are_paths` | the seam to implement for bespoke formats |
+| `register_adapter` / `get_adapter` | `(name, factory)` / `(name, **kwargs)` | declarative adapter registry |
+| `InputAdapter` | Protocol: `schema` + `ticks(uri)`; optional lazy `iter_ticks(uri)`, `check_source(uri)`, and `sources_are_paths` | the seam to implement for bespoke formats |
 
 ## Selection
 
@@ -119,7 +119,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 
 | name | signature | does |
 |---|---|---|
-| `OutputSpec` | `.from_dict({shard_length, short_policy?, container?, modalities})` | declared modalities + chunking ([output.md](output.md)) |
+| `OutputSpec` | `.from_dict({shard_length, short_policy?, container?, presence_mask?, modalities})` | declared modalities + chunking; `_present` enabled by default ([output.md](output.md)) |
 | `Modality` | `(name, dtype, shape, src_kind, src_arg)` | one declared modality |
 | `OutputEncoder` / `PassthroughEncoder` | `timestep(record, ctx) -> {modality: array}` | the domain seam for derived tensors |
 | `register_encoder` / `get_encoder` | `(name, factory)` / `(name, **kwargs)` | encoder registry |
@@ -132,7 +132,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 
 | name | signature | does |
 |---|---|---|
-| `iter_shards` | `(dataset, *, split=None, modalities=None, trim=True, container=None, with_meta=False) -> Iterator[dict]` | shards back as `{modality -> (T, *shape)}` numpy arrays |
+| `iter_shards` | `(dataset, *, split=None, modalities=None, trim=True, container=None, with_meta=False) -> Iterator[dict]` | shards back as `{modality -> array}` plus `_present` when enabled |
 | `shard_entries` | `(dataset, *, split=None, container=None) -> (entries, container)` | manifest entries (paths rebased if the dataset moved) |
 | `read_shard_arrays` | `(entry, container, *, modalities=None, trim=True) -> {name: array}` | one shard: trim pad, reshape, restore dtype |
 | `kuration.torch.ShardDataset` | `(dataset, *, split=None, modalities=None, trim=True, container=None, transform=None, include_meta=False)` | map-style PyTorch `Dataset` over the above (`[torch]`) |

@@ -37,7 +37,7 @@ write_dataset("out/", schema=schema, adapter=adapter, sources=[...],
 
 # read it back for training — numpy core, or kuration.torch.ShardDataset for PyTorch
 from kuration import iter_shards
-for arr in iter_shards("out/", split="train"):   # {modality -> (T, *shape)}
+for arr in iter_shards("out/", split="train"):   # modalities + boolean arr["_present"]
     ...
 ```
 
@@ -118,8 +118,8 @@ maps the common ones to causes and fixes.
 
 - **Closed grammar, loud validation** — every metric token is enumerated and checked against
   the schema at load; unknown tokens raise. No silent fallbacks.
-- **Reproducible from the artifact** — resolved schema + strategy + output spec live in
-  `config.json`.
+- **Reproducible from the artifact** — the resolved job, source/component provenance,
+  timestamps, budget accounting, and output spec live in `config.json`.
 - **Deterministic under parallelism** — canonical segment ordering before binning/selection
   makes seeded results worker-count-independent.
 - **Domain code only at the seams** — `InputAdapter`, `OutputEncoder`, a registered Python

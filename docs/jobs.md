@@ -36,11 +36,11 @@ curate; otherwise → report.
 
 | key | required | value |
 |---|---|---|
-| `output` | yes | an `OutputSpec` dict: `{"shard_length", "short_policy"?, "container"?, "modalities": {...}}` ([output.md](output.md)) |
+| `output` | yes | an `OutputSpec` dict: `{"shard_length", "short_policy"?, "container"?, "presence_mask"?, "modalities": {...}}` ([output.md](output.md)) |
 | `train_hours` | yes | train budget in hours (the emitted set is the strategy's *best* N hours) |
 | `test_hours` | no (0) | test budget; sources split leakage-free |
 | `out` | yes | output directory — local path or cloud URL |
-| `resume` | no (false) | skip re-encoding shards that already exist; raises if the `out` dir was started under a different output spec |
+| `resume` | no (false) | skip existing shards only when the complete run/source provenance fingerprint matches |
 
 **Python-API-only knobs** (not JSON-expressible or not wired into the job spec):
 `group_of` / `tags_of` (callables), `clip_aggregate`, `span_steps` / `span_seconds` (sub-track

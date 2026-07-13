@@ -28,6 +28,7 @@ spec = OutputSpec.from_dict({
     "shard_length": 64,             # timesteps per shard
     "short_policy": "keep",         # keep | pad | drop  (tail handling)
     "container": "npz",             # npz | json | hdf5 | parquet
+    "presence_mask": True,           # emit boolean _present per timestep (default)
     "modalities": {
         "pos":    {"dtype": "float32", "shape": [3], "source": "field:pos"},
         "battery":{"dtype": "float32", "shape": [],  "source": "field:battery"},
@@ -47,6 +48,11 @@ spec = OutputSpec.from_dict({
 
 **`short_policy`:** `keep` → last shard is its (shorter) real tail; `pad` → last shard padded
 to `shard_length` with zero rows (real length recorded); `drop` → short tail discarded.
+
+**Missing entities:** every shard includes `_present: bool[L]` by default. It is false when the
+track entity is absent at a real timestep, so zero-filled modality values remain distinguishable
+from genuine zeros. Set `presence_mask: false` only when a legacy consumer cannot accept the
+auxiliary array.
 
 **Containers:** `npz` (numpy-native, tensor default) and `json` (human-readable) are
 dependency-free; `hdf5` needs the `[array]` extra and `parquet` the `[parquet]` extra. All four
@@ -101,10 +107,15 @@ train and test **hour budgets** in descending priority. Properties:
 - **source-level, leakage-free split** — a whole source goes to exactly one of train/test;
 - **decoupled budgets** — sources are pre-partitioned into split pools so a spread-out priority
   can't starve the test budget;
-- **group cap in hours** — a group can't exceed `max_group_overshoot × (budget / n_groups)`;
+- **optional group cap in hours** — when configured, a group can't exceed
+  `max_group_overshoot × (budget / n_groups)`;
 - **tag reserve** — with `selection.tag_coverage`, each tag's highest-priority track is admitted
   first (bounded by `min_tag_frac` of the budget) so a rare label survives the cut;
 - budget honored to within one track.
+
+`results.budget` and the manifest's `budget` block report requested, candidate, admitted, and
+emitted seconds per split, plus underfill, dropped-tail emission loss, non-finite exclusions,
+and group-cap exclusions.
 
 With the `filter` method, spans whose segments all fail the predicates get `-inf` priority and
 are **never admitted**, even when the budget has room — the fill emits only predicate-passing
@@ -125,21 +136,21 @@ So the emitted N hours is the strategy's *best* N hours, not a random draw.
 
 ```
 out/
-  train/<source>_<entity>[_spanNNN]_<hash8>_shard0000.npz, ...
-  test/<source>_<entity>[_spanNNN]_<hash8>_shard0000.npz, ...
-  dataset_manifest.json         # {count, shards:[{path, source_id, entity_id, split,
-                                #                  shard_index, n_steps, padded, shape, dtype}]}
-  config.json                   # resolved schema + strategy + output spec + results + seed
-  .kuration_output_spec.json    # spec fingerprint checked by resume
+  train/<source>_<entity>[_spanNNN]_<hash12>_shard0000.npz, ...
+  test/<source>_<entity>[_spanNNN]_<hash12>_shard0000.npz, ...
+  dataset_manifest.json         # shards plus requested/admitted/emitted budget accounting
+  config.json                   # resolved job, results, timestamps, and full provenance
+  .kuration_output_spec.json    # complete run fingerprint checked by resume
 ```
 
-The readable filename prefix flattens `/` to `_`; the 8-char hash makes names collision-free
+The readable filename prefix is portable and length-bounded; the 12-char hash disambiguates
 across distinct `(source, entity)` pairs (path-like source ids can otherwise alias after
 flattening). Manifest entry order is deterministic (sorted by source/entity/span), so
 `ShardDataset[i]` is stable across runs and machines.
 
-`config.json` is the reproducibility record — schema, strategy, and output spec together
-regenerate this dataset from the same sources.
+`config.json` is the reproducibility record. Its provenance block fingerprints the effective
+job, SDK version, adapter/encoder/callback code and state, and source metadata. Resume refuses
+to reuse shards when any fingerprinted input changes.
 
 ## Reading a dataset back
 
@@ -151,8 +162,8 @@ the PyTorch wrapper (`kuration.torch`, the `[torch]` extra) is a thin layer over
 from kuration import iter_shards
 
 for arr in iter_shards("out/", split="train"):
-    # arr = {modality -> np.ndarray (T, *shape)}, trimmed to the shard's real n_steps
-    obs, act = arr["obs"], arr["act"]
+    # declared modalities plus boolean _present, trimmed to the shard's real n_steps
+    obs, act, present = arr["obs"], arr["act"], arr["_present"]
 ```
 
 `iter_shards(dataset, *, split=None, modalities=None, trim=True, container=None, with_meta=False)`

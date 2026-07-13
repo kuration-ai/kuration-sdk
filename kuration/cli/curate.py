@@ -40,9 +40,14 @@ def _run(args) -> None:
                         on_error=job.get("on_error", "skip"), resume=job.get("resume", False),
                         streaming=job.get("streaming", False))
     r = res["results"]
+    b = r["budget"]
+    emitted = b["emitted_seconds"]
+    requested = b["requested_seconds"]
     print(f"wrote {r['shards']} shards from {r['tracks_admitted']}/{r['tracks_total']} tracks "
           f"({r['n_train']} train / {r['n_test']} test sources, "
-          f"{r['sources_skipped']} skipped) → {job['out']}")
+          f"{r['sources_skipped']} skipped; emitted "
+          f"{emitted['train'] / 3600:.3f}/{requested['train'] / 3600:.3f} train h, "
+          f"{emitted['test'] / 3600:.3f}/{requested['test'] / 3600:.3f} test h) → {job['out']}")
 
 
 if __name__ == "__main__":

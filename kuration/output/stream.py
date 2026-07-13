@@ -13,6 +13,7 @@ from ..io import exists as _exists
 from .base import PassthroughEncoder
 from .containers import CONTAINER_EXT, write_shard
 from .shardwriter import _build_arrays, track_name
+from .track import PRESENT_KEY
 
 
 def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dict], *,
@@ -22,6 +23,9 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
     ext = CONTAINER_EXT[spec.container]
     shape = {m.name: list(m.shape) for m in spec.modalities}
     dtype = {m.name: m.dtype for m in spec.modalities}
+    if spec.presence_mask:
+        shape["_present"] = []
+        dtype["_present"] = "bool"
     st: dict = {}
     for j in jobs:
         st[(j["eid"], j["span_index"])] = {
@@ -57,6 +61,7 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
                 rec = dict(tk.entities.get(s["eid"]) or {})
                 for gname, gval in (tk.globals or {}).items():
                     rec.setdefault(gname, gval)
+                rec[PRESENT_KEY] = s["eid"] in tk.entities
                 s["buf"].append(rec)
                 if len(s["buf"]) == spec.shard_length:
                     _flush(key)

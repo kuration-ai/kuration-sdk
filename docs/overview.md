@@ -100,10 +100,10 @@ write_dataset(
     segmenter=Segmenter(4, 2, unit="seconds", sample_hz=20),   # 4s windows, 2s stride
     spec=spec, train_hours=10, test_hours=1, seed=0,
 )
-# -> out/train/<src>_<entity>_<hash8>_shard0000.npz, ..., dataset_manifest.json, config.json
+# -> out/train/<src>_<entity>_<hash12>_shard0000.npz, ..., dataset_manifest.json, config.json
 ```
 
-`config.json` embeds the **resolved schema + strategy + output spec**, so the dataset
+`config.json` embeds the **resolved job, source/component provenance, and output spec**, so the dataset
 reproduces from its own directory alone.
 
 ## Reference docs

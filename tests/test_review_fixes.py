@@ -473,3 +473,54 @@ def test_track_name_is_portable_and_bounded():
     name = track_name("C:\\bad?path/" + "x" * 400, "entity:*", "_span001")
     assert len(name) <= 109
     assert set(name) <= set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+
+
+def test_presence_mask_marks_entity_absence_in_memory_and_streaming(tmp_path):
+    ticks = [Tick(time=i, entities=({0: {"pos": (float(i), 0.0), "act": 1.0}}
+                                    if i not in (2, 3) else {})) for i in range(8)]
+    data = {"s": ticks}
+    common = dict(schema=SCHEMA, sources=["s"], strategy=_strategy(),
+                  segmenter=Segmenter(4, 4), spec=SPEC, train_hours=1, test_hours=0)
+    mem = write_dataset(str(tmp_path / "mem"), adapter=MemAdapter(SCHEMA, data), **common)
+    stream = write_dataset(str(tmp_path / "stream"), adapter=MemAdapter(SCHEMA, data),
+                           streaming=True, **common)
+    for result in (mem, stream):
+        first = np.load(result["shards"][0]["path"])
+        assert first["_present"].tolist() == [True, True, False, False]
+
+
+def test_presence_mask_can_be_disabled(tmp_path):
+    spec = OutputSpec.from_dict({**SPEC.to_dict(), "presence_mask": False})
+    entries = write_track(str(tmp_path), Track("s", 0, [{"pos": (0.0, 0.0)}]), spec,
+                          schema=SCHEMA)
+    assert "_present" not in np.load(entries[0]["path"]).files
+
+
+def test_resume_rejects_changed_run_configuration(tmp_path):
+    _write(tmp_path, out="resume", resume=False)
+    changed = load_strategy({"name": "changed",
+                             "define": {"am": {"source": "e.act", "reduce": "max"}},
+                             "selection": {"method": "top-k", "weights": {"am": 1.0}}}, SCHEMA)
+    data = _data()
+    with pytest.raises(ValueError, match="different inputs or run configuration"):
+        write_dataset(str(tmp_path / "resume"), schema=SCHEMA,
+                      adapter=MemAdapter(SCHEMA, data), sources=list(data), strategy=changed,
+                      segmenter=Segmenter(4, 4), spec=SPEC, train_hours=1, resume=True)
+
+
+def test_budget_accounting_reports_emitted_underfill(tmp_path):
+    data = _data(n_sources=1, n_ticks=6, n_entities=1)
+    spec = OutputSpec.from_dict({"shard_length": 4, "short_policy": "drop",
+                                 "modalities": {"obs": {"dtype": "float32", "shape": [2],
+                                                          "source": "field:pos"}}})
+    out = write_dataset(str(tmp_path / "budget"), schema=SCHEMA,
+                        adapter=MemAdapter(SCHEMA, data), sources=list(data),
+                        strategy=_strategy(), segmenter=Segmenter(4, 2), spec=spec,
+                        train_hours=10 / 3600, test_hours=0)
+    budget = out["results"]["budget"]
+    assert budget["requested_seconds"]["train"] == 10
+    assert budget["admitted_seconds"]["train"] == 6
+    assert budget["emitted_seconds"]["train"] == 4
+    assert budget["emission_loss_seconds"]["train"] == 2
+    manifest = json.loads((tmp_path / "budget" / "dataset_manifest.json").read_text())
+    assert manifest["budget"] == budget

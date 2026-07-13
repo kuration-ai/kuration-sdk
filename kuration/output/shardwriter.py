@@ -18,7 +18,7 @@ import numpy as np
 from .base import OutputEncoder, PassthroughEncoder
 from .containers import CONTAINER_EXT, write_shard
 from .spec import OutputSpec
-from .track import Track
+from .track import PRESENT_KEY, Track
 
 
 def _chunks(records: list[dict], shard_length: int, short_policy: str):
@@ -54,14 +54,20 @@ def track_name(source_id, entity_id, name_suffix: str = "") -> str:
 def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: dict) -> dict:
     L = len(piece)
     arrays = {m.name: m.zeros(L) for m in spec.modalities}
+    if spec.presence_mask:
+        arrays["_present"] = np.zeros(L, dtype=np.bool_)
     enc_mods = [m for m in spec.modalities if m.src_kind == "encoder"]
     for t, rec in enumerate(piece):
         if rec is None:           # pad row — leave zeros
             continue
-        enc_out = encoder.timestep(rec, ctx) if enc_mods else {}
+        present = bool(rec.get(PRESENT_KEY, True))
+        clean = rec if PRESENT_KEY not in rec else {k: v for k, v in rec.items() if k != PRESENT_KEY}
+        if spec.presence_mask:
+            arrays["_present"][t] = present
+        enc_out = encoder.timestep(clean, ctx) if enc_mods else {}
         for m in spec.modalities:
             if m.src_kind == "field":
-                val = rec.get(m.src_arg)
+                val = clean.get(m.src_arg)
             elif m.src_kind == "segment":
                 val = ctx["track"].get(m.src_arg)
             else:
@@ -89,6 +95,11 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
     name = track_name(track.source_id, track.entity_id, name_suffix)
     ext = CONTAINER_EXT[spec.container]
     entries: list[dict] = []
+    shape = {m.name: list(m.shape) for m in spec.modalities}
+    dtype = {m.name: m.dtype for m in spec.modalities}
+    if spec.presence_mask:
+        shape["_present"] = []
+        dtype["_present"] = "bool"
     for k, (piece, real_len, padded) in enumerate(
             _chunks(track.records, spec.shard_length, spec.short_policy)):
         base = f"{out_dir}/{split}/{name}_shard{k:04d}" + ("_padded" if padded else "")
@@ -100,6 +111,5 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
         entries.append({"path": path, "source_id": track.source_id,
                         "entity_id": str(track.entity_id), "split": split,
                         "shard_index": k, "n_steps": real_len, "padded": padded,
-                        "shape": {m.name: list(m.shape) for m in spec.modalities},
-                        "dtype": {m.name: m.dtype for m in spec.modalities}})
+                        "shape": shape, "dtype": dtype})
     return entries

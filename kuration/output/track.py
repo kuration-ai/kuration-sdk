@@ -13,6 +13,8 @@ from typing import Any
 from ..buffer import Tick
 from ..schema import SchemaSpec
 
+PRESENT_KEY = "__kuration_entity_present__"
+
 
 @dataclass
 class Track:
@@ -43,6 +45,7 @@ def tracks_from_ticks(schema: SchemaSpec, ticks: list[Tick], source_id: str) -> 
             rec = dict(tk.entities.get(eid) or {})
             for gname, gval in (tk.globals or {}).items():
                 rec.setdefault(gname, gval)
+            rec[PRESENT_KEY] = eid in tk.entities
             records.append(rec)
         tracks.append(Track(source_id=source_id, entity_id=eid, records=records))
     return tracks

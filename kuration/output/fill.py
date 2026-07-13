@@ -17,14 +17,15 @@ from ..select import assign_splits
 
 def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
                   max_group_overshoot: Optional[float] = None, tag_coverage: dict = None,
-                  seed: int = 0) -> tuple[set, dict]:
+                  seed: int = 0, return_stats: bool = False):
     """Admit items (each {id, source_id, priority, seconds, group, tags?}) to the train/test
     hour budgets in descending priority. Sources are pre-partitioned into split pools (seeded,
     stratified by group) so the two budgets are decoupled — the fix that stops a spread-out
     priority from committing every source to train and starving test. With `tag_coverage`
     ({"min_tag_frac": f}), a reserve pass first admits the highest-priority item carrying each
     tag (bounded by f x total budget) so a rare label isn't dropped by the priority cut.
-    Returns (admitted_ids, source->split)."""
+    Returns `(admitted_ids, source->split)`. With `return_stats=True`, appends a third budget
+    accounting dict without changing the long-standing default return shape."""
     if train_hours < 0 or test_hours < 0:
         raise ValueError("train_hours and test_hours must be >= 0")
     if max_group_overshoot is not None and max_group_overshoot <= 0:
@@ -79,4 +80,30 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
         if secs["train"] >= train_t and secs["test"] >= test_t:
             break
         _try_admit(it)
-    return admitted, split
+
+    admitted_seconds = {sp: sum(it["seconds"] for it in items
+                                if it["id"] in admitted and split.get(it["source_id"]) == sp)
+                        for sp in ("train", "test")}
+    candidate_seconds = {sp: sum(it["seconds"] for it in items
+                                 if math.isfinite(it["priority"])
+                                 and split.get(it["source_id"]) == sp)
+                         for sp in ("train", "test")}
+    rejected_group_cap = 0
+    if math.isfinite(max_per_group):
+        for it in items:
+            g = it["group"] if it["group"] is not None else "\x00"
+            if (it["id"] not in admitted and math.isfinite(it["priority"])
+                    and group_secs[g] + it["seconds"] > max_per_group):
+                rejected_group_cap += 1
+    stats = {
+        "requested_seconds": {"train": train_t, "test": test_t},
+        "admitted_seconds": admitted_seconds,
+        "underfill_seconds": {sp: max(0.0, target[sp] - admitted_seconds[sp])
+                              for sp in ("train", "test")},
+        "candidate_seconds": candidate_seconds,
+        "items_total": len(items),
+        "items_admitted": len(admitted),
+        "items_rejected_nonfinite": sum(not math.isfinite(it["priority"]) for it in items),
+        "items_rejected_group_cap": rejected_group_cap,
+    }
+    return (admitted, split, stats) if return_stats else (admitted, split)

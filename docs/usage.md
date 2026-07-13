@@ -77,7 +77,7 @@ spec = OutputSpec.from_dict({
 write_dataset("out/run1", schema=schema, adapter=adapter, sources=[...],
               strategy=strategy, segmenter=seg, spec=spec,
               train_hours=10, test_hours=1, seed=0)
-# -> out/run1/{train,test}/<src>_<entity>_<hash8>_shardNNNN.npz + dataset_manifest.json + config.json
+# -> out/run1/{train,test}/<src>_<entity>_<hash12>_shardNNNN.npz + dataset_manifest.json + config.json
 ```
 The emitted N hours is the strategy's *best* N hours (not a random draw). `config.json`
 regenerates the run.
@@ -197,8 +197,9 @@ HDF5, Zarr, and HuggingFace inputs support it. NPZ and partitioned-Parquet datas
 the option because they cannot guarantee bounded memory.
 
 `resume=True` is safe against crashes and drift: shards are written atomically (no partial
-file ever sits at the final path), and the output spec is pinned in a sidecar — resuming the
-same `out_dir` with a *changed* spec raises. To re-emit with a new spec, use a fresh `out_dir`.
+file ever sits at the final path), and a complete run fingerprint is pinned in a sidecar.
+Changes to sources, schema, strategy, segmentation, budgets, adapter/encoder code or state,
+callbacks, seed, or output spec reject resume. To change a run, use a fresh `out_dir`.
 
 ## 12 · Sub-track spans (keep the best *parts* of long sources)
 
@@ -328,7 +329,7 @@ dataset. The ones you're most likely to meet, and what they mean:
 | `filter '...': field ... is a vector` | comparison filters take scalar fields only | filter on a scalar field, or `define` a scalar metric from the vector first |
 | `segment pool is EMPTY` | every source was skipped (see the per-source stderr lines), or every source is shorter than the segment window | fix the first per-source error, or shrink `segmenter` window; rerun with `on_error="raise"` to see the full traceback |
 | `missing mapped column(s)/key(s) [...]` (or run-time `KeyError('<col>')` per skipped source) | the adapter's field/time/entity/global map names a column/key the source doesn't have | fix the name; `kur-validate --check-sources` catches this at preflight for every built-in adapter |
-| `resume=True but ... different output spec` | the `out_dir` was started under another `OutputSpec`; its shards wouldn't match a new manifest | use a fresh `out_dir` for a changed spec (or restore the original spec) |
+| `resume=True but ... different output spec/run configuration` | the pinned run, source metadata, or component fingerprint changed | use a fresh `out_dir` for a changed run (or restore the original inputs and job) |
 | `span_steps=... < shard_length=... with short_policy='drop'` | every admitted span would chunk to zero shards while consuming the hours budget | raise `span_steps`, lower `shard_length`, or use `short_policy: "keep"/"pad"` |
 | `binning axis '...': N NaN feature value(s)` | a registered metric or scorer produced NaN on some window; NaN would poison the quantile edges | make the metric total (return 0.0 for degenerate windows), or drop those segments with a pre-pass filter |
 | `dataset ... lacks modalities [...]` | mixing curated datasets with different modalities under a schema derived from the first | pass an explicit `schema=` covering only the shared modalities |

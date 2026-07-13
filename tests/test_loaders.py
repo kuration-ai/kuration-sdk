@@ -54,7 +54,8 @@ def test_roundtrip_shapes_and_values(tmp_path, container):
     shards = list(iter_shards(out))
     assert shards, "no shards read back"
     for arr in shards:
-        assert set(arr) == {"obs", "act"}
+        assert set(arr) == {"obs", "act", "_present"}
+        assert arr["_present"].dtype == np.bool_ and arr["_present"].all()
         assert arr["obs"].ndim == 2 and arr["obs"].shape[1] == 2   # (T, 2) — reshape restored
         assert arr["act"].ndim == 1                                # scalar modality -> (T,)
         # obs = field:pos = (step, L): x-column steps consecutively, y-column is constant L
