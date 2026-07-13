@@ -4,7 +4,8 @@ Full pipeline: schema-driven metric DSL, input adapters, segmentation, feature e
 binning, declarative strategies (base + feature-space + filter + pre-pass filters + a
 learned-scorer seam), the output layer (declared modalities, npz/json/hdf5/parquet shards,
 hours-budget fill, sub-track spans), tag-coverage, experiment + report, parallel /
-skip-and-log / resume / out-of-core execution, and path-agnostic local + cloud I/O.
+skip-and-log / resume / out-of-core execution, path-agnostic local + cloud I/O, schema
+inference, and a fluent `input(...).operator(...)` pipeline API.
 See README.md, docs/, and PLAN.md.
 """
 from .adapters import (
@@ -27,10 +28,12 @@ from .curate import CurateResult, curate
 from .dsl import compile_metric, register_compiled, register_metric
 from .experiment import Arm, run_experiment, union_define
 from .features import FeatureEngine
+from .infer import infer_schema
 from .io import exists, local_copy, read_text, write_bytes, write_text
 from .loaders import iter_shards, read_shard_arrays, shard_entries
 from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities
+from .pipeline import Pipeline, input
 from .report import dataset_report
 from .scorers import SegmentScorer, apply_scorers, get_scorer, register_scorer
 from .output import (
@@ -72,4 +75,5 @@ __all__ = [
     "register_encoder", "get_encoder", "Track", "tracks_from_ticks", "write_track",
     "fill_to_hours", "write_dataset",
     "iter_shards", "read_shard_arrays", "shard_entries",
+    "infer_schema", "Pipeline", "input",
 ]

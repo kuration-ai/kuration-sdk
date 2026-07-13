@@ -24,6 +24,32 @@ or `"raise"`; `streaming=True` is the out-of-core path.
 - `write_dataset` returns `{"shards": [entries], "split": {source -> "train"/"test"}, "admitted": set, "results": {...counts}, "errors": [...]}`.
 - `Arm(name, strategy)` — one experiment arm; `union_define(arms) -> dict` merges their `define`s.
 
+## Fluent pipeline
+
+The higher-level facade over the entry points above — no explicit schema/adapter/strategy
+required; see [pipeline.md](pipeline.md) for the full operator reference.
+
+| name | signature | does |
+|---|---|---|
+| `input` | `(src=None, *, schema=None, adapter=None, sources=None, fields=None, time=None, entity=None, hz=None, kinds=None, sample=200, globals=None, **adapter_kw) -> Pipeline` | sniff `src`, infer a schema (unless `schema=`), build the adapter — eagerly, loudly |
+| `infer_schema` | `(sample, *, name="inferred", time=None, entity=None, hz=None, kinds=None) -> (SchemaSpec, hints)` | classify a sample (rows/dict-of-arrays/ticks) into a schema + adapter `fields=` hints |
+| `Pipeline.window` | `(window, stride=None, unit="steps") -> Pipeline` | set the `Segmenter` |
+| `Pipeline.measure` | `(name, spec=None, *, of=None, map=None, filter=None, scope=None) -> Pipeline` | declare a per-segment metric (bare name / reduce string / DSL dict / callable) |
+| `Pipeline.filter` | `(what, op=None, value=None, **kw) -> Pipeline` | `("anomaly"/"dedup", **knobs)` pre-pass filter, or `(metric, op, value)` universal predicate |
+| `Pipeline.organize` | `(metric, *args, bins=None) -> Pipeline` | add a quantile-bin axis |
+| `Pipeline.score` | `(name, out=None, **params) -> Pipeline` | add a whole-pool `SegmentScorer` |
+| `Pipeline.tag` | `(*sources, min_frac=None) -> Pipeline` | declarative tag sources (+ optional tag-coverage floor) |
+| `Pipeline.split` | `(test=0.2) -> Pipeline` | source-level test split |
+| `Pipeline.group` | `(fn) -> Pipeline` | `group_of(source_id) -> key` |
+| `Pipeline.options` | `(**kw) -> Pipeline` | `workers, on_error, seed, streaming, resume, sample_hz` |
+| `Pipeline.curate` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | configure selection; exactly one of `n=`/`hours=` |
+| `Pipeline.collect` | `(n=None) -> CurateResult` | terminal — count-path selection |
+| `Pipeline.output` | `(path, *, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None) -> dict` | terminal — write shards + manifests + `config.json` (embeds `"pipeline"` provenance) |
+| `Pipeline.report` | `(**kw) -> dict` | terminal — feature pass only → `dataset_report` |
+| `Pipeline.experiment` | `(arms: dict, n: int, baseline=None) -> dict` | terminal — multi-arm comparison (`arms` maps name → `Pipeline` or raw strategy dict) |
+| `Pipeline.head` | `(k=5) -> list[Tick]` | inspector — first `k` ticks of the first source |
+| `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources}`, no data touched |
+
 ## Schema & data model
 
 | name | signature | does |

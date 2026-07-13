@@ -60,7 +60,9 @@ def _cmp(a: float, op: str, b: float) -> bool:
 
 
 def _passes(seg, predicates: list) -> bool:
-    """True iff a segment satisfies every DSL-metric predicate (the `filter` method)."""
+    """True iff a segment satisfies every DSL-metric predicate. Predicates are a universal
+    pre-filter: with `method: filter` they ARE the selection; with any other method the
+    failing segments are dropped from the pool (set path) / priced -inf (hours path)."""
     return all(_cmp(seg.features.get(p["metric"], 0.0), p["op"], p["value"]) for p in predicates)
 
 
@@ -76,7 +78,7 @@ class Strategy:
     tag_coverage: Optional[dict]
     group_cap: Optional[dict]
     resolved: dict
-    predicates: list = None              # `filter` method: [{metric, op, value}, ...]
+    predicates: list = None              # universal pre-filter: [{metric, op, value}, ...]
     feature_space: Optional[list] = None  # metric names spanning the vector space (methods.py)
     method_params: dict = None           # extra selection knobs (clusters/dsir_bins/knn_k/...)
     filters: list = None                 # pre-pass filters [{type: anomaly|dedup, ...}]
@@ -246,10 +248,21 @@ def _weighted_score(segments: list[Segment], weights: dict[str, float], normaliz
 def segment_priorities(segments: list[Segment], strategy: Strategy, *, seed: int = 0,
                        workers: int = 1) -> np.ndarray:
     """Per-segment priority (higher = admit sooner), aligned with `segments`. Consumed by the
-    hours-budget fill and by the set-based `select` below."""
+    hours-budget fill and by the set-based `select` below. Predicate-failing segments get
+    -inf under every method (fill_to_hours never admits non-finite priorities)."""
     n = len(segments)
     if n == 0:
         return np.zeros(0, dtype=np.float64)
+    prio = _raw_priorities(segments, strategy, seed=seed, workers=workers)
+    if strategy.predicates and strategy.method != "filter":
+        ok = np.fromiter((_passes(s, strategy.predicates) for s in segments), dtype=bool, count=n)
+        prio = np.where(ok, prio, float("-inf"))
+    return prio
+
+
+def _raw_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
+                    workers: int) -> np.ndarray:
+    n = len(segments)
     if strategy.method in _METHOD_MODULE_METHODS:
         from .methods import method_priorities
         return method_priorities(segments, strategy, seed=seed, workers=workers)
@@ -349,6 +362,10 @@ def select(segments: list[Segment], strategy: Strategy, *, target_size: int,
     worker-count-independent."""
     if not segments:
         return []
+    if strategy.predicates and strategy.method != "filter":
+        segments = [s for s in segments if _passes(s, strategy.predicates)]
+        if not segments:
+            return []
     py_rng = random.Random(seed)
     np_rng = np.random.default_rng(seed)
 

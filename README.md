@@ -45,6 +45,28 @@ See **[docs/overview.md](docs/overview.md)** for the full end-to-end example, th
 [docs/usage.md](docs/usage.md) cookbook for recipes, and **[examples/](examples/)** for
 runnable, self-contained demos (`python examples/01_timeseries_to_shards.py`).
 
+## Fluent pipeline (no explicit schema/adapter/strategy)
+
+For the common case, `input(...)` sniffs a source, infers a `SchemaSpec`, and returns a
+chainable `Pipeline` — every operator validates itself loudly and returns a new `Pipeline`:
+
+```python
+from kuration import input
+
+(input("logs/*.csv", time="t", entity="agent")
+    .window(4, unit="seconds")
+    .measure("speed", "mean", of="pos")
+    .filter("speed", ">=", 1.0)              # universal predicate, any selection method
+    .organize("speed", bins=8)
+    .curate("equal", n=5000)
+    .output("out/run1"))
+```
+
+See **[docs/pipeline.md](docs/pipeline.md)** for the full operator reference and
+`examples/04_operator_pipeline.py` for a runnable chain. The classic API below (explicit
+`SchemaSpec` + `InputAdapter` + `load_strategy`) remains the way to reach custom adapters,
+encoders, or `workers>1` over in-memory data.
+
 ## Pipeline
 
 ```
@@ -59,6 +81,7 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | doc | covers |
 |---|---|
 | [docs/overview.md](docs/overview.md) | the pipeline, install, a full worked example |
+| [docs/pipeline.md](docs/pipeline.md) | the fluent `input(...).operator(...)` API — inference rules, every operator, terminals |
 | [docs/usage.md](docs/usage.md) | **cookbook** — task-oriented recipes across every capability |
 | [docs/architecture.md](docs/architecture.md) | design deep-dive: layers, data contracts, decisions, extension points |
 | [docs/schema.md](docs/schema.md) | authoring a `SchemaSpec` (fields, kinds, semantics tags) |
@@ -69,7 +92,7 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | [docs/api.md](docs/api.md) | **API reference** — every public name with its real signature |
 | [docs/jobs.md](docs/jobs.md) | **job-spec reference** — every JSON key the `kur-*` CLIs accept |
 
-Hitting a loud validation error? [docs/usage.md § Troubleshooting](docs/usage.md#16--troubleshooting--common-loud-failures)
+Hitting a loud validation error? [docs/usage.md § Troubleshooting](docs/usage.md#17--troubleshooting--common-loud-failures)
 maps the common ones to causes and fixes.
 
 ## Scale & robustness
@@ -136,8 +159,10 @@ containers, **sub-track spans**, hours-budget fill, `write_dataset`), the **read
 tag-coverage**, a single-dataset **stats report**, a first-class **learned-scorer seam**
 (whole-pool/action-aware metrics), a multi-arm **experiment/comparison** harness,
 **parallel / skip-and-log / resume / out-of-core** execution, **path-agnostic I/O**
-(local + `gs://`/`s3://`/`az://` via fsspec), and a **`kur-validate`** preflight (+ shipped JSON
-Schema), driven by the `kur-*` CLIs. 206 tests (`pytest tests/`).
+(local + `gs://`/`s3://`/`az://` via fsspec), a **`kur-validate`** preflight (+ shipped JSON
+Schema), driven by the `kur-*` CLIs, **schema inference** (`kuration.infer`) and a **fluent
+`input(...).operator(...)` pipeline** over it with universal pre-filter predicates (any
+selection method, count or hours path). 326 tests (`pytest tests/`).
 
 Planned: migration of the reference CS2 pipeline onto the SDK (Phase G), and a spill/external
 tier for *total* segment pools larger than RAM. See `PLAN.md`.

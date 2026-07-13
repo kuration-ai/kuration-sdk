@@ -69,6 +69,23 @@ Combined with the curated-dataset adapter ([adapters.md](adapters.md)), this is 
 those (non-matching clips get `-inf` priority and are **never** admitted to the hours budget,
 even when it has room to spare).
 
+`selection.predicates` are not exclusive to `method: filter` — they are a **universal
+pre-filter that composes with every selection method**. With `method: filter` the predicates
+*are* the selection; with any other method (`uniform-bins`, `weighted`, `top-k`,
+`target-distribution`, the feature-space methods, …) failing segments are dropped from the
+pool before it runs — on the count path (`select`) they're removed outright; on the hours
+path (`segment_priorities`) they're priced `-inf`, so `fill_to_hours` never admits them even
+when the budget has room to spare:
+
+```jsonc
+{"selection": {"method": "top-k", "weights": {"speed": 1.0},
+               "predicates": [{"metric": "hp", "op": "<=", "value": 50}]}}
+// ranks by speed, but a segment with hp > 50 is never selected, on either path
+```
+
+The fluent pipeline's `.filter(metric, op, value)` (see [pipeline.md](pipeline.md)) compiles
+straight to a `selection.predicates` entry, under any `.curate(method, ...)`.
+
 Scores combine each metric's values, normalized (`quantile` rank by default — robust to
 outliers) and weighted.
 

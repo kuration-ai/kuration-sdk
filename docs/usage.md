@@ -2,9 +2,10 @@
 
 Task-oriented recipes spanning what the SDK can do. Each is a minimal, runnable snippet; see the
 per-layer references ([schema](schema.md), [dsl](dsl.md), [adapters](adapters.md),
-[strategies](strategies.md), [output](output.md)) for full options, [api.md](api.md) for every
-public signature, [jobs.md](jobs.md) for the CLI job-spec keys, and [overview](overview.md)
-for the one-shot end-to-end example.
+[strategies](strategies.md), [output](output.md)) for full options, [pipeline.md](pipeline.md)
+for the fluent `input(...).operator(...)` API, [api.md](api.md) for every public signature,
+[jobs.md](jobs.md) for the CLI job-spec keys, and [overview](overview.md) for the one-shot
+end-to-end example.
 
 Throughout, assume a schema and an adapter:
 
@@ -282,9 +283,37 @@ kur-experiment job.json --out cmp.json   # add "arms": [...] + "target_size" to 
 kur-report     job.json --out rep.json   # profile metric distributions (no selection)
 ```
 
+## 16 · Curate a CSV/JSON in one chain (fluent pipeline, no explicit schema)
+
+For the common case, skip `SchemaSpec`/`TimeseriesAdapter`/`load_strategy` entirely — `input()`
+infers the schema and every operator validates against it. Full reference: [pipeline.md](pipeline.md).
+
+```python
+from kuration import input, iter_shards
+
+(input("logs/*.csv", time="t", entity="agent")     # or a .json file, a list of paths, rows, ...
+    .window(16)
+    .measure("hp")
+    .filter("hp", "<=", 50)                          # universal predicate — any selection method
+    .measure("action_entropy", "entropy", of="action")
+    .organize("action_entropy", bins=4)
+    .curate("equal", n=5000)                         # alias for uniform-bins
+    .options(on_error="raise")
+    .output("out/run1", container="hdf5"))            # container inferred from the path otherwise
+
+for arrays in iter_shards("out/run1", split="train"):
+    arrays["hp"]        # (window, ) float32
+```
+
+`.curate(hours=...)` instead of `n=` routes `.output(...)` through the hour-budget fill; add
+`.split(test=0.2)` for a leakage-free train/test split; `.describe()` shows the resolved
+schema/strategy/segmenter/options before anything runs. See `examples/04_operator_pipeline.py`
+for this exact chain end to end (count path + hours path + config.json's `"pipeline"`
+provenance).
+
 ---
 
-## 16 · Troubleshooting — common loud failures
+## 17 · Troubleshooting — common loud failures
 
 The SDK fails loudly by design: a raised error at load or preflight beats a silently wrong
 dataset. The ones you're most likely to meet, and what they mean:
@@ -303,6 +332,8 @@ dataset. The ones you're most likely to meet, and what they mean:
 | `binning axis '...': N NaN feature value(s)` | a registered metric or scorer produced NaN on some window; NaN would poison the quantile edges | make the metric total (return 0.0 for degenerate windows), or drop those segments with a pre-pass filter |
 | `dataset ... lacks modalities [...]` | mixing curated datasets with different modalities under a schema derived from the first | pass an explicit `schema=` covering only the shared modalities |
 | `needs fsspec` / `needs h5py` / `needs pyarrow` / `needs zarr` | an optional capability was reached without its extra installed | install the named extra, e.g. `pip install -e '.[cloud]'` |
+| `write_dataset needs sample_hz ... for the hours budget` | fluent-pipeline `.curate(hours=...).output(...)` on a source whose schema has no `sample_hz` (inference found no numeric time column, or duplicate/no-gap timestamps) | pass `hz=` to `input()`, or `.options(sample_hz=...)` before `.output(...)` |
+| `workers>1 is not supported for in-memory sources` | `.options(workers=2)` on a `Pipeline` built from in-memory rows/ticks/DataFrame — parallel workers rebuild adapters by name per process and can't see in-process data | keep `workers=1` for in-memory input, or write the data to files first and `input()` the paths |
 
 Two habits keep runs debuggable: **`kur-validate job.json` before every CLI run** (all of the
 load-time errors above surface in milliseconds, before any data is read), and
