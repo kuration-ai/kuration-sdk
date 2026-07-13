@@ -146,6 +146,28 @@ together and writes `dataset_manifest.json` + `config.json`.
 | a per-segment metric the grammar can't express | `@register_metric` over a `WindowBuffer` | a grammar change |
 | a **whole-pool / learned / influence** metric | a `SegmentScorer` (`score(segments, ctx)`) | the closed grammar |
 | a new on-disk container | a `containers.write_shard` branch (extra) | the writer |
+
+### Plugin discovery
+
+Registry extensions can ship without a custom CLI wrapper. A job may list import-side-effect
+modules under `plugins`, or an installed distribution may expose a zero-argument initializer:
+
+```toml
+[project.entry-points."kuration.plugins"]
+my_plugin = "my_package.kuration_plugin:register"
+```
+
+Discovery is lazy and idempotent. Explicit modules and entry-point modules are propagated into
+spawned feature workers before `FeatureEngine` construction, and their code hashes are included
+in run provenance. Plugin registration errors remain loud.
+
+### Progress events
+
+`score_sources`, `curate`, `run_experiment`, and `write_dataset` accept `progress=callback`.
+Events always contain `phase` and `event`; phases are `provenance`, `scoring`, `scorers`,
+`selection`, and `writing`, while events are `start`, `advance`, and `complete`. Advance events include
+`current`, `total`, and where applicable `source` and `status`. Pipeline users pass the same
+callback through `.options(progress=...)`.
 | a new dataset's fields | a `SchemaSpec` (data) | any code |
 
 ### Two scoring seams, two shapes

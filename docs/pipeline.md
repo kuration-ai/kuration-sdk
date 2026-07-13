@@ -95,7 +95,7 @@ concepts: [schema.md](schema.md)):
 | `.tag` | `(*sources, min_frac=None)` | a `tags.from` entry; `min_frac` sets `selection.tag_coverage` |
 | `.split` | `(test=0.2)` | source-level test split (count path: `test_frac`; hours path: budget share) |
 | `.group` | `(fn)` | `group_of(source_id) -> key` (group cap + stratified splits) |
-| `.options` | `(workers=, on_error=, seed=, streaming=, resume=, sample_hz=)` | execution kwargs passed to the terminal |
+| `.options` | `(workers=, on_error=, seed=, streaming=, resume=, sample_hz=, progress=)` | execution kwargs passed to the terminal |
 | `.curate` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params)` | `selection.method` + knobs; exactly one of `n=`/`hours=` |
 
 `.measure`'s four forms:

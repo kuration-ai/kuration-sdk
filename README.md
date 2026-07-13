@@ -105,7 +105,10 @@ maps the common ones to causes and fixes.
 - **Resume** — `write_dataset(resume=True)` skips re-encoding shards that already exist, so an
   interrupted run only does the missing work. Safe by construction: shards are written
   atomically (a crash never leaves a partial file at the final path), and resuming with a
-  *different* output spec raises instead of silently mixing old shards with a new manifest.
+  different run/source/component fingerprint raises instead of reusing stale shards.
+- **Plugins + progress** — jobs load registration modules through `plugins`, installed packages
+  use the `kuration.plugins` entry-point group, and all execution APIs emit structured progress
+  events (rendered automatically by run CLIs on interactive stderr).
 - **Out-of-core** — `streaming=True` reads each source as a lazy tick stream on both the
   feature pass and shard write for streaming-capable adapters. CSV, JSONL, single-file Parquet,
   HDF5, Zarr, and HuggingFace inputs support it; NPZ and partitioned-Parquet `dataset` mode
@@ -163,7 +166,9 @@ tag-coverage**, a single-dataset **stats report**, a first-class **learned-score
 (local + `gs://`/`s3://`/`az://` via fsspec), a **`kur-validate`** preflight (+ shipped JSON
 Schema), driven by the `kur-*` CLIs, **schema inference** (`kuration.infer`) and a **fluent
 `input(...).operator(...)` pipeline** over it with universal pre-filter predicates (any
-selection method, count or hours path). 326 tests (`pytest tests/`).
+selection method, count or hours path), complete resume provenance, default presence masks,
+budget accounting, plugin discovery, and structured progress. 346 passed / 2 optional-Zarr
+skipped in the development environment (`pytest tests/`).
 
 Planned: migration of the reference CS2 pipeline onto the SDK (Phase G), and a spill/external
 tier for *total* segment pools larger than RAM. See `PLAN.md`.

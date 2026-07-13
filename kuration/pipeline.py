@@ -37,7 +37,7 @@ __all__ = ["Pipeline", "input"]
 
 _GLOB_CHARS = set("*?[")
 _FILTER_TYPES = {"anomaly", "dedup"}
-_OPTION_KEYS = {"workers", "on_error", "seed", "streaming", "resume", "sample_hz"}
+_OPTION_KEYS = {"workers", "on_error", "seed", "streaming", "resume", "sample_hz", "progress"}
 _TABULAR_KINDS = {"timeseries", "jsonl", "json-rows", "parquet-dataset"}
 _SUFFIX_CONTAINER = {".hdf5": "hdf5", ".h5": "hdf5", ".npz": "npz",
                      ".parquet": "parquet", ".json": "json"}
@@ -436,7 +436,7 @@ class Pipeline:
         self._split_test: Optional[float] = None
         self._group_of: Optional[Callable] = None
         self._options = {"workers": 1, "on_error": "skip", "seed": 0, "streaming": False,
-                         "resume": False, "sample_hz": None}
+                         "resume": False, "sample_hz": None, "progress": None}
 
     # ---- immutability plumbing -------------------------------------------------------
     def _clone(self) -> "Pipeline":
@@ -608,13 +608,15 @@ class Pipeline:
 
     def options(self, **kw) -> "Pipeline":
         """Execution options: workers, on_error ('skip'|'raise'), seed, streaming, resume,
-        sample_hz. Unknown options are loud."""
+        sample_hz, progress callback. Unknown options are loud."""
         unknown = set(kw) - _OPTION_KEYS
         if unknown:
             raise ValueError(f"unknown option(s) {sorted(unknown)}; "
                              f"expected {sorted(_OPTION_KEYS)}")
         if "on_error" in kw and kw["on_error"] not in ("skip", "raise"):
             raise ValueError(f"on_error must be 'skip' or 'raise', got {kw['on_error']!r}")
+        if "progress" in kw and kw["progress"] is not None and not callable(kw["progress"]):
+            raise ValueError("progress must be callable or None")
         p = self._next("options", **kw)
         p._options.update(kw)
         return p
@@ -734,7 +736,7 @@ class Pipeline:
                 "strategy": self._raw_strategy(require_method=False),
                 "output": None,
                 "segmenter": dict(self._window_desc),
-                "options": dict(self._options),
+                "options": {k: _jsonable(v) for k, v in self._options.items()},
                 "sources": [str(s) for s in self.sources]}
 
     # ---- terminals -----------------------------------------------------------------------
@@ -756,7 +758,7 @@ class Pipeline:
                        group_of=self._group_of, tags_of=None,
                        test_frac=self._split_test or 0.0, workers=self._options["workers"],
                        on_error=self._options["on_error"],
-                       streaming=self._options["streaming"])
+                       streaming=self._options["streaming"], progress=self._options["progress"])
 
     def report(self, **kw) -> dict:
         """Feature pass only (no selection) -> dataset_report over the scored pool."""
@@ -773,12 +775,13 @@ class Pipeline:
             segmenter=self._segmenter_or_default(),
             tags_spec={"from": list(self._tags)} if self._tags else None,
             group_of=self._group_of, workers=self._options["workers"],
-            on_error=self._options["on_error"], streaming=self._options["streaming"])
+            on_error=self._options["on_error"], streaming=self._options["streaming"],
+            progress=self._options["progress"])
         if self._scorers:
             from .scorers import apply_scorers, parse_scorers
             apply_scorers(parse_scorers([dict(s) for s in self._scorers]), segments,
                           schema=self.schema, adapter=self.adapter,
-                          seed=self._options["seed"])
+                          seed=self._options["seed"], progress=self._options["progress"])
         return dataset_report(segments, **kw)
 
     def experiment(self, arms: dict, n: int, baseline: Optional[str] = None) -> dict:
@@ -802,7 +805,8 @@ class Pipeline:
                               seed=self._options["seed"], baseline=baseline,
                               group_of=self._group_of, workers=self._options["workers"],
                               on_error=self._options["on_error"],
-                              streaming=self._options["streaming"])
+                              streaming=self._options["streaming"],
+                              progress=self._options["progress"])
 
     def output(self, path, *, container: Optional[str] = None, shard_length: int = 64,
                short_policy: str = "keep", modalities: Optional[dict] = None,
@@ -867,7 +871,7 @@ class Pipeline:
                 sample_hz=opt["sample_hz"] or None, seed=opt["seed"],
                 group_of=self._group_of, span_steps=span_steps, span_seconds=span_seconds,
                 workers=opt["workers"], on_error=opt["on_error"], resume=opt["resume"],
-                streaming=opt["streaming"])
+                streaming=opt["streaming"], progress=opt["progress"])
             from .io import read_text
             from .manifest import write_config
             cfg = json.loads(read_text(f"{path}/config.json"))
@@ -886,9 +890,9 @@ class Pipeline:
         if not result.selected:
             raise ValueError("selection is empty — nothing to write (check "
                              "filters/predicates and the segment window)")
-        return self._write_selected(path, result, spec, encoder, opt["seed"])
+        return self._write_selected(path, result, spec, encoder, opt["seed"], opt["progress"])
 
-    def _write_selected(self, out_dir: str, result, spec, encoder, seed: int) -> dict:
+    def _write_selected(self, out_dir: str, result, spec, encoder, seed: int, progress=None) -> dict:
         """Count-path write: each selected segment becomes a sub-track per entity, written
         with the same shard mechanics as the hours path."""
         from .io import write_text
@@ -899,7 +903,9 @@ class Pipeline:
         for s in result.selected:
             by_source.setdefault(s.source_id, []).append(s)
         entries: list = []
-        for src in sorted(by_source, key=str):
+        from .progress import emit
+        emit(progress, "writing", "start", total=len(by_source))
+        for source_i, src in enumerate(sorted(by_source, key=str), 1):
             segs = sorted(by_source[src], key=lambda s: s.start_idx)
             tracks = tracks_from_ticks(self.schema, list(self.adapter.ticks(src)), src)
             split = result.splits.get(src, "train")
@@ -913,6 +919,10 @@ class Pipeline:
                     entries += write_track(out_dir, sub, spec, encoder=encoder,
                                            schema=self.schema, split=split,
                                            name_suffix=f"_seg{k:04d}")
+            emit(progress, "writing", "advance", current=source_i, total=len(by_source),
+                 source=src, status="ok")
+        emit(progress, "writing", "complete", current=len(by_source), total=len(by_source),
+             detail=f"{len(entries)} shards")
         write_text(f"{out_dir}/dataset_manifest.json",
                    json.dumps({"count": len(entries), "shards": entries}, indent=2))
         results = {"shards": len(entries), "selected": len(result.selected),

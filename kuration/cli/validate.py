@@ -23,7 +23,8 @@ from pathlib import Path
 
 from ..output import OutputSpec
 from ..strategy import load_strategy
-from ._common import build_adapter, build_schema, build_segmenter, read_job, resolve_sources
+from ._common import (build_adapter, build_schema, build_segmenter, load_job_plugins, read_job,
+                      resolve_sources)
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "job.schema.json"
 
@@ -40,6 +41,7 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
     """Run the SDK's load-time validators. Raises ValueError/etc on the first problem;
     returns a summary dict on success."""
     kind = job_kind(job)
+    load_job_plugins(job)
     schema = build_schema(job)
     adapter = build_adapter(job, schema)
     schema = schema if schema is not None else getattr(adapter, "schema", None)

@@ -35,7 +35,7 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
            group_of: Optional[Callable[[str], object]] = None,
            tags_of: Optional[Callable[[Segment], Iterable]] = None,
            test_frac: float = 0.0, workers: int = 1, on_error: str = "skip",
-           streaming: bool = False) -> CurateResult:
+           streaming: bool = False, progress=None) -> CurateResult:
     """Curate a target-count segment set from `sources`.
 
     group_of(source_id) -> group key (sets Segment.group for the group cap + split strata);
@@ -51,12 +51,15 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
         group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error,
-        streaming=streaming)
+        streaming=streaming, progress=progress)
 
     if strategy.scorers:   # whole-pool learned/action-aware scoring -> features
         from .scorers import apply_scorers
-        apply_scorers(strategy.scorers, all_segments, schema=schema, adapter=adapter, seed=seed)
+        apply_scorers(strategy.scorers, all_segments, schema=schema, adapter=adapter, seed=seed,
+                      progress=progress)
 
+    from .progress import emit
+    emit(progress, "selection", "start", total=len(all_segments))
     pool = all_segments
     if strategy.filters:
         from .methods import apply_filters
@@ -64,6 +67,8 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     bin_segments(pool, strategy.axes)
     tag_vocab = sorted({t for s in pool for t in s.tags}, key=str)
     selected = select(pool, strategy, target_size=target_size, tag_vocab=tag_vocab, seed=seed)
+    emit(progress, "selection", "complete", current=len(selected), total=len(pool),
+         detail=f"{len(selected)} selected")
 
     splits: dict = {}
     if test_frac > 0:

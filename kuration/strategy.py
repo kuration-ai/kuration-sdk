@@ -253,6 +253,8 @@ def load_strategy(name_or_spec, schema: SchemaSpec) -> Strategy:
     """Load a strategy from a dict or JSON file path.
     Validates `define` (compiles each DSL metric against `schema`) and that every referenced
     metric is either defined or registered — all loudly, before any data is read."""
+    from .plugins import load_plugins
+    load_plugins()
     if isinstance(name_or_spec, dict):
         spec = name_or_spec
     else:

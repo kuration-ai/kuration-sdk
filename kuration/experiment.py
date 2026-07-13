@@ -54,7 +54,7 @@ def _js(p: np.ndarray, q: np.ndarray) -> float:
 def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], segmenter,
                    target_size: int, seed: int = 0, baseline: str = None,
                    group_of=None, tags_of=None, workers: int = 1, on_error: str = "skip",
-                   streaming: bool = False) -> dict:
+                   streaming: bool = False, progress=None) -> dict:
     names = [a.name for a in arms]
     if len(set(names)) != len(names):
         raise ValueError(f"duplicate arm names "
@@ -74,7 +74,7 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
     all_segments, _, _ = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=union, registered=registered,
         segmenter=segmenter, tags_spec=union_tags, group_of=group_of, tags_of=tags_of,
-        workers=workers, on_error=on_error, streaming=streaming)
+        workers=workers, on_error=on_error, streaming=streaming, progress=progress)
 
     # Whole-pool scorers, unioned across arms (a shared output name must mean one scorer,
     # with one parameterization — otherwise the last arm's params would silently win).
@@ -88,10 +88,12 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
     if union_scorers:
         from .scorers import apply_scorers
         apply_scorers(list(union_scorers.values()), all_segments, schema=schema, adapter=adapter,
-                      seed=seed)
+                      seed=seed, progress=progress)
 
     tag_vocab = sorted({t for s in all_segments for t in s.tags}, key=str)
     selected: dict = {}
+    from .progress import emit
+    emit(progress, "selection", "start", total=len(arms))
     for arm in arms:
         pool = all_segments
         if arm.strategy.filters:
@@ -100,6 +102,10 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
         bin_segments(pool, arm.strategy.axes)                    # sequential; bin overwritten per arm
         selected[arm.name] = select(pool, arm.strategy, target_size=target_size,
                                     tag_vocab=tag_vocab, seed=seed)
+        emit(progress, "selection", "advance", current=len(selected), total=len(arms),
+             source=arm.name, status="ok")
+    emit(progress, "selection", "complete", current=len(arms), total=len(arms),
+         detail=f"{len(arms)} arms")
 
     metrics = sorted(set(union) | referenced)
     edges = {m: np.histogram_bin_edges(

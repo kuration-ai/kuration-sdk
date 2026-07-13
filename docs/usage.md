@@ -201,6 +201,13 @@ file ever sits at the final path), and a complete run fingerprint is pinned in a
 Changes to sources, schema, strategy, segmentation, budgets, adapter/encoder code or state,
 callbacks, seed, or output spec reject resume. To change a run, use a fresh `out_dir`.
 
+Custom registry extensions can be loaded from a job with `"plugins": ["my_package.plugin"]`,
+or from Python with `load_plugins(...)`. Installed packages may expose a `kuration.plugins`
+entry point. For programmatic progress, pass `progress=events.append` (or any callback) to
+`curate`, `run_experiment`, or `write_dataset`; fluent pipelines use
+`.options(progress=callback)`. Run CLIs render the same events on interactive stderr and accept
+`--quiet`.
+
 ## 12 · Sub-track spans (keep the best *parts* of long sources)
 
 ```python

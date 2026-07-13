@@ -36,5 +36,8 @@ def register_encoder(name: str, factory: Callable[..., OutputEncoder]) -> None:
 
 def get_encoder(name: str, **kwargs) -> OutputEncoder:
     if name not in _ENCODERS:
+        from ..plugins import load_plugins
+        load_plugins()
+    if name not in _ENCODERS:
         raise ValueError(f"unknown encoder {name!r}; registered: {sorted(_ENCODERS)}")
     return _ENCODERS[name](**kwargs)

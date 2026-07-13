@@ -105,6 +105,7 @@
     "test_hours": {"type": "number", "minimum": 0},
     "out": {"type": "string", "description": "Curate: output directory (local path or cloud URL)."},
     "seed": {"type": "integer"},
+    "plugins": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "workers": {"type": "integer", "minimum": 1},
     "on_error": {"enum": ["skip", "raise"]},
     "resume": {"type": "boolean"},

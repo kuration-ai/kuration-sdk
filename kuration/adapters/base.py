@@ -97,5 +97,8 @@ def register_adapter(name: str, factory: Callable[..., InputAdapter]) -> None:
 
 def get_adapter(name: str, **kwargs) -> InputAdapter:
     if name not in _ADAPTERS:
+        from ..plugins import load_plugins
+        load_plugins()
+    if name not in _ADAPTERS:
         raise ValueError(f"unknown adapter {name!r}; registered: {sorted(_ADAPTERS)}")
     return _ADAPTERS[name](**kwargs)

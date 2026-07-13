@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import sys
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from .features import FeatureEngine
 
@@ -36,8 +36,11 @@ def _entities_in_order(ticks) -> list:
 def _score_one(args):
     """Worker: read one source, segment, compute features. Returns a status tuple so a
     failure is data (skipped in the parent), not a pool-killing exception."""
-    schema, define, registered, tags_spec, adapter, segmenter, source, group, streaming = args
+    (schema, define, registered, tags_spec, adapter, segmenter, source, group, streaming,
+     plugin_modules) = args
     try:
+        from .plugins import load_plugins
+        load_plugins(list(plugin_modules))
         engine = FeatureEngine(schema, define=define, registered=registered, tags_spec=tags_spec)
         if streaming:
             # Stream windows from a lazy tick iterator: never hold more than one window. A
@@ -77,7 +80,7 @@ def _score_one(args):
 
 def score_sources(*, schema, adapter, sources, define, registered, segmenter,
                   tags_spec=None, group_of=None, tags_of=None, workers: int = 1,
-                  on_error: str = "skip", streaming: bool = False):
+                  on_error: str = "skip", streaming: bool = False, progress=None):
     """Return (all_segments_sorted, errors, source_tracks).
 
       errors:        [{"source", "error"}] for skipped sources (on_error='skip')
@@ -89,14 +92,36 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
     if streaming and getattr(adapter, "supports_streaming", True) is False:
         raise ValueError(f"{type(adapter).__name__} cannot provide bounded-memory streaming; "
                          "use an uncompressed array store such as HDF5/Zarr or streaming=False")
+    if on_error not in ("skip", "raise"):
+        raise ValueError(f"on_error must be 'skip' or 'raise', got {on_error!r}")
+    from .dsl.registry import METRICS
+    from .plugins import loaded_plugin_modules
+    metric_modules = {METRICS[r].__module__ for r in registered if r in METRICS}
+    plugin_modules = tuple(sorted(set(loaded_plugin_modules()) | metric_modules))
+    worker_modules = plugin_modules if workers and workers > 1 else ()
     items = [(schema, define, registered, tags_spec, adapter, segmenter, src,
-              (group_of(src) if group_of else None), streaming) for src in sources]
+              (group_of(src) if group_of else None), streaming, worker_modules) for src in sources]
+    from .progress import emit
+    emit(progress, "scoring", "start", total=len(items))
     if workers and workers > 1:
         context = mp.get_context("spawn")
         with ProcessPoolExecutor(max_workers=workers, mp_context=context) as ex:
-            results = list(ex.map(_score_one, items))
+            results = [None] * len(items)
+            futures = {ex.submit(_score_one, item): i for i, item in enumerate(items)}
+            done = 0
+            for future in as_completed(futures):
+                i = futures[future]
+                results[i] = future.result()
+                done += 1
+                emit(progress, "scoring", "advance", current=done, total=len(items),
+                     source=results[i][1], status=results[i][0])
     else:
-        results = [_score_one(it) for it in items]
+        results = []
+        for i, item in enumerate(items, 1):
+            result = _score_one(item)
+            results.append(result)
+            emit(progress, "scoring", "advance", current=i, total=len(items),
+                 source=result[1], status=result[0])
 
     all_segments, errors, source_tracks = [], [], {}
     for status, src, payload, track_lens in results:
@@ -122,4 +147,6 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
         for s in all_segments:
             s.tags = frozenset(tags_of(s))
     all_segments.sort(key=lambda s: (s.source_id, s.start_idx))   # determinism
+    emit(progress, "scoring", "complete", current=len(items), total=len(items),
+         detail=f"{len(all_segments)} segments, {len(errors)} skipped")
     return all_segments, errors, source_tracks

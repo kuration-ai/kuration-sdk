@@ -47,11 +47,17 @@ def register_scorer(name: str, factory: Callable[..., SegmentScorer]) -> None:
 
 def get_scorer(name: str, **kwargs) -> SegmentScorer:
     if name not in _SCORERS:
+        from .plugins import load_plugins
+        load_plugins()
+    if name not in _SCORERS:
         raise ValueError(f"unknown scorer {name!r}; registered: {sorted(_SCORERS)}")
     return _SCORERS[name](**kwargs)
 
 
 def has_scorer(name: str) -> bool:
+    if name not in _SCORERS:
+        from .plugins import load_plugins
+        load_plugins()
     return name in _SCORERS
 
 
@@ -90,13 +96,16 @@ def _materialize_buffers(segments, schema, adapter) -> list:
     return bufs
 
 
-def apply_scorers(entries: list[tuple], segments: list, *, schema, adapter, seed: int = 0) -> None:
+def apply_scorers(entries: list[tuple], segments: list, *, schema, adapter, seed: int = 0,
+                  progress=None) -> None:
     """Run each scorer over the whole pool and write its output into `seg.features[output]`.
     Buffers are materialized once and shared across buffer-needing scorers."""
     if not entries or not segments:
         return
+    from .progress import emit
+    emit(progress, "scorers", "start", total=len(entries))
     buffers = None
-    for name, output, params in entries:
+    for scorer_i, (name, output, params) in enumerate(entries, 1):
         scorer = get_scorer(name, **params)
         ctx = {"schema": schema, "seed": seed}
         if getattr(scorer, "needs_buffers", False):
@@ -109,6 +118,10 @@ def apply_scorers(entries: list[tuple], segments: list, *, schema, adapter, seed
                              f"{len(segments)} segments")
         for s, v in zip(segments, vals):
             s.features[output] = float(v)
+        emit(progress, "scorers", "advance", current=scorer_i,
+             total=len(entries), source=output, status="ok")
+    emit(progress, "scorers", "complete", current=len(entries), total=len(entries),
+         detail=f"{len(entries)} scorers")
 
 
 # --------------------------------------------------------------------------------------

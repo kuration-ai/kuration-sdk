@@ -61,7 +61,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                   tags_of: Optional[Callable] = None,
                   clip_aggregate: str = "max", span_steps: Optional[int] = None,
                   span_seconds: Optional[float] = None, workers: int = 1,
-                  on_error: str = "skip", resume: bool = False, streaming: bool = False) -> dict:
+                  on_error: str = "skip", resume: bool = False, streaming: bool = False,
+                  progress=None) -> dict:
     """`workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips bad sources;
     `resume=True` skips re-writing shards whose files already exist.
 
@@ -86,6 +87,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             f"span_steps={span_len} < shard_length={spec.shard_length} with "
             f"short_policy='drop': every admitted span would chunk to zero shards while "
             f"still consuming the hours budget")
+    from ..progress import emit
+    emit(progress, "provenance", "start", total=len(sources))
     from ..provenance import build_run_signature
     signature = build_run_signature(
         schema=schema, strategy=strategy, spec=spec, segmenter=segmenter, sources=sources,
@@ -93,6 +96,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         train_hours=train_hours, test_hours=test_hours, span_len=span_len,
         clip_aggregate=clip_aggregate, group_of=group_of, tags_of=tags_of)
     _check_resume_run(out_dir, signature, resume)
+    emit(progress, "provenance", "complete", current=len(sources), total=len(sources),
+         detail=signature["fingerprint"][:12])
     registered = [r for r in strategy.referenced_metrics()
                   if r not in strategy.define and r not in strategy.scorer_outputs()]
 
@@ -102,12 +107,14 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
         group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error,
-        streaming=streaming)
+        streaming=streaming, progress=progress)
 
     if strategy.scorers:   # whole-pool learned/action-aware scoring -> features
         from ..scorers import apply_scorers
-        apply_scorers(strategy.scorers, all_segments, schema=schema, adapter=adapter, seed=seed)
+        apply_scorers(strategy.scorers, all_segments, schema=schema, adapter=adapter, seed=seed,
+                      progress=progress)
 
+    emit(progress, "selection", "start", total=len(all_segments))
     pool = all_segments
     if strategy.filters:
         from ..methods import apply_filters
@@ -149,6 +156,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         items, train_hours=train_hours, test_hours=test_hours,
         max_group_overshoot=group_overshoot, tag_coverage=strategy.tag_coverage, seed=seed,
         return_stats=True)
+    emit(progress, "selection", "complete", current=len(admitted), total=len(items),
+         detail=f"{len(admitted)} items admitted")
 
     # Re-read each admitted source once; write each admitted span as its own (sub-)track.
     entries = []
@@ -157,7 +166,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     # ShardDataset indexing) is hash-seed-independent.
     for (src, eid, k) in sorted(admitted, key=lambda t: (str(t[0]), str(t[1]), t[2])):
         by_source.setdefault(src, []).append((eid, k))
-    for src in sorted(by_source):
+    emit(progress, "writing", "start", total=len(by_source))
+    for source_i, src in enumerate(sorted(by_source), 1):
         suffix = lambda k: "" if span_len is None else f"_span{k:03d}"
         if streaming:
             from .stream import stream_source_shards
@@ -169,6 +179,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                          else adapter.ticks(src))
             entries += stream_source_shards(out_dir, src, tick_iter, jobs,
                                             schema=schema, spec=spec, encoder=encoder, resume=resume)
+            emit(progress, "writing", "advance", current=source_i, total=len(by_source),
+                 source=src, status="ok")
             continue
         tracks = {t.entity_id: t for t in tracks_from_ticks(schema, list(adapter.ticks(src)), src)}
         for (eid, k) in by_source[src]:
@@ -182,6 +194,10 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             entries += write_track(out_dir, sub, spec, encoder=encoder, schema=schema,
                                    split=split.get(src, "train"), resume=resume,
                                    name_suffix=suffix(k))
+        emit(progress, "writing", "advance", current=source_i, total=len(by_source),
+             source=src, status="ok")
+    emit(progress, "writing", "complete", current=len(by_source), total=len(by_source),
+         detail=f"{len(entries)} shards")
 
     emitted = {sp: sum(e["n_steps"] for e in entries if e["split"] == sp) / sample_hz
                for sp in ("train", "test")}

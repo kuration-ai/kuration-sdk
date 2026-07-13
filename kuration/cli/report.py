@@ -14,8 +14,8 @@ from pathlib import Path
 from ..report import dataset_report
 from ..scoring import score_sources
 from ..strategy import load_strategy
-from ._common import (build_adapter, build_schema, build_segmenter, cli_run, read_job,
-                      resolve_sources)
+from ._common import (build_adapter, build_schema, build_segmenter, cli_progress_for, cli_run,
+                      load_job_plugins, read_job, resolve_sources)
 
 
 def main() -> None:
@@ -23,12 +23,14 @@ def main() -> None:
     ap.add_argument("job", help="Path to the job JSON.")
     ap.add_argument("--out", default=None, help="Write the full report JSON here.")
     ap.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
+    ap.add_argument("--quiet", action="store_true", help="Suppress interactive progress output.")
     args = ap.parse_args()
     cli_run(lambda: _run(args), debug=args.debug)
 
 
 def _run(args) -> None:
     job = read_job(args.job)
+    load_job_plugins(job)
     schema = build_schema(job)
     adapter = build_adapter(job, schema)
     schema = schema or adapter.schema
@@ -44,7 +46,7 @@ def _run(args) -> None:
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
         workers=job.get("workers", 1), on_error=job.get("on_error", "skip"),
-        streaming=job.get("streaming", False))
+        streaming=job.get("streaming", False), progress=cli_progress_for(quiet=args.quiet))
 
     rep = dataset_report(segs)
     print(f"{rep['n_segments']} segments from {rep['n_sources']} sources "

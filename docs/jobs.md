@@ -25,12 +25,16 @@ curate; otherwise → report.
 | `schema` | unless the adapter derives one | inline `SchemaSpec` dict **or a path** to a JSON file ([schema.md](schema.md)). The curated adapter derives its own — omit there. |
 | `adapter` | yes | `{"type": <registered name>, ...kwargs}` — type is `timeseries`, `jsonl`, `hdf5`, `npz`, `parquet-dataset`, `huggingface`, `zarr`, `curated`, or your own `register_adapter` name; the remaining keys are that adapter's constructor kwargs ([adapters.md](adapters.md)) |
 | `sources` | no | explicit list of source URIs (local paths or `gs://`/`s3://`/`az://`). Omit to use the adapter's own `sources()` (curated / parquet-dataset / huggingface enumerate) |
+| `plugins` | no | importable registration modules loaded before adapter/strategy construction |
 | `segmenter` | yes | `{"window": W, "stride": S, "unit": "steps"\|"seconds", "sample_hz"?: hz}` — `sample_hz` defaults to the schema's |
 | `strategy` | yes (per-arm for experiments) | inline strategy dict or a path to one ([strategies.md](strategies.md)) |
 | `seed` | no (0) | RNG seed — same seed + sources → same result, regardless of `workers` |
 | `workers` | no (1) | parallel feature pass over a process pool |
 | `on_error` | no (`"skip"`) | `"skip"` logs + skips an unreadable source; `"raise"` fails fast. Either way an **empty** pool raises |
 | `streaming` | no (false) | out-of-core for streaming-capable adapters; NPZ and partitioned-Parquet dataset mode reject it |
+
+Run CLIs show throttled phase progress when stderr is an interactive terminal. Redirected output
+stays clean; pass `--quiet` to suppress interactive progress explicitly.
 
 ## Curate jobs (`kur-curate`)
 

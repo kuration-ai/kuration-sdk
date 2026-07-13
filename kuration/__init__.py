@@ -34,6 +34,8 @@ from .loaders import iter_shards, read_shard_arrays, shard_entries
 from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities
 from .pipeline import Pipeline, input
+from .plugins import load_plugins, loaded_plugin_modules, plugin_provenance
+from .progress import ProgressCallback
 from .report import dataset_report
 from .scorers import SegmentScorer, apply_scorers, get_scorer, register_scorer
 from .output import (
@@ -76,4 +78,5 @@ __all__ = [
     "fill_to_hours", "write_dataset",
     "iter_shards", "read_shard_arrays", "shard_entries",
     "infer_schema", "Pipeline", "input",
+    "load_plugins", "loaded_plugin_modules", "plugin_provenance", "ProgressCallback",
 ]

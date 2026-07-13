@@ -10,15 +10,16 @@ signature. Optional-extra requirements are tagged (`[methods]`, `[parquet]`, `[a
 
 | name | signature | does |
 |---|---|---|
-| `curate` | `(*, schema, adapter, sources, strategy, segmenter, target_size, seed=0, group_of=None, tags_of=None, test_frac=0.0, workers=1, on_error="skip", streaming=False) -> CurateResult` | score all sources, select a target **count** of segments |
-| `write_dataset` | `(out_dir, *, schema, adapter, sources, strategy, segmenter, spec, encoder=None, train_hours, test_hours=0.0, sample_hz=None, seed=0, group_of=None, tags_of=None, clip_aggregate="max", span_steps=None, span_seconds=None, workers=1, on_error="skip", resume=False, streaming=False) -> dict` | score, fill a train/test **hour budget**, write shards + manifests + config |
-| `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False) -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
+| `curate` | `(*, ..., streaming=False, progress=None) -> CurateResult` | score all sources, select a target **count** of segments |
+| `write_dataset` | `(out_dir, *, ..., resume=False, streaming=False, progress=None) -> dict` | score, fill a train/test **hour budget**, write shards + manifests + config |
+| `run_experiment` | `(*, ..., streaming=False, progress=None) -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
 | `dataset_report` | `(segments, *, metrics=None, hist_bins=10) -> dict` | per-metric distribution profile (+ tag/group counts) of a scored pool |
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
 cap and stratified splits); `tags_of(segment) -> iterable` overrides declarative tags;
 `workers` parallelizes the feature pass (deterministic); `on_error` is `"skip"` (log + collect)
-or `"raise"`; `streaming=True` is the out-of-core path.
+or `"raise"`; `streaming=True` is the out-of-core path; `progress(event_dict)` receives phase
+events without coupling execution to a particular UI.
 
 - `CurateResult` — dataclass: `selected`, `all_segments`, `schema`, `strategy`, `splits`, `errors`.
 - `write_dataset` returns `{"shards": [entries], "split": {source -> "train"/"test"}, "admitted": set, "results": {...counts}, "errors": [...]}`.
@@ -41,7 +42,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.tag` | `(*sources, min_frac=None) -> Pipeline` | declarative tag sources (+ optional tag-coverage floor) |
 | `Pipeline.split` | `(test=0.2) -> Pipeline` | source-level test split |
 | `Pipeline.group` | `(fn) -> Pipeline` | `group_of(source_id) -> key` |
-| `Pipeline.options` | `(**kw) -> Pipeline` | `workers, on_error, seed, streaming, resume, sample_hz` |
+| `Pipeline.options` | `(**kw) -> Pipeline` | `workers, on_error, seed, streaming, resume, sample_hz, progress` |
 | `Pipeline.curate` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | configure selection; exactly one of `n=`/`hours=` |
 | `Pipeline.collect` | `(n=None) -> CurateResult` | terminal — count-path selection |
 | `Pipeline.output` | `(path, *, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None) -> dict` | terminal — write shards + manifests + `config.json` (embeds `"pipeline"` provenance) |
@@ -115,6 +116,15 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `register_scorer` / `get_scorer` | `(name, factory)` / `(name, **kwargs)` | registry (`action_residual` ships, `[methods]`) |
 | `apply_scorers` | `(entries, segments, *, schema, adapter, seed=0) -> None` | run parsed scorers, write outputs into `seg.features` |
 
+## Plugins and progress
+
+| name | signature | does |
+|---|---|---|
+| `load_plugins` | `(modules=(), *, include_entry_points=True) -> list[dict]` | load registration modules and installed `kuration.plugins` entry points |
+| `loaded_plugin_modules` | `() -> tuple[str, ...]` | modules propagated to spawned scoring workers |
+| `plugin_provenance` | `() -> list[dict]` | loaded plugin code fingerprints used by resume provenance |
+| `ProgressCallback` | `Callable[[dict], None]` | receives structured `{phase, event, ...}` execution events |
+
 ## Output
 
 | name | signature | does |
@@ -126,7 +136,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `Track` | `(source_id, entity_id, records, meta={})` | one entity's timestep sequence — the output unit |
 | `tracks_from_ticks` | `(schema, ticks, source_id) -> list[Track]` | one track per entity |
 | `write_track` | `(out_dir, track, spec, *, encoder=None, schema=None, split="all", resume=False, name_suffix="") -> [manifest entries]` | low-level: write one track's shards |
-| `fill_to_hours` | `(items, *, train_hours, test_hours, max_group_overshoot=1.5, tag_coverage=None, seed=0) -> (admitted_ids, split)` | the hours-budget fill (rejects non-finite priorities) |
+| `fill_to_hours` | `(items, *, train_hours, test_hours, max_group_overshoot=None, tag_coverage=None, seed=0, return_stats=False)` | hours-budget fill; optional accounting as a third return value |
 
 ## Read side
 

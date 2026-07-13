@@ -26,6 +26,20 @@ def read_job(path: str) -> dict:
         raise ValueError(f"job spec {path} is not valid JSON: {e}") from e
 
 
+def load_job_plugins(job: dict) -> list[dict]:
+    """Load explicit registration modules before constructing any registry-backed objects."""
+    from ..plugins import load_plugins
+    return load_plugins(job.get("plugins") or [])
+
+
+def cli_progress_for(*, quiet: bool = False):
+    """Render progress only on an interactive stderr; redirected CLIs stay machine-clean."""
+    if quiet or not sys.stderr.isatty():
+        return None
+    from ..progress import cli_progress
+    return cli_progress(file=sys.stderr)
+
+
 def cli_run(body, *, debug: bool = False) -> None:
     """Error surface shared by the kur-* mains: a failure prints one `error:` line to stderr
     and exits 1; `--debug` re-raises so the full traceback is available on demand."""
