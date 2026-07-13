@@ -107,8 +107,9 @@ maps the common ones to causes and fixes.
   atomically (a crash never leaves a partial file at the final path), and resuming with a
   *different* output spec raises instead of silently mixing old shards with a new manifest.
 - **Out-of-core** — `streaming=True` reads each source as a lazy tick stream on both the
-  feature pass and the shard write, so a *single source larger than RAM* is fine; opt-in, the
-  in-memory path stays default.
+  feature pass and shard write for streaming-capable adapters. CSV, JSONL, single-file Parquet,
+  HDF5, Zarr, and HuggingFace inputs support it; NPZ and partitioned-Parquet `dataset` mode
+  reject it because their compressed/global-sort semantics cannot guarantee bounded memory.
 - **Path-agnostic I/O** — any source/shard/manifest path may be local or a cloud URL
   (`gs://`, `s3://`, `az://`, …) via fsspec (the `[cloud]` extra + a backend like `gcsfs`);
   local needs nothing.

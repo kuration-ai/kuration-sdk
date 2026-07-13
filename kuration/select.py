@@ -110,15 +110,33 @@ def assign_splits(source_groups: dict, test_frac: float, seed: int) -> dict:
 
     `source_groups`: {source_id -> group_key}. Seeded + sorted so the split is identical
     regardless of the order sources arrive in. Leakage-free: a whole source -> one split."""
+    if not isinstance(test_frac, (int, float)) or not 0 <= test_frac <= 1:
+        raise ValueError(f"test_frac must be in [0, 1], got {test_frac!r}")
     rng = random.Random(seed)
     by_group: dict = defaultdict(list)
     for sid, g in sorted(source_groups.items()):
         by_group[g].append(sid)
+    groups = sorted(by_group, key=lambda x: (x is None, str(type(x)), str(x)))
+    # Allocate the global test count across strata by largest remainder. Independently
+    # rounding every small group would assign singleton strata entirely to train.
+    total_test = int(round(test_frac * len(source_groups)))
+    exact = {g: test_frac * len(by_group[g]) for g in groups}
+    quota = {g: int(exact[g]) for g in groups}
+    remaining = total_test - sum(quota.values())
+    order = sorted(range(len(groups)), key=lambda i: (-(exact[groups[i]] - quota[groups[i]]), i))
+    for i in order:
+        if remaining <= 0:
+            break
+        g = groups[i]
+        if quota[g] < len(by_group[g]):
+            quota[g] += 1
+            remaining -= 1
+
     split: dict = {}
-    for g in sorted(by_group, key=lambda x: (x is None, x)):
+    for g in groups:
         ids = by_group[g][:]
         rng.shuffle(ids)
-        n_test = int(round(test_frac * len(ids)))
+        n_test = quota[g]
         for i, sid in enumerate(ids):
             split[sid] = "test" if i < n_test else "train"
     return split

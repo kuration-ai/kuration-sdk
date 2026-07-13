@@ -97,7 +97,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 
 | name | signature | does |
 |---|---|---|
-| `load_strategy` | `(dict_or_path_or_builtin_name, schema) -> Strategy` | parse + validate a declarative strategy ([strategies.md](strategies.md)) |
+| `load_strategy` | `(dict_or_json_path, schema) -> Strategy` | parse + validate a declarative strategy ([strategies.md](strategies.md)) |
 | `Strategy` | fields: `define, axes, method, weights, normalize, target, tag_coverage, group_cap, predicates, feature_space, method_params, filters, tags, scorers, resolved` | the loaded strategy (its `.resolved` dict lands in `config.json`) |
 | `bin_segments` | `(segments, axes) -> None` | assign quantile-bin tuples in place (tie-robust, NaN-loud) |
 | `quantile_bins` | `(values, n_bins) -> edges` | raw equal-frequency edges |

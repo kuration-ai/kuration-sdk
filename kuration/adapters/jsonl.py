@@ -13,14 +13,13 @@ from .timeseries import TimeseriesAdapter
 
 class JsonlAdapter(TimeseriesAdapter):
     def ticks(self, source_uri: str) -> list[Tick]:
+        return list(self.iter_ticks(source_uri))
+
+    def iter_ticks(self, source_uri: str):
         from ..io import open_file
-        rows = []
         with open_file(source_uri, "rt") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    rows.append(json.loads(line))
-        return self._rows_to_ticks(rows)
+            rows = (json.loads(line) for raw in f if (line := raw.strip()))
+            yield from self._iter_rows_to_ticks(rows)
 
     def check_source(self, source_uri: str) -> None:
         """Preflight one .jsonl by its first non-empty line only: parse it and verify every

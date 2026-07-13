@@ -15,7 +15,8 @@ seams).
 > hours-budget fill); the read side (`iter_shards` numpy-only, `kuration.torch.ShardDataset`
 > for PyTorch); declarative tag-coverage; a stats report and a multi-arm experiment
 > harness; parallel / skip-and-log / resume / **out-of-core** execution (`streaming=True` handles
-> a single source larger than RAM); path-agnostic local + cloud I/O; and the
+> a source larger than RAM when its adapter supports lazy iteration); path-agnostic local +
+> cloud I/O; and the
 > `kur-validate` / `kur-curate` / `kur-experiment` / `kur-report` CLIs (+ a shipped JSON
 > Schema). The remaining scale item is a
 > spill/external tier for a *total segment pool* larger than RAM. See `../PLAN.md`.

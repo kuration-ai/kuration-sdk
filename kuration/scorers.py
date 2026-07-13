@@ -60,10 +60,17 @@ def parse_scorers(raw) -> list[tuple]:
     out = []
     for e in raw or []:
         if isinstance(e, str):
+            if not e:
+                raise ValueError("scorer name must be a non-empty string")
             out.append((e, e, {}))
         elif isinstance(e, dict) and "name" in e:
             params = {k: v for k, v in e.items() if k not in ("name", "as")}
-            out.append((e["name"], e.get("as", e["name"]), params))
+            output = e.get("as", e["name"])
+            if not isinstance(e["name"], str) or not e["name"]:
+                raise ValueError(f"scorer name must be a non-empty string, got {e['name']!r}")
+            if not isinstance(output, str) or not output:
+                raise ValueError(f"scorer output 'as' must be a non-empty string, got {output!r}")
+            out.append((e["name"], output, params))
         else:
             raise ValueError(f"scorer entry must be a name or {{'name': ...}}, got {e!r}")
     return out

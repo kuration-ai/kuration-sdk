@@ -10,7 +10,7 @@ short_policy generalizes the reference chunker:
 from __future__ import annotations
 
 import hashlib
-import math
+import re
 from typing import Optional
 
 import numpy as np
@@ -44,8 +44,10 @@ def track_name(source_id, entity_id, name_suffix: str = "") -> str:
     """Filesystem-safe, collision-free shard basename for one (source, entity, span).
     The readable prefix flattens '/' to '_', which can alias distinct pairs
     (('runs/a','b') vs ('runs','a_b')) — the content hash disambiguates."""
-    safe = f"{source_id}_{entity_id}{name_suffix}".replace("/", "_")
-    h = hashlib.sha1(f"{source_id}\x00{entity_id}\x00{name_suffix}".encode()).hexdigest()[:8]
+    raw = f"{source_id}_{entity_id}{name_suffix}"
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip(". _") or "track"
+    safe = safe[:96].rstrip(". ")
+    h = hashlib.sha256(f"{source_id}\x00{entity_id}\x00{name_suffix}".encode()).hexdigest()[:12]
     return f"{safe}_{h}"
 
 
@@ -77,6 +79,10 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
     chunk boundaries are deterministic, so the entry is reconstructable without rewriting.
     `name_suffix` disambiguates shard filenames across sub-track spans of one track."""
     from ..io import exists as _exists
+    if any(m.src_kind == "field" for m in spec.modalities):
+        if schema is None:
+            raise ValueError("write_track needs schema when OutputSpec contains field: modalities")
+        spec.validate_schema(schema)
     encoder = encoder or PassthroughEncoder()
     ctx = {"schema": schema, "track": {**track.meta, "source_id": track.source_id,
                                        "entity_id": track.entity_id}}

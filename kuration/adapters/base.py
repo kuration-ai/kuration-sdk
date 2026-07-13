@@ -4,12 +4,11 @@ enters the SDK.
 An adapter's contract is deliberately tiny: turn a raw source into an ordered stream of
 canonical `Tick`s (parse + group-by-timestep). Everything after that — building the
 `(T,E,D)` buffer, segmentation, metrics, selection — is generic SDK code that never knows
-which dataset it's looking at. The stream is an `Iterable`, so a future streaming segmenter
-can consume it lazily; the in-memory path materializes it.
+which dataset it's looking at. Streaming-capable adapters expose `iter_ticks`; the compatible
+`ticks` path materializes a list for callers that need random access.
 
-Adapters are registered by name so worker processes can reconstruct them (the SDK's
-parallel feature pass rebuilds the adapter from its registered name + config rather than
-pickling a live object — the same pattern the GCS client uses).
+Adapters are registered by name for declarative job construction. The parallel feature pass
+pickles the configured adapter into spawned workers.
 """
 from __future__ import annotations
 
@@ -27,16 +26,14 @@ class InputAdapter(Protocol):
     def ticks(self, source_uri: str) -> Iterable[Tick]: ...
 
 
-def arrays_to_ticks(schema: SchemaSpec, arrs: dict, gl: dict = None) -> list:
-    """Build single-entity ticks from per-field `(T, *shape)` arrays — shared by the HDF5 and
-    NPZ adapters. Scalar -> float, vector -> tuple, categorical -> str (bytes decoded)."""
+def iter_arrays_to_ticks(schema: SchemaSpec, arrs: dict, gl: dict = None):
+    """Lazily build single-entity ticks from indexable per-field arrays."""
     gl = gl or {}
     n = len(next(iter(arrs.values()))) if arrs else (len(next(iter(gl.values()))) if gl else 0)
     mismatched = {k: len(a) for k, a in {**arrs, **gl}.items() if len(a) != n}
     if mismatched:                       # silent truncation to the first field's length is worse
         raise ValueError(f"arrays_to_ticks: length mismatch — expected {n} steps, got "
                          f"{mismatched}")
-    out = []
     for t in range(n):
         ent = {}
         for fn, arr in arrs.items():
@@ -49,8 +46,12 @@ def arrays_to_ticks(schema: SchemaSpec, arrs: dict, gl: dict = None) -> list:
             else:
                 ent[fn] = float(np.ravel(x)[0]) if np.ndim(x) else float(x)
         g = {gn: float(np.ravel(arr[t])[0]) for gn, arr in gl.items()}
-        out.append(Tick(time=t, entities={0: ent}, globals=g))
-    return out
+        yield Tick(time=t, entities={0: ent}, globals=g)
+
+
+def arrays_to_ticks(schema: SchemaSpec, arrs: dict, gl: dict = None) -> list:
+    """Materialized counterpart to `iter_arrays_to_ticks` for existing callers."""
+    return list(iter_arrays_to_ticks(schema, arrs, gl))
 
 
 def check_mapped_arrays(schema: SchemaSpec, fields: dict, globals_: dict, source_uri: str,

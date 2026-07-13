@@ -8,11 +8,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-import numpy as np
-
 from ..buffer import Tick
 from ..schema import SchemaSpec
-from .base import arrays_to_ticks, check_mapped_arrays, register_adapter
+from .base import check_mapped_arrays, iter_arrays_to_ticks, register_adapter
 
 
 class HDF5Adapter:
@@ -23,17 +21,23 @@ class HDF5Adapter:
         for f in fields:
             if f not in schema.fields:
                 raise ValueError(f"field map references undeclared schema field {f!r}")
+        for g in self.globals:
+            if g not in schema.globals:
+                raise ValueError(f"global map references undeclared schema global {g!r}")
 
     def ticks(self, source_uri: str) -> list[Tick]:
+        return list(self.iter_ticks(source_uri))
+
+    def iter_ticks(self, source_uri: str):
         try:
             import h5py
         except ImportError as e:
             raise ImportError("HDF5Adapter needs h5py: pip install -e '.[array]'") from e
         from ..io import local_copy
         with local_copy(source_uri) as p, h5py.File(p, "r") as f:   # remote staged to tempfile
-            arrs = {fn: f[ds][:] for fn, ds in self.fields.items()}
-            gl = {gn: f[ds][:] for gn, ds in self.globals.items()}
-        return arrays_to_ticks(self.schema, arrs, gl)
+            arrs = {fn: f[ds] for fn, ds in self.fields.items()}
+            gl = {gn: f[ds] for gn, ds in self.globals.items()}
+            yield from iter_arrays_to_ticks(self.schema, arrs, gl)
 
     def check_source(self, source_uri: str) -> None:
         """Preflight one file from metadata only (dataset names + shapes, no array reads):

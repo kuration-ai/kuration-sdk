@@ -61,12 +61,15 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     the fill can keep the *best parts* of a long source rather than the whole source or nothing.
     Unset → one span per whole track (the default).
 
-    `streaming=True` scores and writes out-of-core — each source is read as a lazy tick stream
-    on both the feature pass and the shard write, so a single source larger than RAM is fine."""
+    `streaming=True` scores and writes out-of-core when the adapter provides a bounded-memory
+    tick iterator. Adapters that cannot honor that contract reject the option loudly."""
     sample_hz = sample_hz or schema.sample_hz
     if not sample_hz:
         raise ValueError("write_dataset needs sample_hz (schema.sample_hz or explicit) for the "
                          "hours budget")
+    if train_hours < 0 or test_hours < 0:
+        raise ValueError("train_hours and test_hours must be >= 0")
+    spec.validate_schema(schema)
     span_len = span_steps if span_steps else (round(span_seconds * sample_hz) if span_seconds else None)
     if span_len is not None and spec.short_policy == "drop" and span_len < spec.shard_length:
         raise ValueError(
@@ -124,8 +127,11 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                               "seconds": (end - start) / sample_hz, "group": g, "tags": tg})
                 span_index[(src, eid, k)] = (start, end)
     n_tracks = sum(len(t) for t in source_tracks.values())
-    admitted, split = fill_to_hours(items, train_hours=train_hours, test_hours=test_hours,
-                                    tag_coverage=strategy.tag_coverage, seed=seed)
+    group_overshoot = (strategy.group_cap or {}).get("max_group_overshoot") \
+        if strategy.group_cap else None
+    admitted, split = fill_to_hours(
+        items, train_hours=train_hours, test_hours=test_hours,
+        max_group_overshoot=group_overshoot, tag_coverage=strategy.tag_coverage, seed=seed)
 
     # Re-read each admitted source once; write each admitted span as its own (sub-)track.
     entries = []
@@ -142,7 +148,9 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                      "end": span_index[(src, eid, k)][1], "split": split.get(src, "train"),
                      "name_suffix": suffix(k), "group": group_of(src) if group_of else None}
                     for (eid, k) in by_source[src]]
-            entries += stream_source_shards(out_dir, src, adapter.ticks(src), jobs,
+            tick_iter = (adapter.iter_ticks(src) if hasattr(adapter, "iter_ticks")
+                         else adapter.ticks(src))
+            entries += stream_source_shards(out_dir, src, tick_iter, jobs,
                                             schema=schema, spec=spec, encoder=encoder, resume=resume)
             continue
         tracks = {t.entity_id: t for t in tracks_from_ticks(schema, list(adapter.ticks(src)), src)}

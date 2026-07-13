@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from typing import Optional
 
 from ..select import assign_splits
 
 
 def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
-                  max_group_overshoot: float = 1.5, tag_coverage: dict = None,
+                  max_group_overshoot: Optional[float] = None, tag_coverage: dict = None,
                   seed: int = 0) -> tuple[set, dict]:
     """Admit items (each {id, source_id, priority, seconds, group, tags?}) to the train/test
     hour budgets in descending priority. Sources are pre-partitioned into split pools (seeded,
@@ -24,6 +25,10 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
     ({"min_tag_frac": f}), a reserve pass first admits the highest-priority item carrying each
     tag (bounded by f x total budget) so a rare label isn't dropped by the priority cut.
     Returns (admitted_ids, source->split)."""
+    if train_hours < 0 or test_hours < 0:
+        raise ValueError("train_hours and test_hours must be >= 0")
+    if max_group_overshoot is not None and max_group_overshoot <= 0:
+        raise ValueError("max_group_overshoot must be > 0 or None")
     train_t, test_t = train_hours * 3600.0, test_hours * 3600.0
     total = train_t + test_t
     source_groups = {it["source_id"]: it["group"] for it in items}
@@ -31,7 +36,8 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
     split = assign_splits(source_groups, test_frac, seed)
 
     n_groups = max(len({it["group"] for it in items}), 1)
-    max_per_group = (max_group_overshoot * total / n_groups) if total > 0 else float("inf")
+    max_per_group = (max_group_overshoot * total / n_groups
+                     if max_group_overshoot is not None and total > 0 else float("inf"))
 
     secs = {"train": 0.0, "test": 0.0}
     target = {"train": train_t, "test": test_t}

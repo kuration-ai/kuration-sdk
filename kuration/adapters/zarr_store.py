@@ -11,7 +11,7 @@ from typing import Optional
 
 from ..buffer import Tick
 from ..schema import SchemaSpec
-from .base import arrays_to_ticks, check_mapped_arrays, register_adapter
+from .base import check_mapped_arrays, iter_arrays_to_ticks, register_adapter
 
 
 class ZarrAdapter:
@@ -22,6 +22,9 @@ class ZarrAdapter:
         for f in fields:
             if f not in schema.fields:
                 raise ValueError(f"field map references undeclared schema field {f!r}")
+        for g in self.globals:
+            if g not in schema.globals:
+                raise ValueError(f"global map references undeclared schema global {g!r}")
 
     def _open_group(self, source_uri: str):
         try:
@@ -42,10 +45,13 @@ class ZarrAdapter:
         return zarr.open(store, mode="r")
 
     def ticks(self, source_uri: str) -> list[Tick]:
+        return list(self.iter_ticks(source_uri))
+
+    def iter_ticks(self, source_uri: str):
         g = self._open_group(source_uri)
-        arrs = {fn: g[key][:] for fn, key in self.fields.items()}
-        gl = {gn: g[key][:] for gn, key in self.globals.items()}
-        return arrays_to_ticks(self.schema, arrs, gl)
+        arrs = {fn: g[key] for fn, key in self.fields.items()}
+        gl = {gn: g[key] for gn, key in self.globals.items()}
+        yield from iter_arrays_to_ticks(self.schema, arrs, gl)
 
     def check_source(self, source_uri: str) -> None:
         """Preflight one store from metadata only (array keys + shapes are store metadata —

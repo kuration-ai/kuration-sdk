@@ -32,17 +32,6 @@ class HuggingFaceAdapter(TimeseriesAdapter):
         self.load_kwargs = load_kwargs or {}
         self._rows: Optional[list[dict]] = None      # cached after first load (per process)
 
-    def _load_rows(self) -> list[dict]:
-        if self._rows is None:
-            try:
-                from datasets import load_dataset
-            except ImportError as e:
-                raise ImportError("HuggingFaceAdapter needs the datasets library: "
-                                  "pip install -e '.[hf]'") from e
-            ds = load_dataset(self.dataset_name, self.config, split=self.split, **self.load_kwargs)
-            self._rows = list(ds)
-        return self._rows
-
     # HF sources are dataset/split names (or source_column values), not filesystem paths —
     # tells `kur-validate --check-sources` to skip the existence stat and rely on check_source.
     sources_are_paths = False
@@ -50,13 +39,27 @@ class HuggingFaceAdapter(TimeseriesAdapter):
     def sources(self) -> list[str]:
         if self.source_column is None:
             return [f"{self.dataset_name}:{self.split}"]
-        return sorted({str(r[self.source_column]) for r in self._load_rows()})
+        return sorted({str(r[self.source_column]) for r in self._iter_rows()})
+
+    def _iter_rows(self):
+        if self._rows is not None:
+            yield from self._rows
+            return
+        try:
+            from datasets import load_dataset
+        except ImportError as e:
+            raise ImportError("HuggingFaceAdapter needs the datasets library: "
+                              "pip install -e '.[hf]'") from e
+        # A datasets.Dataset is Arrow-backed and iterable without converting the whole split
+        # into a Python list. Users may also pass streaming=True through load_kwargs.
+        yield from load_dataset(self.dataset_name, self.config, split=self.split,
+                                **self.load_kwargs)
 
     def check_source(self, source_uri: str) -> None:
         """Preflight the dataset's declared features against the column map without
-        downloading data: the builder's metadata already names the columns. If rows are
-        already cached in-process (source_column mode enumerated them), check the first row
-        instead — same cost, ground truth. A dataset whose builder declares no features and
+        downloading data: the builder's metadata already names the columns. If rows were
+        injected or cached in-process, check the first row instead. A dataset whose builder
+        declares no features and
         has no cached rows is unverifiable here; the run-time path stays loud."""
         need = self._required_columns()
         if self.source_column:
@@ -79,10 +82,13 @@ class HuggingFaceAdapter(TimeseriesAdapter):
                              f"{missing}; available: {sorted(cols)}")
 
     def ticks(self, source_uri: str) -> list[Tick]:
-        rows = self._load_rows()
+        return list(self.iter_ticks(source_uri))
+
+    def iter_ticks(self, source_uri: str):
+        rows = self._iter_rows()
         if self.source_column is not None:
-            rows = [r for r in rows if str(r[self.source_column]) == str(source_uri)]
-        return self._rows_to_ticks(rows)
+            rows = (r for r in rows if str(r[self.source_column]) == str(source_uri))
+        yield from self._iter_rows_to_ticks(rows)
 
 
 register_adapter("huggingface", HuggingFaceAdapter)

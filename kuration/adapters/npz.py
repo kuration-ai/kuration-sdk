@@ -22,6 +22,11 @@ class NpzAdapter:
         for f in fields:
             if f not in schema.fields:
                 raise ValueError(f"field map references undeclared schema field {f!r}")
+        for g in self.globals:
+            if g not in schema.globals:
+                raise ValueError(f"global map references undeclared schema global {g!r}")
+
+    supports_streaming = False
 
     def ticks(self, source_uri: str) -> list[Tick]:
         from ..io import local_copy

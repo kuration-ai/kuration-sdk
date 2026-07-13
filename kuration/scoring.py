@@ -9,15 +9,14 @@ errors), never silently dropped. Determinism holds: the parent sorts the pooled 
 `(source_id, start_idx)`, so the result is identical regardless of worker count or completion
 order.
 
-Note: on Linux ≤3.13 the default process start method is `fork`, so the metric registry
-(built-ins and any `@register_metric` defined before the call) is inherited by workers. Under
-`spawn`/`forkserver` — the macOS/Windows default, and the Linux default from Python 3.14 —
-custom metrics must be importable at module scope: one registered only in `__main__` is
-invisible to workers and fails loudly ("unknown registered metric" per source, then the
-empty-pool error).
+The pool explicitly uses `spawn` to avoid unsafe forks from multithreaded runtimes and to behave
+consistently across Python versions. Custom registered metrics must therefore live in an
+importable module; a metric registered only in `__main__` is not visible to workers and fails
+loudly.
 """
 from __future__ import annotations
 
+import multiprocessing as mp
 import sys
 from concurrent.futures import ProcessPoolExecutor
 
@@ -57,7 +56,9 @@ def _score_one(args):
                     yield tk
 
             segs = []
-            for seg, win in segmenter.stream(source, tracked(adapter.ticks(source))):
+            tick_iter = (adapter.iter_ticks(source) if hasattr(adapter, "iter_ticks")
+                         else adapter.ticks(source))
+            for seg, win in segmenter.stream(source, tracked(tick_iter)):
                 seg.group = group
                 engine.score_window(seg, win)
                 segs.append(seg)
@@ -85,10 +86,14 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
     `on_error`: 'skip' (log + continue) or 'raise'. `group_of(source)` is evaluated in the
     parent (callables needn't be picklable); `tags_of` is applied in the parent post-hoc.
     """
+    if streaming and getattr(adapter, "supports_streaming", True) is False:
+        raise ValueError(f"{type(adapter).__name__} cannot provide bounded-memory streaming; "
+                         "use an uncompressed array store such as HDF5/Zarr or streaming=False")
     items = [(schema, define, registered, tags_spec, adapter, segmenter, src,
               (group_of(src) if group_of else None), streaming) for src in sources]
     if workers and workers > 1:
-        with ProcessPoolExecutor(max_workers=workers) as ex:
+        context = mp.get_context("spawn")
+        with ProcessPoolExecutor(max_workers=workers, mp_context=context) as ex:
             results = list(ex.map(_score_one, items))
     else:
         results = [_score_one(it) for it in items]

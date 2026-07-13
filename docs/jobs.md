@@ -26,11 +26,11 @@ curate; otherwise → report.
 | `adapter` | yes | `{"type": <registered name>, ...kwargs}` — type is `timeseries`, `jsonl`, `hdf5`, `npz`, `parquet-dataset`, `huggingface`, `zarr`, `curated`, or your own `register_adapter` name; the remaining keys are that adapter's constructor kwargs ([adapters.md](adapters.md)) |
 | `sources` | no | explicit list of source URIs (local paths or `gs://`/`s3://`/`az://`). Omit to use the adapter's own `sources()` (curated / parquet-dataset / huggingface enumerate) |
 | `segmenter` | yes | `{"window": W, "stride": S, "unit": "steps"\|"seconds", "sample_hz"?: hz}` — `sample_hz` defaults to the schema's |
-| `strategy` | yes (per-arm for experiments) | inline strategy dict, a path to one, or a built-in name ([strategies.md](strategies.md)) |
+| `strategy` | yes (per-arm for experiments) | inline strategy dict or a path to one ([strategies.md](strategies.md)) |
 | `seed` | no (0) | RNG seed — same seed + sources → same result, regardless of `workers` |
 | `workers` | no (1) | parallel feature pass over a process pool |
 | `on_error` | no (`"skip"`) | `"skip"` logs + skips an unreadable source; `"raise"` fails fast. Either way an **empty** pool raises |
-| `streaming` | no (false) | out-of-core: score and write each source from a lazy tick stream |
+| `streaming` | no (false) | out-of-core for streaming-capable adapters; NPZ and partitioned-Parquet dataset mode reject it |
 
 ## Curate jobs (`kur-curate`)
 

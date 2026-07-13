@@ -64,7 +64,8 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
     if kind == "curate":
         if "output" not in job:
             raise ValueError("curate job needs an 'output' spec")
-        OutputSpec.from_dict(job["output"])           # validates modalities/dtype/container
+        output = OutputSpec.from_dict(job["output"])
+        output.validate_schema(schema)
         if "train_hours" not in job:
             raise ValueError("curate job needs 'train_hours'")
         if "out" not in job:

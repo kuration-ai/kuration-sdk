@@ -33,6 +33,11 @@ _BASE_METHODS = {"uniform-bins", "weighted", "target-distribution", "top-k", "fi
 _METHODS = _BASE_METHODS | _METHOD_MODULE_METHODS
 _FILTER_TYPES = {"anomaly", "dedup"}
 _PRED_OPS = {">", ">=", "<", "<=", "==", "!="}
+_NORMALIZATIONS = {"quantile", "minmax", "zscore"}
+_FILTER_KEYS = {
+    "anomaly": {"type", "feature_space", "per_group", "contamination", "normalize"},
+    "dedup": {"type", "feature_space", "per_group", "threshold", "n_clusters", "normalize"},
+}
 
 
 def _resolve_filters(raw) -> list:
@@ -50,6 +55,24 @@ def _resolve_filters(raw) -> list:
         fs = f.get("feature_space")
         if fs is not None and not (isinstance(fs, list) and all(isinstance(m, str) for m in fs)):
             raise ValueError(f"filter 'feature_space' must be a list of metric names (got {fs!r})")
+        unknown = set(f) - _FILTER_KEYS[f["type"]]
+        if unknown:
+            raise ValueError(f"filter {f['type']!r}: unknown key(s) {sorted(unknown)}; expected "
+                             f"{sorted(_FILTER_KEYS[f['type']])}")
+        normalize = f.get("normalize", "zscore")
+        if normalize not in {"zscore", "quantile", "none"}:
+            raise ValueError(f"filter {f['type']!r}: normalize must be zscore/quantile/none")
+        if f["type"] == "anomaly":
+            contamination = f.get("contamination", 0.02)
+            if not isinstance(contamination, (int, float)) or not 0 < contamination <= 0.5:
+                raise ValueError("filter 'anomaly': contamination must be in (0, 0.5]")
+        if f["type"] == "dedup":
+            threshold = f.get("threshold", 0.98)
+            if not isinstance(threshold, (int, float)) or not -1 <= threshold <= 1:
+                raise ValueError("filter 'dedup': threshold must be in [-1, 1]")
+            clusters = f.get("n_clusters", 2048)
+            if not isinstance(clusters, int) or isinstance(clusters, bool) or clusters < 1:
+                raise ValueError("filter 'dedup': n_clusters must be a positive integer")
         out.append(dict(f))
     return out
 
@@ -109,7 +132,15 @@ def _resolve(spec: dict) -> Strategy:
         raise ValueError(f"unknown selection method {method!r}; expected {sorted(_METHODS)}")
 
     raw_axes = (spec.get("binning") or {}).get("axes") or []
-    axes = [(a["metric"], int(a["bins"])) for a in raw_axes]
+    axes = []
+    for a in raw_axes:
+        if not isinstance(a, dict) or set(a) != {"metric", "bins"}:
+            raise ValueError(f"each binning axis must contain exactly metric/bins, got {a!r}")
+        if not isinstance(a["metric"], str) or not a["metric"]:
+            raise ValueError(f"binning axis metric must be a non-empty string, got {a['metric']!r}")
+        if not isinstance(a["bins"], int) or isinstance(a["bins"], bool) or a["bins"] < 1:
+            raise ValueError(f"binning axis {a['metric']!r}: bins must be a positive integer")
+        axes.append((a["metric"], a["bins"]))
     if method in ("uniform-bins", "target-distribution") and not axes:
         raise ValueError(f"method {method!r} requires binning.axes")
 
@@ -117,6 +148,9 @@ def _resolve(spec: dict) -> Strategy:
     if method in ("weighted", "top-k") and not weights:
         raise ValueError(f"method {method!r} requires selection.weights")
     normalize = sel.get("normalize", "quantile")
+    if normalize not in _NORMALIZATIONS:
+        raise ValueError(f"selection.normalize must be one of {sorted(_NORMALIZATIONS)}, "
+                         f"got {normalize!r}")
     target = sel.get("target", "flat")
     if method in ("target-distribution", "dsir"):
         # A dict target missing its metric key would otherwise KeyError only at selection
@@ -129,6 +163,24 @@ def _resolve(spec: dict) -> Strategy:
                              f"(got keys {sorted(target)})")
     tag_coverage = sel.get("tag_coverage", None)
     group_cap = sel.get("group_cap", None)
+    if tag_coverage is not None:
+        if not isinstance(tag_coverage, dict):
+            raise ValueError("selection.tag_coverage must be an object or null")
+        unknown = set(tag_coverage) - {"min_tag_frac"}
+        if unknown:
+            raise ValueError(f"selection.tag_coverage: unknown key(s) {sorted(unknown)}")
+        frac = tag_coverage.get("min_tag_frac", 0.005)
+        if not isinstance(frac, (int, float)) or not 0 <= frac <= 1:
+            raise ValueError("selection.tag_coverage.min_tag_frac must be in [0, 1]")
+    if group_cap is not None:
+        if not isinstance(group_cap, dict):
+            raise ValueError("selection.group_cap must be an object or null")
+        unknown = set(group_cap) - {"max_group_overshoot"}
+        if unknown:
+            raise ValueError(f"selection.group_cap: unknown key(s) {sorted(unknown)}")
+        cap = group_cap.get("max_group_overshoot", 1.5)
+        if not isinstance(cap, (int, float)) or cap <= 0:
+            raise ValueError("selection.group_cap.max_group_overshoot must be > 0")
     define = dict(spec.get("define") or {})
 
     predicates = list(sel.get("predicates") or [])
@@ -154,6 +206,13 @@ def _resolve(spec: dict) -> Strategy:
         tags = {"from": list(froms)}
     from .scorers import parse_scorers
     scorers = parse_scorers(spec.get("scorers"))
+    outputs = [out for _, out, _ in scorers]
+    duplicate_outputs = sorted({out for out in outputs if outputs.count(out) > 1})
+    if duplicate_outputs:
+        raise ValueError(f"duplicate scorer output feature(s) {duplicate_outputs}")
+    collisions = sorted(set(outputs) & set(define))
+    if collisions:
+        raise ValueError(f"scorer output feature(s) {collisions} also appear in 'define'")
     _KNOWN_SEL = {"method", "weights", "normalize", "target", "tag_coverage", "group_cap",
                   "predicates"}
     _KNOWN_PARAMS = {"feature_normalize", "dsir_bins", "knn_k", "rare_sample", "clusters"}
@@ -162,6 +221,14 @@ def _resolve(spec: dict) -> Strategy:
     if unknown:                                   # a typo'd knob must not be silently ignored
         raise ValueError(f"unknown selection key(s) {sorted(unknown)}; expected "
                          f"{sorted(_KNOWN_SEL)} or method params {sorted(_KNOWN_PARAMS)}")
+    for key in ("dsir_bins", "knn_k", "rare_sample", "clusters"):
+        if key in method_params and (not isinstance(method_params[key], int)
+                                     or isinstance(method_params[key], bool)
+                                     or method_params[key] < 1):
+            raise ValueError(f"selection.{key} must be a positive integer")
+    if "feature_normalize" in method_params and method_params["feature_normalize"] not in {
+            "zscore", "quantile", "none"}:
+        raise ValueError("selection.feature_normalize must be zscore/quantile/none")
 
     resolved = {
         "name": spec.get("name", "unnamed"),
@@ -183,21 +250,18 @@ def _resolve(spec: dict) -> Strategy:
 
 
 def load_strategy(name_or_spec, schema: SchemaSpec) -> Strategy:
-    """Load a strategy from a dict, a JSON file path, or a built-in name under strategies/.
+    """Load a strategy from a dict or JSON file path.
     Validates `define` (compiles each DSL metric against `schema`) and that every referenced
     metric is either defined or registered — all loudly, before any data is read."""
     if isinstance(name_or_spec, dict):
         spec = name_or_spec
     else:
         p = Path(name_or_spec)
-        if p.suffix == ".json" and p.exists():
-            spec = json.loads(p.read_text())
-        else:
-            builtin = Path(__file__).resolve().parent / "strategies" / f"{name_or_spec}.json"
-            if not builtin.exists():
-                raise FileNotFoundError(f"strategy {name_or_spec!r} not found (no dict, file, "
-                                        f"or built-in)")
-            spec = json.loads(builtin.read_text())
+        if not p.exists():
+            raise FileNotFoundError(f"strategy JSON file {name_or_spec!r} not found")
+        if p.suffix.lower() != ".json":
+            raise ValueError(f"strategy file must have a .json suffix, got {str(p)!r}")
+        spec = json.loads(p.read_text())
 
     strat = _resolve(spec)
     for nm, msp in strat.define.items():

@@ -64,6 +64,12 @@ class ParquetDatasetAdapter(TimeseriesAdapter):
         the parts instead."""
         return self.source_per == "part"
 
+    @property
+    def supports_streaming(self) -> bool:
+        # Dataset mode globally sorts rows and can merge equal timesteps across parts. That
+        # operation is inherently materializing unless the dataset declares ordering metadata.
+        return self.source_per == "part"
+
     def check_source(self, source_uri: str) -> None:
         """Preflight: in "part" mode the source is one .parquet file (inherited footer-schema
         sniff); in "dataset" mode the source is the whole tree — resolve the parts and sniff
@@ -85,6 +91,11 @@ class ParquetDatasetAdapter(TimeseriesAdapter):
         if self.time_column is not None:
             rows.sort(key=lambda r: r[self.time_column])     # ticks form from runs of equal time
         return self._rows_to_ticks(rows)
+
+    def iter_ticks(self, source_uri: str):
+        if self.source_per != "part":
+            raise ValueError("bounded-memory streaming is unavailable for source_per='dataset'")
+        yield from super().iter_ticks(source_uri)
 
 
 register_adapter("parquet-dataset", ParquetDatasetAdapter)

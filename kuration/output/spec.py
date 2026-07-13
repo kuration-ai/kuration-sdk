@@ -57,11 +57,16 @@ class OutputSpec:
             kind, arg = src.split(":", 1)
             if kind not in _SRC_KINDS:
                 raise ValueError(f"modality {name!r}: source kind must be {sorted(_SRC_KINDS)}")
+            if not arg:
+                raise ValueError(f"modality {name!r}: source argument must not be empty")
             try:
                 np.dtype(m["dtype"])
             except TypeError as e:
                 raise ValueError(f"modality {name!r}: bad dtype {m.get('dtype')!r}") from e
-            mods.append(Modality(name=name, dtype=m["dtype"], shape=tuple(m.get("shape") or ()),
+            shape = tuple(m.get("shape") or ())
+            if any(not isinstance(x, int) or isinstance(x, bool) or x < 1 for x in shape):
+                raise ValueError(f"modality {name!r}: shape dimensions must be positive integers")
+            mods.append(Modality(name=name, dtype=m["dtype"], shape=shape,
                                  src_kind=kind, src_arg=arg))
         shard_length = int(d.get("shard_length", 0))
         if shard_length < 1:
@@ -74,6 +79,23 @@ class OutputSpec:
             raise ValueError(f"container must be {sorted(_CONTAINERS)}")
         return OutputSpec(modalities=tuple(mods), shard_length=shard_length,
                           short_policy=short_policy, container=container)
+
+    def validate_schema(self, schema) -> None:
+        """Validate schema-backed modality sources before any data is read or written."""
+        available = {**schema.fields, **schema.globals}
+        for m in self.modalities:
+            if m.src_kind != "field":
+                continue
+            fs = available.get(m.src_arg)
+            if fs is None:
+                raise ValueError(
+                    f"modality {m.name!r}: field source {m.src_arg!r} is not declared in schema "
+                    f"fields/globals; available: {sorted(available)}")
+            expected = (fs.width,) if fs.kind == "vector" else ()
+            if m.shape != expected:
+                raise ValueError(
+                    f"modality {m.name!r}: shape {m.shape} does not match schema field "
+                    f"{m.src_arg!r} ({fs.kind}, expected {expected})")
 
     def to_dict(self) -> dict:
         return {

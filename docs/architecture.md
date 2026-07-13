@@ -174,10 +174,9 @@ FeatureEngine in-process** — the compiled DSL metrics are closures and can't b
 they're recompiled from the JSON `define` + schema (both picklable); the adapter and segmenter
 ship as-is. Determinism is preserved by sorting the pooled segments by `(source_id, start_idx)`
 before binning/selection, so the result is independent of worker count and completion order.
-(Start-method caveat: on Linux ≤3.13 the default is `fork`, so the metric registry — built-ins
-plus any `@register_metric` defined before the call, even in `__main__` — is inherited by
-workers. Under `spawn`/`forkserver` — the macOS/Windows default, and **Python 3.14 makes
-`forkserver` the Linux default too** — workers rebuild the registry at import, so custom
+(The SDK explicitly uses `spawn`, avoiding unsafe forks from multithreaded runtimes and keeping
+behavior stable across Python versions. Workers
+rebuild the registry at import, so custom
 metrics must be importable at module scope; one registered only in `__main__` raises "unknown
 registered metric" in every worker, which surfaces as all sources skipped + the loud
 empty-pool error. Rule of thumb: put `@register_metric` functions in an importable module.)
@@ -197,13 +196,15 @@ mixing stale shards with a fresh manifest.
 The hot path (binning) stays vectorized rather than parallelized — IPC would cost more than the
 compute.
 
-**Out-of-core (`streaming=True`).** A single source larger than RAM is handled by reading it as
-a lazy tick iterator on *both* passes: `Segmenter.stream` slides a `deque(maxlen=window)` (never
+**Out-of-core (`streaming=True`).** A streaming-capable source larger than RAM is handled as a
+lazy tick iterator on *both* passes: `Segmenter.stream` slides a `deque(maxlen=window)` (never
 more than one window resident) feeding `FeatureEngine.score_window`, and the writer
 (`output/stream.py`) flushes shards from the tick stream holding at most `shard_length` records
 per active (entity, span). The budget fill needs only counts, so admission happens between the
 two passes without holding data. The core contracts are unchanged — only the iteration drivers
-differ — so streaming is opt-in and the in-memory path stays the default. Two caveats: a
+differ — so streaming is opt-in and the in-memory path stays the default. NPZ and partitioned
+Parquet dataset mode reject streaming because they cannot honor bounded-memory semantics. Two
+further caveats: a
 `SegmentScorer(needs_buffers=True)` can't hold the whole pool's sequences (use a per-segment
 embedding feature instead), and a *total segment pool* exceeding RAM (distinct from a single
 big source) would need a further spill/external-sort tier, not yet built.

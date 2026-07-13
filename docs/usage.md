@@ -189,11 +189,12 @@ rep["tags"], rep["groups"]
 write_dataset("out/run1", ..., workers=8,        # parallel feature pass (deterministic)
               on_error="skip",                    # log + skip a bad source (default); "raise" to fail fast
               resume=True,                         # skip re-encoding shards that already exist
-              streaming=True)                      # out-of-core: a single source > RAM is fine
+              streaming=True)                      # bounded memory with a streaming-capable adapter
 ```
 `streaming=True` reads each source as a lazy tick stream on both the feature pass and the shard
-write (also available on `curate(...)` / `run_experiment(...)`). Needs a lazy adapter — CSV/JSONL
-stream naturally; whole-file formats (NPZ) materialize.
+write (also available on `curate(...)` / `run_experiment(...)`). CSV/JSONL/single-file Parquet,
+HDF5, Zarr, and HuggingFace inputs support it. NPZ and partitioned-Parquet dataset mode reject
+the option because they cannot guarantee bounded memory.
 
 `resume=True` is safe against crashes and drift: shards are written atomically (no partial
 file ever sits at the final path), and the output spec is pinned in a sidecar — resuming the

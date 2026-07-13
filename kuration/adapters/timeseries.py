@@ -70,17 +70,18 @@ class TimeseriesAdapter:
         glb = {g: float(rows[0][c]) for g, c in self.globals.items()} if rows else {}
         return Tick(time=_num_time(time), entities=entities, globals=glb)
 
-    def _rows_to_ticks(self, rows: list[dict]) -> list[Tick]:
+    def _iter_rows_to_ticks(self, rows: Iterable[dict]):
         if self.time_column is None:
-            return [self._mk_tick(i, [row]) for i, row in enumerate(rows)]
-        ticks: list[Tick] = []
+            for i, row in enumerate(rows):
+                yield self._mk_tick(i, [row])
+            return
         cur = None
         group: list[dict] = []
         seen_times: set = set()
         for row in rows:
             tv = row[self.time_column]
             if group and tv != cur:
-                ticks.append(self._mk_tick(cur, group))
+                yield self._mk_tick(cur, group)
                 seen_times.add(cur)
                 group = []
                 if tv in seen_times:     # e.g. rows sorted entity-major, not by time
@@ -90,8 +91,10 @@ class TimeseriesAdapter:
             group.append(row)
             cur = tv
         if group:
-            ticks.append(self._mk_tick(cur, group))
-        return ticks
+            yield self._mk_tick(cur, group)
+
+    def _rows_to_ticks(self, rows: list[dict]) -> list[Tick]:
+        return list(self._iter_rows_to_ticks(rows))
 
     # ---- preflight ----------------------------------------------------------
     def _required_columns(self) -> set:
@@ -135,6 +138,9 @@ class TimeseriesAdapter:
         return self._rows_to_ticks(list(rows))
 
     def ticks(self, source_uri: str) -> list[Tick]:
+        return list(self.iter_ticks(source_uri))
+
+    def iter_ticks(self, source_uri: str):
         from ..io import local_copy, open_file
         if source_uri.endswith(".parquet"):
             try:
@@ -142,13 +148,15 @@ class TimeseriesAdapter:
             except ImportError as e:
                 raise ImportError("reading .parquet needs the optional extra: "
                                   "pip install -e '.[parquet]'") from e
-            with local_copy(source_uri) as p:     # gs://, s3://, … staged to a tempfile
-                rows = pq.read_table(p).to_pylist()
+            with local_copy(source_uri) as p:
+                def rows():
+                    for batch in pq.ParquetFile(p).iter_batches():
+                        yield from batch.to_pylist()
+                yield from self._iter_rows_to_ticks(rows())
         else:
             import csv
             with open_file(source_uri, "rt") as f:
-                rows = list(csv.DictReader(f))
-        return self._rows_to_ticks(rows)
+                yield from self._iter_rows_to_ticks(csv.DictReader(f))
 
 
 register_adapter("timeseries", TimeseriesAdapter)

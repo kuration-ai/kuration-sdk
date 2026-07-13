@@ -377,3 +377,99 @@ def test_span_drop_mismatch_rejected(tmp_path):
                                                                         "shape": [2],
                                                                         "source": "field:pos"}}}),
                       train_hours=1.0, span_steps=4)
+
+
+# ---- 2026-07 follow-up review: contract validation and scale -----------------
+def test_write_dataset_rejects_unknown_output_field_before_scoring(tmp_path):
+    bad = OutputSpec.from_dict({"shard_length": 4, "modalities": {
+        "obs": {"dtype": "float32", "shape": [], "source": "field:typo"}}})
+    class NeverRead(MemAdapter):
+        def ticks(self, src):
+            raise AssertionError("validation must happen before data reads")
+    with pytest.raises(ValueError, match="not declared"):
+        write_dataset(str(tmp_path / "bad"), schema=SCHEMA,
+                      adapter=NeverRead(SCHEMA, _data()), sources=["s1"],
+                      strategy=_strategy(), segmenter=Segmenter(4, 4), spec=bad,
+                      train_hours=1)
+
+
+def test_output_field_shape_must_match_schema():
+    bad = OutputSpec.from_dict({"shard_length": 4, "modalities": {
+        "obs": {"dtype": "float32", "shape": [], "source": "field:pos"}}})
+    with pytest.raises(ValueError, match="does not match"):
+        bad.validate_schema(SCHEMA)
+
+
+def test_hours_fill_has_no_implicit_group_cap():
+    items = [{"id": i, "source_id": f"s{i}", "priority": 10 - i, "seconds": 10,
+              "group": "A" if i < 9 else "B"} for i in range(10)]
+    admitted, _ = fill_to_hours(items, train_hours=100 / 3600, test_hours=0)
+    assert admitted == set(range(10))
+
+
+def test_split_global_quota_survives_singleton_strata():
+    from kuration.select import assign_splits
+    split = assign_splits({f"s{i}": f"g{i}" for i in range(10)}, 0.2, 0)
+    assert sum(v == "test" for v in split.values()) == 2
+
+
+@pytest.mark.parametrize("mutator,match", [
+    (lambda s: s["selection"].update(normalize="typo"), "normalize"),
+    (lambda s: s.update(binning={"axes": [{"metric": "am", "bins": 0}]}), "bins"),
+    (lambda s: s.update(filters=[{"type": "dedup", "thresholdd": 0.9}]), "unknown key"),
+])
+def test_strategy_rejects_silent_fallbacks(mutator, match):
+    raw = {"define": {"am": {"source": "e.act", "reduce": "mean"}},
+           "selection": {"method": "top-k", "weights": {"am": 1.0}}}
+    mutator(raw)
+    with pytest.raises(ValueError, match=match):
+        load_strategy(raw, SCHEMA)
+
+
+def test_strategy_rejects_scorer_output_collisions():
+    raw = {"define": {"am": {"source": "e.act", "reduce": "mean"}},
+           "scorers": [{"name": "action_residual", "as": "am", "obs": "pos",
+                        "action": "act"}],
+           "selection": {"method": "top-k", "weights": {"am": 1.0}}}
+    with pytest.raises(ValueError, match="also appear"):
+        load_strategy(raw, SCHEMA)
+
+
+def test_array_adapters_reject_undeclared_globals():
+    from kuration.adapters import HDF5Adapter, NpzAdapter, ZarrAdapter
+    schema = SchemaSpec.from_dict({"name": "g", "fields": {"x": {"kind": "scalar"}},
+                                   "globals": {"known": {"kind": "scalar"}}})
+    for cls in (NpzAdapter, HDF5Adapter, ZarrAdapter):
+        with pytest.raises(ValueError, match="undeclared schema global"):
+            cls(schema, fields={"x": "x"}, globals={"typo": "g"})
+
+
+def test_streaming_timeseries_uses_lazy_iterator(tmp_path):
+    from kuration.adapters.timeseries import TimeseriesAdapter
+    p = tmp_path / "data.csv"
+    p.write_text("t,a,x,y\n" + "".join(f"{i},1,{i},0\n" for i in range(8)))
+    class LazyOnly(TimeseriesAdapter):
+        def ticks(self, source_uri):
+            raise AssertionError("streaming path called materializing ticks()")
+    ad = LazyOnly(SCHEMA, fields={"act": "a", "pos": ["x", "y"]}, time_column="t")
+    from kuration.scoring import score_sources
+    segs, _, _ = score_sources(schema=SCHEMA, adapter=ad, sources=[str(p)],
+                               define=_strategy().define, registered=[],
+                               segmenter=Segmenter(4, 4), streaming=True, on_error="raise")
+    assert len(segs) == 2
+
+
+def test_npz_streaming_rejected_loudly():
+    from kuration.adapters import NpzAdapter
+    from kuration.scoring import score_sources
+    with pytest.raises(ValueError, match="cannot provide bounded-memory streaming"):
+        score_sources(schema=SCHEMA, adapter=NpzAdapter(SCHEMA, fields={"act": "a"}),
+                      sources=["unused.npz"], define={}, registered=[],
+                      segmenter=Segmenter(4, 4), streaming=True)
+
+
+def test_track_name_is_portable_and_bounded():
+    from kuration.output.shardwriter import track_name
+    name = track_name("C:\\bad?path/" + "x" * 400, "entity:*", "_span001")
+    assert len(name) <= 109
+    assert set(name) <= set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")

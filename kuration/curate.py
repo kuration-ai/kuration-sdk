@@ -41,7 +41,7 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     group_of(source_id) -> group key (sets Segment.group for the group cap + split strata);
     tags_of(segment) -> tags (sets Segment.tags for tag coverage). Both optional.
     `workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips a bad source;
-    `streaming=True` scores each source out-of-core (single source larger than RAM is fine).
+    `streaming=True` scores each source out-of-core with a streaming-capable adapter.
     """
     referenced = strategy.referenced_metrics()
     # scorer outputs are produced by the scorer stage, not the feature pass — exclude them.
