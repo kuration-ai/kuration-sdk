@@ -46,6 +46,12 @@ def test_semantic_position_hint_compiles_to_explicit_schema():
         p.as_position("pos")
 
 
+def test_semantic_refinement_preserves_existing_vector_width():
+    p = input([{"pos": [1.0, 2.0]}, {"pos": [3.0, 4.0]}])
+    with pytest.raises(ValueError, match="must preserve that width"):
+        p.as_position("pos", dims=["x", "y", "z"])
+
+
 def test_output_presets_have_explicit_categorical_policy():
     spec = output_preset("numpy-timeseries", schema=_schema(True), categorical="omit")
     assert spec.container == "npz" and [m.name for m in spec.modalities] == ["x"]

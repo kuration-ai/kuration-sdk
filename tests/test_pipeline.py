@@ -13,9 +13,11 @@ import numpy as np
 import pytest
 
 from kuration import (
+    Registry,
     SchemaSpec,
     Segment,
     bin_segments,
+    default_registry,
     iter_shards,
     load_strategy,
     segment_priorities,
@@ -170,11 +172,22 @@ def test_filter_unknown_metric_loud():
     assert "nope" in str(e.value) and "'hp'" in str(e.value)
 
 
+@pytest.mark.parametrize("value", ["not-a-number", float("nan"), float("inf"), True])
+def test_filter_invalid_value_is_eagerly_loud(value):
+    with pytest.raises(ValueError, match="finite number"):
+        _pipe().measure("hp").filter("hp", "<=", value)
+
+
 def test_filter_prepass_entry():
     p = _pipe().measure("hp").filter("dedup", feature_space=["hp"])
     assert p._prepass == [{"type": "dedup", "feature_space": ["hp"]}]
     assert p.describe()["strategy"]["filters"] == [{"type": "dedup",
                                                     "feature_space": ["hp"]}]
+
+
+def test_filter_prepass_metric_references_are_eagerly_validated():
+    with pytest.raises(ValueError, match="undeclared metrics"):
+        _pipe().filter("dedup", feature_space=["missing"])
 
 
 # ======================================================================================
@@ -295,6 +308,36 @@ def test_curate_defaults_uniform_bins_with_axes_and_topk_with_weights():
     assert with_weights.describe()["strategy"]["selection"]["method"] == "top-k"
 
 
+def test_curate_references_and_method_params_are_eagerly_validated():
+    base = _pipe().measure("hp")
+    with pytest.raises(ValueError, match="undeclared metrics"):
+        base.curate("top-k", n=1, weights={"missing": 1})
+    with pytest.raises(ValueError, match="unknown selection key"):
+        base.curate("top-k", n=1, weights={"hp": 1}, typo=2)
+    with pytest.raises(ValueError, match="normalize"):
+        base.curate("top-k", n=1, weights={"hp": 1}, normalize="bogus")
+
+
+def test_tag_fraction_is_eagerly_validated():
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        _pipe().tag("team", min_frac=1.5)
+
+
+def test_overlay_registry_scorer_is_accepted_and_executed():
+    class ConstantScorer:
+        needs_buffers = False
+
+        def score(self, segments, ctx):
+            return np.ones(len(segments))
+
+    registry = Registry(default_registry)
+    registry.register_scorer("test/constant", lambda: ConstantScorer())
+    p = (_pipe().using(registry).window(16).score("test/constant", out="quality")
+         .curate("top-k", n=2, weights={"quality": 1}).options(on_error="raise"))
+    result = p.collect()
+    assert result.selected and all(s.features["quality"] == 1 for s in result.selected)
+
+
 # ======================================================================================
 # collect() end-to-end
 # ======================================================================================
@@ -370,6 +413,27 @@ def test_output_include_exclude(tmp_path):
         p.output(str(tmp_path / "bad"), include=["nope"])
     with pytest.raises(ValueError, match="exclude"):
         p.output(str(tmp_path / "bad2"), exclude=["nope"])
+
+
+def test_output_preset_filters_modalities_instead_of_ignoring_them(tmp_path):
+    p = (_pipe().window(16).measure("hp").organize("hp", bins=2).curate(n=2)
+         .options(on_error="raise"))
+    p.output(str(tmp_path / "preset"), preset="numpy-timeseries",
+             categorical="omit", include=["hp"])
+    cfg = json.loads((tmp_path / "preset" / "config.json").read_text())
+    assert set(cfg["output"]["modalities"]) == {"hp"}
+    assert set(cfg["output_preset"]["resolved"]["modalities"]) == {"hp"}
+
+
+def test_output_rejects_conflicting_spec_and_preset_arguments(tmp_path):
+    p = _pipe().measure("hp").curate("top-k", n=1, weights={"hp": 1})
+    spec = {"shard_length": 8, "modalities": {
+        "hp": {"dtype": "float32", "shape": [], "source": "field:hp"}}}
+    with pytest.raises(ValueError, match="direct escape hatch"):
+        p.output(tmp_path / "spec", spec=spec, container="hdf5")
+    with pytest.raises(ValueError, match="cannot be combined"):
+        p.output(tmp_path / "preset", preset="numpy-timeseries",
+                 categorical="omit", modalities=spec["modalities"])
 
 
 def test_output_resume_on_count_path_loud(tmp_path):

@@ -498,6 +498,10 @@ class Pipeline:
             if dims is not None:
                 if fd["kind"] != "vector":
                     raise ValueError(f"dims can only refine an existing vector field, got {field!r}")
+                if len(dims) != len(fd.get("dims") or []):
+                    raise ValueError(
+                        f"field {field!r} has {len(fd.get('dims') or [])} vector components; "
+                        f"semantic dims must preserve that width (got {len(dims)})")
                 fd["dims"] = list(dims)
         elif semantics == "position" and dims:
             missing = [d for d in dims if d not in fields]
@@ -604,8 +608,16 @@ class Pipeline:
                                 what in self._registry.names("filter"))
         if isinstance(what, str) and (what in _FILTER_TYPES or is_registered_filter) \
                 and op is None and value is None:
+            entry = {"type": what, **kw}
+            from .strategy import _resolve_filters
+            _resolve_filters([entry], self._registry)  # eager knob/descriptor validation
+            unknown_features = sorted(set(entry.get("feature_space") or [])
+                                      - self._metric_names())
+            if unknown_features:
+                raise ValueError(f"filter {what!r} references undeclared metrics "
+                                 f"{unknown_features}; known: {sorted(self._metric_names())}")
             p = self._next("filter", what, **kw)
-            p._prepass.append({"type": what, **kw})
+            p._prepass.append(entry)
             return p
         if kw:
             raise ValueError(f"filter({what!r}, ...): keyword knobs only apply to the "
@@ -621,10 +633,15 @@ class Pipeline:
             raise ValueError(
                 f"unknown filter op {op!r}; canonical ops {sorted(set(_OP_ALIASES.values()))}"
                 f", aliases {sorted(k for k in _OP_ALIASES if k.isalpha())}")
+        if isinstance(value, bool):
+            raise ValueError(f"filter predicate value must be a finite number, got {value!r}")
         try:
             value = float(value)
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as e:
+            raise ValueError(
+                f"filter predicate value must be a finite number, got {value!r}") from e
+        if not math.isfinite(value):
+            raise ValueError(f"filter predicate value must be a finite number, got {value!r}")
         p = self._next("filter", what, op, value)
         p._predicates.append({"metric": what, "op": canon, "value": value})
         return p
@@ -658,7 +675,7 @@ class Pipeline:
     def score(self, name: str, out: Optional[str] = None, **params) -> "Pipeline":
         """Add a whole-pool SegmentScorer; its output feature is `out` (default: name)."""
         from .scorers import get_scorer, has_scorer
-        if not has_scorer(name):
+        if name not in self._registry.names("scorer") and not has_scorer(name):
             get_scorer(name)                 # raises the canonical loud message
         out_name = out or name
         if out_name in self._metric_names():
@@ -675,6 +692,10 @@ class Pipeline:
                              "'stream.field')")
         from .tags import compile_tagger
         compile_tagger({"from": list(sources)}, self.schema)   # eager, loud
+        if min_frac is not None:
+            if (not isinstance(min_frac, (int, float)) or isinstance(min_frac, bool)
+                    or not math.isfinite(min_frac) or not 0 <= min_frac <= 1):
+                raise ValueError("tag(min_frac=...) must be a finite number in [0, 1]")
         p = self._next("tag", *sources, min_frac=min_frac)
         p._tags = list(dict.fromkeys(list(self._tags) + list(sources)))
         if min_frac is not None:
@@ -756,6 +777,37 @@ class Pipeline:
                                        or isinstance(test_hours, bool)
                                        or not math.isfinite(test_hours) or test_hours < 0):
             raise ValueError("test_hours must be a finite non-negative number")
+        known_metrics = self._metric_names()
+        if weights is not None:
+            if not isinstance(weights, dict):
+                raise ValueError("curate(weights=...) must be a metric-to-weight dict")
+            unknown_weights = sorted(set(weights) - known_metrics)
+            if unknown_weights:
+                raise ValueError(f"curate weights reference undeclared metrics {unknown_weights}; "
+                                 f"known: {sorted(known_metrics)}")
+            for metric, weight in weights.items():
+                if (not isinstance(weight, (int, float)) or isinstance(weight, bool)
+                        or not math.isfinite(weight)):
+                    raise ValueError(f"curate weight for {metric!r} must be finite")
+        if normalize is not None and normalize not in {"quantile", "minmax", "zscore"}:
+            raise ValueError("curate normalize must be quantile, minmax, or zscore")
+        if isinstance(target, dict):
+            target_metrics = [target[k] for k in ("metric", "anchor_metric") if k in target]
+            if not all(isinstance(metric, str) for metric in target_metrics):
+                raise ValueError("curate target metric references must be strings")
+            target_metrics = set(target_metrics)
+            unknown_target = sorted(target_metrics - known_metrics)
+            if unknown_target:
+                raise ValueError(f"curate target references undeclared metrics {unknown_target}; "
+                                 f"known: {sorted(known_metrics)}")
+        fs = method_params.get("feature_space")
+        if fs is not None:
+            if not isinstance(fs, (list, tuple)) or not all(isinstance(x, str) for x in fs):
+                raise ValueError("curate feature_space must be a list of metric names")
+            unknown_fs = sorted(set(fs) - known_metrics)
+            if unknown_fs:
+                raise ValueError(f"curate feature_space references undeclared metrics "
+                                 f"{unknown_fs}; known: {sorted(known_metrics)}")
         if method is not None:
             canon = _METHOD_ALIASES.get(str(method).lower())
             if canon is None:
@@ -792,6 +844,12 @@ class Pipeline:
         if test_hours is not None:
             p._test_hours = float(test_hours)
             p._test_hours_explicit = True
+        # Validate the fully assembled selection now, while the operator is being added.
+        # Metric DSL entries were already compiled by measure(); _resolve covers method-
+        # specific knobs, targets, normalization, caps, predicates, filters, and scorers
+        # without touching data or registering callable metrics globally.
+        from .strategy import _resolve
+        _resolve(p._raw_strategy(), p._registry)
         return p
 
     # ---- compilation -------------------------------------------------------------------
@@ -989,9 +1047,15 @@ class Pipeline:
         self._check_exec()
         path = str(path)
         if spec is not None and (preset is not None or modalities is not None or include is not None
-                                 or exclude is not None or preset_params):
+                                 or exclude is not None or container is not None
+                                 or shard_length != 64 or short_policy != "keep"
+                                 or categorical is not None or preset_params):
             raise ValueError("output(spec=...) is the direct escape hatch and cannot be combined "
-                             "with preset/modalities/include/exclude/preset_params")
+                             "with preset/modalities/include/exclude/container/shard_length/"
+                             "short_policy/categorical/preset_params")
+        if preset is not None and modalities is not None:
+            raise ValueError("output(preset=...) defines its modalities and cannot be combined "
+                             "with modalities=; use include=/exclude= to filter the preset")
         preset_resolution = None
         from .output.spec import OutputSpec
         if spec is not None:
@@ -1018,6 +1082,27 @@ class Pipeline:
             spec = output_preset(preset, schema=self.schema, **params)
             preset_resolution = {"name": preset, "version": 1, "parameters": params,
                                  "resolved": spec.to_dict()}
+            if include is not None or exclude is not None:
+                raw_spec = spec.to_dict()
+                preset_mods = raw_spec["modalities"]
+                if include is not None:
+                    unknown = sorted(set(include) - set(preset_mods))
+                    if unknown:
+                        raise ValueError(f"output(): include names unknown preset modalities "
+                                         f"{unknown} (have: {sorted(preset_mods)})")
+                    preset_mods = {k: v for k, v in preset_mods.items() if k in set(include)}
+                if exclude is not None:
+                    unknown = sorted(set(exclude) - set(preset_mods))
+                    if unknown:
+                        raise ValueError(f"output(): exclude names unknown preset modalities "
+                                         f"{unknown} (have: {sorted(preset_mods)})")
+                    preset_mods = {k: v for k, v in preset_mods.items()
+                                   if k not in set(exclude)}
+                if not preset_mods:
+                    raise ValueError("output(): include/exclude left no preset modalities")
+                raw_spec["modalities"] = preset_mods
+                spec = OutputSpec.from_dict(raw_spec)
+                preset_resolution["resolved"] = spec.to_dict()
         else:
             if container is None:
                 container = _SUFFIX_CONTAINER.get(os.path.splitext(path)[1].lower(), "npz")
