@@ -477,6 +477,43 @@ class Pipeline:
         p._registry = registry
         return p
 
+    def apply(self, name: str, **params) -> "Pipeline":
+        """Expand a registered compositional operator over this pipeline.
+
+        The operator receives a clone and must return a derived ``Pipeline`` containing at
+        least one additional ordinary operator. Its descriptor validates parameters before
+        expansion. Provenance records the named call, descriptor, and nested expansion.
+        """
+        from .plugins import load_plugins
+        from .registry import validate_parameters
+        if not isinstance(name, str) or not name:
+            raise ValueError("apply() needs a non-empty registered operator name")
+        if name not in self._registry.names("operator"):
+            load_plugins()
+        descriptor = self._registry.descriptor("operator", name)
+        validate_parameters(descriptor, params)
+        operator = self._registry.get("operator", name)
+        result = operator(self._clone(), **params)
+        if not isinstance(result, Pipeline):
+            raise ValueError(
+                f"operator {name!r} must return a Pipeline, got {type(result).__name__}")
+        prefix = result._ops[:len(self._ops)]
+        if prefix != self._ops:
+            raise ValueError(
+                f"operator {name!r} must derive from the Pipeline it receives")
+        expansion = result._ops[len(self._ops):]
+        if not expansion:
+            raise ValueError(f"operator {name!r} must add at least one pipeline operator")
+        p = result._clone()
+        p._ops = list(self._ops) + [{
+            "op": "apply",
+            "args": [name],
+            "kwargs": {k: _jsonable(v) for k, v in params.items()},
+            "component": descriptor.to_dict(),
+            "expansion": expansion,
+        }]
+        return p
+
     def _with_schema(self, schema: SchemaSpec, opname: str, *args, **kwargs) -> "Pipeline":
         p = self._next(opname, *args, **kwargs)
         p.schema = schema

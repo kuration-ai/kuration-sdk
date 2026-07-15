@@ -70,6 +70,29 @@ from kuration import input
     .output("out/run1", preset="numpy-timeseries", categorical="omit"))
 ```
 
+### Operator map
+
+Every operator returns a new immutable `Pipeline`.
+
+| stage | operators | purpose |
+|---|---|---|
+| Input | `input(...)` | load files, rows, arrays, or a custom adapter; infer the schema |
+| Schema | `.semantic()`, `.as_position()`, `.as_angular()`, `.as_bitmask()`, `.at_rate()` | refine inferred meaning and sample rate |
+| Window | `.window()` | divide each source into candidate segments |
+| Describe | `.measure()`, `.score()`, `.tag()` | calculate metrics, whole-pool scores, and categorical coverage |
+| Restrict | `.filter()` | apply predicates or anomaly/dedup filters |
+| Organize | `.organize()`, `.group()`, `.split()` | create diversity bins, leakage groups, and train/test splits |
+| Compose | `.apply()` | expand a registered, reusable sequence of ordinary operators |
+| Select | `.curate()` | choose a count or duration budget using a selection method |
+| Configure | `.options()` | set strictness, workers, seed, streaming, resume, and progress |
+| Inspect | `.head()`, `.describe()`, `.explain()` | inspect data or the execution plan before running |
+| Finish | `.collect()`, `.output()`, `.report()`, `.experiment()` | select, write shards, profile data, or compare strategies |
+
+Extend behavior with registered components; package a reusable workflow with
+`register_operator()` and `.apply("name", ...)`. See the
+[pipeline guide](docs/pipeline.md) for accepted forms and the [API reference](docs/api.md) for
+exact signatures.
+
 See **[docs/pipeline.md](docs/pipeline.md)** for the full operator reference and
 `examples/04_operator_pipeline.py` for a runnable chain. The classic API below (explicit
 `SchemaSpec` + `InputAdapter` + `load_strategy`) remains the way to reach custom adapters,
@@ -149,6 +172,7 @@ kur-curate job.json                       # sources -> hours-budget shards
 kur-experiment job.json --out cmp.json    # compare several strategy "arms" over the same sources
 kur-report job.json --out report.json     # profile a dataset's metric distributions (no selection)
 kur-list methods                          # discover built-ins and installed plugins
+kur-list operators                        # discover compositional pipeline operators
 kur-describe scorer action_residual       # parameter schema, capabilities, origin
 kur-explain job.json --json               # structured execution plan, no row reads
 kur-migrate old-job.json --out job.json   # deterministic format migration

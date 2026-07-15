@@ -43,6 +43,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `infer_schema` | `(sample, *, name="inferred", time=None, entity=None, hz=None, kinds=None) -> (SchemaSpec, hints)` | classify a sample (rows/dict-of-arrays/ticks) into a schema + adapter `fields=` hints |
 | `Pipeline.window` | `(window, stride=None, unit="steps") -> Pipeline` | set the `Segmenter` |
 | `Pipeline.using` | `(registry) -> Pipeline` | resolve adapters, metrics, scorers, encoders, methods, filters, containers, and presets through an explicit `Registry` overlay |
+| `Pipeline.apply` | `(name, **params) -> Pipeline` | validate and expand a registered compositional operator; provenance retains its descriptor and ordinary-operator expansion |
 | `Pipeline.semantic` | `(field, semantics, *, dims=None, bits=None, max_rate=None) -> Pipeline` | refine an inferred field as `"position"`, `"angular"`, or `"bitmask"` |
 | `Pipeline.as_position` | `(field, *, dims=None, max_rate=None) -> Pipeline` | position-semantic convenience wrapper |
 | `Pipeline.as_angular` | `(field, *, max_rate=None) -> Pipeline` | angular-semantic convenience wrapper |
@@ -171,9 +172,10 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `describe_component` | `(kind, name, *, registry=default_registry) -> dict` | return one descriptor; raises for an unknown kind or name |
 | `register_method` | `(name, fn, **metadata) -> None` | register a selection-priority method |
 | `register_filter` | `(name, fn, **metadata) -> None` | register a pre-pass filter |
+| `register_operator` | `(name, fn=None, **metadata)` | register a `(pipeline, **params) -> Pipeline` composition directly or as a decorator |
 
 Registry kinds are `adapter`, `metric`, `scorer`, `encoder`, `method`, `filter`, `container`, and
-`preset`. Names accept `name` or `namespace/name`; duplicate registrations raise unless the
+`preset`, plus compositional `operator`. Names accept `name` or `namespace/name`; duplicate registrations raise unless the
 lower-level `Registry.register(..., replace=True)` API is used. See
 [customization.md](customization.md) for descriptors, parameter schemas, and plugin packaging.
 

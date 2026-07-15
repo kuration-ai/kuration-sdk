@@ -8,7 +8,7 @@ import re
 from typing import Any, Callable, Optional
 
 _KINDS = {"adapter", "metric", "scorer", "encoder", "method", "filter", "container",
-          "preset"}
+          "preset", "operator"}
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?$")
 
 
@@ -153,6 +153,12 @@ class Registry:
     def register_preset(self, name: str, component: Any, **metadata) -> None:
         self.register("preset", name, component, **metadata)
 
+    def register_operator(self, name: str, component: Any, **metadata) -> None:
+        """Register a compositional ``Pipeline.apply`` operator in this registry."""
+        if not callable(component):
+            raise ValueError("operator component must be callable")
+        self.register("operator", name, component, **metadata)
+
 
 default_registry = Registry()
 
@@ -189,6 +195,35 @@ def validate_parameters(descriptor: ComponentDescriptor, params: dict) -> None:
         if unknown:
             raise ValueError(f"{descriptor.kind} {descriptor.name!r}: unknown parameter(s) "
                              f"{sorted(unknown)}; expected {sorted(props)}")
+    json_types = {
+        "string": lambda value: isinstance(value, str),
+        "integer": lambda value: isinstance(value, int) and not isinstance(value, bool),
+        "number": lambda value: isinstance(value, (int, float)) and not isinstance(value, bool),
+        "boolean": lambda value: isinstance(value, bool),
+        "object": lambda value: isinstance(value, dict),
+        "array": lambda value: isinstance(value, (list, tuple)),
+        "null": lambda value: value is None,
+    }
+    for name in set(params) & set(props):
+        value, rule = params[name], props[name]
+        expected = rule.get("type")
+        allowed = [expected] if isinstance(expected, str) else list(expected or [])
+        if allowed and not any(kind in json_types and json_types[kind](value) for kind in allowed):
+            raise ValueError(
+                f"{descriptor.kind} {descriptor.name!r}: parameter {name!r} must have "
+                f"JSON type {' or '.join(allowed)}, got {type(value).__name__}")
+        if "enum" in rule and value not in rule["enum"]:
+            raise ValueError(
+                f"{descriptor.kind} {descriptor.name!r}: parameter {name!r} must be one of "
+                f"{rule['enum']}, got {value!r}")
+        if "minimum" in rule and value < rule["minimum"]:
+            raise ValueError(
+                f"{descriptor.kind} {descriptor.name!r}: parameter {name!r} must be >= "
+                f"{rule['minimum']}, got {value!r}")
+        if "maximum" in rule and value > rule["maximum"]:
+            raise ValueError(
+                f"{descriptor.kind} {descriptor.name!r}: parameter {name!r} must be <= "
+                f"{rule['maximum']}, got {value!r}")
 
 
 def register_method(name: str, fn: Callable, **metadata) -> None:
@@ -208,3 +243,20 @@ def register_container(name: str, handler: Any, **metadata) -> None:
 def register_preset(name: str, factory: Callable, **metadata) -> None:
     """Register an output-preset factory in the default registry."""
     default_registry.register("preset", name, factory, **metadata)
+
+
+def register_operator(name: str, fn: Optional[Callable] = None, **metadata):
+    """Register a compositional pipeline operator, directly or as a decorator.
+
+    The callable receives ``(pipeline, **params)`` and must return a derived ``Pipeline`` that
+    adds at least one ordinary operator. Parameters are validated against descriptor metadata
+    before it runs. Duplicate names and non-callable components raise ``ValueError``.
+    """
+    def decorate(component: Callable):
+        default_registry.register_operator(name, component, **metadata)
+        return component
+
+    if fn is None:
+        return decorate
+    decorate(fn)
+    return None

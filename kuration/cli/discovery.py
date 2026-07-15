@@ -6,7 +6,7 @@ import json
 
 _PLURAL = {"adapters": "adapter", "metrics": "metric", "scorers": "scorer",
            "methods": "method", "filters": "filter", "encoders": "encoder",
-           "containers": "container", "presets": "preset"}
+           "containers": "container", "presets": "preset", "operators": "operator"}
 
 
 def list_main() -> None:

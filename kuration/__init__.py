@@ -60,7 +60,7 @@ from .segment import Segment, Segmenter
 from .select import assign_splits
 from .strategy import Strategy, load_strategy, segment_priorities, select
 from .registry import (ComponentDescriptor, Registry, default_registry, describe_component,
-                       list_components, register_method, register_preset)
+                       list_components, register_method, register_operator, register_preset)
 from .results import (DatasetReport, DatasetWriteResult, ExecutionPlan, ExperimentResult,
                       ValidationResult)
 from .versioning import (ARTIFACT_FORMAT_VERSION, JOB_SCHEMA_VERSION, migrate,
@@ -78,7 +78,7 @@ __all__ = [
     "bin_segments", "quantile_bins",
     "Strategy", "load_strategy", "select", "segment_priorities", "assign_splits",
     "apply_filters", "method_priorities", "score_sources", "dataset_report",
-    "register_method", "register_filter",
+    "register_method", "register_filter", "register_operator",
     "SegmentScorer", "register_scorer", "get_scorer", "apply_scorers",
     "curate", "CurateResult",
     "build_config", "dump_segment_manifest", "write_config",

@@ -101,6 +101,7 @@ concepts: [schema.md](schema.md)):
 | `.as_position/.as_angular/.as_bitmask` | semantic convenience wrappers | `.semantic(...)` |
 | `.at_rate` | `(hz)` | `SchemaSpec.sample_hz` |
 | `.using` | `(Registry)` | explicit component-resolution overlay |
+| `.apply` | `(name, **params)` | a registered composition expanded into ordinary operators |
 
 `.measure`'s four forms:
 ```python
@@ -123,6 +124,45 @@ aliases case-insensitively (`le`/`lte`/`leq`/`<=`, `ge`/`gte`/`geq`/`>=`, `lt`/`
 `gt`/`greater`/`>`, `eq`/`equal`/`=`/`==`, `ne`/`neq`/`!=`). **Predicates are a universal
 pre-filter**: they gate every selection method (not only `"filter"`), on both the count and
 hours paths — see [strategies.md](strategies.md).
+
+### Reusable compositions with `.apply()`
+
+`register_operator()` packages a validated sequence of existing operators under a discoverable
+name. The handler receives a cloned pipeline and keyword parameters, and must return a pipeline
+derived from that clone with at least one ordinary operator added:
+
+```python
+from kuration import register_operator
+
+@register_operator(
+    "acme/balance-motion",
+    parameters={
+        "type": "object",
+        "properties": {
+            "field": {"type": "string"},
+            "bins": {"type": "integer", "minimum": 1},
+        },
+        "required": ["field"],
+        "additionalProperties": False,
+    },
+)
+def balance_motion(pipeline, *, field, bins=8):
+    return (pipeline
+            .measure("motion", "mean", of=field)
+            .organize("motion", bins=bins))
+
+pipeline = pipeline.apply("acme/balance-motion", field="velocity", bins=8)
+```
+
+Parameter names and required keys are checked before expansion; the ordinary operators then
+perform their usual schema and value validation. `config.json` records the named call, component
+descriptor/code fingerprint, parameters, and nested expansion. Operators resolve through the
+pipeline's active registry, so `.using(local_registry)` and plugin entry points work normally.
+
+This is deliberately a composition seam, not a native execution-stage seam: a handler cannot
+introduce a new terminal or bypass the validation and execution contracts of existing operators.
+Use registered metrics, scorers, filters, methods, adapters, encoders, containers, or presets
+when the behavior belongs to one of those stages.
 
 ## Inspectors (cheap, no data touched / minimal read)
 

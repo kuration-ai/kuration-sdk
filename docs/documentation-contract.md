@@ -79,7 +79,7 @@ pre-`1.0` API is frozen.
 ### Top-level Python API
 
 `kuration.__all__` is the machine-readable inventory for `from kuration import ...`. Its current
-94 names are grouped below by user task.
+95 names are grouped below by user task.
 
 - Entry and results: `input`, `Pipeline`, `infer_schema`, `curate`, `CurateResult`,
   `write_dataset`, `DatasetWriteResult`, `run_experiment`, `Arm`, `union_define`,
@@ -100,7 +100,7 @@ pre-`1.0` API is frozen.
   `iter_shards`, `read_shard_arrays`, `shard_entries`.
 - Registries, plugins, and progress: `Registry`, `default_registry`, `ComponentDescriptor`,
   `list_components`, `describe_component`, `load_plugins`, `loaded_plugin_modules`,
-  `plugin_provenance`, `ProgressCallback`.
+  `plugin_provenance`, `ProgressCallback`, `register_operator`.
 - Manifests and I/O: `build_config`, `dump_segment_manifest`, `write_config`, `read_text`,
   `write_text`, `write_bytes`, `exists`, `local_copy`.
 - Versioning and migration: `ARTIFACT_FORMAT_VERSION`, `JOB_SCHEMA_VERSION`, `migrate`,
@@ -115,8 +115,8 @@ All non-underscore methods intentionally exposed by `Pipeline` are public:
 
 - Schema and resolution: `using`, `semantic`, `as_position`, `as_angular`, `as_bitmask`,
   `at_rate`.
-- Pipeline construction: `window`, `measure`, `filter`, `organize`, `score`, `tag`, `split`,
-  `group`, `options`, `curate`.
+- Pipeline construction: `apply`, `window`, `measure`, `filter`, `organize`, `score`, `tag`,
+  `split`, `group`, `options`, `curate`.
 - Inspection: `head`, `describe`, `explain`.
 - Terminals: `collect`, `report`, `experiment`, `output`.
 
