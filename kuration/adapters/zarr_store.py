@@ -15,6 +15,12 @@ from .base import check_mapped_arrays, iter_arrays_to_ticks, register_adapter
 
 
 class ZarrAdapter:
+    """Map arrays in one local or remote Zarr store to a canonical tick stream.
+
+    Requires the ``zarr`` extra; remote URLs also require ``cloud`` and the matching fsspec
+    backend. ``fields`` and ``globals`` map schema names to store keys.
+    """
+
     def __init__(self, schema: SchemaSpec, *, fields: dict, globals: Optional[dict] = None):
         self.schema = schema
         self.fields = fields                 # schema_field -> zarr array key

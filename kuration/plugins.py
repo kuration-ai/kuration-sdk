@@ -75,6 +75,7 @@ def load_plugins(modules=(), *, include_entry_points: bool = True) -> list[dict]
 
 
 def loaded_plugin_modules() -> tuple[str, ...]:
+    """Return loaded plugin module names in deterministic sorted order."""
     return tuple(sorted(_LOADED_MODULES))
 
 

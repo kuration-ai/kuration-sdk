@@ -55,6 +55,12 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
                    target_size: int, seed: int = 0, baseline: str = None,
                    group_of=None, tags_of=None, workers: int = 1, on_error: str = "skip",
                    streaming: bool = False, progress=None) -> dict:
+    """Score a shared source pool once and compare selections from multiple strategy arms.
+
+    Returns an ``ExperimentResult`` containing ``baseline``, ``n_total_segments``, ``metrics``,
+    and per-arm counts/distribution comparisons. Empty or duplicate arms, conflicting metric or
+    scorer definitions, an unknown baseline, and ordinary scoring errors raise ``ValueError``.
+    """
     from .strategy import validate_target_size
     target_size = validate_target_size(target_size)
     if not arms:

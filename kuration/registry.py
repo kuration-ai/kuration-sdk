@@ -166,6 +166,10 @@ def list_components(kind: Optional[str] = None, *, registry: Registry = default_
 
 def describe_component(kind: str, name: str, *,
                        registry: Registry = default_registry) -> dict:
+    """Return one installed component descriptor as a JSON-safe dictionary.
+
+    Plugins are loaded before lookup; an unknown kind or name raises ``ValueError``.
+    """
     from .plugins import load_plugins
     load_plugins()
     return registry.descriptor(kind, name).to_dict()
@@ -188,10 +192,12 @@ def validate_parameters(descriptor: ComponentDescriptor, params: dict) -> None:
 
 
 def register_method(name: str, fn: Callable, **metadata) -> None:
+    """Register a selection-priority method in the default registry."""
     default_registry.register("method", name, fn, **metadata)
 
 
 def register_filter(name: str, fn: Callable, **metadata) -> None:
+    """Register a pre-pass filter in the default registry."""
     default_registry.register("filter", name, fn, **metadata)
 
 
@@ -200,4 +206,5 @@ def register_container(name: str, handler: Any, **metadata) -> None:
 
 
 def register_preset(name: str, factory: Callable, **metadata) -> None:
+    """Register an output-preset factory in the default registry."""
     default_registry.register("preset", name, factory, **metadata)

@@ -90,6 +90,10 @@ _ADAPTERS: dict[str, Callable[..., InputAdapter]] = {}
 
 
 def register_adapter(name: str, factory: Callable[..., InputAdapter], **metadata) -> None:
+    """Register an input-adapter factory under a unique name.
+
+    ``metadata`` becomes its component descriptor. Duplicate names raise ``ValueError``.
+    """
     if name in _ADAPTERS:
         raise ValueError(f"adapter {name!r} already registered")
     _ADAPTERS[name] = factory
@@ -98,6 +102,11 @@ def register_adapter(name: str, factory: Callable[..., InputAdapter], **metadata
 
 
 def get_adapter(name: str, *, registry=None, **kwargs) -> InputAdapter:
+    """Construct a named adapter, loading plugins on demand.
+
+    ``kwargs`` are passed to the factory. An explicit ``registry`` bypasses the legacy global
+    adapter table; an unknown name raises ``ValueError``.
+    """
     if registry is not None:
         return registry.get("adapter", name)(**kwargs)
     if name not in _ADAPTERS:

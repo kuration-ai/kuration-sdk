@@ -29,6 +29,10 @@ _ENCODERS: dict[str, Callable[..., OutputEncoder]] = {}
 
 
 def register_encoder(name: str, factory: Callable[..., OutputEncoder], **metadata) -> None:
+    """Register an output-encoder factory under a unique name.
+
+    Duplicate names raise ``ValueError``; ``metadata`` becomes its component descriptor.
+    """
     if name in _ENCODERS:
         raise ValueError(f"encoder {name!r} already registered")
     _ENCODERS[name] = factory
@@ -37,6 +41,10 @@ def register_encoder(name: str, factory: Callable[..., OutputEncoder], **metadat
 
 
 def get_encoder(name: str, *, registry=None, **kwargs) -> OutputEncoder:
+    """Construct a named output encoder, loading plugins on demand.
+
+    ``kwargs`` are passed to the factory. An unknown name raises ``ValueError``.
+    """
     if registry is not None:
         return registry.get("encoder", name)(**kwargs)
     if name not in _ENCODERS:

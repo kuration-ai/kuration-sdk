@@ -19,6 +19,12 @@ from .tags import compile_tagger
 
 
 class FeatureEngine:
+    """Compile metrics and optional tag rules, then populate ``Segment`` objects.
+
+    ``define`` contains closed-grammar metric specs and ``registered`` contains registered
+    metric names. Unknown metrics, invalid specs, and duplicate names raise ``ValueError``.
+    """
+
     def __init__(self, schema: SchemaSpec, *, define: Optional[dict] = None,
                  registered: Optional[list] = None, tags_spec: Optional[dict] = None):
         self.schema = schema

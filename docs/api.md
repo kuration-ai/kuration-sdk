@@ -6,13 +6,20 @@ signature. Optional-extra requirements are tagged (`[methods]`, `[parquet]`, `[a
 ([schema](schema.md) · [dsl](dsl.md) · [adapters](adapters.md) · [strategies](strategies.md) ·
 [output](output.md)) and the [usage cookbook](usage.md).
 
+Signatures below use `/` and `*` with their normal Python meanings. Unless a row says otherwise,
+invalid names, shapes, ranges, or incompatible options raise `ValueError`; reaching an optional
+capability without its extra raises `ImportError` with the install command; source/storage errors
+propagate as the corresponding I/O or parser exception. User callbacks, registered components,
+and encoders may raise their own exceptions. Terminal return values are typed or mapping-compatible
+objects as noted below.
+
 ## Entry points (start here)
 
 | name | signature | does |
 |---|---|---|
-| `curate` | `(*, ..., streaming=False, progress=None) -> CurateResult` | score all sources, select a target **count** of segments |
-| `write_dataset` | `(out_dir, *, ..., resume=False, streaming=False, progress=None) -> dict` | score, fill a train/test **hour budget**, write shards + manifests + config |
-| `run_experiment` | `(*, ..., streaming=False, progress=None) -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
+| `curate` | `(*, schema, adapter, sources, strategy, segmenter, target_size, seed=0, group_of=None, tags_of=None, test_frac=0.0, workers=1, on_error="skip", streaming=False, progress=None) -> CurateResult` | score all sources, select a target **count** of segments |
+| `write_dataset` | `(out_dir, *, schema, adapter, sources, strategy, segmenter, spec, encoder=None, train_hours, test_hours=0.0, sample_hz=None, seed=0, group_of=None, tags_of=None, clip_aggregate="max", span_steps=None, span_seconds=None, workers=1, on_error="skip", resume=False, streaming=False, progress=None) -> dict` | score, fill a train/test **hour budget**, write shards + manifests + config |
+| `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None) -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
 | `dataset_report` | `(segments, *, metrics=None, hist_bins=10) -> dict` | per-metric distribution profile (+ tag/group counts) of a scored pool |
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
@@ -35,6 +42,12 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `input` | `(src=None, *, schema=None, adapter=None, sources=None, fields=None, time=None, entity=None, hz=None, kinds=None, sample=200, globals=None, **adapter_kw) -> Pipeline` | sniff `src`, infer a schema (unless `schema=`), build the adapter — eagerly, loudly |
 | `infer_schema` | `(sample, *, name="inferred", time=None, entity=None, hz=None, kinds=None) -> (SchemaSpec, hints)` | classify a sample (rows/dict-of-arrays/ticks) into a schema + adapter `fields=` hints |
 | `Pipeline.window` | `(window, stride=None, unit="steps") -> Pipeline` | set the `Segmenter` |
+| `Pipeline.using` | `(registry) -> Pipeline` | resolve adapters, metrics, scorers, encoders, methods, filters, containers, and presets through an explicit `Registry` overlay |
+| `Pipeline.semantic` | `(field, semantics, *, dims=None, bits=None, max_rate=None) -> Pipeline` | refine an inferred field as `"position"`, `"angular"`, or `"bitmask"` |
+| `Pipeline.as_position` | `(field, *, dims=None, max_rate=None) -> Pipeline` | position-semantic convenience wrapper |
+| `Pipeline.as_angular` | `(field, *, max_rate=None) -> Pipeline` | angular-semantic convenience wrapper |
+| `Pipeline.as_bitmask` | `(field, *, bits) -> Pipeline` | bitmask-semantic convenience wrapper |
+| `Pipeline.at_rate` | `(hz) -> Pipeline` | set `SchemaSpec.sample_hz` when inference could not determine it |
 | `Pipeline.measure` | `(name, spec=None, *, of=None, map=None, filter=None, scope=None) -> Pipeline` | declare a per-segment metric (bare name / reduce string / DSL dict / callable) |
 | `Pipeline.filter` | `(what, op=None, value=None, **kw) -> Pipeline` | `("anomaly"/"dedup", **knobs)` pre-pass filter, or `(metric, op, value)` universal predicate |
 | `Pipeline.organize` | `(metric, *args, bins=None) -> Pipeline` | add a quantile-bin axis |
@@ -42,14 +55,36 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.tag` | `(*sources, min_frac=None) -> Pipeline` | declarative tag sources (+ optional tag-coverage floor) |
 | `Pipeline.split` | `(test=0.2) -> Pipeline` | source-level test split |
 | `Pipeline.group` | `(fn) -> Pipeline` | `group_of(source_id) -> key` |
-| `Pipeline.options` | `(**kw) -> Pipeline` | `workers, on_error, seed, streaming, resume, sample_hz, progress` |
+| `Pipeline.options` | `(**kw) -> Pipeline` | `mode, workers, on_error, seed, streaming, resume, sample_hz, progress` |
 | `Pipeline.curate` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | configure selection; exactly one of `n=`/`hours=` |
 | `Pipeline.collect` | `(n=None) -> CurateResult` | terminal — count-path selection |
-| `Pipeline.output` | `(path, *, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None) -> dict` | terminal — write shards + manifests + `config.json` (embeds `"pipeline"` provenance) |
+| `Pipeline.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, preset_params=None) -> dict` | terminal — write shards + manifests + `config.json` (embeds `"pipeline"` provenance) |
 | `Pipeline.report` | `(**kw) -> dict` | terminal — feature pass only → `dataset_report` |
 | `Pipeline.experiment` | `(arms: dict, n: int, baseline=None) -> dict` | terminal — multi-arm comparison (`arms` maps name → `Pipeline` or raw strategy dict) |
 | `Pipeline.head` | `(k=5) -> list[Tick]` | inspector — first `k` ticks of the first source |
 | `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources}`, no data touched |
+| `Pipeline.explain` | `(*, inspect_sources=False) -> ExecutionPlan` | inspector — typed stage plan, requirements, implicit choices, and warnings; optionally preflight source metadata |
+
+All operators are immutable: each returns a new pipeline. `semantic` fails if a semantic is
+already set; `at_rate` fails if `sample_hz` is already known; and `using` requires a `Registry`.
+See [pipeline.md](pipeline.md) for accepted operator forms and validation behavior.
+
+## Typed results and execution plans
+
+| name | signature / stable fields | does |
+|---|---|---|
+| `CurateResult` | `(selected, all_segments, schema, strategy, splits={}, errors=[])` | typed count-path result |
+| `DatasetWriteResult` | dict-compatible; `.to_dict()` and attribute access | dataset write result returned by output paths |
+| `ExperimentResult` | dict-compatible; `.to_dict()` and attribute access | multi-arm experiment result |
+| `DatasetReport` | dict-compatible; `.to_dict()` and attribute access | distribution report result |
+| `ValidationResult` | dict-compatible; `.to_dict()` and attribute access | programmatic validation result used by the CLI layer |
+| `ExecutionPlan` | `(source, schema, window, strategy, output, options, stages=(), warnings=())` | immutable mapping returned by `Pipeline.explain`; `.to_dict()` serializes and `.render(detailed=False)` formats text |
+| `Arm` | `(name, strategy)` | one named `run_experiment` strategy arm |
+| `union_define` | `(arms) -> dict` | merge arm metric definitions, rejecting incompatible duplicate names |
+
+The four dict-compatible result types preserve ordinary key access while adding attribute access
+during the typed-result transition. Consumers should use documented keys, not the concrete `dict`
+subclass implementation.
 
 ## Schema & data model
 
@@ -80,18 +115,18 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 `.check_source(source_uri)` preflight (used by `kur-validate --check-sources`); see
 [adapters.md](adapters.md).
 
-| name | key kwargs | reads |
+| name | constructor | reads |
 |---|---|---|
-| `TimeseriesAdapter` | `fields, time_column=None, entity_column=None, globals=None` | CSV / single Parquet (`[parquet]`) / `from_rows(rows)` |
-| `JsonlAdapter` | same as timeseries | `.jsonl` (one row-object per line) |
-| `HDF5Adapter` | `fields, globals=None` | `.h5`, one file = one source/entity (`[array]`) |
-| `NpzAdapter` | `fields, globals=None` | `.npz` (dep-free) |
-| `ParquetDatasetAdapter` | `fields, path, source_per="part", time_column=None, entity_column=None, globals=None`; `.sources()` | a directory/glob of Parquet parts (`[parquet]`) |
-| `HuggingFaceAdapter` | `fields, dataset, split="train", config=None, time_column=None, entity_column=None, globals=None, source_column=None, load_kwargs=None`; `.sources()` | a HF dataset (`[hf]`) |
-| `ZarrAdapter` | `fields, globals=None` | a Zarr store (`[zarr]`; remote via `[cloud]`) |
+| `TimeseriesAdapter` | `(schema, *, fields, time_column=None, entity_column=None, globals=None)` | CSV / single Parquet (`[parquet]`) / `from_rows(rows)` |
+| `JsonlAdapter` | `(schema, *, fields, time_column=None, entity_column=None, globals=None)` | `.jsonl` (one row-object per line) |
+| `HDF5Adapter` | `(schema, *, fields, globals=None)` | `.h5`, one file = one source/entity (`[array]`) |
+| `NpzAdapter` | `(schema, *, fields, globals=None)` | `.npz` (dep-free) |
+| `ParquetDatasetAdapter` | `(schema, *, fields, path, source_per="part", time_column=None, entity_column=None, globals=None)`; `.sources()` | a directory/glob of Parquet parts (`[parquet]`) |
+| `HuggingFaceAdapter` | `(schema, *, fields, dataset, split="train", config=None, time_column=None, entity_column=None, globals=None, source_column=None, load_kwargs=None)`; `.sources()` | a HF dataset (`[hf]`) |
+| `ZarrAdapter` | `(schema, *, fields, globals=None)` | a Zarr store (`[zarr]`; remote via `[cloud]`) |
 | `CuratedDatasetAdapter` | `(dataset_dir_or_list, schema=None)`; `.sources()`, `.dataset_of` | kuration's own output, re-curatable |
 | `schema_from_output` | `(output_spec_dict, *, name="curated", sample_hz=None, entity_axis="e") -> SchemaSpec` | derive a schema from a dataset's `config.json` output block |
-| `register_adapter` / `get_adapter` | `(name, factory)` / `(name, **kwargs)` | declarative adapter registry |
+| `register_adapter` / `get_adapter` | `(name, factory, **metadata) -> None` / `(name, *, registry=None, **kwargs) -> InputAdapter` | declarative adapter registry |
 | `InputAdapter` | Protocol: `schema` + `ticks(uri)`; optional lazy `iter_ticks(uri)`, `check_source(uri)`, and `sources_are_paths` | the seam to implement for bespoke formats |
 
 ## Selection
@@ -125,6 +160,23 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `plugin_provenance` | `() -> list[dict]` | loaded plugin code fingerprints used by resume provenance |
 | `ProgressCallback` | `Callable[[dict], None]` | receives structured `{phase, event, ...}` execution events |
 
+## Component registries and discovery
+
+| name | signature | does |
+|---|---|---|
+| `Registry` | `(parent=None)` | isolated component registry; `.child()` creates an overlay whose entries shadow its parent |
+| `default_registry` | `Registry` instance | process-wide registry used when no explicit overlay is supplied |
+| `ComponentDescriptor` | `(name, kind, description="", parameters=<factory>, capabilities=<factory>, extra=None, install_hint=None, package=None, version=None, schema_version=1, documentation=None, stability="stable", module=None, fingerprint=None)` | JSON-safe component metadata; `.to_dict()` omits `None` values |
+| `list_components` | `(kind=None, *, registry=default_registry) -> list[dict]` | discover installed component descriptors without reading datasets |
+| `describe_component` | `(kind, name, *, registry=default_registry) -> dict` | return one descriptor; raises for an unknown kind or name |
+| `register_method` | `(name, fn, **metadata) -> None` | register a selection-priority method |
+| `register_filter` | `(name, fn, **metadata) -> None` | register a pre-pass filter |
+
+Registry kinds are `adapter`, `metric`, `scorer`, `encoder`, `method`, `filter`, `container`, and
+`preset`. Names accept `name` or `namespace/name`; duplicate registrations raise unless the
+lower-level `Registry.register(..., replace=True)` API is used. See
+[customization.md](customization.md) for descriptors, parameter schemas, and plugin packaging.
+
 ## Output
 
 | name | signature | does |
@@ -137,6 +189,14 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `tracks_from_ticks` | `(schema, ticks, source_id) -> list[Track]` | one track per entity |
 | `write_track` | `(out_dir, track, spec, *, encoder=None, schema=None, split="all", resume=False, name_suffix="") -> [manifest entries]` | low-level: write one track's shards |
 | `fill_to_hours` | `(items, *, train_hours, test_hours, max_group_overshoot=None, tag_coverage=None, seed=0, return_stats=False)` | hours-budget fill; optional accounting as a third return value |
+| `Container` | `(extension, writer, reader)` | one shard-container implementation |
+| `register_container` | `(name, container=None, *, extension=None, writer=None, reader=None, **metadata)` | register a `Container` instance or its three parts |
+| `output_preset` | `(name, *, schema, registry=default_registry, **params) -> OutputSpec` | resolve a named output preset against a schema |
+| `register_preset` | `(name, factory, **metadata) -> None` | register an output-preset factory |
+
+Built-in presets are `numpy-timeseries`, `pytorch-sequences`, and `tabular`. Preset parameters
+are validated through their component descriptors; unknown presets and parameters raise before
+any output is written.
 
 ## Read side
 
@@ -153,7 +213,25 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 
 | name | signature | does |
 |---|---|---|
-| `build_config` / `write_config` | `(schema, strategy, *, results, seed, ...) -> dict` / `(path, config)` | the reproducibility record (`config.json`) |
-| `dump_segment_manifest` | `(path, segments)` | JSON manifest of a scored/selected pool |
-| `read_text` / `write_text` / `write_bytes` / `exists` | `(path, ...)` | path-agnostic I/O (local or `gs://`/`s3://`/`az://` via `[cloud]`) |
+| `build_config` | `(schema, strategy, *, results, seed, started=None, ended=None) -> dict` | build the reproducibility record written as `config.json` |
+| `write_config` | `(path, config) -> None` | serialize a reproducibility configuration as indented JSON |
+| `dump_segment_manifest` | `(path, segments) -> None` | JSON manifest of a scored/selected pool |
+| `read_text` | `(path) -> str` | read path-agnostic text |
+| `write_text` | `(path, text) -> None` | write path-agnostic text |
+| `write_bytes` | `(path, data) -> None` | write path-agnostic bytes |
+| `exists` | `(path) -> bool` | test a local or remote path |
 | `local_copy` | context manager: `(path) -> local file path` | stage a remote object for libs needing a real path |
+
+## Artifact versions and migration
+
+| name | signature | does |
+|---|---|---|
+| `ARTIFACT_FORMAT_VERSION` | `str` | current `config.json` / dataset artifact contract version |
+| `JOB_SCHEMA_VERSION` | `str` | current declarative job contract version |
+| `migrate` | `(value, out=None) -> dict` | migrate a job/config dict or JSON path; optionally write formatted JSON |
+| `migrate_job` | `(job) -> dict` | deep-copy and migrate a job dictionary to `JOB_SCHEMA_VERSION` |
+| `migrate_config` | `(config) -> dict` | deep-copy and migrate an artifact config to `ARTIFACT_FORMAT_VERSION` |
+
+Migration is non-mutating for dictionary inputs. A malformed version, non-object input, or a
+future unsupported major version raises `ValueError`. The matching command-line interface is
+`kur-migrate`; see [jobs.md](jobs.md) for the serialized job contract.

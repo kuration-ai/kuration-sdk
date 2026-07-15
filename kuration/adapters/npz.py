@@ -15,6 +15,13 @@ from .base import arrays_to_ticks, check_mapped_arrays, register_adapter
 
 
 class NpzAdapter:
+    """Map arrays in one NumPy NPZ archive to a canonical single-entity tick stream.
+
+    ``fields`` and ``globals`` map schema names to archive keys. Undeclared schema names,
+    missing keys, inconsistent time dimensions, and incompatible shapes raise ``ValueError``.
+    NPZ input does not support the streaming execution path.
+    """
+
     def __init__(self, schema: SchemaSpec, *, fields: dict, globals: Optional[dict] = None):
         self.schema = schema
         self.fields = fields                 # schema_field -> npz key

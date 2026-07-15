@@ -31,6 +31,12 @@ class Segment:
 
 
 class Segmenter:
+    """Create fixed-width, fixed-stride windows in steps or seconds.
+
+    Second-based windows require a positive ``sample_hz`` and are rounded to steps. Invalid
+    units, non-positive sizes, or non-integral step sizes raise ``ValueError``.
+    """
+
     def __init__(self, window: float, stride: float, *, unit: str = "steps",
                  sample_hz: Optional[float] = None):
         if unit not in ("steps", "seconds"):

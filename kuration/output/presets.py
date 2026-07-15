@@ -81,6 +81,11 @@ _PARAMS = {"type": "object", "properties": {
 
 
 def output_preset(name: str, *, schema, registry=default_registry, **params) -> OutputSpec:
+    """Resolve a registered output preset into a validated ``OutputSpec``.
+
+    ``params`` are checked against the preset's descriptor. Unknown presets, missing required
+    parameters, and unexpected parameters raise ``ValueError``.
+    """
     descriptor = registry.descriptor("preset", name)
     validate_parameters(descriptor, params)
     return registry.get("preset", name)(schema, **params)

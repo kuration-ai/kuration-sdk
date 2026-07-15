@@ -27,6 +27,10 @@ def check_version(value: Any, *, kind: str) -> str:
 
 
 def migrate_job(job: dict) -> dict:
+    """Return a deep-copied job updated to the current job-schema version.
+
+    A malformed or unsupported future major version raises ``ValueError``.
+    """
     check_version(job.get("job_schema_version"), kind="job")
     out = copy.deepcopy(job)
     out["job_schema_version"] = JOB_SCHEMA_VERSION
@@ -34,6 +38,10 @@ def migrate_job(job: dict) -> dict:
 
 
 def migrate_config(config: dict) -> dict:
+    """Return a deep-copied config updated to the current artifact version.
+
+    A malformed or unsupported future major version raises ``ValueError``.
+    """
     check_version(config.get("artifact_format_version"), kind="artifact")
     out = copy.deepcopy(config)
     out["artifact_format_version"] = ARTIFACT_FORMAT_VERSION

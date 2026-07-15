@@ -2,6 +2,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
+
+pytest.importorskip(
+    "google.protobuf",
+    reason="Open P2P example tests require the optional p2p extra",
+)
 
 from kuration import iter_shards
 from examples.public_data import open_p2p

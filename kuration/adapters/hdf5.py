@@ -14,6 +14,12 @@ from .base import check_mapped_arrays, iter_arrays_to_ticks, register_adapter
 
 
 class HDF5Adapter:
+    """Map datasets in one HDF5 file to a canonical single-entity tick stream.
+
+    Requires the ``array`` extra. ``fields`` and ``globals`` map schema names to HDF5
+    dataset paths; undeclared schema names and incompatible source shapes raise ``ValueError``.
+    """
+
     def __init__(self, schema: SchemaSpec, *, fields: dict, globals: Optional[dict] = None):
         self.schema = schema
         self.fields = fields                 # schema_field -> hdf5 dataset name

@@ -29,6 +29,7 @@ def segment_record(s: Segment) -> dict:
 
 
 def dump_segment_manifest(path: str, segments: list[Segment]) -> None:
+    """Write scored segments and the artifact format version as JSON."""
     payload = {"artifact_format_version": ARTIFACT_FORMAT_VERSION,
                "count": len(segments), "segments": [segment_record(s) for s in segments]}
     write_text(path, json.dumps(payload, indent=2, default=float))
@@ -36,6 +37,11 @@ def dump_segment_manifest(path: str, segments: list[Segment]) -> None:
 
 def build_config(schema: SchemaSpec, strategy: Strategy, *, results: dict, seed: int,
                  started: Optional[str] = None, ended: Optional[str] = None) -> dict:
+    """Build the reproducibility configuration embedded in a curated dataset.
+
+    The returned dictionary contains the artifact version, resolved schema and strategy, seed,
+    optional timestamps, result accounting, and loaded-plugin provenance.
+    """
     return {
         "artifact_format_version": ARTIFACT_FORMAT_VERSION,
         "schema": schema.to_dict(),
@@ -49,4 +55,5 @@ def build_config(schema: SchemaSpec, strategy: Strategy, *, results: dict, seed:
 
 
 def write_config(path: str, config: dict) -> None:
+    """Serialize a configuration dictionary as indented JSON to a local or remote path."""
     write_text(path, json.dumps(config, indent=2, default=float))

@@ -40,6 +40,10 @@ _SCORERS: dict[str, Callable[..., SegmentScorer]] = {}
 
 
 def register_scorer(name: str, factory: Callable[..., SegmentScorer], **metadata) -> None:
+    """Register a whole-pool scorer factory under a unique name.
+
+    Duplicate names raise ``ValueError``; ``metadata`` becomes its component descriptor.
+    """
     if name in _SCORERS:
         raise ValueError(f"scorer {name!r} already registered")
     _SCORERS[name] = factory
@@ -48,6 +52,10 @@ def register_scorer(name: str, factory: Callable[..., SegmentScorer], **metadata
 
 
 def get_scorer(name: str, *, registry=None, **kwargs) -> SegmentScorer:
+    """Construct a named scorer, loading plugins on demand.
+
+    ``kwargs`` are passed to the factory. An unknown name raises ``ValueError``.
+    """
     if registry is not None:
         return registry.get("scorer", name)(**kwargs)
     if name not in _SCORERS:

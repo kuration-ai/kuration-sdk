@@ -50,21 +50,25 @@ def open_file(path, mode: str = "rb"):
 
 
 def read_text(path) -> str:
+    """Read UTF-8-compatible text from a local path or fsspec URL."""
     with open_file(path, "rt") as f:
         return f.read()
 
 
 def write_text(path, text: str) -> None:
+    """Write text to a local path or fsspec URL, creating local parent directories."""
     with open_file(path, "wt") as f:
         f.write(text)
 
 
 def write_bytes(path, data: bytes) -> None:
+    """Write bytes to a local path or fsspec URL, creating local parent directories."""
     with open_file(path, "wb") as f:
         f.write(data)
 
 
 def exists(path) -> bool:
+    """Return whether a local path or fsspec URL exists."""
     if is_remote(path):
         return _fs(path).exists(str(path))
     return Path(_local(path)).exists()

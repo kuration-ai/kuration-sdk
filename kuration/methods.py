@@ -284,6 +284,11 @@ METHOD_MODULE_METHODS = set(PRIORITY_METHODS)
 
 
 def method_priorities(segments, strategy, *, seed=0, workers=1) -> np.ndarray:
+    """Return one selection priority per segment for a feature-space strategy.
+
+    The strategy chooses the method, feature space, normalization, and method parameters.
+    These methods require the ``methods`` extra and raise ``ImportError`` when it is absent.
+    """
     names = resolve_feature_space(strategy)
     fn = PRIORITY_METHODS[strategy.method]
     p = strategy.method_params or {}
@@ -351,6 +356,7 @@ _FILTERS: dict[str, Any] = {"anomaly": anomaly_filter, "dedup": dedup_filter}
 
 
 def register_filter(name, fn, **metadata):
+    """Register a pre-pass filter callable and its component metadata."""
     from .registry import register_filter as _register
     _register(name, fn, **metadata)
 
