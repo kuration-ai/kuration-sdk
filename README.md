@@ -17,33 +17,38 @@ pip install -e '.[parquet,array]'         # + pyarrow / h5py  (Parquet & HDF5 co
 pip install -e '.[cloud]'                 # + fsspec  (gs:// / s3:// / az:// I/O; add a backend)
 pip install -e '.[torch]'                 # + torch   (kuration.torch.ShardDataset; read side)
 pip install -e '.[hf,zarr]'               # + datasets / zarr  (HuggingFace & Zarr input adapters)
+pip install -e '.[p2p]'                   # + protobuf  (Open P2P public-data example)
 ```
 
-## At a glance
+## Quick start
 
-```python
-from kuration import (SchemaSpec, TimeseriesAdapter, Segmenter,
-                      load_strategy, OutputSpec, write_dataset)
+From the repository root, make a complete first run with only Python 3.11+ and NumPy:
 
-schema   = SchemaSpec.from_dict({...})                       # declare fields + semantics
-adapter  = TimeseriesAdapter(schema, fields={...},           # map columns -> fields (no code)
-                             time_column="t", entity_column="id")
-strategy = load_strategy({...}, schema)                      # metrics + selection, as data
-spec     = OutputSpec.from_dict({...})                       # declared output modalities
-
-write_dataset("out/", schema=schema, adapter=adapter, sources=[...],
-              strategy=strategy, segmenter=Segmenter(4, 2, unit="seconds", sample_hz=20),
-              spec=spec, train_hours=10, test_hours=1, seed=0)
-
-# read it back for training — numpy core, or kuration.torch.ShardDataset for PyTorch
-from kuration import iter_shards
-for arr in iter_shards("out/", split="train"):   # modalities + boolean arr["_present"]
-    ...
+```bash
+python -m pip install -e .
+python examples/quickstart.py --out quickstart-out
 ```
 
-See **[docs/overview.md](docs/overview.md)** for the full end-to-end example, the
-[docs/usage.md](docs/usage.md) cookbook for recipes, and **[examples/](examples/)** for
-runnable, self-contained demos (`python examples/01_timeseries_to_shards.py`).
+This creates six tiny sensor sessions locally, scores 42 candidate windows, selects 12 that
+cover different activity and fault patterns, writes train/test NPZ shards, and reads one back.
+The run is deterministic and requires no download or optional dependency.
+
+```text
+input: 6 sessions, 288 rows
+curation: 42 candidate windows -> 12 selected
+output: 12 shards in quickstart-out
+first shard: split=test, modalities=['_present', 'fault', 'signal', 'temperature'], signal_shape=(12,)
+reproducible config: quickstart-out/config.json
+```
+
+Follow the **[ten-minute walkthrough](docs/quickstart.md)** to understand each operator and
+inspect the resulting manifest, configuration, and arrays.
+
+Then see the bounded
+**[TeaPearce Counter-Strike worked example](examples/public_data/README.md)** for a real public
+dataset, a custom HDF5 adapter, rare-event coverage, and optional image output.
+The companion **[Open P2P example](examples/public_data/open_p2p.md)** curates keyboard, mouse,
+correction, environment, and text-instruction coverage from `annotation.proto` files.
 
 ## Fluent pipeline (no explicit schema/adapter/strategy)
 
@@ -83,6 +88,7 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 
 | doc | covers |
 |---|---|
+| [docs/quickstart.md](docs/quickstart.md) | a tested, network-independent first curated dataset |
 | [docs/overview.md](docs/overview.md) | the pipeline, install, a full worked example |
 | [docs/pipeline.md](docs/pipeline.md) | the fluent `input(...).operator(...)` API — inference rules, every operator, terminals |
 | [docs/usage.md](docs/usage.md) | **cookbook** — task-oriented recipes across every capability |
@@ -95,6 +101,7 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | [docs/api.md](docs/api.md) | **API reference** — every public name with its real signature |
 | [docs/jobs.md](docs/jobs.md) | **job-spec reference** — every JSON key the `kur-*` CLIs accept |
 | [docs/customization.md](docs/customization.md) | registries, descriptors, presets, versioning, and extension authoring |
+| [docs/documentation-contract.md](docs/documentation-contract.md) | documentation audiences, entry paths, information architecture, and public API boundary |
 
 Hitting a loud validation error? [docs/usage.md § Troubleshooting](docs/usage.md#17--troubleshooting--common-loud-failures)
 maps the common ones to causes and fixes.
@@ -177,8 +184,8 @@ Schema), driven by the `kur-*` CLIs, **schema inference** (`kuration.infer`) and
 selection method, count or hours path), complete resume provenance, default presence masks,
 budget accounting, discoverable/isolated registries, semantic hints, output presets,
 strict/explore modes, structured execution plans, versioned artifacts/jobs, typed-compatible
-results, and structured progress. 381 passed / 2 optional-Zarr
-skipped in the development environment (`pytest tests/`).
+results, and structured progress. The full suite passes in the development environment;
+optional-format tests skip when their corresponding extras are absent (`pytest tests/`).
 
 Deferred: a spill/external tier for *total* segment pools larger than RAM and count-path resume.
 See `PLAN.md`.
