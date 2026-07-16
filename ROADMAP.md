@@ -38,6 +38,8 @@ These items gate public publishing. Pipeline execution optimization does not gat
 - Output-aware dry runs with optional bounded source, candidate-window, and shard estimates.
 - Post-run Python/CLI artifact inspection with full shard integrity verification.
 - Actionable CLI remedies, execution-path parity coverage, and a fluent-first documentation path.
+- Bounded input previews, candidate-vs-selected review, artifact diffing, and dependency-free
+  static HTML reports.
 
 ## Delivered — synchronized video ingestion
 

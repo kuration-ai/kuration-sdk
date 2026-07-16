@@ -1130,6 +1130,27 @@ class Pipeline:
                             "overrides": sorted(self._explicit_options)},
                 "sources": [str(s) for s in self.sources]}
 
+    def preview(self, *, max_sources: int = 3, max_ticks_per_source: int = 10_000,
+                examples: int = 5):
+        """Read a bounded source sample and summarize fields, missingness, and examples."""
+        from .review import preview_dataset
+        return preview_dataset(schema=self.schema, adapter=self.adapter, sources=self.sources,
+                               max_sources=max_sources,
+                               max_ticks_per_source=max_ticks_per_source,
+                               examples=examples)
+
+    def review(self, n: Optional[int] = None, *, examples: int = 10,
+               hist_bins: int = 10):
+        """Run count selection and compare candidate and selected distributions/coverage.
+
+        Review intentionally uses the reference ``collect`` path so it can expose the complete
+        candidate pool. Use output dry-run estimates for very large pools before reviewing.
+        """
+        result = self.collect(n=n)
+        from .review import selection_review
+        return selection_review(result, seed=self._options["seed"], examples=examples,
+                                hist_bins=hist_bins)
+
     def explain(self, *, inspect_sources: bool = False):
         """Return a stable, structured execution plan without reading rows by default."""
         from .results import ExecutionPlan

@@ -70,6 +70,8 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.experiment` | `(arms: dict, n: int, baseline=None) -> dict` | terminal — multi-arm comparison (`arms` maps name → `Pipeline` or raw strategy dict) |
 | `Pipeline.head` | `(k=5) -> list[Tick]` | inspector — first `k` ticks of the first source |
 | `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources}`, no data touched |
+| `Pipeline.preview` | `(*, max_sources=3, max_ticks_per_source=10000, examples=5) -> DatasetPreview` | inspector — bounded field quality, source shape, and representative tick sample |
+| `Pipeline.review` | `(n=None, *, examples=10, hist_bins=10) -> SelectionReview` | terminal — compare the complete candidate pool with a count selection |
 | `Pipeline.explain` | `(*, inspect_sources=False) -> ExecutionPlan` | inspector — typed stage plan, requirements, implicit choices, and warnings; optionally preflight source metadata |
 
 All operators are immutable: each returns a new pipeline. `semantic` fails if a semantic is
@@ -85,9 +87,17 @@ See [pipeline.md](pipeline.md) for accepted operator forms and validation behavi
 | `ExperimentResult` | dict-compatible; `.to_dict()` and attribute access | multi-arm experiment result |
 | `DatasetReport` | dict-compatible; `.to_dict()` and attribute access | distribution report result |
 | `DatasetInspection` | dict-compatible; `.to_dict()` and attribute access | artifact summary and optional shard-integrity result |
+| `DatasetPreview` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | bounded source/field-quality preview |
+| `SelectionReview` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | candidate-versus-selected metrics, coverage, rationale, and examples |
+| `DatasetComparison` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | structured differences between two curated artifacts |
 | `ValidationResult` | dict-compatible; `.to_dict()` and attribute access | programmatic validation result used by the CLI layer |
 | `ExecutionPlan` | `(source, schema, window, strategy, output, options, stages=(), warnings=(), physical_plan=None)` | immutable mapping returned by `Pipeline.explain`; `.to_dict()` serializes and `.render(detailed=False)` formats text |
 | `inspect_dataset` | `(dataset, *, verify=False, container=None) -> DatasetInspection` | inspect manifests/config without original sources; `verify=True` decodes every shard |
+| `preview_dataset` | `(*, schema, adapter, sources, max_sources=3, max_ticks_per_source=10000, examples=5) -> DatasetPreview` | classic-API form of the bounded data preview |
+| `selection_review` | `(result, *, seed=0, examples=10, hist_bins=10) -> SelectionReview` | review an existing `CurateResult` |
+| `compare_datasets` | `(left, right, *, verify=False) -> DatasetComparison` | compare artifact schema, output, pipeline, provenance, size, and integrity |
+| `render_html_report` | `(*reports, title="kuration review") -> str` | render typed/mapping reports as dependency-free static HTML |
+| `write_html_report` | `(path, *reports, title="kuration review") -> str` | write the static HTML report locally or through configured path I/O |
 | `Arm` | `(name, strategy)` | one named `run_experiment` strategy arm |
 | `union_define` | `(arms) -> dict` | merge arm metric definitions, rejecting incompatible duplicate names |
 

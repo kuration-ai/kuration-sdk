@@ -84,8 +84,10 @@ are grouped below by user task.
 
 - Entry and results: `input`, `Pipeline`, `infer_schema`, `curate`, `CurateResult`,
   `write_dataset`, `DatasetWriteResult`, `run_experiment`, `Arm`, `union_define`,
-  `ExperimentResult`, `dataset_report`, `DatasetReport`, `inspect_dataset`,
-  `DatasetInspection`, `ExecutionPlan`, `ValidationResult`.
+  `ExperimentResult`, `dataset_report`, `DatasetReport`, `preview_dataset`, `DatasetPreview`,
+  `selection_review`, `SelectionReview`, `inspect_dataset`, `DatasetInspection`,
+  `compare_datasets`, `DatasetComparison`, `render_html_report`, `write_html_report`,
+  `ExecutionPlan`, `ValidationResult`.
 - Schema and canonical data: `SchemaSpec`, `FieldSpec`, `MediaSpec`, `Tick`, `WindowBuffer`,
   `build_window`, `empty_like`, `Segment`, `Segmenter`, `FrameRef`, `VideoMetadata`.
 - Metrics and scoring: `compile_metric`, `register_metric`, `register_compiled`, `FeatureEngine`,
@@ -143,7 +145,7 @@ are always internal.
 The installed commands are public end-user interfaces:
 
 - Run and analyze: `kur-curate`, `kur-experiment`, `kur-report`.
-- Validate and inspect: `kur-validate`, `kur-explain`, `kur-inspect`.
+- Validate and inspect: `kur-validate`, `kur-explain`, `kur-inspect`, `kur-diff`.
 - Discover extensions: `kur-list`, `kur-describe`.
 - Upgrade documents: `kur-migrate`.
 

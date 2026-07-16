@@ -62,6 +62,8 @@ inspect the resulting manifest, configuration, and arrays.
 |---|---|
 | Try kuration or curate ordinary CSV/Parquet/row data | Fluent `input(...).window(...).sample(...).output(...)` and the [quickstart](docs/quickstart.md) |
 | Decide whether a planned run will fit and what it needs | `pipeline.output(path, dry_run=True, inspect_sources=True)` before writing |
+| Check input quality and whether selection changed the data as intended | `pipeline.preview()` and `pipeline.review()` |
+| Compare two written datasets | `kur-diff BASELINE CANDIDATE --verify` |
 | Run a checked, reproducible JSON job | `kur-validate job.json --check-sources`, then `kur-explain job.json` and `kur-curate job.json` |
 | Add a proprietary format, model, metric, or container | The [customization guide](docs/customization.md) and classic explicit API |
 | Find a task-specific variation | The [usage cookbook](docs/usage.md) |
@@ -156,7 +158,7 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | [CONTRIBUTING.md](CONTRIBUTING.md) | contributor setup, design rules, checks, documentation, and pull requests |
 | [ROADMAP.md](ROADMAP.md) | release gates, delivered optional execution extensions, scale items, and path to 1.0 |
 
-Hitting a loud validation error? [docs/usage.md § Troubleshooting](docs/usage.md#17--troubleshooting--common-loud-failures)
+Hitting a loud validation error? [docs/usage.md § Troubleshooting](docs/usage.md#18--troubleshooting--common-loud-failures)
 maps the common ones to causes and fixes.
 
 ## Scale & robustness
@@ -220,6 +222,7 @@ kur-describe scorer action_residual       # parameter schema, capabilities, orig
 kur-explain job.json --json               # structured execution plan, no row reads
 kur-migrate old-job.json --out job.json   # deterministic format migration
 kur-inspect out/run1 --verify             # summarize an artifact and decode-check every shard
+kur-diff out/baseline out/candidate       # compare schema, configuration, provenance, and size
 ```
 
 `kur-validate` runs every load-time validator the real run would (schema, adapter field maps,

@@ -198,6 +198,8 @@ when the behavior belongs to one of those stages.
 ## Inspectors (cheap, no data touched / minimal read)
 
 - `.head(k=5)` — the first `k` `Tick`s of the first source (reads only what it needs).
+- `.preview()` — bounded source/field quality: time ranges, entity counts, missingness, numeric
+  ranges, categorical values, and representative ticks. `.render()` gives terminal text.
 - `.describe()` — `{"schema", "strategy", "output": None, "segmenter", "options", "sources"}`:
   the pipeline's fully resolved state, without running anything. `"strategy"` is the same raw
   dict a terminal would compile and load.
@@ -224,6 +226,7 @@ retain the compatible reference implementation and appear as materialization war
 | terminal | signature | routes to |
 |---|---|---|
 | `.collect` | `(n=None)` | `curate()` — count-path selection → `CurateResult` |
+| `.review` | `(n=None, *, examples=10, hist_bins=10)` | reference count selection → candidate-vs-selected metrics, coverage, rationale, and examples |
 | `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, dry_run=False, inspect_sources=False)` | validate/estimate with `dry_run=True`, otherwise write through the ordinary `OutputSpec` path |
 | `.report` | `(**kw)` | feature pass only (no selection) → `dataset_report` |
 | `.experiment` | `(arms, n, baseline=None)` | `run_experiment`; `arms` maps name → `Pipeline` (its compiled strategy) or a raw strategy dict |
@@ -246,6 +249,10 @@ retain the compatible reference implementation and appear as materialization war
   options win; strict mode raises on source errors and implicit categorical omission.
 - The count path rewrites its selection deterministically per run, so `resume=True` on it
   raises (hours path only).
+
+`.review()` intentionally materializes the complete candidate pool so it can compare it with the
+selection. Run the output dry run first for a large corpus; use `preview()` when you only need a
+bounded look at raw input quality.
 
 ## Loud-error philosophy
 

@@ -7,7 +7,7 @@ from typing import Any
 
 from .io import exists, read_text
 from .loaders import read_shard_arrays, shard_entries
-from .results import DatasetInspection
+from .results import DatasetComparison, DatasetInspection
 from .versioning import check_version
 
 
@@ -90,3 +90,72 @@ def inspect_dataset(dataset, *, verify: bool = False,
                    "backend": physical.get("backend", physical.get("mode"))},
         verification={"requested": verify, "checked": checked,
                       "valid": not verification_errors, "errors": verification_errors})
+
+
+def _changes(left: Any, right: Any, path: str = "", *, limit: int = 500) -> list[dict]:
+    if left == right:
+        return []
+    if isinstance(left, dict) and isinstance(right, dict):
+        changes = []
+        for key in sorted(set(left) | set(right)):
+            child = f"{path}.{key}" if path else str(key)
+            if key not in left:
+                changes.append({"path": child, "left": None, "right": right[key]})
+            elif key not in right:
+                changes.append({"path": child, "left": left[key], "right": None})
+            else:
+                changes.extend(_changes(left[key], right[key], child,
+                                        limit=limit - len(changes)))
+            if len(changes) >= limit:
+                break
+        return changes[:limit]
+    if isinstance(left, list) and isinstance(right, list):
+        changes = []
+        for index in range(max(len(left), len(right))):
+            child = f"{path}[{index}]"
+            if index >= len(left):
+                changes.append({"path": child, "left": None, "right": right[index]})
+            elif index >= len(right):
+                changes.append({"path": child, "left": left[index], "right": None})
+            else:
+                changes.extend(_changes(left[index], right[index], child,
+                                        limit=limit - len(changes)))
+            if len(changes) >= limit:
+                break
+        return changes[:limit]
+    return [{"path": path or "$", "left": left, "right": right}]
+
+
+def compare_datasets(left, right, *, verify: bool = False) -> DatasetComparison:
+    """Compare two written datasets' schemas, output contracts, provenance, and sizes."""
+    left_base, right_base = _base_path(left), _base_path(right)
+    if left_base is None or right_base is None:
+        raise ValueError("compare_datasets needs dataset directories or manifest paths, not "
+                         "loaded manifest dictionaries")
+    left_inspection = inspect_dataset(left, verify=verify)
+    right_inspection = inspect_dataset(right, verify=verify)
+    left_config = json.loads(read_text(f"{left_base}/config.json"))
+    right_config = json.loads(read_text(f"{right_base}/config.json"))
+    comparable_left = {key: left_config.get(key) for key in (
+        "artifact_format_version", "schema", "strategy", "output", "pipeline",
+        "output_request", "output_preset", "mode", "results", "warnings")}
+    comparable_right = {key: right_config.get(key) for key in comparable_left}
+    changes = _changes(comparable_left, comparable_right)
+    left_summary = {"dataset": left_base, "shards": left_inspection.shards,
+                    "splits": left_inspection.splits,
+                    "modalities": left_inspection.modalities,
+                    "provenance_fingerprint": left_inspection.provenance_fingerprint,
+                    "verification": left_inspection.verification}
+    right_summary = {"dataset": right_base, "shards": right_inspection.shards,
+                     "splits": right_inspection.splits,
+                     "modalities": right_inspection.modalities,
+                     "provenance_fingerprint": right_inspection.provenance_fingerprint,
+                     "verification": right_inspection.verification}
+    summary_changes = _changes(
+        {key: value for key, value in left_summary.items() if key != "dataset"},
+        {key: value for key, value in right_summary.items() if key != "dataset"},
+        "artifact")
+    all_changes = summary_changes + changes
+    return DatasetComparison(left=left_summary, right=right_summary,
+                             identical=not all_changes, changes=all_changes,
+                             verified=verify)

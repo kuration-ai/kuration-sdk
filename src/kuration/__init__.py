@@ -42,13 +42,15 @@ from .features import FeatureEngine
 from .infer import infer_schema
 from .io import exists, local_copy, read_text, write_bytes, write_text
 from .loaders import iter_shards, read_shard_arrays, shard_entries
-from .inspection import inspect_dataset
+from .inspection import compare_datasets, inspect_dataset
+from .html_report import render_html_report, write_html_report
 from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities, register_filter
 from .pipeline import Pipeline, input
 from .plugins import load_plugins, loaded_plugin_modules, plugin_provenance
 from .progress import ProgressCallback
 from .report import dataset_report
+from .review import preview_dataset, selection_review
 from .scorers import SegmentScorer, apply_scorers, get_scorer, register_scorer
 from .output import (
     Container,
@@ -80,8 +82,9 @@ from .select import assign_splits
 from .strategy import Strategy, load_strategy, segment_priorities, select
 from .registry import (ComponentDescriptor, Registry, default_registry, describe_component,
                        list_components, register_method, register_operator, register_preset)
-from .results import (DatasetInspection, DatasetReport, DatasetWriteResult, ExecutionPlan,
-                      ExperimentResult, ValidationResult)
+from .results import (DatasetComparison, DatasetInspection, DatasetPreview, DatasetReport,
+                      DatasetWriteResult, ExecutionPlan, ExperimentResult, SelectionReview,
+                      ValidationResult)
 from .versioning import (ARTIFACT_FORMAT_VERSION, JOB_SCHEMA_VERSION, migrate,
                          migrate_config, migrate_job)
 
@@ -124,7 +127,9 @@ __all__ = [
     "fill_to_hours", "write_dataset",
     "Container", "register_container", "output_preset", "register_preset",
     "iter_shards", "read_shard_arrays", "shard_entries",
-    "inspect_dataset", "DatasetInspection",
+    "inspect_dataset", "DatasetInspection", "compare_datasets", "DatasetComparison",
+    "preview_dataset", "DatasetPreview", "selection_review", "SelectionReview",
+    "render_html_report", "write_html_report",
     "infer_schema", "Pipeline", "input",
     "load_plugins", "loaded_plugin_modules", "plugin_provenance", "ProgressCallback",
     "Registry", "default_registry", "ComponentDescriptor", "list_components",

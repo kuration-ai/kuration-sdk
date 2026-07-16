@@ -61,6 +61,7 @@ kur-describe = "kuration.cli.discovery:describe_main"
 kur-migrate = "kuration.cli.migrate:main"
 kur-explain = "kuration.cli.explain:main"
 kur-inspect = "kuration.cli.inspect:main"
+kur-diff = "kuration.cli.diff:main"
 
 [build-system]
 requires = ["setuptools"]

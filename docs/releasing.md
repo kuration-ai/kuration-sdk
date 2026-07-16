@@ -2,7 +2,7 @@
 
 The CI workflow builds a wheel and source distribution on every supported Python version, then
 installs the wheel in a clean environment and verifies imports, package data, typing metadata,
-and the `kur-inspect` entry point. A published GitHub release runs
+and the `kur-inspect`/`kur-diff` entry points. A published GitHub release runs
 `.github/workflows/publish.yml`, which builds both artifacts and publishes them to PyPI with
 OpenID Connect; no long-lived API token is stored in GitHub.
 

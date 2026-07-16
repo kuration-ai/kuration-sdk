@@ -211,7 +211,13 @@ assert verified.verification["valid"]
 
 The report includes split sizes and durations, modalities, padding, budget information, skipped
 source errors, provenance, and execution mode. The equivalent CLI is `kur-inspect out/`; use
-`kur-inspect out/ --verify` in handoff or CI and `--json` for automation.
+`kur-inspect out/ --verify` in handoff or CI, `--json` for automation, or `--html report.html`
+for a dependency-free shareable report.
+
+Compare two artifacts with `compare_datasets(left, right, verify=False)` or `kur-diff LEFT RIGHT`.
+The result reports shard/split/modality changes and recursively identifies differences in schema,
+strategy, output, fluent pipeline, results, and warnings. `kur-diff --html diff.html` writes the
+same structured comparison as a self-contained static document.
 
 **PyTorch.**
 

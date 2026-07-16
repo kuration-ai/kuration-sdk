@@ -34,9 +34,12 @@ jobs:
           assert package.joinpath("schemas/job.schema.json").is_file()
           assert package.joinpath("py.typed").is_file()
           assert "site-packages" in str(Path(kuration.__file__).resolve())
-          assert hasattr(kuration, "inspect_dataset")
+          for name in ("inspect_dataset", "compare_datasets", "DatasetPreview",
+                       "SelectionReview", "render_html_report"):
+              assert hasattr(kuration, name)
           PY
           /tmp/kuration-wheel-smoke/bin/kur-inspect --help
+          /tmp/kuration-wheel-smoke/bin/kur-diff --help
       - uses: actions/upload-artifact@v4
         with:
           name: python-package-distributions

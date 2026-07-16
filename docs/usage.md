@@ -349,7 +349,33 @@ provenance).
 
 ---
 
-## 17 · Troubleshooting — common loud failures
+## 17 · Review input, selection, and artifact changes
+
+```python
+from kuration import compare_datasets, render_html_report, write_html_report
+
+preview = pipeline.preview()       # bounded raw-input quality and examples
+review = pipeline.review()         # full candidate-vs-selected count review
+print(preview.render())
+print(review.render())
+
+comparison = compare_datasets("out/baseline", "out/candidate", verify=True)
+write_html_report("review.html", preview, review, comparison,
+                  title="Curation review")
+```
+
+The review includes selection configuration, metric shifts, bin/tag/group/source coverage,
+split balance, and stable selected examples with priorities. For artifact-only automation:
+
+```bash
+kur-diff out/baseline out/candidate --verify --json
+kur-diff out/baseline out/candidate --html review.html
+kur-inspect out/candidate --html inspection.html
+```
+
+---
+
+## 18 · Troubleshooting — common loud failures
 
 The SDK fails loudly by design: a raised error at load or preflight beats a silently wrong
 dataset. The ones you're most likely to meet, and what they mean:

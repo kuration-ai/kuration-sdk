@@ -34,6 +34,61 @@ class DatasetInspection(TypedResult):
     """Metadata and optional integrity results for one written dataset artifact."""
 
 
+class DatasetPreview(TypedResult):
+    """Bounded source sample describing inferred fields, quality, and examples."""
+
+    def render(self) -> str:
+        lines = [f"schema: {self['schema'].get('name', 'unnamed')}",
+                 f"sources: {self['sources']['sampled']}/{self['sources']['total']} sampled",
+                 f"records: {self['records']['ticks']} ticks; "
+                 f"{self['records']['entity_records']} entity records"]
+        for name, field in self["fields"].items():
+            detail = f"missing={field['missing_fraction']:.1%}"
+            if field["kind"] == "categorical":
+                detail += f"; unique={field['unique']}"
+            elif "min" in field:
+                detail += f"; range=[{field['min']:.3g}, {field['max']:.3g}]"
+            lines.append(f"field {name} ({field['kind']}): {detail}")
+        for warning in self["warnings"]:
+            lines.append(f"warning [{warning['code']}]: {warning['message']}")
+        return "\n".join(lines)
+
+
+class SelectionReview(TypedResult):
+    """Candidate-versus-selected distribution, coverage, rationale, and examples."""
+
+    def render(self) -> str:
+        lines = [f"selection: {self['selected']}/{self['candidates']} "
+                 f"({self['selection_rate']:.1%})",
+                 f"method: {self['rationale']['method']}"]
+        selected = self["coverage"]["selected"]
+        lines.append(f"coverage: {selected['sources']} sources; "
+                     f"{(selected.get('bins') or {}).get('occupied', 0)} occupied bins")
+        for name, metric in self["metrics"].items():
+            lines.append(f"metric {name}: mean "
+                         f"{metric['candidate'].get('mean', 0):.3g} -> "
+                         f"{metric['selected'].get('mean', 0):.3g} "
+                         f"(delta {metric['mean_delta']:+.3g})")
+        for warning in self["warnings"]:
+            lines.append(f"warning [{warning['code']}]: {warning['message']}")
+        return "\n".join(lines)
+
+
+class DatasetComparison(TypedResult):
+    """Structured differences between two curated dataset artifacts."""
+
+    def render(self) -> str:
+        lines = [f"datasets: {self['left']['dataset']} -> {self['right']['dataset']}",
+                 f"identical: {self['identical']}",
+                 f"shards: {self['left']['shards']} -> {self['right']['shards']}"]
+        for change in self["changes"][:20]:
+            lines.append(f"change {change['path']}: {change['left']!r} -> "
+                         f"{change['right']!r}")
+        if len(self["changes"]) > 20:
+            lines.append(f"... {len(self['changes']) - 20} more change(s)")
+        return "\n".join(lines)
+
+
 class ValidationResult(TypedResult):
     pass
 

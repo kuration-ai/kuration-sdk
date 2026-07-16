@@ -160,6 +160,11 @@ hours when emitted training volume—not the number of candidate windows—is th
 Keep `.options(mode="strict", seed=...)` during development, and run `explain()` again after
 changing the selection method or execution options.
 
+Use `pipeline.preview()` to inspect bounded raw-input quality before scoring and
+`pipeline.review()` to compare the complete candidate pool with a count selection. Both return
+JSON-safe typed results with concise `.render()` output; combine them into a shareable page with
+`write_html_report("review.html", preview, review)`.
+
 Next:
 
 - Learn every fluent operator in the [pipeline guide](pipeline.md).

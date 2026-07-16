@@ -46,12 +46,17 @@ def main() -> None:
     parser.add_argument("--verify", action="store_true",
                         help="Decode every shard and report missing/corrupt payloads.")
     parser.add_argument("--json", action="store_true", help="Emit structured JSON.")
+    parser.add_argument("--html", metavar="PATH",
+                        help="Write a self-contained HTML inspection report.")
     parser.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
     args = parser.parse_args()
 
     def body():
         from ..inspection import inspect_dataset
         report = inspect_dataset(args.dataset, verify=args.verify)
+        if args.html:
+            from ..html_report import write_html_report
+            write_html_report(args.html, report, title="kuration dataset inspection")
         print(json.dumps(report.to_dict(), indent=2) if args.json
               else render_inspection(report))
         if args.verify and not report["verification"]["valid"]:
