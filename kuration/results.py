@@ -59,16 +59,37 @@ class ExecutionPlan(Mapping[str, Any]):
         return len(self.to_dict())
 
     def render(self, *, detailed: bool = False) -> str:
-        lines = [f"source: {self.source['kind']} ({self.source['count']} source(s))",
+        selection = self.strategy.get("selection", {})
+        request = self.options.get("selection_budget") or {}
+        budget = (f"count={request['value']}" if request.get("kind") == "count"
+                  else f"hours={request['value']}" if request.get("kind") == "hours"
+                  else "budget unresolved")
+        physical = self.physical_plan or {}
+        stages = physical.get("stages", self.stages)
+        materializes = [stage["name"] for stage in stages
+                        if stage.get("materializes_total_pool")]
+        extras = self.options.get("optional_extras") or []
+        source_kind = {"_RowsAdapter": "in-memory rows", "_TickAdapter": "in-memory ticks",
+                       "_JsonRowsAdapter": "JSON rows"}.get(
+                           self.source["kind"], self.source["kind"])
+        lines = [f"source: {source_kind} ({self.source['count']} source(s))",
                  f"schema: {self.schema.get('name', 'unnamed')}",
                  f"window: {self.window['window']} {self.window['unit']} "
                  f"(stride {self.window['stride']})",
-                 f"method: {self.strategy.get('selection', {}).get('method', 'unresolved')}"]
+                 f"selection: {selection.get('method', 'unresolved')} ({budget})",
+                 f"execution: {self.options.get('executor', 'local')}; "
+                 f"errors={self.options.get('on_error', 'skip')}; "
+                 f"total-pool materialization="
+                 f"{', '.join(materializes) if materializes else 'none'}",
+                 f"optional extras: {', '.join(extras) if extras else 'none (NumPy core)'}"]
         if self.output:
             lines.append(f"output: {self.output.get('container', 'unresolved')}")
-        lines.extend(f"warning: {w['message']}" for w in self.warnings)
+        for warning in self.warnings:
+            lines.append(f"warning [{warning.get('code', 'general')}]: {warning['message']}")
+            if warning.get("hint"):
+                lines.append(f"  fix: {warning['hint']}")
         if detailed:
-            for stage in self.stages:
+            for stage in stages:
                 line = (f"stage: {stage['name']} (mode={stage.get('mode', 'unresolved')}, "
                         f"passes={stage.get('passes', 1)}, streaming={stage['streaming']})")
                 if stage.get("barrier_reason"):

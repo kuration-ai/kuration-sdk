@@ -54,6 +54,8 @@ def run(out_dir: str | Path) -> dict:
         .options(mode="strict", seed=7)
     )
 
+    print("preflight:")
+    print(pipeline.explain().render())
     result = pipeline.output(out_dir, container="npz", shard_length=12)
     arrays, metadata = next(iter_shards(out_dir, with_meta=True))
 

@@ -28,6 +28,13 @@ python examples/quickstart.py --out quickstart-out
 You should see output shaped like this:
 
 ```text
+preflight:
+source: in-memory rows (6 source(s))
+schema: inferred
+window: 12 steps (stride 6)
+selection: uniform-bins (count=12)
+execution: local; errors=raise; total-pool materialization=none
+optional extras: none (NumPy core)
 input: 6 sessions, 288 rows
 curation: 42 candidate windows -> 12 selected
 output: 12 shards in quickstart-out
@@ -56,6 +63,7 @@ pipeline = (
     .options(mode="strict", seed=7)
 )
 
+print(pipeline.explain().render())
 result = pipeline.output("quickstart-out", container="npz", shard_length=12)
 ```
 
@@ -73,7 +81,9 @@ Reading from top to bottom:
    the first twelve windows.
 7. Strict mode makes source errors and ambiguous output choices fail immediately. The seed makes
    selection and splitting repeatable.
-8. `output(...)` writes NPZ shards plus manifests and the fully resolved configuration.
+8. `explain()` confirms the resolved budget, execution behavior, materialization barriers, and
+   optional extras without reading source rows. Warnings include a concrete fix.
+9. `output(...)` writes NPZ shards plus manifests and the fully resolved configuration.
 
 The script constructs its small sessions in memory so the first run has no network or data-file
 prerequisite. `input(...)` also accepts CSV, JSONL, Parquet, NPZ, HDF5, Zarr, Hugging Face, and
@@ -125,6 +135,18 @@ pipeline = input("logs/*.csv", time="t", entity="device", hz=1)
 
 Keep the remaining operators, then adjust the fields, window size, metrics, and target count to
 match the curation question.
+
+## 6. Choose count or hours
+
+| need | use | result |
+|---|---|---|
+| A fixed number of representative windows, evaluation samples, or a small experiment | `.sample(..., n=5000)` | Exactly up to `n` selected segments; each selected entity-window becomes output shards |
+| A training dataset with a storage/time budget | `.sample(..., hours=100, test_hours=5)` | Highest-priority output spans fill separate train/test duration budgets; hours output supports safe resume |
+
+Start with count selection while designing metrics because it is quick to inspect. Switch to
+hours when emitted training volume—not the number of candidate windows—is the real constraint.
+Keep `.options(mode="strict", seed=...)` during development, and run `explain()` again after
+changing the selection method or execution options.
 
 Next:
 

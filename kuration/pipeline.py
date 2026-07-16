@@ -1045,6 +1045,37 @@ class Pipeline:
                 "parallel workers rebuild adapters per process and cannot see in-process "
                 "data — use workers=1 or write the data to files first")
 
+    def _optional_extras(self) -> list[str]:
+        """Best-effort install extras implied by the resolved pipeline, without importing them."""
+        extras: set[str] = set()
+        adapter_extra = {
+            "HDF5Adapter": "array", "ParquetDatasetAdapter": "parquet",
+            "HuggingFaceAdapter": "hf", "ZarrAdapter": "zarr",
+            "VideoAdapter": "video", "JoinedMediaAdapter": "video",
+        }.get(type(self.adapter).__name__)
+        if adapter_extra:
+            extras.add(adapter_extra)
+        if any(str(source).lower().endswith(".parquet") for source in self.sources):
+            extras.add("parquet")
+        from .io import is_remote
+        if any(is_remote(source) for source in self.sources):
+            extras.add("cloud")
+        if self._options["executor"] == "ray":
+            extras.add("ray")
+        if self._options["memory_budget"] is not None:
+            extras.add("scale")
+        if self._prepass or self._method in {
+                "cluster-balanced", "k-center", "facility", "dsir", "rare", "typical"}:
+            extras.add("methods")
+        for call in self._transforms:
+            try:
+                extra = self._registry.descriptor("transform", call["implementation"]).extra
+            except ValueError:
+                extra = None
+            if extra:
+                extras.add(extra)
+        return sorted(extras)
+
     # ---- inspectors (cheap, non-terminal) ------------------------------------------------
     def head(self, k: int = 5) -> list:
         """First k Ticks of the first source (reads only what it needs)."""
@@ -1068,10 +1099,18 @@ class Pipeline:
         categorical = [n for n, f in self.schema.fields.items() if f.kind == "categorical"]
         if categorical:
             warnings.append({"code": "categorical-output-policy", "message":
-                             f"categorical fields {categorical} need an explicit output policy"})
+                             f"categorical fields {categorical} need an explicit output policy",
+                             "hint": "Pass categorical='omit', 'integer-vocab', or 'encoder' "
+                                     "to output()."})
         if self._options["on_error"] == "skip":
             warnings.append({"code": "source-errors-skipped", "message":
-                             "source errors will be skipped and reported"})
+                             "source errors will be skipped and reported",
+                             "hint": "Use .options(mode='strict') while developing to fail fast."})
+        if self._method is None and not self._axes and not self._weights:
+            warnings.append({"code": "selection-unresolved", "message":
+                             "no selection method or budget has been configured",
+                             "hint": "Add .sample('equal', n=...) for a count or "
+                                     ".sample('top-k', hours=..., weights=...) for duration."})
         if inspect_sources and hasattr(self.adapter, "check_source"):
             for source in self.sources:
                 self.adapter.check_source(source)
@@ -1082,12 +1121,17 @@ class Pipeline:
             spill_path=self._options["spill_dir"])
         warnings.extend(dict(warning) for warning in physical.warnings)
         stages = tuple(stage.to_dict() for stage in physical.stages)
+        options = dict(self.describe()["options"])
+        options["selection_budget"] = (
+            {"kind": "count", "value": self._n} if self._n is not None else
+            {"kind": "hours", "value": self._hours} if self._hours is not None else None)
+        options["optional_extras"] = self._optional_extras()
         return ExecutionPlan(source={"kind": type(self.adapter).__name__,
                                      "count": len(self.sources),
                                      "sources": [str(s) for s in self.sources]},
                              schema=self.schema.to_dict(), window=dict(self._window_desc),
                              strategy=strategy, output=None,
-                             options=self.describe()["options"], stages=stages,
+                             options=options, stages=stages,
                              warnings=tuple(warnings), physical_plan=physical.to_dict())
 
     # ---- terminals -----------------------------------------------------------------------

@@ -7,6 +7,7 @@ and `kur-validate job.json` preflights any job in milliseconds — no data read.
 
 ```bash
 kur-validate   job.json [--check-sources] [--json-schema] [--print-schema]
+kur-explain    job.json [--json]           # budget, execution, extras, warnings + fixes
 kur-curate     job.json                    # curate job -> hours-budget shards
 kur-experiment job.json [--out cmp.json]   # experiment job -> per-arm JS-vs-baseline
 kur-report     job.json [--out rep.json]   # report job -> metric distribution profile
@@ -17,6 +18,19 @@ Every CLI accepts `--debug`: failures normally print a one-line `error: ...` and
 
 The job **kind** is inferred: `arms` present → experiment; `output`/`train_hours` present →
 curate; otherwise → report.
+
+Recommended development loop:
+
+```bash
+kur-validate job.json --check-sources   # schema, mappings, and source metadata
+kur-explain job.json                    # confirm budget/execution/dependencies; no rows read
+kur-curate job.json                     # run only after the preflight looks right
+```
+
+`kur-explain --json` emits the same information for automation. Its text form highlights
+error policy and optional extras, and every warning includes a concrete fix. Use
+`on_error: "raise"` or `mode: "strict"` while developing; switch to skip-and-report only when
+partial source failure is an intentional operational policy.
 
 ## Keys shared by all job kinds
 

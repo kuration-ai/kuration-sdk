@@ -80,6 +80,21 @@ def test_kur_curate_runs(tmp_path):
     assert (out / "config.json").exists()
 
 
+def test_kur_explain_is_actionable_in_text_and_json(tmp_path):
+    csv_path = _make_csv(tmp_path)
+    job = tmp_path / "job.json"
+    job.write_text(json.dumps(_job(csv_path, tmp_path / "out")))
+    text_plan = _run(["kuration.cli.explain", str(job)])
+    assert text_plan.returncode == 0, text_plan.stderr
+    assert "selection: top-k (train=100h, test=0h)" in text_plan.stdout
+    assert "execution: local; workers=1" in text_plan.stdout
+    assert "fix: Set mode='strict'" in text_plan.stdout
+    json_plan = _run(["kuration.cli.explain", str(job), "--json"])
+    plan = json.loads(json_plan.stdout)
+    assert plan["selection"]["budget"] == {"kind": "hours", "train": 100, "test": 0}
+    assert plan["validation"]["n_sources"] == 1
+
+
 def test_kur_report_with_scorer(tmp_path):
     """Regression: a strategy that references a scorer output (here in weights) must not push
     that output into the report's feature-pass `registered` list — doing so makes the engine

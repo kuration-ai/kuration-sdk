@@ -63,8 +63,20 @@ def test_explain_embeds_json_safe_physical_plan_deterministically():
     assert first.stages[1]["streaming"] is False  # bounded multipass barrier, not row streaming
     assert json.loads(json.dumps(first.to_dict()))["physical_plan"]["version"] == 1
     rendered = first.render(detailed=True)
+    assert "selection: top-k (count=1)" in rendered
+    assert "optional extras: none (NumPy core)" in rendered
+    assert "total-pool materialization=none" in rendered
     assert "mode=pipeline_parallel" in rendered
     assert "barrier:" in rendered
+
+
+def test_explain_warnings_include_actionable_fixes():
+    plan = input([{"label": "a"}, {"label": "b"}]).explain()
+    rendered = plan.render()
+    assert "warning [selection-unresolved]" in rendered
+    assert "warning [categorical-output-policy]" in rendered
+    assert "fix: Add .sample" in rendered
+    assert "categorical='omit'" in rendered
 
 
 def test_physical_plan_memory_budget_validates_without_reading_data():

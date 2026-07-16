@@ -370,7 +370,10 @@ def compile_physical_plan(pipeline, *, memory_budget: int | None = None,
         materializes = any(op.traits.state_bound == "proportional-to-pool" for op in group)
         if materializes:
             warnings.append({"code": "unbounded-operator",
-                             "message": f"{group[0].name} has no bounded runtime yet"})
+                             "message": f"{group[0].name} has no bounded runtime yet",
+                             "hint": "For a bounded exact run, prefer top-k or uniform-bins "
+                                     "without global filters/scorers; otherwise size the "
+                                     "candidate pool for memory."})
         resources = OperatorResources(
             cpu=max(op.traits.resources.cpu for op in group),
             gpu=max(op.traits.resources.gpu for op in group),

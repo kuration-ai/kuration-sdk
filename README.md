@@ -10,19 +10,16 @@ reached through documented input, media, transform, and output seams. The metric
 is a **closed grammar** validated against the schema, selection is a **declarative strategy**,
 and the curated set + its full configuration are written reproducibly.
 
+Start with the NumPy-only core. Install an extra only when preflight says the pipeline needs it:
+
 ```bash
-pip install -e '.[all]'                    # all SDK features and format integrations
-pip install -e .                          # core (numpy only)
-pip install -e '.[methods]'               # + scikit-learn  (feature-space selection + filters)
-pip install -e '.[parquet,array]'         # + pyarrow / h5py  (Parquet & HDF5 containers/adapters)
-pip install -e '.[scale]'                 # + pyarrow  (bounded feature tables/checkpoints)
-pip install -e '.[cloud]'                 # + fsspec  (gs:// / s3:// / az:// I/O; add a backend)
-pip install -e '.[torch]'                 # + torch   (kuration.torch.ShardDataset; read side)
-pip install -e '.[hf,zarr]'               # + datasets / zarr  (HuggingFace & Zarr input adapters)
-pip install -e '.[p2p]'                   # + protobuf  (Open P2P public-data example)
-pip install -e '.[video]'                 # + PyAV  (lazy CPU MP4 ingestion and decode)
-pip install -e '.[ray]'                   # + Ray  (ordered distributed source execution)
+pip install -e .                 # recommended first install
+pip install -e '.[all]'          # every optional integration
 ```
+
+Common extras are `methods`, `parquet`, `array`, `scale`, `cloud`, `torch`, `hf`, `zarr`,
+`video`, and `ray`. The relevant guide names the extra at its point of use, while
+`pipeline.explain()` reports extras implied by a fluent pipeline.
 
 ## Quick start
 
@@ -38,6 +35,13 @@ cover different activity and fault patterns, writes train/test NPZ shards, and r
 The run is deterministic and requires no download or optional dependency.
 
 ```text
+preflight:
+source: in-memory rows (6 source(s))
+schema: inferred
+window: 12 steps (stride 6)
+selection: uniform-bins (count=12)
+execution: local; errors=raise; total-pool materialization=none
+optional extras: none (NumPy core)
 input: 6 sessions, 288 rows
 curation: 42 candidate windows -> 12 selected
 output: 12 shards in quickstart-out
@@ -47,6 +51,19 @@ reproducible config: quickstart-out/config.json
 
 Follow the **[ten-minute walkthrough](docs/quickstart.md)** to understand each operator and
 inspect the resulting manifest, configuration, and arrays.
+
+## Choose the shortest path
+
+| goal | start here |
+|---|---|
+| Try kuration or curate ordinary CSV/Parquet/row data | Fluent `input(...).window(...).sample(...).output(...)` and the [quickstart](docs/quickstart.md) |
+| Decide whether a planned run will fit and what it needs | `pipeline.explain().render(detailed=True)` before `output()` |
+| Run a checked, reproducible JSON job | `kur-validate job.json --check-sources`, then `kur-explain job.json` and `kur-curate job.json` |
+| Add a proprietary format, model, metric, or container | The [customization guide](docs/customization.md) and classic explicit API |
+| Find a task-specific variation | The [usage cookbook](docs/usage.md) |
+
+For development, prefer `.options(mode="strict", seed=...)`: it fails on the first bad source
+instead of completing with skipped-source errors.
 
 Then see the bounded
 **[TeaPearce Counter-Strike worked example](examples/public_data/teapearce_csgo.md)** for a real public
