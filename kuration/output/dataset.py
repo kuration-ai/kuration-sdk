@@ -20,7 +20,7 @@ from ..scoring import score_sources
 from ..segment import Segmenter
 from ..strategy import Strategy, segment_priorities
 from .base import OutputEncoder, PassthroughEncoder
-from .fill import fill_to_hours
+from .external_fill import external_fill_to_hours
 from .shardwriter import write_track
 from .spec import OutputSpec
 from .track import Track, tracks_from_ticks
@@ -55,6 +55,152 @@ def _check_resume_run(out_dir: str, signature: dict, resume: bool) -> None:
                                        "output": signature["payload"]["output"]}, indent=2))
 
 
+def _registered_features(strategy, transforms):
+    transform_outputs = {output for call in transforms for output in call["outputs"]}
+    return [name for name in strategy.referenced_metrics()
+            if name not in strategy.define and name not in strategy.scorer_outputs()
+            and name not in transform_outputs]
+
+
+def _span_stream(prioritized, source_tracks, *, sample_hz, span_len, clip_aggregate, group_of,
+                 spill_dir):
+    from ..external import iter_external_span_items
+    return iter_external_span_items(
+        prioritized, source_tracks, sample_hz=sample_hz, span_len=span_len,
+        clip_aggregate=clip_aggregate, group_of=group_of, spill_dir=spill_dir)
+
+
+def _legacy_hours_selection(*, out_dir, schema, adapter, sources, strategy, segmenter,
+                            sample_hz, span_len, clip_aggregate, group_of, tags_of, workers,
+                            on_error, streaming, progress, transforms, registry, executor,
+                            train_hours, test_hours, seed):
+    all_segments, errors, source_tracks = score_sources(
+        schema=schema, adapter=adapter, sources=sources, define=strategy.define,
+        registered=_registered_features(strategy, transforms), segmenter=segmenter,
+        tags_spec=strategy.tags, group_of=group_of, tags_of=tags_of, workers=workers,
+        on_error=on_error, streaming=streaming, progress=progress, executor=executor)
+    if transforms:
+        from ..transforms import apply_transforms
+        apply_transforms(transforms, all_segments, adapter=adapter,
+                         registry=registry or strategy.registry, progress=progress)
+    if strategy.scorers:
+        from ..scorers import apply_scorers
+        apply_scorers(strategy.scorers, all_segments, schema=schema, adapter=adapter, seed=seed,
+                      progress=progress, registry=strategy.registry)
+    from ..progress import emit
+    emit(progress, "selection", "start", total=len(all_segments))
+    pool = all_segments
+    if strategy.filters:
+        from ..methods import apply_filters
+        pool = apply_filters(all_segments, strategy, seed=seed)
+    bin_segments(pool, strategy.axes)
+    priorities = segment_priorities(pool, strategy, seed=seed)
+    by_source = {}
+    for index, segment in enumerate(pool):
+        by_source.setdefault(segment.source_id, []).append(
+            (segment, float(priorities[index])))
+
+    def prioritized_segments():
+        for source in sorted(by_source, key=str):
+            for segment, priority in by_source[source]:
+                yield segment, priority
+
+    from ..io import is_remote
+    spill_dir = None if is_remote(out_dir) else f"{out_dir}/.kuration/spill"
+    spans = _span_stream(
+        prioritized_segments(), source_tracks, sample_hz=sample_hz, span_len=span_len,
+        clip_aggregate=clip_aggregate, group_of=group_of, spill_dir=spill_dir)
+    group_overshoot = (strategy.group_cap or {}).get("max_group_overshoot") \
+        if strategy.group_cap else None
+    admitted, split, budget, details = external_fill_to_hours(
+        spans, train_hours=train_hours, test_hours=test_hours,
+        max_group_overshoot=group_overshoot, tag_coverage=strategy.tag_coverage,
+        seed=seed, spill_dir=spill_dir)
+    emit(progress, "selection", "complete", current=len(admitted),
+         total=budget["items_total"], detail=f"{len(admitted)} items admitted")
+    return (admitted, split, budget, details, errors, source_tracks, None,
+            len(all_segments))
+
+
+def _bounded_hours_selection(*, out_dir, signature, schema, adapter, sources, strategy,
+                             segmenter, sample_hz, span_len, clip_aggregate, group_of,
+                             tags_of, on_error, progress, transforms, registry,
+                             train_hours, test_hours, batch_size, checkpoint_dir, spill_dir,
+                             max_in_flight):
+    from ..bounded import checkpoint_feature_stage
+    from ..checkpoints import CheckpointIdentity, StageCheckpoint, canonical_hash
+    from ..external import (iter_external_top_k_priorities,
+                            iter_external_uniform_priorities,
+                            iter_external_weighted_priorities)
+    from ..io import is_remote
+    from .external_fill import external_fill_to_hours
+
+    spill_dir = spill_dir or (None if is_remote(out_dir) else f"{out_dir}/.kuration/spill")
+    checkpoint_dir = checkpoint_dir or f"{out_dir}/.kuration/checkpoints"
+    physical = {
+        "version": 1, "backend": "local", "mode": f"bounded-hours-{strategy.method}",
+        "resolved_transforms": list(transforms),
+        "stages": [
+            {"id": "stage000", "mode": "pipeline_parallel",
+             "operators": ["read", "segment", "metrics", "predicates", "transforms"],
+             "checkpoint": "partition-reusable"},
+            {"id": "stage001", "mode": "data_parallel",
+             "operators": ["normalize", "top-k-priority", "span-fill"],
+             "checkpoint": "reducer-state", "passes": 2},
+            {"id": "stage002", "mode": "pipeline_parallel", "operators": ["output"],
+             "checkpoint": "partition-reusable"}],
+        "spill_path": spill_dir}
+    active_registry = registry or strategy.registry
+    components = []
+    if active_registry is not None:
+        for call in transforms:
+            try:
+                components.append(active_registry.descriptor(
+                    "transform", call["implementation"]).to_dict())
+            except ValueError:
+                pass
+    identity = CheckpointIdentity(
+        logical_plan_hash=canonical_hash(signature["payload"]),
+        physical_plan_hash=canonical_hash(physical),
+        input_fingerprints=tuple(signature["payload"].get("sources", ())),
+        schema=schema.to_dict(), components=tuple(components),
+        parameters={"seed": signature["payload"]["seed"]})
+    checkpoint = StageCheckpoint(checkpoint_dir, "stage000", identity)
+    stage = checkpoint_feature_stage(
+        schema=schema, adapter=adapter, sources=sources, define=strategy.define,
+        registered=_registered_features(strategy, transforms), segmenter=segmenter,
+        checkpoint=checkpoint, batch_size=batch_size, tags_spec=strategy.tags,
+        predicates=strategy.predicates, transforms=transforms,
+        registry=registry or strategy.registry, group_of=group_of, tags_of=tags_of,
+        on_error=on_error, progress=progress, max_in_flight=max_in_flight)
+    marker = checkpoint.finalize([commit.partition_id for commit in stage.commits])
+    normalize = "quantile" if strategy.normalize == "none" else strategy.normalize
+    if strategy.method == "top-k":
+        prioritized = iter_external_top_k_priorities(
+            stage.commits, weights=strategy.weights, normalize=normalize, spill_dir=spill_dir)
+    elif strategy.method == "weighted":
+        prioritized = iter_external_weighted_priorities(
+            stage.commits, weights=strategy.weights, normalize=normalize,
+            seed=signature["payload"]["seed"], spill_dir=spill_dir)
+    else:
+        prioritized = iter_external_uniform_priorities(
+            stage.commits, axes=strategy.axes, seed=signature["payload"]["seed"],
+            spill_dir=spill_dir)
+    spans = _span_stream(
+        prioritized, stage.source_tracks, sample_hz=sample_hz, span_len=span_len,
+        clip_aggregate=clip_aggregate, group_of=group_of, spill_dir=spill_dir)
+    group_overshoot = (strategy.group_cap or {}).get("max_group_overshoot") \
+        if strategy.group_cap else None
+    admitted, split, budget, details = external_fill_to_hours(
+        spans, train_hours=train_hours, test_hours=test_hours,
+        max_group_overshoot=group_overshoot, tag_coverage=strategy.tag_coverage,
+        seed=signature["payload"]["seed"], spill_dir=spill_dir)
+    execution = {"bounded": True, "physical_plan": physical, "checkpoint": marker,
+                 "telemetry": stage.telemetry}
+    return (admitted, split, budget, details, list(stage.errors), stage.source_tracks,
+            execution, stage.candidate_rows)
+
+
 def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                   sources: Iterable[str], strategy: Strategy, segmenter: Segmenter,
                   spec: OutputSpec, encoder: Optional[OutputEncoder] = None,
@@ -65,7 +211,10 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                   clip_aggregate: str = "max", span_steps: Optional[int] = None,
                   span_seconds: Optional[float] = None, workers: int = 1,
                   on_error: str = "skip", resume: bool = False, streaming: bool = False,
-                  progress=None, transforms=(), registry=None, executor: str = "local") -> dict:
+                  progress=None, transforms=(), registry=None, executor: str = "local",
+                  memory_budget: int | None = None, batch_size: int = 1024,
+                  checkpoint_dir: str | None = None, spill_dir: str | None = None,
+                  approximation: str = "exact", max_in_flight: int = 2) -> dict:
     """`workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips bad sources;
     `resume=True` skips re-writing shards whose files already exist.
 
@@ -103,6 +252,19 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         raise ValueError("workers must be a positive integer")
     if not isinstance(resume, bool) or not isinstance(streaming, bool):
         raise ValueError("resume and streaming must be true or false")
+    if (not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1):
+        raise ValueError("batch_size must be a positive integer")
+    if (not isinstance(max_in_flight, int) or isinstance(max_in_flight, bool)
+            or max_in_flight < 1):
+        raise ValueError("max_in_flight must be a positive integer")
+    if memory_budget is not None and (not isinstance(memory_budget, int)
+                                      or isinstance(memory_budget, bool) or memory_budget < 1):
+        raise ValueError("memory_budget must be a positive integer or None")
+    if approximation not in {"exact", "approximate"}:
+        raise ValueError("approximation must be 'exact' or 'approximate'")
+    if approximation == "approximate":
+        raise ValueError(f"selection method {strategy.method!r} has no declared approximate "
+                         "hours implementation yet")
     spec.validate_schema(schema)
     span_len = span_steps if span_steps is not None else (
         round(span_seconds * sample_hz) if span_seconds is not None else None)
@@ -113,6 +275,28 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             f"span_steps={span_len} < shard_length={spec.shard_length} with "
             f"short_policy='drop': every admitted span would chunk to zero shards while "
             f"still consuming the hours budget")
+    bounded = (strategy.method in {"top-k", "weighted", "uniform-bins"}
+               and not strategy.filters and not strategy.scorers
+               and executor == "local")
+    if bounded:
+        try:
+            import pyarrow  # noqa: F401
+        except ImportError:
+            bounded = False
+    if memory_budget is not None and not bounded:
+        blockers = []
+        if strategy.method not in {"top-k", "weighted", "uniform-bins"}:
+            blockers.append(f"method {strategy.method!r}")
+        if strategy.filters:
+            blockers.append("global filters")
+        if strategy.scorers:
+            blockers.append("global scorers")
+        if executor != "local":
+            blockers.append(f"executor {executor!r}")
+        if not blockers:
+            blockers.append("PyArrow is unavailable")
+        raise ValueError("memory_budget requires a bounded exact hours plan; unsupported: "
+                         + ", ".join(blockers))
     from ..progress import emit
     emit(progress, "provenance", "start", total=len(sources))
     from ..provenance import build_run_signature
@@ -124,85 +308,30 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     _check_resume_run(out_dir, signature, resume)
     emit(progress, "provenance", "complete", current=len(sources), total=len(sources),
          detail=signature["fingerprint"][:12])
-    transform_outputs = {o for t in transforms for o in t["outputs"]}
-    registered = [r for r in strategy.referenced_metrics() if r not in strategy.define
-                  and r not in strategy.scorer_outputs() and r not in transform_outputs]
-
-    # Parallel score pass: returns features + per-source track lengths (so the fill needs no
-    # second read of the data). The data itself is re-read only for admitted sources, below.
-    all_segments, errors, source_tracks = score_sources(
-        schema=schema, adapter=adapter, sources=sources, define=strategy.define,
-        registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
-        group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error,
-        streaming=streaming, progress=progress, executor=executor)
-
-    if transforms:
-        from ..transforms import apply_transforms
-        apply_transforms(transforms, all_segments, adapter=adapter,
-                         registry=registry or strategy.registry, progress=progress)
-
-    if strategy.scorers:   # whole-pool learned/action-aware scoring -> features
-        from ..scorers import apply_scorers
-        apply_scorers(strategy.scorers, all_segments, schema=schema, adapter=adapter, seed=seed,
-                      progress=progress, registry=strategy.registry)
-
-    emit(progress, "selection", "start", total=len(all_segments))
-    pool = all_segments
-    if strategy.filters:
-        from ..methods import apply_filters
-        pool = apply_filters(all_segments, strategy, seed=seed)
-    bin_segments(pool, strategy.axes)
-    prio = segment_priorities(pool, strategy, seed=seed)
-
-    # Per-source segment data so a span's priority/tags/features aggregate only the segments
-    # overlapping THAT span (not the whole source). Aggregated features populate Track.meta,
-    # which makes documented `segment:<feature>` output modalities work end to end.
-    segs_by_src: dict = {}
-    for i, s in enumerate(pool):
-        segs_by_src.setdefault(s.source_id, []).append(
-            (s.start_idx, s.end_idx, float(prio[i]), s.tags, dict(s.features)))
-    def _reduce(values: list[float]) -> float:
-        if clip_aggregate == "max":
-            return max(values)
-        if clip_aggregate == "min":
-            return min(values)
-        return sum(values) / len(values)
-
-    def _span_summary(src, start, end):
-        prios: list[float] = []
-        tags: set = set()
-        feature_values: dict[str, list[float]] = {}
-        for st, en, p, tg, features in segs_by_src.get(src, ()):
-            if st < end and en > start:
-                prios.append(p)
-                tags |= tg
-                for name, value in features.items():
-                    feature_values.setdefault(name, []).append(float(value))
-        meta = {name: _reduce(values) for name, values in feature_values.items()}
-        return ((_reduce(prios) if prios else float("-inf")), frozenset(tags), meta)
-
-    # Build span items: (source, entity, span_index) -> {priority, seconds, group, tags}.
-    items, span_index, span_meta = [], {}, {}
-    for src, tlist in source_tracks.items():
-        g = group_of(src) if group_of else None
-        for (eid, n) in tlist:
-            bounds = ([(s, min(s + span_len, n)) for s in range(0, n, span_len)]
-                      if span_len else [(0, n)])
-            for k, (start, end) in enumerate(bounds):
-                p, tg, meta = _span_summary(src, start, end)
-                items.append({"id": (src, eid, k), "source_id": src, "priority": p,
-                              "seconds": (end - start) / sample_hz, "group": g, "tags": tg})
-                span_index[(src, eid, k)] = (start, end)
-                span_meta[(src, eid, k)] = meta
-    n_tracks = sum(len(t) for t in source_tracks.values())
-    group_overshoot = (strategy.group_cap or {}).get("max_group_overshoot") \
-        if strategy.group_cap else None
-    admitted, split, budget = fill_to_hours(
-        items, train_hours=train_hours, test_hours=test_hours,
-        max_group_overshoot=group_overshoot, tag_coverage=strategy.tag_coverage, seed=seed,
-        return_stats=True)
-    emit(progress, "selection", "complete", current=len(admitted), total=len(items),
-         detail=f"{len(admitted)} items admitted")
+    if bounded:
+        emit(progress, "selection", "start", total=None)
+        selection = _bounded_hours_selection(
+            out_dir=out_dir, signature=signature, schema=schema, adapter=adapter,
+            sources=sources, strategy=strategy, segmenter=segmenter, sample_hz=sample_hz,
+            span_len=span_len, clip_aggregate=clip_aggregate, group_of=group_of,
+            tags_of=tags_of, on_error=on_error, progress=progress, transforms=transforms,
+            registry=registry, train_hours=train_hours, test_hours=test_hours,
+            batch_size=batch_size, checkpoint_dir=checkpoint_dir, spill_dir=spill_dir,
+            max_in_flight=max_in_flight)
+    else:
+        selection = _legacy_hours_selection(
+            out_dir=out_dir, schema=schema, adapter=adapter, sources=sources,
+            strategy=strategy, segmenter=segmenter, sample_hz=sample_hz,
+            span_len=span_len, clip_aggregate=clip_aggregate, group_of=group_of,
+            tags_of=tags_of, workers=workers, on_error=on_error, streaming=streaming,
+            progress=progress, transforms=transforms, registry=registry, executor=executor,
+            train_hours=train_hours, test_hours=test_hours, seed=seed)
+    (admitted, split, budget, admitted_details, errors, source_tracks, execution,
+     segment_count) = selection
+    n_tracks = sum(len(tracks) for tracks in source_tracks.values())
+    if bounded:
+        emit(progress, "selection", "complete", current=len(admitted),
+             total=budget["items_total"], detail=f"{len(admitted)} items admitted")
 
     # Re-read each admitted source once; write each admitted span as its own (sub-)track.
     entries = []
@@ -216,10 +345,12 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         suffix = lambda k: "" if span_len is None else f"_span{k:03d}"
         if streaming:
             from .stream import stream_source_shards
-            jobs = [{"eid": eid, "span_index": k, "start": span_index[(src, eid, k)][0],
-                     "end": span_index[(src, eid, k)][1], "split": split.get(src, "train"),
+            jobs = [{"eid": eid, "span_index": k,
+                     "start": admitted_details[(src, eid, k)]["start"],
+                     "end": admitted_details[(src, eid, k)]["end"],
+                     "split": split.get(src, "train"),
                      "name_suffix": suffix(k), "group": group_of(src) if group_of else None,
-                     "meta": span_meta[(src, eid, k)]}
+                     "meta": admitted_details[(src, eid, k)]["meta"]}
                     for (eid, k) in by_source[src]]
             tick_iter = (adapter.iter_ticks(src) if hasattr(adapter, "iter_ticks")
                          else adapter.ticks(src))
@@ -234,10 +365,11 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             tr = tracks.get(eid)
             if tr is None:
                 continue
-            start, end = span_index[(src, eid, k)]
+            detail = admitted_details[(src, eid, k)]
+            start, end = detail["start"], detail["end"]
             sub = tr if (start, end) == (0, tr.n_steps) else Track(
                 tr.source_id, tr.entity_id, tr.records[start:end], dict(tr.meta))
-            sub.meta.update(span_meta[(src, eid, k)])
+            sub.meta.update(detail["meta"])
             sub.meta["group"] = group_of(src) if group_of else None
             entries += write_track(out_dir, sub, spec, encoder=encoder, schema=schema,
                                    split=split.get(src, "train"), resume=resume,
@@ -263,7 +395,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                json.dumps({"artifact_format_version": ARTIFACT_FORMAT_VERSION,
                            "count": len(entries), "shards": entries, "budget": budget}, indent=2))
     results = {"shards": len(entries), "tracks_admitted": len(admitted),
-               "tracks_total": n_tracks, "sources_skipped": len(errors),
+               "tracks_total": n_tracks, "segments_total": segment_count,
+               "sources_skipped": len(errors),
                "n_train": sum(1 for v in split.values() if v == "train"),
                "n_test": sum(1 for v in split.values() if v == "test"),
                "budget": budget}
@@ -271,6 +404,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     cfg = build_config(schema, strategy, results=results, seed=seed, started=started, ended=ended)
     cfg["output"] = spec.to_dict()
     cfg["provenance"] = signature
+    if execution is not None:
+        cfg["execution"] = execution
     write_config(f"{out_dir}/config.json", cfg)
     from ..results import DatasetWriteResult
     return DatasetWriteResult(shards=entries, split=split, admitted=admitted, results=results,

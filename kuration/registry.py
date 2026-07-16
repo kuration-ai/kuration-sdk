@@ -19,6 +19,7 @@ class ComponentDescriptor:
     description: str = ""
     parameters: dict = field(default_factory=lambda: {"type": "object", "properties": {}})
     capabilities: dict[str, bool] = field(default_factory=dict)
+    execution_traits: Optional[dict] = None
     extra: Optional[str] = None
     install_hint: Optional[str] = None
     package: Optional[str] = None
@@ -74,6 +75,7 @@ class Registry:
     def register(self, kind: str, name: str, component: Any, *, replace: bool = False,
                  description: str = "", parameters: Optional[dict] = None,
                  capabilities: Optional[dict[str, bool]] = None, extra: Optional[str] = None,
+                 execution_traits: Optional[dict] = None,
                  install_hint: Optional[str] = None, package: Optional[str] = None,
                  version: Optional[str] = None, schema_version: int = 1,
                  documentation: Optional[str] = None, stability: str = "stable") -> None:
@@ -83,12 +85,16 @@ class Registry:
             raise ValueError(f"invalid component name {name!r}; use 'name' or 'namespace/name'")
         if name in self._entries[kind] and not replace:
             raise ValueError(f"{kind} {name!r} already registered in this registry")
+        if execution_traits is not None:
+            from .planning import OperatorTraits
+            execution_traits = OperatorTraits.from_dict(execution_traits).to_dict()
         module, fingerprint = _identity(component)
         desc = ComponentDescriptor(
             name=name, kind=kind, description=description,
             parameters=parameters or {"type": "object", "properties": {},
                                       "additionalProperties": False},
-            capabilities=dict(capabilities or {}), extra=extra, install_hint=install_hint,
+            capabilities=dict(capabilities or {}), execution_traits=execution_traits,
+            extra=extra, install_hint=install_hint,
             package=package, version=version, schema_version=schema_version,
             documentation=documentation, stability=stability, module=module,
             fingerprint=fingerprint)

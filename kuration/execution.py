@@ -6,6 +6,8 @@ results, so scheduling/completion order cannot affect selection.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Iterable, Protocol
 
 
@@ -19,6 +21,14 @@ class ResourceSpec:
 class ExecutionBackend(Protocol):
     def map_sources(self, items: Iterable, fn: Callable, resources: ResourceSpec = ResourceSpec()): ...
     def map_batches(self, items: Iterable, fn: Callable, resources: ResourceSpec = ResourceSpec()): ...
+    def iter_batches(self, items: Iterable, fn: Callable, *, max_in_flight: int = 2,
+                     workers: int = 1, resources: ResourceSpec = ResourceSpec()): ...
+
+
+def _bounds(max_in_flight: int, workers: int) -> None:
+    for name, value in (("max_in_flight", max_in_flight), ("workers", workers)):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ValueError(f"{name} must be a positive integer")
 
 
 class LocalExecutionBackend:
@@ -28,7 +38,20 @@ class LocalExecutionBackend:
         return [fn(item) for item in items]
 
     def map_batches(self, items, fn, resources=ResourceSpec()):
-        return [fn(item) for item in items]
+        return list(self.iter_batches(items, fn, resources=resources))
+
+    def iter_batches(self, items, fn, *, max_in_flight=2, workers=1,
+                     resources=ResourceSpec()):
+        """Yield input-ordered results with bounded producer backpressure."""
+        _bounds(max_in_flight, workers)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            pending = deque()
+            for item in items:
+                pending.append(executor.submit(fn, item))
+                if len(pending) >= max_in_flight:
+                    yield pending.popleft().result()
+            while pending:
+                yield pending.popleft().result()
 
 
 class RayExecutionBackend:
@@ -56,7 +79,23 @@ class RayExecutionBackend:
         return self._map(items, fn, resources)
 
     def map_batches(self, items, fn, resources=ResourceSpec()):
-        return self._map(items, fn, resources)
+        return list(self.iter_batches(items, fn, resources=resources))
+
+    def iter_batches(self, items, fn, *, max_in_flight=2, workers=1,
+                     resources=ResourceSpec()):
+        """Submit at most ``max_in_flight`` Ray objects and assemble in input order."""
+        _bounds(max_in_flight, workers)
+        options = {"num_cpus": resources.num_cpus, "num_gpus": resources.num_gpus}
+        if resources.memory is not None:
+            options["memory"] = resources.memory
+        remote = self.ray.remote(fn).options(**options)
+        pending = deque()
+        for item in items:
+            pending.append(remote.remote(item))
+            if len(pending) >= max_in_flight:
+                yield self.ray.get(pending.popleft())
+        while pending:
+            yield self.ray.get(pending.popleft())
 
 
 def get_execution_backend(name: str):

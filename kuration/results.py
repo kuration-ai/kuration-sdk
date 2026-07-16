@@ -44,6 +44,7 @@ class ExecutionPlan(Mapping[str, Any]):
     options: dict
     stages: tuple[dict, ...] = ()
     warnings: tuple[dict, ...] = ()
+    physical_plan: dict | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -67,5 +68,10 @@ class ExecutionPlan(Mapping[str, Any]):
             lines.append(f"output: {self.output.get('container', 'unresolved')}")
         lines.extend(f"warning: {w['message']}" for w in self.warnings)
         if detailed:
-            lines.extend(f"stage: {s['name']} (streaming={s['streaming']})" for s in self.stages)
+            for stage in self.stages:
+                line = (f"stage: {stage['name']} (mode={stage.get('mode', 'unresolved')}, "
+                        f"passes={stage.get('passes', 1)}, streaming={stage['streaming']})")
+                if stage.get("barrier_reason"):
+                    line += f" — barrier: {stage['barrier_reason']}"
+                lines.append(line)
         return "\n".join(lines)

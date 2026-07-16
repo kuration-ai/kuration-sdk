@@ -26,6 +26,15 @@ from .adapters import (
 )
 from .binning import bin_segments, quantile_bins
 from .buffer import Tick, WindowBuffer, build_window, empty_like
+from .columnar import IDENTITY_COLUMNS, SegmentBatch, iter_segment_batches
+from .checkpoints import (CheckpointIdentity, PartitionCommit, StageCheckpoint,
+                          canonical_hash)
+from .bounded import FeatureStageResult, checkpoint_feature_stage
+from .external import (external_quantile_edges, external_top_k, external_uniform_bins,
+                       external_weighted, iter_external_span_items,
+                       iter_external_hash_dedup, iter_external_top_k_priorities,
+                       iter_external_uniform_priorities,
+                       iter_external_weighted_priorities)
 from .curate import CurateResult, curate
 from .dsl import compile_metric, register_compiled, register_metric
 from .experiment import Arm, run_experiment, union_define
@@ -58,10 +67,12 @@ from .output import (
 )
 from .schema import FieldSpec, MediaSpec, SchemaSpec
 from .media import FrameRef, MediaProvider, PyAVMediaProvider, VideoMetadata
-from .transforms import (BatchTransform, apply_transforms, get_transform,
-                         register_batch_transform, register_transform)
+from .transforms import (BatchTransform, apply_transforms, apply_transforms_to_windows,
+                         get_transform, register_batch_transform, register_transform)
 from .execution import (ExecutionBackend, LocalExecutionBackend, RayExecutionBackend,
                         ResourceSpec, get_execution_backend)
+from .planning import (OperatorResources, OperatorTraits, PhysicalOperator, PhysicalPlan,
+                       PhysicalStage, compile_physical_plan)
 from .scoring import score_sources
 from .segment import Segment, Segmenter
 from .select import assign_splits
@@ -76,6 +87,15 @@ from .versioning import (ARTIFACT_FORMAT_VERSION, JOB_SCHEMA_VERSION, migrate,
 __all__ = [
     "SchemaSpec", "FieldSpec", "MediaSpec",
     "WindowBuffer", "Tick", "build_window", "empty_like",
+    "SegmentBatch", "IDENTITY_COLUMNS", "iter_segment_batches",
+    "CheckpointIdentity", "PartitionCommit", "StageCheckpoint", "canonical_hash",
+    "FeatureStageResult", "checkpoint_feature_stage",
+    "external_quantile_edges", "external_top_k",
+    "external_uniform_bins",
+    "iter_external_top_k_priorities", "iter_external_span_items",
+    "iter_external_uniform_priorities",
+    "external_weighted", "iter_external_weighted_priorities",
+    "iter_external_hash_dedup",
     "compile_metric", "register_metric", "register_compiled",
     "InputAdapter", "TimeseriesAdapter", "HDF5Adapter", "NpzAdapter", "JsonlAdapter",
     "CuratedDatasetAdapter", "ParquetDatasetAdapter", "HuggingFaceAdapter", "ZarrAdapter",
@@ -83,9 +103,11 @@ __all__ = [
     "FrameRef", "VideoMetadata", "MediaProvider", "PyAVMediaProvider",
     "VideoAdapter", "JoinedMediaAdapter",
     "BatchTransform", "register_batch_transform", "register_transform", "get_transform",
-    "apply_transforms",
+    "apply_transforms", "apply_transforms_to_windows",
     "ExecutionBackend", "LocalExecutionBackend", "RayExecutionBackend", "ResourceSpec",
     "get_execution_backend",
+    "OperatorResources", "OperatorTraits", "PhysicalOperator", "PhysicalStage",
+    "PhysicalPlan", "compile_physical_plan",
     "Arm", "run_experiment", "union_define",
     "Segment", "Segmenter", "FeatureEngine",
     "bin_segments", "quantile_bins",

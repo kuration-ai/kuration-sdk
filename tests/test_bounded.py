@@ -1,0 +1,75 @@
+"""Bounded fused feature-stage execution and partition reuse."""
+import pytest
+
+from kuration import (CheckpointIdentity, Registry, SegmentBatch, StageCheckpoint,
+                       canonical_hash, checkpoint_feature_stage, default_registry, input)
+
+pytest.importorskip("pyarrow")
+
+
+class _DoubleTransform:
+    output_features = ("doubled",)
+    inputs = ("feature:mean_x",)
+    calls = 0
+    instances = 0
+
+    def __init__(self):
+        type(self).instances += 1
+
+    def transform_batch(self, batch, ctx):
+        type(self).calls += 1
+        return {"doubled": batch["feature:mean_x"] * 2}
+
+
+def _setup(tmp_path):
+    registry = Registry(default_registry)
+    registry.register_transform("test/double", _DoubleTransform)
+    pipeline = (input([{"x": 1.0}, {"x": 2.0}, {"x": 3.0}, {"x": 4.0}, {"x": 5.0}])
+                .using(registry).window(2, stride=1)
+                .measure("mean_x", "mean", of="x")
+                .transform("test/double", inputs=["feature:mean_x"], batch_size=2)
+                .filter("doubled", ">=", 5))
+    identity = CheckpointIdentity(canonical_hash(pipeline.describe()),
+                                  canonical_hash(pipeline.explain().physical_plan))
+    checkpoint = StageCheckpoint(str(tmp_path), "features", identity)
+    return pipeline, registry, checkpoint
+
+
+def _run(pipeline, registry, checkpoint):
+    return checkpoint_feature_stage(
+        schema=pipeline.schema, adapter=pipeline.adapter, sources=pipeline.sources,
+        define=pipeline._define, registered=(), segmenter=pipeline._segmenter_or_default(),
+        checkpoint=checkpoint, batch_size=2, predicates=pipeline._predicates,
+        transforms=pipeline._transforms, registry=registry, on_error="raise")
+
+
+def test_bounded_feature_stage_fuses_scoring_predicates_and_transforms(tmp_path):
+    pipeline, registry, checkpoint = _setup(tmp_path)
+    result = _run(pipeline, registry, checkpoint)
+    assert [commit.rows for commit in result.commits] == [1, 2]
+    assert result.rows == 3
+    assert result.telemetry["checkpoint_misses"] == 2
+    assert result.telemetry["checkpoint_bytes"] > 0
+    restored = [segment for commit in result.commits
+                for segment in SegmentBatch.read_ipc(commit.data_file).to_segments()]
+    assert [(segment.start_idx, segment.features["doubled"]) for segment in restored] == [
+        (1, 5.0), (2, 7.0), (3, 9.0)]
+    assert list(result.source_tracks.values()) == [((0, 5),)]
+
+
+def test_bounded_feature_stage_reuses_valid_partitions_without_transform_work(tmp_path):
+    pipeline, registry, checkpoint = _setup(tmp_path)
+    _DoubleTransform.calls = 0
+    _DoubleTransform.instances = 0
+    first = _run(pipeline, registry, checkpoint)
+    assert _DoubleTransform.calls == 2
+    assert _DoubleTransform.instances == 1
+    _DoubleTransform.calls = 0
+    second = _run(pipeline, registry, checkpoint)
+    assert _DoubleTransform.calls == 0
+    assert _DoubleTransform.instances == 1
+    assert second.commits == first.commits
+    assert second.telemetry["checkpoint_hits"] == 2
+    assert second.telemetry["checkpoint_misses"] == 0
+    marker = checkpoint.finalize([commit.partition_id for commit in second.commits])
+    assert marker["rows"] == 3

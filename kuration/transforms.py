@@ -139,57 +139,86 @@ def apply_transforms(calls, segments, *, adapter, registry, progress=None):
     """Populate transform outputs in place, preserving canonical segment ordering."""
     if not calls:
         return segments
-    from .media import media_provider_for
-    from .progress import emit
     by_source: dict[Any, list] = {}
     for seg in segments:
         by_source.setdefault(seg.source_id, []).append(seg)
     tick_cache = {src: list(adapter.ticks(src)) for src in by_source}
-    provider = media_provider_for(adapter)
-    emit(progress, "transforms", "start", total=len(calls))
-    for call_i, call in enumerate(calls, 1):
-        factory = registry.get("transform", call["implementation"])
-        transform = _construct(factory, call["params"], call["device"])
-        ordered = [s for src in sorted(by_source, key=str) for s in by_source[src]]
-        size = call["batch_size"]
-        for offset in range(0, len(ordered), size):
-            chunk = ordered[offset:offset + size]
-            batch: dict[str, Any] = {"segment_ids": [(s.source_id, s.start_idx, s.end_idx)
-                                                      for s in chunk]}
-            for token in call["inputs"]:
-                kind, arg = token.split(":", 1)
-                windows = [tick_cache[s.source_id][s.start_idx:s.end_idx] for s in chunk]
-                if kind == "field":
-                    batch[token] = np.stack([_field_window(w, arg) for w in windows])
-                elif kind == "feature":
-                    batch[token] = np.asarray([s.features[arg] for s in chunk])
-                else:
-                    if provider is None:
-                        raise ValueError(f"transform {call['name']!r} needs a media provider")
-                    refs = [[tick.media.get(arg) for tick in w] for w in windows]
-                    if any(ref is None for group in refs for ref in group):
-                        raise ValueError(f"transform {call['name']!r}: missing media:{arg} reference")
-                    decoded = [provider.decode_batch(group) for group in refs]
-                    batch[token] = np.stack(decoded)
-            ctx = {"device": call["device"], "schema": adapter.schema,
-                   "transform": call["name"], "seed": call["params"].get("seed")}
-            fn = getattr(transform, "transform_batch", transform)
-            try:
-                result = fn(batch, ctx)
-            except TypeError:
-                result = fn(batch)
-            if not isinstance(result, Mapping):
-                if len(call["outputs"]) != 1:
-                    raise ValueError(f"transform {call['name']!r} must return an output mapping")
-                result = {call["outputs"][0]: result}
-            for output in call["outputs"]:
-                vals = np.asarray(result.get(output))
-                if vals.shape != (len(chunk),) or not np.all(np.isfinite(vals)):
-                    raise ValueError(f"transform {call['name']!r} output {output!r} must be "
-                                     f"{len(chunk)} finite scalars, got shape {vals.shape}")
-                for seg, value in zip(chunk, vals):
-                    seg.features[output] = float(value)
-        emit(progress, "transforms", "advance", current=call_i, total=len(calls),
-             source=call["name"], status="ok")
-    emit(progress, "transforms", "complete", current=len(calls), total=len(calls))
-    return segments
+    ordered = [s for src in sorted(by_source, key=str) for s in by_source[src]]
+    windows = [tick_cache[s.source_id][s.start_idx:s.end_idx] for s in ordered]
+    return apply_transforms_to_windows(calls, ordered, windows, adapter=adapter,
+                                       registry=registry, progress=progress)
+
+
+def apply_transforms_to_windows(calls, segments, windows, *, adapter, registry, progress=None):
+    """Apply transforms to already-bounded windows without rereading or caching a source."""
+    return _TransformRunner(calls, adapter=adapter, registry=registry).apply(
+        segments, windows, progress=progress)
+
+
+class _TransformRunner:
+    """Long-lived resolved transform instances for one physical stage worker."""
+
+    def __init__(self, calls, *, adapter, registry):
+        from .media import media_provider_for
+        self.calls = tuple(calls)
+        self.adapter = adapter
+        self.provider = media_provider_for(adapter)
+        self.resolved = tuple(
+            (call, _construct(registry.get("transform", call["implementation"]),
+                              call["params"], call["device"]))
+            for call in self.calls)
+
+    def apply(self, segments, windows, *, progress=None):
+        if not self.calls:
+            return segments
+        if len(segments) != len(windows):
+            raise ValueError("segments and windows must have identical lengths")
+        provider = self.provider
+        adapter = self.adapter
+        from .progress import emit
+        emit(progress, "transforms", "start", total=len(self.calls))
+        for call_i, (call, transform) in enumerate(self.resolved, 1):
+            size = call["batch_size"]
+            for offset in range(0, len(segments), size):
+                chunk = segments[offset:offset + size]
+                chunk_windows = windows[offset:offset + size]
+                batch: dict[str, Any] = {"segment_ids": [
+                    (s.source_id, s.start_idx, s.end_idx) for s in chunk]}
+                for token in call["inputs"]:
+                    kind, arg = token.split(":", 1)
+                    if kind == "field":
+                        batch[token] = np.stack([_field_window(w, arg) for w in chunk_windows])
+                    elif kind == "feature":
+                        batch[token] = np.asarray([s.features[arg] for s in chunk])
+                    else:
+                        if provider is None:
+                            raise ValueError(f"transform {call['name']!r} needs a media provider")
+                        refs = [[tick.media.get(arg) for tick in w] for w in chunk_windows]
+                        if any(ref is None for group in refs for ref in group):
+                            raise ValueError(
+                                f"transform {call['name']!r}: missing media:{arg} reference")
+                        batch[token] = np.stack(
+                            [provider.decode_batch(group) for group in refs])
+                ctx = {"device": call["device"], "schema": adapter.schema,
+                       "transform": call["name"], "seed": call["params"].get("seed")}
+                fn = getattr(transform, "transform_batch", transform)
+                try:
+                    result = fn(batch, ctx)
+                except TypeError:
+                    result = fn(batch)
+                if not isinstance(result, Mapping):
+                    if len(call["outputs"]) != 1:
+                        raise ValueError(
+                            f"transform {call['name']!r} must return an output mapping")
+                    result = {call["outputs"][0]: result}
+                for output in call["outputs"]:
+                    vals = np.asarray(result.get(output))
+                    if vals.shape != (len(chunk),) or not np.all(np.isfinite(vals)):
+                        raise ValueError(f"transform {call['name']!r} output {output!r} must be "
+                                         f"{len(chunk)} finite scalars, got shape {vals.shape}")
+                    for seg, value in zip(chunk, vals):
+                        seg.features[output] = float(value)
+            emit(progress, "transforms", "advance", current=call_i, total=len(self.calls),
+                 source=call["name"], status="ok")
+        emit(progress, "transforms", "complete", current=len(self.calls), total=len(self.calls))
+        return segments

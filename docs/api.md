@@ -85,7 +85,7 @@ See [pipeline.md](pipeline.md) for accepted operator forms and validation behavi
 | `ExperimentResult` | dict-compatible; `.to_dict()` and attribute access | multi-arm experiment result |
 | `DatasetReport` | dict-compatible; `.to_dict()` and attribute access | distribution report result |
 | `ValidationResult` | dict-compatible; `.to_dict()` and attribute access | programmatic validation result used by the CLI layer |
-| `ExecutionPlan` | `(source, schema, window, strategy, output, options, stages=(), warnings=())` | immutable mapping returned by `Pipeline.explain`; `.to_dict()` serializes and `.render(detailed=False)` formats text |
+| `ExecutionPlan` | `(source, schema, window, strategy, output, options, stages=(), warnings=(), physical_plan=None)` | immutable mapping returned by `Pipeline.explain`; `.to_dict()` serializes and `.render(detailed=False)` formats text |
 | `Arm` | `(name, strategy)` | one named `run_experiment` strategy arm |
 | `union_define` | `(arms) -> dict` | merge arm metric definitions, rejecting incompatible duplicate names |
 
@@ -174,7 +174,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 |---|---|---|
 | `Registry` | `(parent=None)` | isolated component registry; `.child()` creates an overlay whose entries shadow its parent |
 | `default_registry` | `Registry` instance | process-wide registry used when no explicit overlay is supplied |
-| `ComponentDescriptor` | `(name, kind, description="", parameters=<factory>, capabilities=<factory>, extra=None, install_hint=None, package=None, version=None, schema_version=1, documentation=None, stability="stable", module=None, fingerprint=None)` | JSON-safe component metadata; `.to_dict()` omits `None` values |
+| `ComponentDescriptor` | `(name, kind, description="", parameters=<factory>, capabilities=<factory>, execution_traits=None, extra=None, install_hint=None, package=None, version=None, schema_version=1, documentation=None, stability="stable", module=None, fingerprint=None)` | JSON-safe component metadata; `.to_dict()` omits `None` values |
 | `list_components` | `(kind=None, *, registry=default_registry) -> list[dict]` | discover installed component descriptors without reading datasets |
 | `describe_component` | `(kind, name, *, registry=default_registry) -> dict` | return one descriptor; raises for an unknown kind or name |
 | `register_method` | `(name, fn, **metadata) -> None` | register a selection-priority method |
@@ -185,6 +185,40 @@ Registry kinds are `adapter`, `metric`, `scorer`, `encoder`, `method`, `filter`,
 `preset`, plus compositional `operator`. Names accept `name` or `namespace/name`; duplicate registrations raise unless the
 lower-level `Registry.register(..., replace=True)` API is used. See
 [customization.md](customization.md) for descriptors, parameter schemas, and plugin packaging.
+
+## Physical planning, columnar batches, and checkpoints
+
+PyArrow-backed APIs require the optional `[scale]` extra. They keep feature metadata in bounded
+record batches and atomically publish reusable stage partitions; ordinary `Segment` objects
+remain the Python convenience boundary.
+
+| name | signature | does |
+|---|---|---|
+| `OperatorResources` | `(cpu=1.0, gpu=0.0, memory_bytes=None, preferred_batch_size=None, max_batch_size=None)` | validated portable resource and batch bounds |
+| `OperatorTraits` | `(scope, shape, fusible, passes="one", state_bound="constant", required_columns=(), produced_columns=(), resources=<factory>, determinism="stable-key", checkpoint="partition-reusable")` | closed machine-readable logical-operator execution contract |
+| `PhysicalOperator` | `(id, name, traits, parameters={}, component=None)` | one normalized operator in a physical plan |
+| `PhysicalStage` | `(id, mode, operators, passes, materializes_input, checkpoint, barrier_reason=None, estimated_peak_memory=None, resources=<factory>)` | fused pipeline island or explicit barrier stage |
+| `PhysicalPlan` | `(version, backend, stages, memory_budget=None, spill_path=None, warnings=())` | deterministic mapping-compatible backend-neutral plan |
+| `compile_physical_plan` | `(pipeline, *, memory_budget=None, spill_path=None) -> PhysicalPlan` | resolve operators, fuse bounded maps, and isolate global/multipass barriers without reading sources |
+| `IDENTITY_COLUMNS` | `tuple[str, ...]` | required stable identity/metadata columns in every `SegmentBatch` |
+| `SegmentBatch` | `(record_batch)`; `.from_segments(...)`, `.read_ipc(...)` | immutable bounded Arrow record batch with projection, slicing, NumPy views, and atomic IPC |
+| `iter_segment_batches` | `(segments, batch_size, **kwargs) -> Iterator[SegmentBatch]` | convert an iterable while retaining at most one configured Python batch |
+| `CheckpointIdentity` | `(logical_plan_hash, physical_plan_hash, input_fingerprints=(), schema={}, components=(), parameters={})` | complete reuse identity for a physical stage |
+| `PartitionCommit` | `(partition_id, identity, data_file, rows, sha256, columns, ...)` | checksum-protected committed partition metadata |
+| `StageCheckpoint` | `(root, stage_id, identity)` | validate, reuse, publish, and finalize independent partition commits |
+| `canonical_hash` | `(value) -> str` | deterministic SHA-256 over canonical JSON |
+| `FeatureStageResult` | `(commits, errors, source_tracks)` | bounded feature-island result without a total Python segment pool |
+| `checkpoint_feature_stage` | `(*, schema, adapter, sources, define, registered, segmenter, checkpoint, batch_size=1024, ...) -> FeatureStageResult` | stream segmentation, metrics, predicates, and transforms into checkpoint partitions |
+| `external_quantile_edges` | `(partitions, feature, n_bins, *, spill_dir=None) -> ndarray` | exact NumPy-compatible quantiles with disk-proportional state |
+| `external_top_k` | `(partitions, *, weights, target_size, normalize="quantile", spill_dir=None) -> list[Segment]` | exact stable top-k that materializes only selected segments |
+| `external_uniform_bins` | `(partitions, *, axes, target_size, seed=0, spill_dir=None) -> list[Segment]` | exact multipass quantile organization and deterministic disk-backed equal-bin selection |
+| `iter_external_uniform_priorities` | `(partitions, *, axes, seed=0, spill_dir=None) -> Iterator[tuple[Segment, float]]` | exact disk-backed uniform-bin priorities for hours filling |
+| `iter_external_top_k_priorities` | `(partitions, *, weights, normalize="quantile", spill_dir=None)` | stream every canonical segment with its exact disk-backed normalized priority |
+| `iter_external_span_items` | `(prioritized_segments, source_tracks, *, sample_hz, span_len=None, clip_aggregate="max", group_of=None, spill_dir=None)` | aggregate overlapping segment priorities/features into a bounded span-item stream |
+| `iter_external_weighted_priorities` | `(partitions, *, weights, normalize="quantile", seed=0, spill_dir=None)` | stream exact canonical Gumbel weighted priorities using two bounded passes |
+| `external_weighted` | `(partitions, *, weights, target_size, normalize="quantile", seed=0, spill_dir=None) -> list[Segment]` | select exact hours-path Gumbel priorities while retaining only the selected heap; count-weighted sampling has a distinct NumPy contract |
+| `iter_external_hash_dedup` | `(partitions, *, feature_names=None, per_group=False, spill_dir=None)` | exact disk-backed feature-vector dedup with full-payload collision resolution and canonical retention |
+| `apply_transforms_to_windows` | `(calls, segments, windows, *, adapter, registry, progress=None)` | bounded transform execution over already-extracted windows without source rereads |
 
 ## Output
 

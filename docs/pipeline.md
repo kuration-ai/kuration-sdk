@@ -202,8 +202,21 @@ when the behavior belongs to one of those stages.
 - `.describe()` — `{"schema", "strategy", "output": None, "segmenter", "options", "sources"}`:
   the pipeline's fully resolved state, without running anything. `"strategy"` is the same raw
   dict a terminal would compile and load.
-- `.explain()` — a typed, mapping-compatible `ExecutionPlan` with stages, streaming/full-pool
-  requirements, implicit choices, and actionable warnings. `.render()` gives concise text.
+- `.explain()` — a typed, mapping-compatible `ExecutionPlan` containing the backend-neutral
+  physical plan: fused operators, pipeline/data-parallel mode, barriers and reasons, pass counts,
+  materialization status, resources, checkpoint policy, implicit choices, and actionable
+  warnings. `.render(detailed=True)` gives the stage-by-stage form.
+
+Execution tuning lives in `.options(...)`: `memory_budget` is a byte budget used by physical
+planning, `batch_size` bounds each segment batch, `max_in_flight` bounds producer/consumer
+queue depth, `checkpoint_dir` and `spill_dir`
+override artifact locations, and `approximation` is `"exact"` or `"approximate"`. Exact remains
+the default; an operator without a declared approximate implementation never silently changes
+algorithms. Setting `memory_budget` makes bounded execution an enforced contract: output rejects
+unsupported exact global methods, global filters/scorers, unavailable Arrow support, and the
+not-yet-bounded Ray feature-island path before reading source rows. Without a budget, those plans
+retain the compatible reference implementation and appear as materialization warnings in
+`.explain()`.
 
 ## Terminals
 

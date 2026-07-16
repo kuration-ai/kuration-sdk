@@ -271,3 +271,36 @@ it keyed on features by name — so it ported almost verbatim. The work was at t
 3. `config.json` fully determines a rerun (schema + strategy + output spec embedded).
 4. Canonical segment sort precedes binning/selection (determinism).
 5. Splits are source-level (leakage-free): a whole source goes to one split.
+## Physical planning and bounded feature tables
+
+`Pipeline.explain()` compiles resolved logical state into a serializable `PhysicalPlan` before
+source rows are read. Window-local maps fuse into pipeline-parallel islands; global, multipass,
+or explicitly non-fusible operators form barriers. Registered component descriptors may declare
+validated `execution_traits` covering scope, shape, fusion, passes, state bounds, projected
+columns, resources, determinism, and checkpoint policy.
+
+With the optional `[scale]` extra, `SegmentBatch` stores stable segment identities and projected
+features in bounded Arrow `RecordBatch` values. `StageCheckpoint` writes attempt-specific Arrow
+IPC files, validates them, atomically publishes one partition commit, and publishes the stage
+commit only after every expected checksum is valid. Restarts reuse only partitions whose logical
+plan, physical plan, inputs, schema, components, and parameters match.
+
+The first automatic runtime covers exact local top-k count output without whole-pool scorers,
+and uniform-bin count output without whole-pool scorers, global filters, or coverage postpasses.
+It fuses streaming segmentation, metrics, universal
+predicates, and bounded transforms; exact normalization and stable top-k use a disk-backed index.
+Other logical plans continue through the established reference runtime and are identified by
+`Pipeline.explain()` warnings until their bounded reducers are implemented.
+
+The hours writer also stores span candidates, overlap summaries, bounds, tags, and budget
+ordering externally. Only admitted spans return to Python for source reread and shard emission.
+Exact top-k, weighted, and uniform-bin hours plans automatically use checkpointed bounded features and
+disk-backed priorities, including predicates, transforms, tag coverage, group caps, subdivision,
+and resume. Plans containing whole-pool scorers or global prefilters retain the reference path.
+
+The local and Ray execution contracts also expose ordered `iter_batches` scheduling. Producers
+cannot advance beyond `max_in_flight`; the fused local feature island uses this to overlap the
+next segmentation batch with one long-lived scoring/transform worker. Stage telemetry records
+partition count, checkpoint hits/misses and bytes, candidate/output rows, batch size, and queue
+depth in `config.json`. Exact feature-hash dedup uses disk-backed SHA-256 lookup plus full-payload
+collision resolution; cosine/near dedup remains a distinct approximate algorithm.

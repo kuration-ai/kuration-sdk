@@ -26,6 +26,7 @@ classifiers = [
 [project.optional-dependencies]
 methods = ["scikit-learn>=1.4"]   # feature-space selection methods
 parquet = ["pyarrow"]             # Parquet input adapter / output container
+scale = ["pyarrow"]               # Arrow IPC feature tables and bounded execution
 array = ["h5py"]                  # tensor shard container
 cloud = ["fsspec"]                # gs:// / s3:// / az:// I/O (plus a backend: gcsfs/s3fs/adlfs)
 torch = ["torch"]                 # PyTorch ShardDataset over a curated dataset (kuration.torch)

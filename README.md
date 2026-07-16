@@ -15,6 +15,7 @@ pip install -e '.[all]'                    # all SDK features and format integra
 pip install -e .                          # core (numpy only)
 pip install -e '.[methods]'               # + scikit-learn  (feature-space selection + filters)
 pip install -e '.[parquet,array]'         # + pyarrow / h5py  (Parquet & HDF5 containers/adapters)
+pip install -e '.[scale]'                 # + pyarrow  (bounded feature tables/checkpoints)
 pip install -e '.[cloud]'                 # + fsspec  (gs:// / s3:// / az:// I/O; add a backend)
 pip install -e '.[torch]'                 # + torch   (kuration.torch.ShardDataset; read side)
 pip install -e '.[hf,zarr]'               # + datasets / zarr  (HuggingFace & Zarr input adapters)
@@ -139,6 +140,19 @@ maps the common ones to causes and fixes.
 
 ## Scale & robustness
 
+- **Automatic bounded count output** — supported exact top-k and uniform-bin count plans stream fused
+  segmentation/metrics/predicates/transforms into checksummed Arrow partitions and select from
+  a disk-backed index. The selected `k`, rather than the total segment pool, crosses back into
+  Python objects. `config.json` records the physical plan and committed partitions.
+- **External hours metadata** — span candidates, bounds, aggregate metadata, tags, and budget
+  ordering live in a temporary disk-backed index; only admitted span metadata returns to the
+  driver. Exact top-k, weighted, and uniform-bin hours plans automatically use checkpointed
+  bounded features and external priorities. Model-backed transforms are constructed once per
+  bounded stage worker and skipped entirely when all matching feature partitions are reusable.
+- **Backpressure and telemetry** — local and Ray batch schedulers cap in-flight work while
+  preserving input order. Written configs report checkpoint hits/misses, bytes, rows, batch size,
+  and queue depth. Exact disk-backed feature-hash dedup is available separately from approximate
+  near-dedup.
 - **Parallel feature pass** — `workers>1` on `curate` / `run_experiment` / `write_dataset`
   scores sources over a process pool (workers recompile the DSL from schema + `define`),
   deterministic regardless of worker count.

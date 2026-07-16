@@ -40,7 +40,8 @@ __all__ = ["Pipeline", "input"]
 _GLOB_CHARS = set("*?[")
 _FILTER_TYPES = {"anomaly", "dedup"}
 _OPTION_KEYS = {"workers", "on_error", "seed", "streaming", "resume", "sample_hz", "progress",
-                "mode", "executor"}
+                "mode", "executor", "memory_budget", "batch_size", "checkpoint_dir",
+                "spill_dir", "approximation", "max_in_flight"}
 _TABULAR_KINDS = {"timeseries", "jsonl", "json-rows", "parquet-dataset"}
 _SUFFIX_CONTAINER = {".hdf5": "hdf5", ".h5": "hdf5", ".npz": "npz",
                      ".parquet": "parquet", ".json": "json"}
@@ -450,7 +451,9 @@ class Pipeline:
         self._group_of: Optional[Callable] = None
         self._options: dict[str, Any] = {
             "workers": 1, "on_error": "skip", "seed": 0, "streaming": False,
-            "resume": False, "sample_hz": None, "progress": None, "executor": "local"}
+            "resume": False, "sample_hz": None, "progress": None, "executor": "local",
+            "memory_budget": None, "batch_size": 1024, "checkpoint_dir": None,
+            "spill_dir": None, "approximation": "exact", "max_in_flight": 2}
         self._mode: Optional[str] = None
         self._explicit_options: set[str] = set()
         from .registry import default_registry
@@ -843,6 +846,16 @@ class Pipeline:
             raise ValueError("progress must be callable or None")
         if "executor" in kw and kw["executor"] not in {"local", "ray"}:
             raise ValueError("executor must be 'local' or 'ray'")
+        for key in ("memory_budget", "batch_size", "max_in_flight"):
+            if key in kw and kw[key] is not None and (
+                    not isinstance(kw[key], int) or isinstance(kw[key], bool) or kw[key] < 1):
+                raise ValueError(f"{key} must be a positive integer or None")
+        for key in ("checkpoint_dir", "spill_dir"):
+            if key in kw and kw[key] is not None and (
+                    not isinstance(kw[key], str) or not kw[key]):
+                raise ValueError(f"{key} must be a non-empty path string or None")
+        if "approximation" in kw and kw["approximation"] not in {"exact", "approximate"}:
+            raise ValueError("approximation must be 'exact' or 'approximate'")
         p = self._next("options", mode=mode, **kw)
         if mode is not None:
             p._mode = mode
@@ -1057,22 +1070,19 @@ class Pipeline:
             for source in self.sources:
                 self.adapter.check_source(source)
         strategy = self._raw_strategy(require_method=False)
-        full_pool = bool(strategy.get("filters") or strategy.get("scorers") or
-                         strategy.get("selection", {}).get("method") in
-                         {"cluster-balanced", "k-center", "facility-location", "dsir",
-                          "rare", "typical"})
-        stages = ({"name": "input", "streaming": hasattr(self.adapter, "iter_ticks"),
-                   "materializes_total_pool": False},
-                  {"name": "selection", "streaming": not full_pool,
-                   "materializes_total_pool": full_pool},
-                  {"name": "output", "streaming": True, "materializes_total_pool": False})
+        from .planning import compile_physical_plan
+        physical = compile_physical_plan(
+            self, memory_budget=self._options["memory_budget"],
+            spill_path=self._options["spill_dir"])
+        warnings.extend(dict(warning) for warning in physical.warnings)
+        stages = tuple(stage.to_dict() for stage in physical.stages)
         return ExecutionPlan(source={"kind": type(self.adapter).__name__,
                                      "count": len(self.sources),
                                      "sources": [str(s) for s in self.sources]},
                              schema=self.schema.to_dict(), window=dict(self._window_desc),
                              strategy=strategy, output=None,
                              options=self.describe()["options"], stages=stages,
-                             warnings=tuple(warnings))
+                             warnings=tuple(warnings), physical_plan=physical.to_dict())
 
     # ---- terminals -----------------------------------------------------------------------
     def collect(self, n: Optional[int] = None):
@@ -1280,6 +1290,10 @@ class Pipeline:
             encoder = get_encoder(encoder["name"], **dict(encoder.get("params") or {}))
         strategy = self._compile()
         opt = self._options
+        if opt["approximation"] == "approximate":
+            raise ValueError(f"selection method {strategy.method!r} has no declared "
+                             "approximate physical implementation yet; use "
+                             "approximation='exact'")
 
         if self._hours is not None:                       # ---- hours-budget path ----
             from .output.dataset import write_dataset
@@ -1297,7 +1311,10 @@ class Pipeline:
                 workers=opt["workers"], on_error=opt["on_error"], resume=opt["resume"],
                 streaming=opt["streaming"], progress=opt["progress"],
                 transforms=self._transforms, registry=self._registry,
-                executor=opt["executor"])
+                executor=opt["executor"], memory_budget=opt["memory_budget"],
+                batch_size=opt["batch_size"], checkpoint_dir=opt["checkpoint_dir"],
+                spill_dir=opt["spill_dir"], approximation=opt["approximation"],
+                max_in_flight=opt["max_in_flight"])
             from .io import read_text
             from .manifest import write_config
             cfg = json.loads(read_text(f"{path}/config.json"))
@@ -1317,7 +1334,13 @@ class Pipeline:
                              "selection deterministically per run")
         if self._n is None:
             raise ValueError("output() needs .curate(n=...) or .curate(hours=...) first")
-        result = self.collect()
+        can_run_bounded = self._can_run_bounded_count(strategy)
+        if opt["memory_budget"] is not None and not can_run_bounded:
+            raise ValueError(
+                "memory_budget requires a bounded exact count plan; currently supported only "
+                "for local top-k/uniform-bins without global filters, scorers, tag coverage, "
+                "or group caps (and with PyArrow installed)")
+        result = self._bounded_count_result(path, strategy) if can_run_bounded else self.collect()
         if not result.selected:
             raise ValueError("selection is empty — nothing to write (check "
                              "filters/predicates and the segment window)")
@@ -1331,8 +1354,86 @@ class Pipeline:
             cfg["output_preset"] = preset_resolution
         cfg["mode"] = {"name": self._mode, "resolved": self.describe()["options"]}
         cfg["warnings"] = [dict(w) for w in self.explain().warnings]
+        if getattr(result, "execution", None):
+            cfg["execution"] = result.execution
         write_config(f"{path}/config.json", cfg)
         return written
+
+    def _can_run_bounded_count(self, strategy) -> bool:
+        """Whether the implemented exact bounded runtime covers this logical pipeline."""
+        if (strategy.method not in {"top-k", "uniform-bins"}
+                or strategy.filters or strategy.scorers
+                or strategy.tag_coverage or strategy.group_cap
+                or self._options["executor"] != "local"):
+            return False
+        try:
+            import pyarrow  # noqa: F401
+        except ImportError:
+            return False
+        return True
+
+    def _bounded_count_result(self, out_dir: str, strategy):
+        """Execute the currently supported exact count plan without a total Python pool."""
+        from .bounded import SizedSegmentPool, checkpoint_feature_stage
+        from .checkpoints import CheckpointIdentity, StageCheckpoint, canonical_hash
+        from .curate import CurateResult
+        from .external import external_top_k, external_uniform_bins
+        from .planning import compile_physical_plan
+        from .plugins import plugin_provenance
+        from .provenance import component_identity, source_descriptor
+        spill_dir = self._options["spill_dir"] or f"{out_dir}/.kuration/spill"
+        checkpoint_dir = (self._options["checkpoint_dir"]
+                          or f"{out_dir}/.kuration/checkpoints")
+        physical = compile_physical_plan(
+            self, memory_budget=self._options["memory_budget"], spill_path=spill_dir)
+        logical = {"schema": self.schema.to_dict(), "strategy": strategy.resolved,
+                   "window": dict(self._window_desc), "sources": [str(s) for s in self.sources],
+                   "transforms": list(self._transforms)}
+        identity = CheckpointIdentity.from_plans(
+            logical, physical,
+            input_fingerprints=tuple(source_descriptor(source, self.adapter)
+                                     for source in self.sources),
+            schema=self.schema.to_dict(), components=tuple(plugin_provenance()),
+            parameters={"seed": self._options["seed"],
+                        "adapter": component_identity(self.adapter)})
+        checkpoint = StageCheckpoint(checkpoint_dir, physical.stages[0].id, identity)
+        transform_outputs = {output for call in self._transforms for output in call["outputs"]}
+        registered = [name for name in strategy.referenced_metrics()
+                      if name not in strategy.define and name not in transform_outputs]
+        stage = checkpoint_feature_stage(
+            schema=self.schema, adapter=self.adapter, sources=self.sources,
+            define=strategy.define, registered=registered,
+            segmenter=self._segmenter_or_default(), checkpoint=checkpoint,
+            batch_size=self._options["batch_size"],
+            tags_spec=strategy.tags, predicates=strategy.predicates,
+            transforms=self._transforms, registry=self._registry,
+            group_of=self._group_of, on_error=self._options["on_error"],
+            progress=self._options["progress"],
+            max_in_flight=self._options["max_in_flight"])
+        marker = checkpoint.finalize([commit.partition_id for commit in stage.commits])
+        if strategy.method == "top-k":
+            # Preserve the current reference behavior: `_normalize(..., "none")`
+            # historically falls through to stable quantile ranks.
+            normalize = "quantile" if strategy.normalize == "none" else strategy.normalize
+            selected = external_top_k(
+                stage.commits, weights=strategy.weights, target_size=self._n,
+                normalize=normalize, spill_dir=spill_dir)
+        elif strategy.method == "uniform-bins":
+            selected = external_uniform_bins(
+                stage.commits, axes=strategy.axes, target_size=self._n,
+                seed=self._options["seed"], spill_dir=spill_dir)
+        splits = {}
+        if self._split_test:
+            from .select import assign_splits
+            source_groups = {source: self._group_of(source) if self._group_of else None
+                             for source in stage.source_tracks}
+            splits = assign_splits(source_groups, self._split_test, self._options["seed"])
+        result = CurateResult(selected=selected, all_segments=SizedSegmentPool(
+            stage.candidate_rows), schema=self.schema, strategy=strategy,
+            splits=splits, errors=list(stage.errors))
+        result.execution = {"physical_plan": physical.to_dict(), "checkpoint": marker,
+                            "bounded": True, "telemetry": stage.telemetry}
+        return result
 
     def _write_selected(self, out_dir: str, result, spec, encoder, seed: int, progress=None) -> dict:
         """Count-path write: each selected segment becomes a sub-track per entity, written
