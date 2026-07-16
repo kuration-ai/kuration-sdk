@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Iterable, Protocol
+from typing import Any, Callable, Iterable, Protocol
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,7 @@ class LocalExecutionBackend:
         """Yield input-ordered results with bounded producer backpressure."""
         _bounds(max_in_flight, workers)
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            pending = deque()
+            pending: deque[Any] = deque()
             for item in items:
                 pending.append(executor.submit(fn, item))
                 if len(pending) >= max_in_flight:
@@ -89,7 +89,7 @@ class RayExecutionBackend:
         if resources.memory is not None:
             options["memory"] = resources.memory
         remote = self.ray.remote(fn).options(**options)
-        pending = deque()
+        pending: deque[Any] = deque()
         for item in items:
             pending.append(remote.remote(item))
             if len(pending) >= max_in_flight:

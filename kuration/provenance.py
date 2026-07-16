@@ -70,12 +70,34 @@ def source_descriptor(source, adapter) -> dict:
     s = str(source)
     if is_remote(s):
         from .io import _fs
-        info = _fs(s).info(s)
+        fs = _fs(s)
+        info = fs.info(s)
         keep = ("size", "mtime", "updated", "etag", "ETag", "checksum", "version_id", "generation")
+        if info.get("type") == "directory":
+            details = fs.find(s, detail=True)
+            remote_entries = [(str(path), *(str(meta[k]) for k in keep if k in meta))
+                              for path, meta in sorted(details.items())
+                              if meta.get("type") != "directory"]
+            encoded = json.dumps(remote_entries, sort_keys=True,
+                                 separators=(",", ":")).encode()
+            return {"source": s, "metadata": {"is_dir": True,
+                                                  "entries": len(remote_entries),
+                                                  "tree_sha256": _sha(encoded)}}
         return {"source": s, "metadata": {k: str(info[k]) for k in keep if k in info}}
     p = Path(s[7:] if s.startswith("file://") else s)
     if p.exists():
         st = p.stat()
+        if p.is_dir():
+            local_entries: list[tuple[str, int, int]] = []
+            for child in sorted(p.rglob("*")):
+                if child.is_file():
+                    child_stat = child.stat()
+                    local_entries.append((child.relative_to(p).as_posix(), child_stat.st_size,
+                                          child_stat.st_mtime_ns))
+            encoded = json.dumps(local_entries, separators=(",", ":")).encode()
+            return {"source": s, "metadata": {"is_dir": True,
+                                                  "entries": len(local_entries),
+                                                  "tree_sha256": _sha(encoded)}}
         return {"source": s, "metadata": {"size": st.st_size, "mtime_ns": st.st_mtime_ns,
                                              "is_dir": p.is_dir()}}
     return {"source": s, "metadata": {"non_path": True}}
@@ -90,14 +112,15 @@ def sdk_version() -> str:
 
 def build_run_signature(*, schema, strategy, spec, segmenter, sources, adapter, encoder,
                         seed, sample_hz, train_hours, test_hours, span_len, clip_aggregate,
-                        group_of=None, tags_of=None) -> dict:
+                        group_of=None, tags_of=None, transforms=(), registry=None) -> dict:
     from .plugins import plugin_provenance
     from .registry import default_registry
     from .versioning import ARTIFACT_FORMAT_VERSION
-    registry = strategy.registry or default_registry
+    registry = registry or strategy.registry or default_registry
     refs = [("method", strategy.method), ("container", spec.container)]
     refs += [("filter", f["type"]) for f in (strategy.filters or [])]
     refs += [("scorer", name) for name, _out, _params in (strategy.scorers or [])]
+    refs += [("transform", call["implementation"]) for call in transforms]
     extensions = []
     for kind, name in refs:
         try:
@@ -120,6 +143,7 @@ def build_run_signature(*, schema, strategy, spec, segmenter, sources, adapter, 
         "encoder": component_identity(encoder),
         "group_of": component_identity(group_of),
         "tags_of": component_identity(tags_of),
+        "transforms": list(transforms),
         "plugins": plugin_provenance(),
         "extensions": extensions,
         "sources": sorted((source_descriptor(s, adapter) for s in sources),

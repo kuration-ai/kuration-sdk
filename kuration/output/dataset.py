@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import math
 from datetime import datetime, timezone
-from typing import Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from ..adapters.base import InputAdapter
 from ..binning import bin_segments
@@ -95,7 +95,7 @@ def _legacy_hours_selection(*, out_dir, schema, adapter, sources, strategy, segm
         pool = apply_filters(all_segments, strategy, seed=seed)
     bin_segments(pool, strategy.axes)
     priorities = segment_priorities(pool, strategy, seed=seed)
-    by_source = {}
+    by_source: dict[str, list[tuple[Any, float]]] = {}
     for index, segment in enumerate(pool):
         by_source.setdefault(segment.source_id, []).append(
             (segment, float(priorities[index])))
@@ -304,7 +304,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         schema=schema, strategy=strategy, spec=spec, segmenter=segmenter, sources=sources,
         adapter=adapter, encoder=(encoder or PassthroughEncoder()), seed=seed, sample_hz=sample_hz,
         train_hours=train_hours, test_hours=test_hours, span_len=span_len,
-        clip_aggregate=clip_aggregate, group_of=group_of, tags_of=tags_of)
+        clip_aggregate=clip_aggregate, group_of=group_of, tags_of=tags_of,
+        transforms=transforms, registry=registry)
     _check_resume_run(out_dir, signature, resume)
     emit(progress, "provenance", "complete", current=len(sources), total=len(sources),
          detail=signature["fingerprint"][:12])
@@ -335,7 +336,7 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
 
     # Re-read each admitted source once; write each admitted span as its own (sub-)track.
     entries = []
-    by_source: dict = {}
+    by_source: dict[str, list[tuple[Any, int]]] = {}
     # `admitted` is a set — iterate in sorted order so manifest entry order (and thus
     # ShardDataset indexing) is hash-seed-independent.
     for (src, eid, k) in sorted(admitted, key=lambda t: (str(t[0]), str(t[1]), t[2])):

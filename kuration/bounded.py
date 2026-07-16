@@ -91,6 +91,7 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
     checkpoint_misses = 0
 
     for source_index, source in enumerate(sources, 1):
+        source_commits: list[PartitionCommit] = []
         try:
             engine = FeatureEngine(schema, define=define, registered=list(registered),
                                    tags_spec=tags_spec)
@@ -160,8 +161,12 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
                                    "admitted_rows": len(selected)})
 
             from .execution import LocalExecutionBackend
-            commits.extend(LocalExecutionBackend().iter_batches(
+            source_commits.extend(LocalExecutionBackend().iter_batches(
                 batches(), process, max_in_flight=max_in_flight, workers=1))
+            # A source is the error-isolation unit.  Do not expose partitions from a source
+            # that failed after one or more batches had already committed; those files may
+            # remain reusable on restart, but they are not candidates in this run.
+            commits.extend(source_commits)
             tracks[source] = tuple((entity_id, tick_count) for entity_id in entity_order)
             emit(progress, "scoring", "advance", current=source_index,
                  total=len(sources), source=source, status="ok")

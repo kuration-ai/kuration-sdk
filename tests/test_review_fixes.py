@@ -108,6 +108,43 @@ def test_resume_rejects_changed_output_spec(tmp_path):
         _write(tmp_path, spec=other, resume=True)
 
 
+def test_resume_signature_includes_resolved_transforms(tmp_path):
+    from kuration.output.dataset import _check_resume_run
+    from kuration.provenance import build_run_signature
+
+    data = _data()
+    common = dict(schema=SCHEMA, strategy=_strategy(), spec=SPEC,
+                  segmenter=Segmenter(4, 4), sources=list(data),
+                  adapter=MemAdapter(SCHEMA, data), encoder=object(), seed=0,
+                  sample_hz=1.0, train_hours=1.0, test_hours=0.0,
+                  span_len=None, clip_aggregate="max")
+    first = build_run_signature(**common, transforms=[{
+        "name": "embed", "implementation": "vendor/embed", "outputs": ("z",),
+        "inputs": ("field:act",), "batch_size": 8, "device": "cpu",
+        "params": {"revision": "v1"}, "resources": {}}])
+    second = build_run_signature(**common, transforms=[{
+        "name": "embed", "implementation": "vendor/embed", "outputs": ("z",),
+        "inputs": ("field:act",), "batch_size": 8, "device": "cpu",
+        "params": {"revision": "v2"}, "resources": {}}])
+    assert first["fingerprint"] != second["fingerprint"]
+    _check_resume_run(str(tmp_path / "resume"), first, False)
+    with pytest.raises(ValueError, match="different inputs or run configuration"):
+        _check_resume_run(str(tmp_path / "resume"), second, True)
+
+
+def test_directory_source_fingerprint_tracks_child_changes(tmp_path):
+    from kuration.provenance import source_descriptor
+
+    store = tmp_path / "store.zarr"
+    store.mkdir()
+    chunk = store / "0.0"
+    chunk.write_bytes(b"old")
+    before = source_descriptor(str(store), object())
+    chunk.write_bytes(b"new payload")
+    after = source_descriptor(str(store), object())
+    assert before != after
+
+
 # ---- C2: shard filenames cannot collide across (source, entity) --------------
 def test_shard_names_do_not_collide(tmp_path):
     recs = [{"pos": (float(i), 0.0), "act": 0.0} for i in range(4)]

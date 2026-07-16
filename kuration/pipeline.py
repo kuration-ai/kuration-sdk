@@ -183,6 +183,12 @@ class _JsonRowsAdapter(TimeseriesAdapter):
         from .infer import load_rows
         return self._rows_to_ticks([_expand_row(r) for r in load_rows(source_uri)])
 
+    def iter_ticks(self, source_uri):
+        # TimeseriesAdapter.iter_ticks treats every non-Parquet path as CSV.  JSON arrays
+        # necessarily materialize through load_rows, but must still expose the correct tick
+        # stream to bounded execution, which prefers iter_ticks when it exists.
+        yield from self.ticks(source_uri)
+
 
 # ======================================================================================
 # input() — the factory (intentionally shadows builtins.input in this module)
@@ -1375,13 +1381,15 @@ class Pipeline:
     def _bounded_count_result(self, out_dir: str, strategy):
         """Execute the currently supported exact count plan without a total Python pool."""
         from .bounded import SizedSegmentPool, checkpoint_feature_stage
-        from .checkpoints import CheckpointIdentity, StageCheckpoint, canonical_hash
+        from .checkpoints import CheckpointIdentity, StageCheckpoint
         from .curate import CurateResult
         from .external import external_top_k, external_uniform_bins
         from .planning import compile_physical_plan
         from .plugins import plugin_provenance
         from .provenance import component_identity, source_descriptor
-        spill_dir = self._options["spill_dir"] or f"{out_dir}/.kuration/spill"
+        from .io import is_remote
+        spill_dir = self._options["spill_dir"] or (
+            None if is_remote(out_dir) else f"{out_dir}/.kuration/spill")
         checkpoint_dir = (self._options["checkpoint_dir"]
                           or f"{out_dir}/.kuration/checkpoints")
         physical = compile_physical_plan(
@@ -1397,6 +1405,9 @@ class Pipeline:
             parameters={"seed": self._options["seed"],
                         "adapter": component_identity(self.adapter)})
         checkpoint = StageCheckpoint(checkpoint_dir, physical.stages[0].id, identity)
+        if self._n is None:  # guarded by output(); keeps this private method type-safe
+            raise ValueError("bounded count output requires a target size")
+        target_size = self._n
         transform_outputs = {output for call in self._transforms for output in call["outputs"]}
         registered = [name for name in strategy.referenced_metrics()
                       if name not in strategy.define and name not in transform_outputs]
@@ -1416,11 +1427,11 @@ class Pipeline:
             # historically falls through to stable quantile ranks.
             normalize = "quantile" if strategy.normalize == "none" else strategy.normalize
             selected = external_top_k(
-                stage.commits, weights=strategy.weights, target_size=self._n,
+                stage.commits, weights=strategy.weights, target_size=target_size,
                 normalize=normalize, spill_dir=spill_dir)
         elif strategy.method == "uniform-bins":
             selected = external_uniform_bins(
-                stage.commits, axes=strategy.axes, target_size=self._n,
+                stage.commits, axes=strategy.axes, target_size=target_size,
                 seed=self._options["seed"], spill_dir=spill_dir)
         splits = {}
         if self._split_test:

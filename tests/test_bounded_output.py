@@ -52,3 +52,27 @@ def test_undeclared_approximate_mode_fails_before_reading(tmp_path):
         _pipeline().options(approximation="approximate").output(
             str(tmp_path / "approximate"), categorical="omit")
 
+
+def test_bounded_count_remote_output_uses_local_temporary_spill():
+    fsspec = pytest.importorskip("fsspec")
+    fsspec.filesystem("memory").store.clear()
+    result = _pipeline().output("memory://bounded-count", categorical="omit")
+    assert result["selected"] == 3
+    with fsspec.open("memory://bounded-count/config.json", "rt") as file:
+        config = json.load(file)
+    assert config["execution"]["bounded"] is True
+    assert config["execution"]["physical_plan"]["spill_path"] is None
+
+
+def test_bounded_count_reads_json_arrays_through_json_adapter(tmp_path):
+    paths = []
+    for source in range(2):
+        path = tmp_path / f"source-{source}.json"
+        path.write_text(json.dumps([{"t": tick, "x": float(source + tick)}
+                                    for tick in range(6)]))
+        paths.append(str(path))
+    pipeline = (input(paths, time="t").window(2).measure("level", "mean", of="x")
+                .sample("top-k", n=2, weights={"level": 1.0}))
+    result = pipeline.output(str(tmp_path / "out"), categorical="omit")
+    assert result["selected"] == 2
+    assert result["shards"]

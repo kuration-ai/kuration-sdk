@@ -131,10 +131,11 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
                        "FROM items ORDER BY priority DESC,source_id,id_sort")
         if tag_coverage and total > 0:
             reserve_cap = tag_coverage.get("min_tag_frac", 0.005) * total
-            reserved, covered = 0.0, set()
-            tags = [row[0] for row in connection.execute("SELECT DISTINCT tag FROM item_tags "
-                                                          "ORDER BY tag")]
-            for tag in tags:
+            reserved = 0.0
+            covered: set[str] = set()
+            all_tags = [row[0] for row in connection.execute(
+                "SELECT DISTINCT tag FROM item_tags ORDER BY tag")]
+            for tag in all_tags:
                 if tag in covered or reserved >= reserve_cap:
                     continue
                 query = ("SELECT i.id_blob,i.source_id,i.priority,i.seconds,i.group_blob,i.tags_blob "

@@ -1,6 +1,8 @@
 """Read side: kuration.loaders (numpy) + kuration.torch.ShardDataset (the [torch] extra)."""
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
@@ -20,6 +22,27 @@ SCHEMA = SchemaSpec.from_dict({
     "name": "d", "entity_axis": "e", "sample_hz": 1.0,
     "fields": {"pos": {"kind": "vector", "dims": ["x", "y"]}, "act": {"kind": "scalar"}},
 })
+
+
+def test_loader_does_not_hide_future_config_version(tmp_path):
+    from kuration.versioning import ARTIFACT_FORMAT_VERSION
+
+    (tmp_path / "dataset_manifest.json").write_text(json.dumps({
+        "artifact_format_version": ARTIFACT_FORMAT_VERSION, "shards": []}))
+    (tmp_path / "config.json").write_text(json.dumps({
+        "artifact_format_version": "999.0", "output": {"container": "json"}}))
+    with pytest.raises(ValueError, match="unsupported future artifact"):
+        shard_entries(str(tmp_path))
+
+
+def test_loader_does_not_hide_malformed_config(tmp_path):
+    from kuration.versioning import ARTIFACT_FORMAT_VERSION
+
+    (tmp_path / "dataset_manifest.json").write_text(json.dumps({
+        "artifact_format_version": ARTIFACT_FORMAT_VERSION, "shards": []}))
+    (tmp_path / "config.json").write_text("{")
+    with pytest.raises(json.JSONDecodeError):
+        shard_entries(str(tmp_path))
 
 
 class MemAdapter:

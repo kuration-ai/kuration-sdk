@@ -17,6 +17,7 @@ import numpy as np
 
 from .checkpoints import PartitionCommit
 from .columnar import SegmentBatch
+from .segment import Segment
 
 
 def _paths(partitions: Iterable[PartitionCommit | str]) -> list[str]:
@@ -363,6 +364,7 @@ def iter_external_uniform_priorities(partitions: Iterable[PartitionCommit | str]
         for path, row_idx, bin_key, position in connection.execute(query):
             if path != cached_path:
                 cached_path, cached_batch = path, SegmentBatch.read_ipc(path)
+            assert cached_batch is not None
             segment = cached_batch.slice(row_idx, 1).to_segments()[0]
             segment.bin = tuple(json.loads(bin_key))
             yield segment, -float(position + 1)
@@ -444,6 +446,7 @@ def iter_external_top_k_priorities(partitions: Iterable[PartitionCommit | str], 
         for path, row_idx, priority in connection.execute(query):
             if path != cached_path:
                 cached_path, cached_batch = path, SegmentBatch.read_ipc(path)
+            assert cached_batch is not None
             segment = cached_batch.slice(row_idx, 1).to_segments()[0]
             yield segment, float(priority)
     finally:
@@ -481,7 +484,7 @@ def external_weighted(partitions: Iterable[PartitionCommit | str], *, weights: d
     """
     if not isinstance(target_size, int) or isinstance(target_size, bool) or target_size < 1:
         raise ValueError("target_size must be a positive integer")
-    heap = []
+    heap: list[tuple[float, int, Segment]] = []
     for ordinal, (segment, priority) in enumerate(iter_external_weighted_priorities(
             partitions, weights=weights, normalize=normalize, seed=seed,
             spill_dir=spill_dir)):
@@ -532,7 +535,9 @@ def iter_external_span_items(prioritized_segments, source_tracks: dict, *, sampl
                 bounds = ((start, min(start + span_len, length))
                           for start in range(0, length, span_len)) if span_len else ((0, length),)
                 for span_index, (start, end) in enumerate(bounds):
-                    priorities, tags, feature_values = [], set(), {}
+                    priorities: list[float] = []
+                    tags: set = set()
+                    feature_values: dict[str, list[float]] = {}
                     query = ("SELECT priority,tags,features FROM segments WHERE source_id=? "
                              "AND start_idx<? AND end_idx>? ORDER BY start_idx,end_idx")
                     for priority, tags_blob, features_blob in connection.execute(

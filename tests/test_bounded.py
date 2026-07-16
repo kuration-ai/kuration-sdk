@@ -73,3 +73,32 @@ def test_bounded_feature_stage_reuses_valid_partitions_without_transform_work(tm
     assert second.telemetry["checkpoint_misses"] == 0
     marker = checkpoint.finalize([commit.partition_id for commit in second.commits])
     assert marker["rows"] == 3
+
+
+def test_bounded_skip_discards_all_partitions_from_failed_source(tmp_path):
+    pipeline, _, _ = _setup(tmp_path)
+
+    class Adapter:
+        schema = pipeline.schema
+
+        def ticks(self, source):
+            return pipeline.adapter.ticks(pipeline.sources[0])
+
+    identity = CheckpointIdentity(canonical_hash({"logical": 1}),
+                                  canonical_hash({"physical": 1}))
+    checkpoint = StageCheckpoint(str(tmp_path / "rollback"), "features", identity)
+
+    def fail_late(segment):
+        if segment.source_id == "bad" and segment.start_idx >= 2:
+            raise RuntimeError("late source failure")
+        return ()
+
+    result = checkpoint_feature_stage(
+        schema=pipeline.schema, adapter=Adapter(), sources=["bad", "good"],
+        define=pipeline._define, registered=(), segmenter=pipeline._segmenter_or_default(),
+        checkpoint=checkpoint, batch_size=2, tags_of=fail_late, on_error="skip")
+
+    assert [error["source"] for error in result.errors] == ["bad"]
+    assert set(result.source_tracks) == {"good"}
+    assert result.commits
+    assert all(commit.partition_id.startswith("good:") for commit in result.commits)

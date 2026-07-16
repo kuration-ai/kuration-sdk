@@ -9,7 +9,7 @@ The hours-over-output-spans budget fill is deferred to the output phase (you can
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from .adapters.base import InputAdapter
 from .binning import bin_segments
@@ -23,11 +23,12 @@ from .strategy import Strategy, select
 @dataclass
 class CurateResult:
     selected: list[Segment]
-    all_segments: list[Segment]
+    all_segments: Any
     schema: SchemaSpec
     strategy: Strategy
     splits: dict = field(default_factory=dict)   # source_id -> "train"/"test" (if test_frac>0)
     errors: list = field(default_factory=list)   # [{source, error}] for skipped sources
+    execution: Optional[dict] = None
 
 
 def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],

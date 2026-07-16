@@ -39,11 +39,13 @@ def _resolve(dataset, container: Optional[str]) -> tuple[dict, str, Optional[str
     check_version(man.get("artifact_format_version"), kind="artifact")
     if container is None and base is not None:
         try:                                     # container lives in the run's config.json
-            cfg = json.loads(read_text(f"{base}/config.json"))
+            config_text = read_text(f"{base}/config.json")
+        except FileNotFoundError:
+            config_text = None                   # legacy manifest with no sibling config
+        if config_text is not None:
+            cfg = json.loads(config_text)
             check_version(cfg.get("artifact_format_version"), kind="artifact")
             container = (cfg.get("output") or {}).get("container")
-        except Exception:
-            container = None
     return man, (container or "npz"), base
 
 
