@@ -18,8 +18,8 @@ result = (
     .window(4, unit="seconds")
     .measure("speed", "mean", of="pos")
     .filter("speed", ">=", 1.0)
-    .organize("speed", bins=8)
-    .curate("equal", n=5000)
+    .bin("speed", bins=8)
+    .sample("equal", n=5000)
     .output("out/run1")
 )
 ```
@@ -90,13 +90,13 @@ concepts: [schema.md](schema.md)):
 | `.window` | `(window, stride=None, unit="steps")` | the `Segmenter` (stride defaults to `window`) |
 | `.measure` | `(name, spec=None, *, of=None, map=None, filter=None, scope=None)` | a `strategy.define[name]` entry — 4 forms below |
 | `.filter` | `("anomaly"/"dedup", **knobs)` **or** `(metric, op, value)` | a pre-pass filter entry, or a `selection.predicates` entry |
-| `.organize` | `(metric, bins=4)` (or positional `(metric, n)` / compat `(metric, "bin", n)`) | a `binning.axes` entry |
+| `.bin` | `(metric, bins=4)` (or positional `(metric, n)`) | a `binning.axes` entry; `.organize` is a compatibility alias |
 | `.score` | `(name, out=None, **params)` | a `strategy.scorers` entry (output name defaults to `name`) |
 | `.tag` | `(*sources, min_frac=None)` | a `tags.from` entry; `min_frac` sets `selection.tag_coverage` |
 | `.split` | `(test=0.2)` | source-level test split (count path: `test_frac`; hours path: budget share) |
 | `.group` | `(fn)` | `group_of(source_id) -> key` (group cap + stratified splits) |
 | `.options` | `(workers=, on_error=, seed=, streaming=, resume=, sample_hz=, progress=)` | execution kwargs passed to the terminal |
-| `.curate` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params)` | `selection.method` + knobs; exactly one of `n=`/`hours=` |
+| `.sample` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params)` | `selection.method` + knobs; exactly one of `n=`/`hours=`; `.curate` is a compatibility alias |
 | `.semantic` | `(field, "position"|"angular"|"bitmask", **metadata)` | a new validated `SchemaSpec` |
 | `.as_position/.as_angular/.as_bitmask` | semantic convenience wrappers | `.semantic(...)` |
 | `.at_rate` | `(hz)` | `SchemaSpec.sample_hz` |
@@ -113,8 +113,8 @@ concepts: [schema.md](schema.md)):
 A bare token auto-qualifies against the schema: an entity field becomes `<entity_axis>.field`,
 a global stays bare, an event-stream name raises (name a field on it: `"stream.field"`).
 
-`.curate`'s method resolution: an explicit `method=` (case-insensitive alias, e.g. `"equal"` →
-`uniform-bins`, `"top"`/`"topk"` → `top-k`) wins; otherwise `.organize(...)` axes present →
+`.sample`'s method resolution: an explicit `method=` (case-insensitive alias, e.g. `"equal"` →
+`uniform-bins`, `"top"`/`"topk"` → `top-k`) wins; otherwise `.bin(...)` axes present →
 `uniform-bins`; otherwise `weights=` given → `top-k`; otherwise it raises (name a method).
 
 `.filter`'s two shapes are disambiguated by the first argument: `"anomaly"`/`"dedup"` (with
@@ -149,7 +149,7 @@ from kuration import register_operator
 def balance_motion(pipeline, *, field, bins=8):
     return (pipeline
             .measure("motion", "mean", of=field)
-            .organize("motion", bins=bins))
+            .bin("motion", bins=bins))
 
 pipeline = pipeline.apply("acme/balance-motion", field="velocity", bins=8)
 ```
@@ -207,8 +207,8 @@ you'll hit directly:
   `name` — raises immediately, not at `collect()`/`output()` time.
 - `.filter(metric, op, value)` on a metric that isn't a declared measure/callable/scorer
   output, or an unrecognized `op` — raises with the known aliases listed.
-- `.organize(metric, ...)` on an unknown or already-used axis metric — raises.
-- `.curate()` with both `n=` and `hours=` (or neither), an unresolvable method, or an unknown
+- `.bin(metric, ...)` on an unknown or already-used axis metric — raises.
+- `.sample()` with both `n=` and `hours=` (or neither), an unresolvable method, or an unknown
   method alias — raises.
 - `.options(**kw)` with an unknown key, or `on_error` outside `{"skip", "raise"}` — raises.
 - `.output(..., include=[...])`/`exclude=[...]` naming an unknown modality — raises.
@@ -226,8 +226,8 @@ result = (
     .measure("hp")
     .filter("hp", "<=", 50)                        # universal predicate: drop bad windows
     .measure("action_entropy", "entropy", of="action")
-    .organize("action_entropy", bins=4)             # diversity axis
-    .curate("equal", n=12)                          # uniform-bins, count path
+    .bin("action_entropy", bins=4)                  # diversity axis
+    .sample("equal", n=12)                          # uniform-bins, count path
     .options(on_error="raise")
     .output("out/run1", container="hdf5")           # needs the [array] extra
 )

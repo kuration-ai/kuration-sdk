@@ -49,10 +49,10 @@ pipeline = (
     .window(12, stride=6)
     .measure("activity", "std", of="signal")
     .measure("fault_rate", "rate", of="fault")
-    .organize("activity", bins=3)
-    .organize("fault_rate", bins=2)
+    .bin("activity", bins=3)
+    .bin("fault_rate", bins=2)
     .split(test=1 / 3)
-    .curate("equal", n=12)
+    .sample("equal", n=12)
     .options(mode="strict", seed=7)
 )
 
@@ -66,10 +66,10 @@ Reading from top to bottom:
 2. `window(...)` turns each session into overlapping 12-step candidate windows.
 3. `measure(...)` computes signal variability and the proportion of non-zero fault values in
    each window.
-4. `organize(...)` places windows into activity/fault bins.
+4. `bin(...)` places windows into activity/fault bins.
 5. `split(...)` assigns whole source sessions to train or test, avoiding leakage between windows
    from the same session.
-6. `curate("equal", n=12)` spreads the selection across occupied bins instead of simply taking
+6. `sample("equal", n=12)` spreads the selection across occupied bins instead of simply taking
    the first twelve windows.
 7. Strict mode makes source errors and ambiguous output choices fail immediately. The seed makes
    selection and splitting repeatable.

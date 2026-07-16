@@ -13,7 +13,7 @@ import math
 import random
 import tempfile
 
-from kuration import SchemaSpec, Segmenter, Tick, load_strategy, OutputSpec, write_dataset
+from kuration import SchemaSpec, Tick, OutputSpec, input
 
 if __import__("importlib").util.find_spec("sklearn") is None:
     raise SystemExit("this example needs scikit-learn: pip install -e '.[methods]'")
@@ -54,18 +54,6 @@ class MemAdapter:
 
 data = {f"ep{i}": trajectory("precise" if i % 2 else "erratic") for i in range(12)}
 
-# Compose: weight a learned action-aware score together with a geometric coverage feature.
-strategy = load_strategy({
-    "name": "quality+coverage",
-    "define": {"ee_speed": {"source": "arm.ee", "map": "speed", "reduce": "mean"}},
-    "scorers": [{"name": "action_residual", "as": "informativeness",
-                 "obs": "ee", "action": "action", "k": 8}],
-    "tags": {"from": ["phase"]},
-    "selection": {"method": "weighted",
-                  "weights": {"informativeness": 1.0, "ee_speed": 0.3},
-                  "tag_coverage": {"min_tag_frac": 0.05}},
-}, schema)
-
 spec = OutputSpec.from_dict({
     "shard_length": 64, "container": "npz",
     "modalities": {"joint":  {"dtype": "float32", "shape": [3], "source": "field:joint"},
@@ -73,9 +61,17 @@ spec = OutputSpec.from_dict({
 })
 
 out = tempfile.mkdtemp(prefix="kuration_ex02_")
-res = write_dataset(out, schema=schema, adapter=MemAdapter(data), sources=list(data),
-                    strategy=strategy, segmenter=Segmenter(1.0, 0.5, unit="seconds", sample_hz=50),
-                    spec=spec, train_hours=0.05, test_hours=0.0, seed=0)
+pipeline = (
+    input(adapter=MemAdapter(data), sources=list(data), schema=schema)
+    .window(1.0, stride=0.5, unit="seconds")
+    .measure("ee_speed", "mean", of="ee", map="speed")
+    .score("action_residual", out="informativeness", obs="ee", action="action", k=8)
+    .tag("phase", min_frac=0.05)
+    .sample("weighted", hours=0.05,
+            weights={"informativeness": 1.0, "ee_speed": 0.3})
+    .options(mode="strict", seed=0)
+)
+res = pipeline.output(out, spec=spec)
 print(f"wrote {res['results']['shards']} shards from {res['results']['tracks_admitted']} "
       f"admitted spans")
 print("  (learned action-residual score composed with geometric ee-speed + phase coverage)")

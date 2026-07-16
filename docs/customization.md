@@ -61,7 +61,7 @@ from kuration import register_operator
 def balance_signal(pipeline, *, field, bins=8):
     return (pipeline
             .measure("signal_level", "mean", of=field)
-            .organize("signal_level", bins=bins))
+            .bin("signal_level", bins=bins))
 
 pipeline = pipeline.apply("acme/balance-signal", field="signal", bins=6)
 ```

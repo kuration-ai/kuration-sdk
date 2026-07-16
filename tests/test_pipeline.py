@@ -251,6 +251,13 @@ def test_organize_kwarg_and_positional_forms_agree():
     assert c.describe()["strategy"]["binning"]["axes"] == axes
 
 
+def test_bin_and_sample_are_preferred_compatible_names():
+    old = _pipe().measure("hp").organize("hp", bins=2).curate(n=3)
+    new = _pipe().measure("hp").bin("hp", bins=2).sample(n=3)
+    assert old.describe()["strategy"] == new.describe()["strategy"]
+    assert [op["op"] for op in new._ops[-2:]] == ["bin", "sample"]
+
+
 def test_organize_unknown_metric_loud():
     with pytest.raises(ValueError) as e:
         _pipe().organize("nope", bins=2)

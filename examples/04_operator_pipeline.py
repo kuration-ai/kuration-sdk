@@ -5,7 +5,7 @@ Synthesizes plain .json sources (array-of-row-objects — a numeric "t" time col
 motivating one-chain shape end to end:
 
     input(...).measure("hp").filter("hp", "<=", 50).measure("action_entropy", "entropy", of="action")
-              .organize("action_entropy", bins=4).curate("equal", n=...).output(out_dir, container=...)
+              .bin("action_entropy", bins=4).sample("equal", n=...).output(out_dir, container=...)
 
 No schema, no adapter, no strategy dict — `input()` infers the schema from a sample and
 every operator validates itself loudly against it.
@@ -25,7 +25,7 @@ work = Path(tempfile.mkdtemp(prefix="kuration_ex04_"))
 # 1. Synthesize plain-JSON device logs: source d{i} has hp centered at 20*i (+ ripple), so
 #    filter("hp", "<=", 50) keeps d0/d1/d2 and drops d3/d4. "action" is drawn per-step with a
 #    per-source skew (source i favors "attack" more as i grows) -> action_entropy varies both
-#    across sources and across windows within a source, giving `organize` real bins to spread.
+#    across sources and across windows within a source, giving `bin` useful ranges to spread.
 ACTIONS = ["idle", "move", "attack"]
 N_SOURCES, N_STEPS = 5, 128
 paths = []
@@ -47,8 +47,8 @@ pipe = (
     .measure("hp")
     .filter("hp", "<=", 50)
     .measure("action_entropy", "entropy", of="action")
-    .organize("action_entropy", bins=4)
-    .curate("equal", n=12)
+    .bin("action_entropy", bins=4)
+    .sample("equal", n=12)
     .options(on_error="raise")
 )
 
@@ -77,8 +77,8 @@ pipe_hours = (
     .measure("hp")
     .filter("hp", "<=", 50)
     .measure("action_entropy", "entropy", of="action")
-    .organize("action_entropy", bins=4)
-    .curate("equal", hours=0.05)
+    .bin("action_entropy", bins=4)
+    .sample("equal", hours=0.05)
     .options(on_error="raise")
 )
 res_hours = pipe_hours.output(str(out_hours), container="npz")
@@ -102,7 +102,7 @@ print(f"read back {len(shards)} train shards; hp shape = {shards[0]['hp'].shape}
 cfg = json.loads((out_count / "config.json").read_text())
 ops = [o["op"] for o in cfg["pipeline"]]
 print("config.json 'pipeline' provenance:", ops)
-assert ops == ["input", "window", "measure", "filter", "measure", "organize", "curate",
+assert ops == ["input", "window", "measure", "filter", "measure", "bin", "sample",
                "options"]
 
 print("\nall assertions passed.")

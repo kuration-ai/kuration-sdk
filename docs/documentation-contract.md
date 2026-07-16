@@ -115,7 +115,7 @@ All non-underscore methods intentionally exposed by `Pipeline` are public:
 
 - Schema and resolution: `using`, `semantic`, `as_position`, `as_angular`, `as_bitmask`,
   `at_rate`.
-- Pipeline construction: `apply`, `window`, `measure`, `filter`, `organize`, `score`, `tag`,
+- Pipeline construction: `apply`, `window`, `measure`, `filter`, `bin`, `score`, `tag`,
   `split`, `group`, `options`, `curate`.
 - Inspection: `head`, `describe`, `explain`.
 - Terminals: `collect`, `report`, `experiment`, `output`.

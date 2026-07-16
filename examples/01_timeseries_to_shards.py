@@ -11,7 +11,7 @@ import random
 import tempfile
 from pathlib import Path
 
-from kuration import SchemaSpec, TimeseriesAdapter, Segmenter, load_strategy, OutputSpec, write_dataset
+from kuration import SchemaSpec, TimeseriesAdapter, OutputSpec, input
 
 rng = random.Random(0)
 work = Path(tempfile.mkdtemp(prefix="kuration_ex01_"))
@@ -46,27 +46,26 @@ for d in range(8):
 adapter = TimeseriesAdapter(schema, fields={"pos": ["x", "y"], "temp": "temp", "mode": "mode"},
                             time_column="t", entity_column="device")
 
-# 3. Strategy as data: diversity over (movement, temperature) bins; cover every mode.
-strategy = load_strategy({
-    "name": "diverse",
-    "define": {"speed": {"source": "device.pos", "map": "speed", "reduce": "mean"},
-               "temp":  {"source": "device.temp", "reduce": "mean"}},
-    "binning": {"axes": [{"metric": "speed", "bins": 5}, {"metric": "temp", "bins": 5}]},
-    "tags": {"from": ["mode"]},
-    "selection": {"method": "uniform-bins", "tag_coverage": {"min_tag_frac": 0.05}},
-}, schema)
-
-# 4. Output: each timestep is a 2-vector position + a scalar temperature.
+# 3. Output: each timestep is a 2-vector position + a scalar temperature.
 spec = OutputSpec.from_dict({
     "shard_length": 32, "container": "npz",
     "modalities": {"pos":  {"dtype": "float32", "shape": [2], "source": "field:pos"},
                    "temp": {"dtype": "float32", "shape": [],  "source": "field:temp"}},
 })
 
-# 5. Curate to an hour budget and write shards.
-res = write_dataset(str(work / "out"), schema=schema, adapter=adapter, sources=sources,
-                    strategy=strategy, segmenter=Segmenter(8, 4, unit="seconds", sample_hz=1),
-                    spec=spec, train_hours=0.04, test_hours=0.02, seed=0)
+# 4. Build and execute the fluent pipeline.
+pipeline = (
+    input(adapter=adapter, sources=sources, schema=schema)
+    .window(8, stride=4, unit="seconds")
+    .measure("speed", "mean", of="pos", map="speed")
+    .measure("temp", "mean", of="temp")
+    .bin("speed", bins=5)
+    .bin("temp", bins=5)
+    .tag("mode", min_frac=0.05)
+    .sample("equal", hours=0.04, test_hours=0.02)
+    .options(mode="strict", seed=0)
+)
+res = pipeline.output(str(work / "out"), spec=spec)
 r = res["results"]
 print(f"wrote {r['shards']} shards  ({r['n_train']} train / {r['n_test']} test sources)")
 print(f"output dir: {work / 'out'}")

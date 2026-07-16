@@ -7,7 +7,7 @@ selected distribution diverges from a random baseline (Jensen-Shannon, per metri
 """
 import math
 
-from kuration import SchemaSpec, Segmenter, Tick, Arm, load_strategy, run_experiment
+from kuration import SchemaSpec, Tick, input
 
 schema = SchemaSpec.from_dict({
     "name": "sig", "entity_axis": "e", "sample_hz": 1.0,
@@ -32,22 +32,19 @@ class MemAdapter:
 
 
 data = {f"s{L}": source(L) for L in range(1, 11)}   # activity levels 1..10
-seg = Segmenter(8, 8, unit="seconds", sample_hz=1)
-
-define = {"speed": {"source": "e.pos", "map": "speed", "reduce": "mean"},
-          "amp":   {"source": "e.amp", "reduce": "mean"}}
-arms = [
-    Arm("baseline", load_strategy({"name": "b", "define": define,
-        "binning": {"axes": [{"metric": "speed", "bins": 6}]},
-        "selection": {"method": "uniform-bins"}}, schema)),
-    Arm("fast", load_strategy({"name": "f", "define": define,
-        "selection": {"method": "top-k", "weights": {"speed": 1.0}}}, schema)),
-    Arm("high-amp", load_strategy({"name": "h", "define": define,
-        "selection": {"method": "top-k", "weights": {"amp": 1.0}}}, schema)),
-]
-
-out = run_experiment(schema=schema, adapter=MemAdapter(data), sources=list(data), arms=arms,
-                     segmenter=seg, target_size=20, baseline="baseline", seed=0)
+base = (
+    input(adapter=MemAdapter(data), sources=list(data), schema=schema)
+    .window(8, stride=8, unit="seconds")
+    .measure("speed", "mean", of="pos", map="speed")
+    .measure("amp", "mean", of="amp")
+    .options(mode="strict", seed=0)
+)
+arms = {
+    "baseline": base.bin("speed", bins=6).sample("equal", n=20),
+    "fast": base.sample("top-k", n=20, weights={"speed": 1.0}),
+    "high-amp": base.sample("top-k", n=20, weights={"amp": 1.0}),
+}
+out = base.experiment(arms, n=20, baseline="baseline")
 
 print(f"baseline = {out['baseline']}  ({out['n_total_segments']} segments scored once)\n")
 for name, a in out["arms"].items():

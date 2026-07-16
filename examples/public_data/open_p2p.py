@@ -61,10 +61,10 @@ def run(sources: list[str], out_dir: str, *, n: int = 12) -> dict:
         .measure("key_density", "mean", of="keys_down")
         .measure("mouse_activity", "mean", of="mouse_motion")
         .measure("instruction_rate", "rate", of="instruction_present")
-        .organize("key_density", bins=4)
-        .organize("mouse_activity", bins=4)
+        .bin("key_density", bins=4)
+        .bin("mouse_activity", bins=4)
         .tag("environment", "action_source", "instruction_state", min_frac=0.05)
-        .curate("equal", n=n)
+        .sample("equal", n=n)
         .options(mode="strict", seed=33)
     )
     if len(sources) > 1:

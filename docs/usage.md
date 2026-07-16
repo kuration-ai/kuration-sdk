@@ -306,8 +306,8 @@ from kuration import input, iter_shards
     .measure("hp")
     .filter("hp", "<=", 50)                          # universal predicate — any selection method
     .measure("action_entropy", "entropy", of="action")
-    .organize("action_entropy", bins=4)
-    .curate("equal", n=5000)                         # alias for uniform-bins
+    .bin("action_entropy", bins=4)
+    .sample("equal", n=5000)                         # alias for uniform-bins
     .options(on_error="raise")
     .output("out/run1", container="hdf5"))            # container inferred from the path otherwise
 
@@ -315,7 +315,7 @@ for arrays in iter_shards("out/run1", split="train"):
     arrays["hp"]        # (window, ) float32
 ```
 
-`.curate(hours=...)` instead of `n=` routes `.output(...)` through the hour-budget fill; add
+`.sample(hours=...)` instead of `n=` routes `.output(...)` through the hour-budget fill; add
 `.split(test=0.2)` for a leakage-free train/test split; `.describe()` shows the resolved
 schema/strategy/segmenter/options before anything runs. See `examples/04_operator_pipeline.py`
 for this exact chain end to end (count path + hours path + config.json's `"pipeline"`

@@ -11,6 +11,7 @@ is a **closed grammar** validated against the schema, selection is a **declarati
 and the curated set + its full configuration are written reproducibly.
 
 ```bash
+pip install -e '.[all]'                    # all SDK features and format integrations
 pip install -e .                          # core (numpy only)
 pip install -e '.[methods]'               # + scikit-learn  (feature-space selection + filters)
 pip install -e '.[parquet,array]'         # + pyarrow / h5py  (Parquet & HDF5 containers/adapters)
@@ -45,7 +46,7 @@ Follow the **[ten-minute walkthrough](docs/quickstart.md)** to understand each o
 inspect the resulting manifest, configuration, and arrays.
 
 Then see the bounded
-**[TeaPearce Counter-Strike worked example](examples/public_data/README.md)** for a real public
+**[TeaPearce Counter-Strike worked example](examples/public_data/teapearce_csgo.md)** for a real public
 dataset, a custom HDF5 adapter, rare-event coverage, and optional image output.
 The companion **[Open P2P example](examples/public_data/open_p2p.md)** curates keyboard, mouse,
 correction, environment, and text-instruction coverage from `annotation.proto` files.
@@ -64,8 +65,8 @@ from kuration import input
     .window(4, unit="seconds")
     .measure("speed", "mean", of="pos")
     .filter("speed", ">=", 1.0)              # universal predicate, any selection method
-    .organize("speed", bins=8)
-    .curate("equal", n=5000)
+    .bin("speed", bins=8)
+    .sample("equal", n=5000)
     .options(mode="strict")
     .output("out/run1", preset="numpy-timeseries", categorical="omit"))
 ```
@@ -74,19 +75,19 @@ from kuration import input
 
 Every operator returns a new immutable `Pipeline`.
 
-| stage | operators | purpose |
+| operators | purpose | recommended compute |
 |---|---|---|
-| Input | `input(...)` | load files, rows, arrays, or a custom adapter; infer the schema |
-| Schema | `.semantic()`, `.as_position()`, `.as_angular()`, `.as_bitmask()`, `.at_rate()` | refine inferred meaning and sample rate |
-| Window | `.window()` | divide each source into candidate segments |
-| Describe | `.measure()`, `.score()`, `.tag()` | calculate metrics, whole-pool scores, and categorical coverage |
-| Restrict | `.filter()` | apply predicates or anomaly/dedup filters |
-| Organize | `.organize()`, `.group()`, `.split()` | create diversity bins, leakage groups, and train/test splits |
-| Compose | `.apply()` | expand a registered, reusable sequence of ordinary operators |
-| Select | `.curate()` | choose a count or duration budget using a selection method |
-| Configure | `.options()` | set strictness, workers, seed, streaming, resume, and progress |
-| Inspect | `.head()`, `.describe()`, `.explain()` | inspect data or the execution plan before running |
-| Finish | `.collect()`, `.output()`, `.report()`, `.experiment()` | select, write shards, profile data, or compare strategies |
+| `input(...)` | load files, rows, arrays, or a custom adapter; infer the schema | CPU; storage bandwidth matters for large sources |
+| `.semantic()`, `.as_position()`, `.as_angular()`, `.as_bitmask()`, `.at_rate()` | refine inferred meaning and sample rate | negligible |
+| `.window()` | divide each source into candidate segments | CPU |
+| `.measure()`, `.score()`, `.tag()` | calculate metrics, whole-pool scores, and categorical coverage | CPU by default; accelerator only for custom learned scorers |
+| `.filter()` | apply predicates or anomaly/dedup filters | CPU and RAM; `[methods]` filters may parallelize |
+| `.bin()`, `.group()`, `.split()` | create diversity bins, leakage groups, and train/test splits | CPU and RAM |
+| `.apply()` | expand a registered, reusable sequence of ordinary operators | depends on the expanded operators |
+| `.sample()` | choose a count or duration budget using a selection method | CPU and RAM; feature-space methods use `[methods]` |
+| `.options()` | set strictness, workers, seed, streaming, resume, and progress | use `workers` for multi-core feature scoring |
+| `.head()`, `.describe()`, `.explain()` | inspect data or the execution plan before running | negligible; `.head()` reads a small source sample |
+| `.collect()`, `.output()`, `.report()`, `.experiment()` | select, write shards, profile data, or compare strategies | CPU plus storage I/O; experiments reuse one scoring pass |
 
 Extend behavior with registered components; package a reusable workflow with
 `register_operator()` and `.apply("name", ...)`. See the
@@ -94,9 +95,10 @@ Extend behavior with registered components; package a reusable workflow with
 exact signatures.
 
 See **[docs/pipeline.md](docs/pipeline.md)** for the full operator reference and
-`examples/04_operator_pipeline.py` for a runnable chain. The classic API below (explicit
-`SchemaSpec` + `InputAdapter` + `load_strategy`) remains the way to reach custom adapters,
-encoders, or `workers>1` over in-memory data.
+`examples/04_operator_pipeline.py` for a runnable chain. Custom adapters and encoders plug
+directly into the fluent pipeline through `input(adapter=..., schema=..., sources=...)` and
+`.output(encoder=...)`. The classic explicit `SchemaSpec` + `InputAdapter` + `load_strategy`
+API remains available for compatibility and declarative job specifications.
 
 ## Pipeline
 
@@ -125,6 +127,7 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | [docs/jobs.md](docs/jobs.md) | **job-spec reference** — every JSON key the `kur-*` CLIs accept |
 | [docs/customization.md](docs/customization.md) | registries, descriptors, presets, versioning, and extension authoring |
 | [docs/documentation-contract.md](docs/documentation-contract.md) | documentation audiences, entry paths, information architecture, and public API boundary |
+| [docs/releasing.md](docs/releasing.md) | build, trusted-publishing setup, and public PyPI release checklist |
 
 Hitting a loud validation error? [docs/usage.md § Troubleshooting](docs/usage.md#17--troubleshooting--common-loud-failures)
 maps the common ones to causes and fixes.

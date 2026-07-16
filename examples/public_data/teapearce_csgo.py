@@ -76,10 +76,10 @@ def run(sources: list[str], out_dir: str, *, n: int = 12,
         .measure("action_density", "mean", of="keys_down")
         .measure("mouse_activity", "mean", of="mouse_motion")
         .measure("shoot_rate", "rate", of="left_click")
-        .organize("action_density", bins=4)
-        .organize("mouse_activity", bins=4)
+        .bin("action_density", bins=4)
+        .bin("mouse_activity", bins=4)
         .tag("combat.kind", min_frac=0.08)
-        .curate("equal", n=n)
+        .sample("equal", n=n)
         .options(mode="strict", seed=21)
     )
     if len(sources) > 1:

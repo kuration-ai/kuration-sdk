@@ -43,10 +43,10 @@ def run(out_dir: str | Path) -> dict:
         .window(12, stride=6)
         .measure("activity", "std", of="signal")
         .measure("fault_rate", "rate", of="fault")
-        .organize("activity", bins=3)
-        .organize("fault_rate", bins=2)
+        .bin("activity", bins=3)
+        .bin("fault_rate", bins=2)
         .split(test=1 / 3)
-        .curate("equal", n=12)
+        .sample("equal", n=12)
         .options(mode="strict", seed=7)
     )
 

@@ -5,7 +5,7 @@ with no downloads. The quick start writes to the directory passed with `--out`; 
 use a temporary directory and print its path.
 
 ```bash
-pip install -e '.[methods]'                       # 02 needs scikit-learn; the quick start needs only numpy
+pip install -e '.[all]'                           # install every optional capability
 python examples/quickstart.py --out quickstart-out
 python examples/01_timeseries_to_shards.py
 python examples/02_robotics_action_aware.py
@@ -14,8 +14,8 @@ python examples/03_compare_strategies.py
 
 | script | shows |
 |---|---|
-| **quickstart** | the tested first run: infer a schema, measure and organize windows, select a diverse subset, write NPZ shards, and read one back. |
-| **01_timeseries_to_shards** | the 5-minute start: declare a schema, map CSV columns to fields (no code), curate generic device logs for diversity + mode-coverage, write train/test shards. |
+| **quickstart** | the tested first run: infer a schema, measure and bin windows, sample a diverse subset, write NPZ shards, and read one back. |
+| **01_timeseries_to_shards** | the 5-minute start: declare a schema, map CSV columns to fields, build a fluent pipeline, sample generic device logs for diversity + mode coverage, and write train/test shards. |
 | **02_robotics_action_aware** | robotics credibility: angular joints + positional end-effector, a learned **action-aware scorer** (`action_residual`) **composed** with geometric coverage + phase coverage — quality and diversity as separate weighted axes. |
 | **03_compare_strategies** | the experiment harness: score once, select per arm (baseline / fast / high-amplitude), report each arm's Jensen-Shannon divergence from baseline per metric. |
 | **public_data/teapearce_csgo** | a bounded public-data workflow: adapt TeaPearce's frame-keyed HDF5, balance action diversity, preserve rare combat events, and optionally emit raw frame tensors. |

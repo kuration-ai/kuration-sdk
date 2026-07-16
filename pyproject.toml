@@ -33,6 +33,17 @@ hf = ["datasets"]                 # HuggingFace datasets input adapter
 zarr = ["zarr"]                   # Zarr array-store input adapter
 p2p = ["protobuf"]                # Open P2P worked example (annotation.proto parsing)
 cli = ["jsonschema"]              # kur-validate --json-schema (JSON Schema cross-check)
+all = [
+    "scikit-learn>=1.4",
+    "pyarrow",
+    "h5py",
+    "fsspec",
+    "torch",
+    "datasets",
+    "zarr",
+    "protobuf",
+    "jsonschema",
+]                                   # every runtime capability in one install
 dev = ["pytest", "jsonschema", "ruff>=0.5", "mypy>=1.10", "build>=1.2"]
 
 [project.scripts]

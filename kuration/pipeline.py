@@ -55,7 +55,7 @@ _OP_ALIASES = {
     "!=": "!=", "ne": "!=", "neq": "!=", "notequal": "!=",
 }
 
-# curate() method aliases (matched case-insensitively) -> canonical strategy method
+# sample() method aliases (matched case-insensitively) -> canonical strategy method
 _METHOD_ALIASES = {
     "equal": "uniform-bins", "uniform": "uniform-bins", "uniform-bins": "uniform-bins",
     "top": "top-k", "top-k": "top-k", "topk": "top-k",
@@ -684,28 +684,34 @@ class Pipeline:
         return p
 
     def organize(self, metric: str, *args, bins=None) -> "Pipeline":
-        """Add a quantile-bin axis over a declared metric. `.organize(m, bins=4)`,
-        `.organize(m, 4)`, or the positional-compat `.organize(m, "bin", 4)`."""
+        """Compatibility alias for :meth:`bin`."""
+        return self._add_bin("organize", metric, *args, bins=bins)
+
+    def bin(self, metric: str, *args, bins=None) -> "Pipeline":
+        """Add a quantile-bin axis over a declared metric."""
+        return self._add_bin("bin", metric, *args, bins=bins)
+
+    def _add_bin(self, operator: str, metric: str, *args, bins=None) -> "Pipeline":
         known = self._metric_names()
         if metric not in known:
-            raise ValueError(f"organize metric {metric!r} is not a declared measure, "
+            raise ValueError(f"{operator} metric {metric!r} is not a declared measure, "
                              f"callable metric, or scorer output (known: {sorted(known)})")
         if any(metric == m for m, _ in self._axes):
-            raise ValueError(f"duplicate organize axis {metric!r}")
+            raise ValueError(f"duplicate bin axis {metric!r}")
         if args:
             if bins is not None:
-                raise ValueError("organize(): pass bins positionally or as bins=, not both")
+                raise ValueError(f"{operator}(): pass bins positionally or as bins=, not both")
             if len(args) == 1 and isinstance(args[0], int):
                 bins = args[0]
             elif len(args) == 2 and args[0] == "bin":
                 bins = args[1]
             else:
-                raise ValueError(f"organize(): unsupported positional form {args!r}; use "
-                                 f"organize(metric, bins=n) or organize(metric, 'bin', n)")
+                raise ValueError(f"{operator}(): unsupported positional form {args!r}; use "
+                                 f"{operator}(metric, bins=n)")
         bins = bins if bins is not None else 4
         if not isinstance(bins, int) or isinstance(bins, bool) or bins < 1:
-            raise ValueError(f"organize(): bins must be a positive integer, got {bins!r}")
-        p = self._next("organize", metric, bins=bins)
+            raise ValueError(f"{operator}(): bins must be a positive integer, got {bins!r}")
+        p = self._next(operator, metric, bins=bins)
         p._axes.append((metric, bins))
         return p
 
@@ -891,6 +897,17 @@ class Pipeline:
         # without touching data or registering callable metrics globally.
         from .strategy import _resolve
         _resolve(p._raw_strategy(), p._registry)
+        return p
+
+    def sample(self, method: Optional[str] = None, *, n: Optional[int] = None,
+               hours: Optional[float] = None, test_hours: Optional[float] = None,
+               weights: Optional[dict] = None, target=None, normalize: Optional[str] = None,
+               group_cap=None, **method_params) -> "Pipeline":
+        """Configure selection; preferred fluent alias for :meth:`curate`."""
+        p = self.curate(method, n=n, hours=hours, test_hours=test_hours, weights=weights,
+                        target=target, normalize=normalize, group_cap=group_cap,
+                        **method_params)
+        p._ops[-1] = {**p._ops[-1], "op": "sample"}
         return p
 
     # ---- compilation -------------------------------------------------------------------

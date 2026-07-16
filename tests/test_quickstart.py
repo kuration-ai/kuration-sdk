@@ -29,8 +29,8 @@ def test_documented_quickstart(tmp_path):
 
     config = json.loads((out_dir / "config.json").read_text())
     assert [op["op"] for op in config["pipeline"]] == [
-        "input", "window", "measure", "measure", "organize", "organize", "split",
-        "curate", "options",
+        "input", "window", "measure", "measure", "bin", "bin", "split",
+        "sample", "options",
     ]
     shards = list(iter_shards(out_dir))
     assert len(shards) == 12

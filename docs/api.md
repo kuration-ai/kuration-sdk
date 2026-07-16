@@ -51,13 +51,15 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.at_rate` | `(hz) -> Pipeline` | set `SchemaSpec.sample_hz` when inference could not determine it |
 | `Pipeline.measure` | `(name, spec=None, *, of=None, map=None, filter=None, scope=None) -> Pipeline` | declare a per-segment metric (bare name / reduce string / DSL dict / callable) |
 | `Pipeline.filter` | `(what, op=None, value=None, **kw) -> Pipeline` | `("anomaly"/"dedup", **knobs)` pre-pass filter, or `(metric, op, value)` universal predicate |
-| `Pipeline.organize` | `(metric, *args, bins=None) -> Pipeline` | add a quantile-bin axis |
+| `Pipeline.bin` | `(metric, *args, bins=None) -> Pipeline` | add a quantile-bin axis (`organize` remains as a compatibility alias) |
+| `Pipeline.organize` | `(metric, *args, bins=None) -> Pipeline` | compatibility alias for `Pipeline.bin` |
 | `Pipeline.score` | `(name, out=None, **params) -> Pipeline` | add a whole-pool `SegmentScorer` |
 | `Pipeline.tag` | `(*sources, min_frac=None) -> Pipeline` | declarative tag sources (+ optional tag-coverage floor) |
 | `Pipeline.split` | `(test=0.2) -> Pipeline` | source-level test split |
 | `Pipeline.group` | `(fn) -> Pipeline` | `group_of(source_id) -> key` |
 | `Pipeline.options` | `(**kw) -> Pipeline` | `mode, workers, on_error, seed, streaming, resume, sample_hz, progress` |
-| `Pipeline.curate` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | configure selection; exactly one of `n=`/`hours=` |
+| `Pipeline.sample` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | configure selection; exactly one of `n=`/`hours=` (`curate` remains as a compatibility alias) |
+| `Pipeline.curate` | `(method=None, **selection_options) -> Pipeline` | compatibility alias for `Pipeline.sample` |
 | `Pipeline.collect` | `(n=None) -> CurateResult` | terminal — count-path selection |
 | `Pipeline.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, preset_params=None) -> dict` | terminal — write shards + manifests + `config.json` (embeds `"pipeline"` provenance) |
 | `Pipeline.report` | `(**kw) -> dict` | terminal — feature pass only → `dataset_report` |
