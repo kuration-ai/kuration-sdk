@@ -45,6 +45,8 @@ def tracks_from_ticks(schema: SchemaSpec, ticks: list[Tick], source_id: str) -> 
             rec = dict(tk.entities.get(eid) or {})
             for gname, gval in (tk.globals or {}).items():
                 rec.setdefault(gname, gval)
+            for mname, ref in (tk.media or {}).items():
+                rec[f"media:{mname}"] = ref
             rec[PRESENT_KEY] = eid in tk.entities
             records.append(rec)
         tracks.append(Track(source_id=source_id, entity_id=eid, records=records))

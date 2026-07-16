@@ -20,6 +20,8 @@ from typing import Optional
 
 _KINDS = {"scalar", "vector", "categorical"}
 _SEMANTICS = {None, "position", "angular", "bitmask"}
+_MEDIA_KINDS = {"video-frame"}
+_MEDIA_LAYOUTS = {"HWC", "CHW"}
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,48 @@ class FieldSpec:
     def width(self) -> int:
         """Number of numeric components (D in the (T,E,D) buffer). 1 for scalar."""
         return len(self.dims) if self.kind == "vector" else 1
+
+
+@dataclass(frozen=True)
+class MediaSpec:
+    """Semantic description of an auxiliary media column.
+
+    Media is discoverable from the schema, but is deliberately excluded from ``fields`` and
+    therefore never copied into a :class:`WindowBuffer` or exposed to the metric grammar.
+    """
+    name: str
+    kind: str
+    dtype: str
+    shape: tuple[int, ...]
+    layout: str = "HWC"
+    color_space: str = "RGB"
+    timing: str = "pts"
+    capabilities: dict[str, bool] = field(default_factory=dict)
+
+
+def _media_from_dict(name: str, d: dict) -> MediaSpec:
+    import numpy as np
+    kind = d.get("kind")
+    if kind not in _MEDIA_KINDS:
+        raise ValueError(f"media {name!r}: kind must be one of {sorted(_MEDIA_KINDS)}")
+    try:
+        dtype = np.dtype(d.get("dtype")).name
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"media {name!r}: invalid dtype {d.get('dtype')!r}") from e
+    shape = tuple(d.get("shape") or ())
+    if not shape or any(not isinstance(x, int) or isinstance(x, bool) or x < 1 for x in shape):
+        raise ValueError(f"media {name!r}: shape needs positive integer dimensions")
+    layout = d.get("layout", "HWC")
+    if layout not in _MEDIA_LAYOUTS or len(layout) != len(shape):
+        raise ValueError(f"media {name!r}: layout must match shape and be HWC or CHW")
+    color = d.get("color_space", "RGB")
+    timing = d.get("timing", "pts")
+    if not isinstance(color, str) or not color or timing not in {"pts", "frame_index"}:
+        raise ValueError(f"media {name!r}: invalid color_space/timing")
+    caps = d.get("capabilities") or {}
+    if not isinstance(caps, dict) or any(not isinstance(v, bool) for v in caps.values()):
+        raise ValueError(f"media {name!r}: capabilities must map names to booleans")
+    return MediaSpec(name, kind, dtype, shape, layout, color, timing, dict(caps))
 
 
 def _field_from_dict(name: str, d: dict) -> FieldSpec:
@@ -87,6 +131,7 @@ class SchemaSpec:
     sample_hz: Optional[float] = None          # enables time-unit windowing + speed scaling
     event_streams: dict[str, dict] = field(default_factory=dict)  # name -> {fields: {...FieldSpec}}
     globals: dict[str, FieldSpec] = field(default_factory=dict)   # per-step scalar streams
+    media: dict[str, MediaSpec] = field(default_factory=dict)     # lazy auxiliary columns
 
     # ---- construction -------------------------------------------------------
     @staticmethod
@@ -95,9 +140,11 @@ class SchemaSpec:
         if not name:
             raise ValueError("schema needs a 'name'")
         raw_fields = d.get("fields") or {}
-        if not raw_fields:
-            raise ValueError(f"schema {name!r}: at least one field is required")
+        raw_media = d.get("media") or {}
+        if not raw_fields and not raw_media:
+            raise ValueError(f"schema {name!r}: at least one field or media column is required")
         fields = {n: _field_from_dict(n, fd) for n, fd in raw_fields.items()}
+        media = {n: _media_from_dict(n, md) for n, md in raw_media.items()}
 
         entity_axis = d.get("entity_axis")
         sample_hz = d.get("sample_hz")
@@ -131,7 +178,8 @@ class SchemaSpec:
             clash.add(ns)
 
         return SchemaSpec(name=name, fields=fields, entity_axis=entity_axis,
-                          sample_hz=sample_hz, event_streams=event_streams, globals=globals_)
+                          sample_hz=sample_hz, event_streams=event_streams, globals=globals_,
+                          media=media)
 
     def to_dict(self) -> dict:
         """Round-trippable plain dict for embedding in config.json."""
@@ -147,6 +195,11 @@ class SchemaSpec:
                 out["max_rate"] = f.max_rate
             return out
         d: dict = {"name": self.name, "fields": {n: fd(f) for n, f in self.fields.items()}}
+        if self.media:
+            d["media"] = {n: {"kind": m.kind, "dtype": m.dtype, "shape": list(m.shape),
+                               "layout": m.layout, "color_space": m.color_space,
+                               "timing": m.timing, "capabilities": dict(m.capabilities)}
+                          for n, m in self.media.items()}
         if self.entity_axis:
             d["entity_axis"] = self.entity_axis
         if self.sample_hz is not None:

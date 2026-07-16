@@ -18,6 +18,9 @@ class OutputEncoder(Protocol):
         `ctx` carries {'schema', 'track'} (the track's metadata)."""
         ...
 
+    # Optional: encode_batch(records, ctx) -> {hook: array with leading batch dimension}.
+    # ShardWriter detects this capability dynamically and otherwise uses timestep().
+
 
 class PassthroughEncoder:
     """No `encoder:` modalities — every modality is field:/segment:. The default."""

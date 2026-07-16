@@ -36,6 +36,7 @@ class Tick:
     entities: dict
     events: dict = field(default_factory=dict)
     globals: dict = field(default_factory=dict)
+    media: dict = field(default_factory=dict)  # name -> lazy media reference
 
 
 @dataclass

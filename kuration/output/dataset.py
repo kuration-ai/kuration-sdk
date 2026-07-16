@@ -65,7 +65,7 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                   clip_aggregate: str = "max", span_steps: Optional[int] = None,
                   span_seconds: Optional[float] = None, workers: int = 1,
                   on_error: str = "skip", resume: bool = False, streaming: bool = False,
-                  progress=None) -> dict:
+                  progress=None, transforms=(), registry=None, executor: str = "local") -> dict:
     """`workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips bad sources;
     `resume=True` skips re-writing shards whose files already exist.
 
@@ -124,8 +124,9 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     _check_resume_run(out_dir, signature, resume)
     emit(progress, "provenance", "complete", current=len(sources), total=len(sources),
          detail=signature["fingerprint"][:12])
-    registered = [r for r in strategy.referenced_metrics()
-                  if r not in strategy.define and r not in strategy.scorer_outputs()]
+    transform_outputs = {o for t in transforms for o in t["outputs"]}
+    registered = [r for r in strategy.referenced_metrics() if r not in strategy.define
+                  and r not in strategy.scorer_outputs() and r not in transform_outputs]
 
     # Parallel score pass: returns features + per-source track lengths (so the fill needs no
     # second read of the data). The data itself is re-read only for admitted sources, below.
@@ -133,7 +134,12 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
         group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error,
-        streaming=streaming, progress=progress)
+        streaming=streaming, progress=progress, executor=executor)
+
+    if transforms:
+        from ..transforms import apply_transforms
+        apply_transforms(transforms, all_segments, adapter=adapter,
+                         registry=registry or strategy.registry, progress=progress)
 
     if strategy.scorers:   # whole-pool learned/action-aware scoring -> features
         from ..scorers import apply_scorers
@@ -218,7 +224,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             tick_iter = (adapter.iter_ticks(src) if hasattr(adapter, "iter_ticks")
                          else adapter.ticks(src))
             entries += stream_source_shards(out_dir, src, tick_iter, jobs,
-                                            schema=schema, spec=spec, encoder=encoder, resume=resume)
+                                            schema=schema, spec=spec, encoder=encoder, resume=resume,
+                                            media_provider=getattr(adapter, "provider", None))
             emit(progress, "writing", "advance", current=source_i, total=len(by_source),
                  source=src, status="ok")
             continue
@@ -234,7 +241,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             sub.meta["group"] = group_of(src) if group_of else None
             entries += write_track(out_dir, sub, spec, encoder=encoder, schema=schema,
                                    split=split.get(src, "train"), resume=resume,
-                                   name_suffix=suffix(k))
+                                   name_suffix=suffix(k),
+                                   media_provider=getattr(adapter, "provider", None))
         emit(progress, "writing", "advance", current=source_i, total=len(by_source),
              source=src, status="ok")
     emit(progress, "writing", "complete", current=len(by_source), total=len(by_source),

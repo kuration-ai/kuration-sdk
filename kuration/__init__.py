@@ -18,6 +18,8 @@ from .adapters import (
     ParquetDatasetAdapter,
     TimeseriesAdapter,
     ZarrAdapter,
+    VideoAdapter,
+    JoinedMediaAdapter,
     get_adapter,
     register_adapter,
     schema_from_output,
@@ -54,7 +56,12 @@ from .output import (
     write_dataset,
     write_track,
 )
-from .schema import FieldSpec, SchemaSpec
+from .schema import FieldSpec, MediaSpec, SchemaSpec
+from .media import FrameRef, MediaProvider, PyAVMediaProvider, VideoMetadata
+from .transforms import (BatchTransform, apply_transforms, get_transform,
+                         register_batch_transform, register_transform)
+from .execution import (ExecutionBackend, LocalExecutionBackend, RayExecutionBackend,
+                        ResourceSpec, get_execution_backend)
 from .scoring import score_sources
 from .segment import Segment, Segmenter
 from .select import assign_splits
@@ -67,12 +74,18 @@ from .versioning import (ARTIFACT_FORMAT_VERSION, JOB_SCHEMA_VERSION, migrate,
                          migrate_config, migrate_job)
 
 __all__ = [
-    "SchemaSpec", "FieldSpec",
+    "SchemaSpec", "FieldSpec", "MediaSpec",
     "WindowBuffer", "Tick", "build_window", "empty_like",
     "compile_metric", "register_metric", "register_compiled",
     "InputAdapter", "TimeseriesAdapter", "HDF5Adapter", "NpzAdapter", "JsonlAdapter",
     "CuratedDatasetAdapter", "ParquetDatasetAdapter", "HuggingFaceAdapter", "ZarrAdapter",
     "schema_from_output", "register_adapter", "get_adapter",
+    "FrameRef", "VideoMetadata", "MediaProvider", "PyAVMediaProvider",
+    "VideoAdapter", "JoinedMediaAdapter",
+    "BatchTransform", "register_batch_transform", "register_transform", "get_transform",
+    "apply_transforms",
+    "ExecutionBackend", "LocalExecutionBackend", "RayExecutionBackend", "ResourceSpec",
+    "get_execution_backend",
     "Arm", "run_experiment", "union_define",
     "Segment", "Segmenter", "FeatureEngine",
     "bin_segments", "quantile_bins",

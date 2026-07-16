@@ -17,7 +17,7 @@ from .track import PRESENT_KEY
 
 
 def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dict], *,
-                         schema, spec, encoder=None, resume: bool = False) -> list[dict]:
+                         schema, spec, encoder=None, resume: bool = False, media_provider=None) -> list[dict]:
     """`jobs`: [{eid, span_index, start, end, split, name_suffix, group}] for this source."""
     encoder = encoder or PassthroughEncoder()
     ext = CONTAINER_EXT[spec.container]
@@ -43,7 +43,8 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
             piece, padded = s["buf"] + [None] * (pad_to - real_len), True
         ctx = {"schema": schema, "track": {**s["meta"], "group": s["group"],
                                              "source_id": source_id,
-                                             "entity_id": s["eid"]}}
+                                             "entity_id": s["eid"]},
+               "media_provider": media_provider}
         name = track_name(source_id, s["eid"], s["suffix"])
         base = f"{out_dir}/{s['split']}/{name}_shard{s['shard']:04d}" + ("_padded" if padded else "")
         if resume and _exists(base + ext):
@@ -62,6 +63,8 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
                 rec = dict(tk.entities.get(s["eid"]) or {})
                 for gname, gval in (tk.globals or {}).items():
                     rec.setdefault(gname, gval)
+                for mname, ref in (tk.media or {}).items():
+                    rec[f"media:{mname}"] = ref
                 rec[PRESENT_KEY] = s["eid"] in tk.entities
                 s["buf"].append(rec)
                 if len(s["buf"]) == spec.shard_length:

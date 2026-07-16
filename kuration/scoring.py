@@ -81,7 +81,8 @@ def _score_one(args):
 
 def score_sources(*, schema, adapter, sources, define, registered, segmenter,
                   tags_spec=None, group_of=None, tags_of=None, workers: int = 1,
-                  on_error: str = "skip", streaming: bool = False, progress=None):
+                  on_error: str = "skip", streaming: bool = False, progress=None,
+                  executor: str = "local"):
     """Return (all_segments_sorted, errors, source_tracks).
 
       errors:        [{"source", "error"}] for skipped sources (on_error='skip')
@@ -108,7 +109,16 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
               (group_of(src) if group_of else None), streaming, worker_modules) for src in sources]
     from .progress import emit
     emit(progress, "scoring", "start", total=len(items))
-    if workers and workers > 1:
+    if executor not in {"local", "ray"}:
+        raise ValueError("executor must be 'local' or 'ray'")
+    if executor == "ray":
+        from .execution import RayExecutionBackend, ResourceSpec
+        backend = RayExecutionBackend()
+        results = backend.map_sources(items, _score_one, ResourceSpec(num_cpus=1))
+        for i, result in enumerate(results, 1):
+            emit(progress, "scoring", "advance", current=i, total=len(items),
+                 source=result[1], status=result[0])
+    elif workers and workers > 1:
         context = mp.get_context("spawn")
         with ProcessPoolExecutor(max_workers=workers, mp_context=context) as ex:
             results: list[Any] = [None] * len(items)

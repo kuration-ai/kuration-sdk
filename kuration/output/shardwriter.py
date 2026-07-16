@@ -57,6 +57,33 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
     if spec.presence_mask:
         arrays["_present"] = np.zeros(L, dtype=np.bool_)
     enc_mods = [m for m in spec.modalities if m.src_kind == "encoder"]
+    clean_piece = [None if rec is None else
+                   (rec if PRESENT_KEY not in rec else
+                    {k: v for k, v in rec.items() if k != PRESENT_KEY}) for rec in piece]
+    enc_batch = None
+    if enc_mods and hasattr(encoder, "encode_batch"):
+        enc_batch = encoder.encode_batch(clean_piece, ctx)
+        if not isinstance(enc_batch, dict):
+            raise ValueError("output encoder encode_batch must return a dict")
+        for key, value in enc_batch.items():
+            if np.asarray(value).shape[:1] != (L,):
+                raise ValueError(f"output encoder batch {key!r} needs leading dimension {L}")
+    media_values: dict[str, np.ndarray] = {}
+    media_mods = [m for m in spec.modalities if m.src_kind == "media"]
+    for m in media_mods:
+        positions, refs = [], []
+        for i, rec in enumerate(clean_piece):
+            if rec is not None and rec.get(f"media:{m.src_arg}") is not None:
+                positions.append(i)
+                refs.append(rec[f"media:{m.src_arg}"])
+        provider = ctx.get("media_provider")
+        if refs and provider is None:
+            raise ValueError(f"media:{m.src_arg} output needs the input adapter's media provider")
+        decoded = provider.decode_batch(refs) if refs else np.empty((0, *m.shape), dtype=m.dtype)
+        values = m.zeros(L)
+        for pos, value in zip(positions, decoded):
+            values[pos] = value
+        media_values[m.name] = values
     for t, rec in enumerate(piece):
         if rec is None:           # pad row — leave zeros
             continue
@@ -64,7 +91,8 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
         clean = rec if PRESENT_KEY not in rec else {k: v for k, v in rec.items() if k != PRESENT_KEY}
         if spec.presence_mask:
             arrays["_present"][t] = present
-        enc_out = encoder.timestep(clean, ctx) if enc_mods else {}
+        enc_out = ({k: np.asarray(v)[t] for k, v in enc_batch.items()} if enc_batch is not None
+                   else (encoder.timestep(clean, ctx) if enc_mods else {}))
         if not isinstance(enc_out, dict):
             raise ValueError(f"output encoder must return a dict, got {type(enc_out).__name__} "
                              f"for source {ctx['track'].get('source_id')!r} at row {t}")
@@ -77,6 +105,8 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
                 val = vocab.get(str(raw)) if raw is not None else None
             elif m.src_kind == "segment":
                 val = ctx["track"].get(m.src_arg)
+            elif m.src_kind == "media":
+                val = media_values[m.name][t]
             else:
                 val = enc_out.get(m.src_arg)
             if val is None:
@@ -102,19 +132,21 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
 
 def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
                 encoder: Optional[OutputEncoder] = None, schema=None,
-                split: str = "all", resume: bool = False, name_suffix: str = "") -> list[dict]:
+                split: str = "all", resume: bool = False, name_suffix: str = "",
+                media_provider=None) -> list[dict]:
     """Write all shards for one track; returns manifest entries. With `resume=True`, a shard
     whose file already exists is left as-is (no re-encode) but still recorded in the manifest —
     chunk boundaries are deterministic, so the entry is reconstructable without rewriting.
     `name_suffix` disambiguates shard filenames across sub-track spans of one track."""
     from ..io import exists as _exists
-    if any(m.src_kind == "field" for m in spec.modalities):
+    if any(m.src_kind in {"field", "media", "vocab"} for m in spec.modalities):
         if schema is None:
             raise ValueError("write_track needs schema when OutputSpec contains field: modalities")
         spec.validate_schema(schema)
     encoder = encoder or PassthroughEncoder()
     ctx = {"schema": schema, "track": {**track.meta, "source_id": track.source_id,
-                                       "entity_id": track.entity_id}}
+                                       "entity_id": track.entity_id},
+           "media_provider": media_provider}
     name = track_name(track.source_id, track.entity_id, name_suffix)
     ext = container_extension(spec.container)
     entries: list[dict] = []

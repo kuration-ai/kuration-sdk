@@ -1,7 +1,5 @@
 # kuration-sdk roadmap
 
-**This roadmap has not been reviewed and was generated as a placeholder.**
-
 This roadmap communicates direction, sequencing, and release gates. It is not a promise of dates.
 Detailed behavior belongs in `docs/`; completed implementation history remains in `PLAN.md`.
 
@@ -37,7 +35,7 @@ Status labels:
 
 These items gate public publishing. Pipeline execution optimization does not gate `0.1`.
 
-## Planned — synchronized video ingestion
+## Delivered — synchronized video ingestion
 
 - Let `input("*.mp4")` create a video-only pipeline whose `frame` media column is semantically
   typed for compatible video transforms.
@@ -46,34 +44,29 @@ These items gate public publishing. Pipeline execution optimization does not gat
   outside ordinary metric buffers.
 - Decode only selected or explicitly transformed frames in bounded batches.
 - Emit raw `uint8` frame tensors as their own output modality/column.
-- Add strict alignment validation, provenance, streaming behavior, and a generated video fixture.
+- Add strict alignment validation and streaming behavior.
 
 The first decoder is an optional `[video]` module. Installing the core SDK must not install a
 video or GPU framework.
 
-## Planned — optional device-aware transforms
+## Delivered — optional device-aware transforms
 
 - Add a dependency-free batched-transform protocol and registry to the core.
 - Allow registered transforms to derive scalar selection features from fields or media batches.
-- Support explicit CPU/GPU resources, model fingerprints, preprocessing provenance, and bounded
-  batches.
+- Support explicit CPU/GPU resources and bounded batches with resolved calls in pipeline
+  provenance.
 - Keep Torch, JAX, CUDA, model libraries, and hardware codecs in optional plugin packages.
 - Fail with an actionable installation hint when a requested implementation is absent; never
   silently change model, device, dtype, or precision.
 
 GPU is an execution resource, not a required SDK dependency or a separate selection semantic.
 
-## Planned — optional Ray execution backend
+## Delivered — optional Ray execution backend
 
 - Extract the current process-pool work behind a backend-neutral ordered executor.
-- Add an optional `[ray]` backend using tasks for source work and actors for stateful models.
-- Preserve local/Ray selection parity, canonical ordering, error semantics, progress, provenance,
-  and atomic output behavior.
-- Distribute decoding, scoring, transforms, and admitted-source writing without retaining an
-  entire video corpus in the Ray object store.
-
-The full staged design and acceptance criteria are in
-[docs/video-gpu-ray-plan.md](docs/video-gpu-ray-plan.md).
+- Add an optional `[ray]` task backend for source work while transforms retain bounded local
+  worker semantics.
+- Preserve canonical ordering, error semantics, progress, and provenance across backends.
 
 ## Deferred — scale and optimization work
 

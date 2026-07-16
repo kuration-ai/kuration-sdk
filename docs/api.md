@@ -183,6 +183,17 @@ lower-level `Registry.register(..., replace=True)` API is used. See
 
 ## Output
 
+`Pipeline.join_video(videos, *, column="frame", on="timestamp", tolerance=..., mismatch="error")`
+adds a strictly aligned lazy video column. `Pipeline.transform(name, *, using=None, inputs=None,
+batch_size=None, device="cpu", **params)` adds a registered bounded scalar-feature transform.
+
+Media contracts include `MediaSpec`, `FrameRef`, `VideoMetadata`, `MediaProvider`,
+`PyAVMediaProvider`, `VideoAdapter`, and `JoinedMediaAdapter`. Transform and execution contracts
+include `BatchTransform`, `register_batch_transform` (`register_transform` alias), `get_transform`,
+`ExecutionBackend`, `ResourceSpec`, and the
+ordered `LocalExecutionBackend` / `RayExecutionBackend` implementations. `apply_transforms`
+executes resolved calls over canonical segments; `get_execution_backend` resolves a backend.
+
 | name | signature | does |
 |---|---|---|
 | `OutputSpec` | `.from_dict({shard_length, short_policy?, container?, presence_mask?, modalities})` | declared modalities + chunking; `_present` enabled by default ([output.md](output.md)) |

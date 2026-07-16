@@ -288,7 +288,7 @@ def _resolve(spec: dict, registry=None) -> Strategy:
                     registry=registry)
 
 
-def load_strategy(name_or_spec, schema: SchemaSpec, *, registry=None) -> Strategy:
+def load_strategy(name_or_spec, schema: SchemaSpec, *, registry=None, available_metrics=()) -> Strategy:
     """Load a strategy from a dict or JSON file path.
     Validates `define` (compiles each DSL metric against `schema`) and that every referenced
     metric is either defined or registered — all loudly, before any data is read."""
@@ -318,7 +318,7 @@ def load_strategy(name_or_spec, schema: SchemaSpec, *, registry=None) -> Strateg
             if name not in active_registry.names("scorer") and not has_scorer(name):
                 raise ValueError(f"strategy {strat.name!r} references unregistered scorer {name!r}")
     # scorer outputs are produced at runtime, so they count as available metric references.
-    available = set(strat.define) | set(METRICS) | strat.scorer_outputs()
+    available = set(strat.define) | set(METRICS) | strat.scorer_outputs() | set(available_metrics)
     missing = [m for m in strat.referenced_metrics() if m not in available]
     if missing:
         raise ValueError(f"strategy {strat.name!r} references undefined metrics {sorted(missing)} "

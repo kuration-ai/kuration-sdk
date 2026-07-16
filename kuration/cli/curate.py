@@ -55,7 +55,8 @@ def _run(args) -> None:
                         streaming=job.get("streaming", False),
                         span_steps=job.get("span_steps"), span_seconds=job.get("span_seconds"),
                         clip_aggregate=job.get("clip_aggregate", "max"),
-                        progress=cli_progress_for(quiet=args.quiet))
+                        progress=cli_progress_for(quiet=args.quiet),
+                        executor=job.get("executor", "local"))
     r = res["results"]
     b = r["budget"]
     emitted = b["emitted_seconds"]

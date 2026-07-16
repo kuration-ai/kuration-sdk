@@ -40,7 +40,7 @@ __all__ = ["Pipeline", "input"]
 _GLOB_CHARS = set("*?[")
 _FILTER_TYPES = {"anomaly", "dedup"}
 _OPTION_KEYS = {"workers", "on_error", "seed", "streaming", "resume", "sample_hz", "progress",
-                "mode"}
+                "mode", "executor"}
 _TABULAR_KINDS = {"timeseries", "jsonl", "json-rows", "parquet-dataset"}
 _SUFFIX_CONTAINER = {".hdf5": "hdf5", ".h5": "hdf5", ".npz": "npz",
                      ".parquet": "parquet", ".json": "json"}
@@ -351,6 +351,14 @@ def _expand_paths(src) -> tuple[list[str], str]:
 def _input_files(src, op, *, schema, fields, time, entity, hz, kinds, sample, globals,
                  **adapter_kw) -> "Pipeline":
     paths, kind = _expand_paths(src)
+    if kind == "video":
+        if schema is not None or fields is not None or time is not None or entity is not None:
+            raise ValueError("video input probes its media schema; schema/fields/time/entity "
+                             "overrides are not supported (use input(adapter=...) instead)")
+        from .media import VideoAdapter
+        ad = VideoAdapter(paths, **adapter_kw)
+        return Pipeline(schema=ad.schema, adapter=ad, sources=paths,
+                        in_memory=False, ops=[op])
     sample_data = None
     if schema is None:
         from .infer import sample_source
@@ -426,6 +434,7 @@ class Pipeline:
         self._tags: list = []            # tag sources for the tags block
         self._tag_coverage: Optional[dict] = None
         self._scorers: list = []         # [{"name", "as", ...params}]
+        self._transforms: list = []      # resolved BatchTransform calls
         self._method: Optional[str] = None
         self._weights: Optional[dict] = None
         self._normalize: Optional[str] = None
@@ -441,7 +450,7 @@ class Pipeline:
         self._group_of: Optional[Callable] = None
         self._options: dict[str, Any] = {
             "workers": 1, "on_error": "skip", "seed": 0, "streaming": False,
-            "resume": False, "sample_hz": None, "progress": None}
+            "resume": False, "sample_hz": None, "progress": None, "executor": "local"}
         self._mode: Optional[str] = None
         self._explicit_options: set[str] = set()
         from .registry import default_registry
@@ -452,7 +461,8 @@ class Pipeline:
         p = object.__new__(Pipeline)
         p.__dict__.update(self.__dict__)
         for attr in ("_ops", "_define", "_callables", "_predicates", "_prepass", "_axes",
-                     "_tags", "_scorers", "_method_params", "_options", "_window_desc"):
+                     "_tags", "_scorers", "_transforms", "_method_params", "_options",
+                     "_window_desc"):
             cur = getattr(self, attr)
             setattr(p, attr, type(cur)(cur))
         p._explicit_options = set(self._explicit_options)
@@ -466,7 +476,9 @@ class Pipeline:
         return p
 
     def _metric_names(self) -> set:
-        return set(self._define) | set(self._callables) | {s["as"] for s in self._scorers}
+        return (set(self._define) | set(self._callables) |
+                {s["as"] for s in self._scorers} |
+                {o for t in self._transforms for o in t["outputs"]})
 
     def using(self, registry) -> "Pipeline":
         """Return a pipeline resolving extension names through an explicit overlay registry."""
@@ -598,6 +610,45 @@ class Pipeline:
             sample_hz=self.schema.sample_hz if unit == "seconds" else None)
         p._window_desc = {"window": window,
                           "stride": stride if stride is not None else window, "unit": unit}
+        return p
+
+    def join_video(self, videos, *, column: str = "frame", on: str = "timestamp",
+                   tolerance=None, mismatch: str = "error", provider=None) -> "Pipeline":
+        """Attach a lazily decoded video media column to every ordinary source."""
+        if not isinstance(column, str) or not column:
+            raise ValueError("join_video column must be a non-empty string")
+        if callable(videos):
+            mapping = {src: videos(src) for src in self.sources}
+        elif isinstance(videos, dict):
+            mapping = {src: videos[src] for src in self.sources if src in videos}
+        else:
+            raise ValueError("join_video videos= must be a {source: video} mapping or callable")
+        missing = [src for src in self.sources if src not in mapping]
+        if missing:
+            raise ValueError(f"join_video has no video for source(s) {missing}")
+        if any(not isinstance(uri, str) or not uri for uri in mapping.values()):
+            raise ValueError("join_video mappings must resolve to non-empty video URI strings")
+        from .media import JoinedMediaAdapter
+        p = self._next("join_video", videos=mapping, column=column, on=on,
+                       tolerance=tolerance, mismatch=mismatch)
+        p.adapter = JoinedMediaAdapter(self.adapter, mapping, provider=provider, column=column,
+                                       on=on, tolerance=tolerance, mismatch=mismatch)
+        p.schema = p.adapter.schema
+        return p
+
+    def transform(self, name: str, *, using=None, inputs=None, batch_size=None,
+                  device="cpu", **params) -> "Pipeline":
+        """Add a registered bounded transform that produces scalar segment features."""
+        from .transforms import resolve_transform
+        call = resolve_transform(name, using=using, inputs=inputs, batch_size=batch_size,
+                                 device=device, params=params, schema=self.schema,
+                                 registry=self._registry)
+        collisions = set(call["outputs"]) & self._metric_names()
+        if collisions:
+            raise ValueError(f"transform output(s) collide with existing features {sorted(collisions)}")
+        p = self._next("transform", name, using=using, inputs=inputs,
+                       batch_size=batch_size, device=device, **params)
+        p._transforms.append(call)
         return p
 
     def measure(self, name: str, spec=None, *, of=None, map=None, filter=None,
@@ -764,8 +815,8 @@ class Pipeline:
         return p
 
     def options(self, **kw) -> "Pipeline":
-        """Execution options: workers, on_error ('skip'|'raise'), seed, streaming, resume,
-        sample_hz, progress callback. Unknown options are loud."""
+        """Execution options: workers, executor ('local'|'ray'), on_error, seed, streaming,
+        resume, sample_hz, and progress callback. Unknown options are loud."""
         unknown = set(kw) - _OPTION_KEYS
         if unknown:
             raise ValueError(f"unknown option(s) {sorted(unknown)}; "
@@ -790,6 +841,8 @@ class Pipeline:
                 raise ValueError("sample_hz must be a finite positive number")
         if "progress" in kw and kw["progress"] is not None and not callable(kw["progress"]):
             raise ValueError("progress must be callable or None")
+        if "executor" in kw and kw["executor"] not in {"local", "ray"}:
+            raise ValueError("executor must be 'local' or 'ray'")
         p = self._next("options", mode=mode, **kw)
         if mode is not None:
             p._mode = mode
@@ -959,7 +1012,9 @@ class Pipeline:
         from .strategy import load_strategy
         for nm, fn in self._callables.items():
             register_compiled(nm, fn)
-        return load_strategy(self._raw_strategy(), self.schema, registry=self._registry)
+        transform_outputs = {o for t in self._transforms for o in t["outputs"]}
+        return load_strategy(self._raw_strategy(), self.schema, registry=self._registry,
+                             available_metrics=transform_outputs)
 
     def _segmenter_or_default(self) -> Segmenter:
         return self._segmenter if self._segmenter is not None else Segmenter(64, 64)
@@ -1040,7 +1095,9 @@ class Pipeline:
                        group_of=self._group_of, tags_of=None,
                        test_frac=self._split_test or 0.0, workers=self._options["workers"],
                        on_error=self._options["on_error"],
-                       streaming=self._options["streaming"], progress=self._options["progress"])
+                       streaming=self._options["streaming"], progress=self._options["progress"],
+                       transforms=self._transforms, registry=self._registry,
+                       executor=self._options["executor"])
 
     def report(self, **kw) -> dict:
         """Feature pass only (no selection) -> dataset_report over the scored pool."""
@@ -1050,7 +1107,9 @@ class Pipeline:
         for nm, fn in self._callables.items():
             register_compiled(nm, fn)
         scorer_outs = {s["as"] for s in self._scorers}
-        registered = [nm for nm in self._callables if nm not in scorer_outs]
+        transform_outs = {o for t in self._transforms for o in t["outputs"]}
+        registered = [nm for nm in self._callables
+                      if nm not in scorer_outs and nm not in transform_outs]
         segments, _errors, _tracks = score_sources(
             schema=self.schema, adapter=self.adapter, sources=self.sources,
             define=dict(self._define), registered=registered,
@@ -1058,7 +1117,11 @@ class Pipeline:
             tags_spec={"from": list(self._tags)} if self._tags else None,
             group_of=self._group_of, workers=self._options["workers"],
             on_error=self._options["on_error"], streaming=self._options["streaming"],
-            progress=self._options["progress"])
+            progress=self._options["progress"], executor=self._options["executor"])
+        if self._transforms:
+            from .transforms import apply_transforms
+            apply_transforms(self._transforms, segments, adapter=self.adapter,
+                             registry=self._registry, progress=self._options["progress"])
         if self._scorers:
             from .scorers import apply_scorers, parse_scorers
             apply_scorers(parse_scorers([dict(s) for s in self._scorers]), segments,
@@ -1231,7 +1294,9 @@ class Pipeline:
                 sample_hz=opt["sample_hz"] or None, seed=opt["seed"],
                 group_of=self._group_of, span_steps=span_steps, span_seconds=span_seconds,
                 workers=opt["workers"], on_error=opt["on_error"], resume=opt["resume"],
-                streaming=opt["streaming"], progress=opt["progress"])
+                streaming=opt["streaming"], progress=opt["progress"],
+                transforms=self._transforms, registry=self._registry,
+                executor=opt["executor"])
             from .io import read_text
             from .manifest import write_config
             cfg = json.loads(read_text(f"{path}/config.json"))
@@ -1295,7 +1360,8 @@ class Pipeline:
                     sub.meta["group"] = seg.group
                     entries += write_track(out_dir, sub, spec, encoder=encoder,
                                            schema=self.schema, split=split,
-                                           name_suffix=f"_seg{k:04d}")
+                                           name_suffix=f"_seg{k:04d}",
+                                           media_provider=getattr(self.adapter, "provider", None))
             emit(progress, "writing", "advance", current=source_i, total=len(by_source),
                  source=src, status="ok")
         emit(progress, "writing", "complete", current=len(by_source), total=len(by_source),

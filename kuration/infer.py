@@ -23,6 +23,7 @@ from .schema import SchemaSpec
 _EXT_KINDS = {
     ".csv": "timeseries", ".parquet": "timeseries", ".jsonl": "jsonl",
     ".npz": "npz", ".h5": "hdf5", ".hdf5": "hdf5", ".json": "json-rows",
+    ".mp4": "video", ".m4v": "video", ".mov": "video",
 }
 _TIME_CANDIDATES = ("t", "time", "timestamp", "ts", "step", "frame", "tick")
 _ENTITY_CANDIDATES = ("entity", "entity_id", "id", "agent", "player", "device", "object")
@@ -47,7 +48,7 @@ def sniff(source) -> str:
     raise ValueError(
         f"cannot infer an adapter for {p!r}: supported extensions are .csv/.parquet "
         f"(timeseries), .jsonl, .npz, .h5/.hdf5 (hdf5), .json (rows), or a directory of "
-        f".parquet parts — pass an explicit adapter= for anything else")
+        f".parquet parts, or .mp4/.m4v/.mov video — pass an explicit adapter= for anything else")
 
 
 # ---- plain-JSON rows --------------------------------------------------------

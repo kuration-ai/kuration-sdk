@@ -31,6 +31,7 @@ curate; otherwise → report.
 | `strategy` | yes (per-arm for experiments) | inline strategy dict or a path to one ([strategies.md](strategies.md)) |
 | `seed` | no (0) | RNG seed — same seed + sources → same result, regardless of `workers` |
 | `workers` | no (1) | parallel feature pass over a process pool |
+| `executor` | no (`"local"`) | ordered `"local"` or optional `[ray]` source execution |
 | `on_error` | no (`"skip"`) | `"skip"` logs + skips an unreadable source; `"raise"` fails fast. Either way an **empty** pool raises |
 | `streaming` | no (false) | out-of-core for streaming-capable adapters; NPZ and partitioned-Parquet dataset mode reject it |
 | `mode` | no | `"explore"` or `"strict"`; explicit options override mode defaults |

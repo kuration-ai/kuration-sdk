@@ -119,7 +119,8 @@
     "workers": {"type": "integer", "minimum": 1},
     "on_error": {"enum": ["skip", "raise"]},
     "resume": {"type": "boolean"},
-    "streaming": {"type": "boolean"}
+    "streaming": {"type": "boolean"},
+    "executor": {"enum": ["local", "ray"]}
     ,"mode": {"enum": ["explore", "strict"]}
     ,"span_steps": {"type": "integer", "minimum": 1}
     ,"span_seconds": {"type": "number", "exclusiveMinimum": 0}

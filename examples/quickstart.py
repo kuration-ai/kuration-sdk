@@ -11,6 +11,10 @@ from __future__ import annotations
 import argparse
 import math
 from pathlib import Path
+import sys
+
+# Keep the checked-in example runnable directly without requiring an editable install.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from kuration import input, iter_shards
 

@@ -1,5 +1,9 @@
 # Output layer — selected curation → training shards
 
+An output modality may use `source: media:<column>`. The writer decodes lazy references in one
+bounded batch and writes a `(T, ...)` tensor. Encoders may implement optional
+`encode_batch(records, ctx)`, which is preferred over the compatible per-record `timestep` hook.
+
 The output layer mirrors the input side: a declarative `OutputSpec` (what each timestep holds)
 + a pluggable `OutputEncoder` (where domain logic lives) + a generic `ShardWriter` (chunking,
 short-policy, containers, manifests). The SDK ships the *mechanics*; the *semantics* (decoding

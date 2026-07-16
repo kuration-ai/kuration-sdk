@@ -35,7 +35,8 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
            group_of: Optional[Callable[[str], object]] = None,
            tags_of: Optional[Callable[[Segment], Iterable]] = None,
            test_frac: float = 0.0, workers: int = 1, on_error: str = "skip",
-           streaming: bool = False, progress=None) -> CurateResult:
+           streaming: bool = False, progress=None, transforms=(), registry=None,
+           executor: str = "local") -> CurateResult:
     """Curate a target-count segment set from `sources`.
 
     group_of(source_id) -> group key (sets Segment.group for the group cap + split strata);
@@ -47,13 +48,19 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     target_size = validate_target_size(target_size)
     referenced = strategy.referenced_metrics()
     # scorer outputs are produced by the scorer stage, not the feature pass — exclude them.
-    registered = [r for r in referenced
-                  if r not in strategy.define and r not in strategy.scorer_outputs()]
+    transform_outputs = {o for t in transforms for o in t["outputs"]}
+    registered = [r for r in referenced if r not in strategy.define
+                  and r not in strategy.scorer_outputs() and r not in transform_outputs]
     all_segments, errors, _ = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
         group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error,
-        streaming=streaming, progress=progress)
+        streaming=streaming, progress=progress, executor=executor)
+
+    if transforms:
+        from .transforms import apply_transforms
+        apply_transforms(transforms, all_segments, adapter=adapter,
+                         registry=registry or strategy.registry, progress=progress)
 
     if strategy.scorers:   # whole-pool learned/action-aware scoring -> features
         from .scorers import apply_scorers

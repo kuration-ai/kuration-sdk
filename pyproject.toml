@@ -31,6 +31,8 @@ cloud = ["fsspec"]                # gs:// / s3:// / az:// I/O (plus a backend: g
 torch = ["torch"]                 # PyTorch ShardDataset over a curated dataset (kuration.torch)
 hf = ["datasets"]                 # HuggingFace datasets input adapter
 zarr = ["zarr"]                   # Zarr array-store input adapter
+video = ["av>=12"]                # optional CPU MP4 provider
+ray = ["ray>=2.20"]               # optional distributed execution backend
 p2p = ["protobuf"]                # Open P2P worked example (annotation.proto parsing)
 cli = ["jsonschema"]              # kur-validate --json-schema (JSON Schema cross-check)
 all = [
@@ -43,6 +45,8 @@ all = [
     "zarr",
     "protobuf",
     "jsonschema",
+    "av>=12",
+    "ray>=2.20",
 ]                                   # every runtime capability in one install
 dev = ["pytest", "jsonschema", "ruff>=0.5", "mypy>=1.10", "build>=1.2"]
 

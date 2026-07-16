@@ -1,5 +1,10 @@
 # SchemaSpec — declaring a dataset's vocabulary
 
+Schemas may also declare an auxiliary `media` mapping. Media columns (initially
+`kind: video-frame`) carry dtype, tensor shape, layout, color space, timing, and provider
+capabilities. A media-only schema is valid. Media is excluded from ordinary fields and the metric
+DSL; batch transforms and outputs address it as `media:<name>`.
+
 A `SchemaSpec` is pure data (JSON / dict) describing the fields the metric DSL may reference.
 It is what makes the closed grammar dataset-agnostic without opening it up: the grammar
 validates every token against the schema, and the resolved schema is embedded in

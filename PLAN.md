@@ -128,9 +128,6 @@ it to *consume* this SDK ("Phase G") is possible future work but **out of scope*
 
 ## 7. Open / deferred (by explicit decision)
 
-- **Video + GPU + Ray execution** — planned as a staged optional extension: synchronized lazy
-  MP4 media columns, device-aware batched transforms, then a backend-neutral Ray executor. See
-  `docs/video-gpu-ray-plan.md`. This does not gate the first SDK release.
 - **Total-pool spill** — handling a *total segment pool* (across all sources, distinct from one
   big source) larger than RAM. Design fork identified: compact-columnar in-memory pool (drop
   unreferenced features, ~10× headroom) vs. true disk-external (multi-pass streaming

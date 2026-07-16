@@ -23,7 +23,7 @@ import numpy as np
 _SHORT_POLICIES = {"keep", "pad", "drop"}
 # npz/json are dep-free; hdf5 needs [array], parquet needs [parquet].
 _CONTAINERS = {"npz", "json", "hdf5", "parquet"}
-_SRC_KINDS = {"field", "segment", "encoder", "vocab"}
+_SRC_KINDS = {"field", "segment", "encoder", "vocab", "media"}
 
 
 @dataclass(frozen=True)
@@ -110,6 +110,15 @@ class OutputSpec:
                                      "a categorical schema field")
                 if m.src_arg not in (self.vocabs or {}):
                     raise ValueError(f"modality {m.name!r}: missing vocabs[{m.src_arg!r}]")
+                continue
+            if m.src_kind == "media":
+                ms = schema.media.get(m.src_arg)
+                if ms is None:
+                    raise ValueError(f"modality {m.name!r}: media source {m.src_arg!r} is not "
+                                     f"declared; available: {sorted(schema.media)}")
+                if m.shape != ms.shape:
+                    raise ValueError(f"modality {m.name!r}: shape {m.shape} does not match "
+                                     f"media:{m.src_arg} shape {ms.shape}")
                 continue
             if m.src_kind != "field":
                 continue

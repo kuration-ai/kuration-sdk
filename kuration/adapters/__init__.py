@@ -8,8 +8,10 @@ from .npz import NpzAdapter
 from .parquet_dataset import ParquetDatasetAdapter
 from .timeseries import TimeseriesAdapter
 from .zarr_store import ZarrAdapter
+from ..media import JoinedMediaAdapter, VideoAdapter
 
 __all__ = ["InputAdapter", "register_adapter", "get_adapter", "TimeseriesAdapter",
            "HDF5Adapter", "NpzAdapter", "JsonlAdapter", "CuratedDatasetAdapter",
            "ParquetDatasetAdapter", "HuggingFaceAdapter", "ZarrAdapter",
            "schema_from_output"]
+__all__ += ["VideoAdapter", "JoinedMediaAdapter"]

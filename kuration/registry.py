@@ -8,7 +8,7 @@ import re
 from typing import Any, Callable, Optional
 
 _KINDS = {"adapter", "metric", "scorer", "encoder", "method", "filter", "container",
-          "preset", "operator"}
+          "preset", "operator", "transform"}
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?$")
 
 
@@ -158,6 +158,9 @@ class Registry:
         if not callable(component):
             raise ValueError("operator component must be callable")
         self.register("operator", name, component, **metadata)
+
+    def register_transform(self, name: str, component: Any, **metadata) -> None:
+        self.register("transform", name, component, **metadata)
 
 
 default_registry = Registry()

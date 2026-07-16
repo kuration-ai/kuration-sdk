@@ -49,6 +49,8 @@ def validate_job(job: dict, *, check_sources: bool = False) -> dict:
         raise ValueError("seed must be an integer")
     if job.get("on_error", "skip") not in {"skip", "raise"}:
         raise ValueError("on_error must be 'skip' or 'raise'")
+    if job.get("executor", "local") not in {"local", "ray"}:
+        raise ValueError("executor must be 'local' or 'ray'")
     for flag in ("resume", "streaming"):
         if flag in job and not isinstance(job[flag], bool):
             raise ValueError(f"{flag} must be true or false")

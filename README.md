@@ -216,8 +216,8 @@ strict/explore modes, structured execution plans, versioned artifacts/jobs, type
 results, and structured progress. The full suite passes in the development environment;
 optional-format tests skip when their corresponding extras are absent (`pytest tests/`).
 
-Planned and deferred work is tracked in [ROADMAP.md](ROADMAP.md); the detailed video/GPU/Ray
-design is in [docs/video-gpu-ray-plan.md](docs/video-gpu-ray-plan.md).
+Planned and deferred work is tracked in [ROADMAP.md](ROADMAP.md). Optional video media columns,
+device-aware batch transforms, and ordered Ray execution are described in the API documentation.
 
 ## Tests
 
