@@ -4,14 +4,19 @@ Task-oriented recipes spanning what the SDK can do. Each is a minimal, runnable 
 per-layer references ([schema](schema.md), [dsl](dsl.md), [adapters](adapters.md),
 [strategies](strategies.md), [output](output.md)) for full options, [pipeline.md](pipeline.md)
 for the fluent `input(...).operator(...)` API, [api.md](api.md) for every public signature,
-[jobs.md](jobs.md) for the CLI job-spec keys, and [overview](overview.md) for the one-shot
+[jobs.md](jobs.md) for the CLI job-spec keys, and [overview](overview.md) for the explicit
 end-to-end example.
 
-For most new projects, begin with the fluent recipe in [quickstart.md](quickstart.md) and recipe
-16 below. Recipes 1–15 use the explicit building blocks when you need exact schema, adapter, or
-strategy control.
+Choose the shortest entry point:
 
-Throughout, assume a schema and an adapter:
+| need | use |
+|---|---|
+| First dataset or ordinary files/rows | [Quick start](quickstart.md), then the [fluent pipeline guide](pipeline.md#worked-example) |
+| Exact schema, adapter, or strategy control | Recipes 1–15 below |
+| Reproducible configuration without Python code | [JSON jobs](jobs.md) |
+| Validate a written dataset | [`inspect_dataset` / `kur-inspect`](output.md#reading-a-dataset-back) |
+
+The explicit recipes assume this schema and adapter:
 
 ```python
 from kuration import SchemaSpec, TimeseriesAdapter, Segmenter, load_strategy
@@ -363,7 +368,7 @@ dataset. The ones you're most likely to meet, and what they mean:
 | `binning axis '...': N NaN feature value(s)` | a registered metric or scorer produced NaN on some window; NaN would poison the quantile edges | make the metric total (return 0.0 for degenerate windows), or drop those segments with a pre-pass filter |
 | `dataset ... lacks modalities [...]` | mixing curated datasets with different modalities under a schema derived from the first | pass an explicit `schema=` covering only the shared modalities |
 | `needs fsspec` / `needs h5py` / `needs pyarrow` / `needs zarr` | an optional capability was reached without its extra installed | install the named extra, e.g. `pip install -e '.[cloud]'` |
-| `write_dataset needs sample_hz ... for the hours budget` | fluent-pipeline `.curate(hours=...).output(...)` on a source whose schema has no `sample_hz` (inference found no numeric time column, or duplicate/no-gap timestamps) | pass `hz=` to `input()`, or `.options(sample_hz=...)` before `.output(...)` |
+| `write_dataset needs sample_hz ... for the hours budget` | fluent-pipeline `.sample(hours=...).output(...)` on a source whose schema has no `sample_hz` (inference found no numeric time column, or duplicate/no-gap timestamps) | pass `hz=` to `input()`, or `.options(sample_hz=...)` before `.output(...)` |
 | `workers>1 is not supported for in-memory sources` | `.options(workers=2)` on a `Pipeline` built from in-memory rows/ticks/DataFrame — parallel workers rebuild adapters by name per process and can't see in-process data | keep `workers=1` for in-memory input, or write the data to files first and `input()` the paths |
 
 Two habits keep runs debuggable: **`kur-validate job.json` before every CLI run** (all of the

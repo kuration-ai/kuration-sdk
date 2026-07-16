@@ -1,14 +1,13 @@
 # The fluent pipeline — `input(...)` → operators → terminals
 
-A second, higher-level way to drive the SDK for the common case: no explicit `SchemaSpec`,
+The primary way to drive the SDK for the common case: no explicit `SchemaSpec`,
 no explicit adapter, no raw strategy dict. `kuration.input(...)` sniffs a source, infers a
 schema (via [`kuration.infer`](#schema-inference)), and returns an immutable `Pipeline`; every
 operator returns a *new* `Pipeline` (nothing is mutated in place); a terminal compiles the
 chain into the classic strategy dict and calls the existing engine
 (`curate` / `write_dataset` / `dataset_report` / `run_experiment` — see [api.md](api.md)).
-Nothing here replaces the classic API in `strategies.md`/`schema.md`/`adapters.md` — it's a
-thin, validated facade over it, and every compiled chain is inspectable via `.describe()`
-before you run anything.
+The explicit APIs in `strategies.md`/`schema.md`/`adapters.md` remain available for custom and
+declarative workflows. Every compiled chain is inspectable via `.describe()` before you run it.
 
 ```python
 from kuration import input
@@ -236,7 +235,7 @@ retain the compatible reference implementation and appear as materialization war
 - `container` defaults from the path's suffix (`.hdf5`/`.h5` → hdf5, `.npz` → npz, `.parquet`
   → parquet, `.json` → json; otherwise npz) or pass it explicitly.
 - Default `modalities` cover every **numeric** schema field (categorical fields are skipped
-  with a printed note — pass `modalities=` to encode one); `include=`/`exclude=` filter the
+  with a message during a real write — pass `modalities=` to encode one); `include=`/`exclude=` filter the
   set by name (unknown names raise).
 - `config.json` gains a `"pipeline"` key: the operator chain (`_ops`) as a JSON list of
   `{"op", "args", "kwargs"}`, in order — so a written dataset records how it was *asked for*,

@@ -10,20 +10,8 @@ curated, training-ready set of shards — *raw source → curated subset → enc
 multivariate series). The core carries **no domain knowledge**; a dataset is described by a
 `SchemaSpec` (data) and reached through documented input, media, transform, and output seams.
 
-> **Status.** The full pipeline is implemented: schema + metric DSL; input adapters (timeseries
-> CSV/Parquet, HDF5, NPZ, JSONL, curated-dataset-as-source, partitioned Parquet, HuggingFace
-> datasets, Zarr); segmentation; feature engine;
-> binning; strategies (base + feature-space methods + filter + anomaly/dedup pre-pass filters);
-> a learned-scorer seam; the output layer (npz/json/hdf5/parquet containers, sub-track spans,
-> hours-budget fill); the read side (`iter_shards` numpy-only, `kuration.torch.ShardDataset`
-> for PyTorch); declarative tag-coverage; a stats report and a multi-arm experiment
-> harness; parallel / skip-and-log / resume / **out-of-core** execution (`streaming=True` handles
-> a source larger than RAM when its adapter supports lazy iteration); path-agnostic local +
-> cloud I/O; lazy synchronized MP4 media columns; device-aware bounded transforms; optional
-> ordered Ray source execution; and the
-> `kur-validate` / `kur-curate` / `kur-experiment` / `kur-report` CLIs (+ a shipped JSON
-> Schema). The remaining scale item is a
-> spill/external tier for a *total segment pool* larger than RAM. See `../PLAN.md`.
+The [API reference](api.md) is the supported-surface inventory. Deferred work belongs in the
+[roadmap](../ROADMAP.md), keeping this guide focused on concepts and usage.
 
 ## The pipeline
 
@@ -113,6 +101,8 @@ reproduces from its own directory alone.
 
 ## Reference docs
 
+- [quickstart.md](quickstart.md) — the fluent, network-independent first run.
+- [pipeline.md](pipeline.md) — the primary fluent API and output-aware dry runs.
 - [usage.md](usage.md) — cookbook: task-oriented recipes across every capability.
 - [architecture.md](architecture.md) — design deep-dive: layers, data contracts, decisions.
 - [schema.md](schema.md) — authoring a `SchemaSpec` (fields, media, kinds, semantics).
@@ -122,6 +112,7 @@ reproduces from its own directory alone.
 - [output.md](output.md) — output specs, encoders, containers, the hours-budget fill.
 - [api.md](api.md) — API reference: every public name with its real signature.
 - [jobs.md](jobs.md) — job-spec reference: every JSON key the `kur-*` CLIs accept.
+- [customization.md](customization.md) — component discovery and extension registration.
 
 ## Design invariants
 

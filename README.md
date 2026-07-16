@@ -42,9 +42,13 @@ window: 12 steps (stride 6)
 selection: uniform-bins (count=12)
 execution: local; errors=raise; total-pool materialization=none
 optional extras: none (NumPy core)
+output: npz; shard_length=12; modalities=['fault', 'signal', 'temperature']
+estimate: about 42 candidate windows (bounded source sample)
+estimate: about 12 output shards; before short-policy drops and per-source split constraints
 input: 6 sessions, 288 rows
 curation: 42 candidate windows -> 12 selected
 output: 12 shards in quickstart-out
+artifact: 12 shards; splits=['test', 'train']; metadata valid
 first shard: split=test, modalities=['_present', 'fault', 'signal', 'temperature'], signal_shape=(12,)
 reproducible config: quickstart-out/config.json
 ```
@@ -228,33 +232,12 @@ builder features — a column/key typo fails at preflight, no data rows read);
 editor's `$schema` at it for autocomplete), and `--json-schema` cross-checks against it.
 Every CLI prints a one-line `error:` on failure and exits 1; `--debug` shows the traceback.
 
-## Status
+## Project status
 
-Implemented: schema + metric DSL, input adapters (timeseries CSV/Parquet, **HDF5**, **NPZ**,
-**JSONL**, **curated-dataset-as-source** — re-curate kuration's own output — plus
-**partitioned Parquet**, **HuggingFace datasets**, and **Zarr**), segmentation,
-lazy synchronized **MP4 media columns**, device-aware bounded **batch transforms**, optional
-ordered **Ray source execution**,
-feature engine, binning, declarative strategies (uniform-bins / weighted / top-k /
-target-distribution / **filter** + feature-space **cluster-balanced / k-center /
-facility-location / dsir / rare / typical**, plus **anomaly/dedup pre-pass filters** — the
-`[methods]` extra), the output layer (specs, encoders, **npz / json / hdf5 / parquet**
-containers, **sub-track spans**, hours-budget fill, `write_dataset`), the **read side**
-(`iter_shards` — numpy-only — and `kuration.torch.ShardDataset` for PyTorch), **declarative
-tag-coverage**, a single-dataset **stats report**, a first-class **learned-scorer seam**
-(whole-pool/action-aware metrics), a multi-arm **experiment/comparison** harness,
-**parallel / skip-and-log / resume / out-of-core** execution, **path-agnostic I/O**
-(local + `gs://`/`s3://`/`az://` via fsspec), a **`kur-validate`** preflight (+ shipped JSON
-Schema), driven by the `kur-*` CLIs, **schema inference** (`kuration.infer`) and a **fluent
-`input(...).operator(...)` pipeline** over it with universal pre-filter predicates (any
-selection method, count or hours path), complete resume provenance, default presence masks,
-budget accounting, discoverable/isolated registries, semantic hints, output presets,
-strict/explore modes, structured execution plans, versioned artifacts/jobs, typed-compatible
-results, and structured progress. The full suite passes in the development environment;
-optional-format tests skip when their corresponding extras are absent (`pytest tests/`).
-
-Planned and deferred work is tracked in [ROADMAP.md](ROADMAP.md). Optional video media columns,
-device-aware batch transforms, and ordered Ray execution are described in the API documentation.
+The fluent pipeline, explicit extension APIs, bounded execution paths, artifact inspection, and
+documented CLIs are implemented and tested on Python 3.11–3.13. See the
+[API reference](docs/api.md) for the supported surface and [ROADMAP.md](ROADMAP.md) for deferred
+work.
 
 ## Tests
 

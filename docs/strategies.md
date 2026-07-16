@@ -84,7 +84,7 @@ when the budget has room to spare:
 ```
 
 The fluent pipeline's `.filter(metric, op, value)` (see [pipeline.md](pipeline.md)) compiles
-straight to a `selection.predicates` entry, under any `.curate(method, ...)`.
+straight to a `selection.predicates` entry, under any `.sample(method, ...)`.
 
 Scores combine each metric's values, normalized (`quantile` rank by default — robust to
 outliers) and weighted.

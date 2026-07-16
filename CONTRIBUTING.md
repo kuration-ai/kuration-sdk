@@ -361,6 +361,10 @@ python -m mypy
 python -m build
 ```
 
+CI additionally installs the built wheel into a clean environment and verifies that `kuration`,
+`kur-inspect`, `schemas/job.schema.json`, and `py.typed` work without the repository on
+`sys.path`.
+
 For changes spanning the pipeline or output path, also run the relevant self-contained examples:
 
 ```bash

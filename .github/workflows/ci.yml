@@ -32,6 +32,25 @@ jobs:
         run: python -m mypy
       - name: Build wheel and sdist
         run: python -m build
+      - name: Smoke-test installed wheel
+        shell: bash
+        run: |
+          python -m venv /tmp/kuration-wheel-smoke
+          /tmp/kuration-wheel-smoke/bin/python -m pip install dist/*.whl
+          cd /tmp
+          /tmp/kuration-wheel-smoke/bin/python - <<'PY'
+          from importlib.resources import files
+          from pathlib import Path
+
+          import kuration
+
+          package = files("kuration")
+          assert package.joinpath("schemas/job.schema.json").is_file()
+          assert package.joinpath("py.typed").is_file()
+          assert "site-packages" in str(Path(kuration.__file__).resolve())
+          assert hasattr(kuration, "inspect_dataset")
+          PY
+          /tmp/kuration-wheel-smoke/bin/kur-inspect --help
       - name: Run examples
         if: matrix.python == '3.11'
         run: |
