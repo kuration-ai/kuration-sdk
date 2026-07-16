@@ -405,6 +405,7 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     cfg = build_config(schema, strategy, results=results, seed=seed, started=started, ended=ended)
     cfg["output"] = spec.to_dict()
     cfg["provenance"] = signature
+    cfg["errors"] = errors
     if execution is not None:
         cfg["execution"] = execution
     write_config(f"{out_dir}/config.json", cfg)

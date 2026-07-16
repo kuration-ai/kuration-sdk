@@ -14,9 +14,9 @@ from pathlib import Path
 import sys
 
 # Keep the checked-in example runnable directly without requiring an editable install.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from kuration import input, iter_shards
+from kuration import input, inspect_dataset, iter_shards
 
 
 def example_sessions() -> dict[str, list[dict]]:
@@ -55,15 +55,20 @@ def run(out_dir: str | Path) -> dict:
     )
 
     print("preflight:")
-    print(pipeline.explain().render())
+    plan = pipeline.output(out_dir, container="npz", shard_length=12, dry_run=True,
+                           inspect_sources=True)
+    print(plan.render())
     result = pipeline.output(out_dir, container="npz", shard_length=12)
     arrays, metadata = next(iter_shards(out_dir, with_meta=True))
+    inspection = inspect_dataset(out_dir)
 
     print(f"input: {len(sessions)} sessions, "
           f"{sum(len(rows) for rows in sessions.values())} rows")
     print(f"curation: {result['results']['segments_total']} candidate windows -> "
           f"{result['selected']} selected")
     print(f"output: {len(result['shards'])} shards in {out_dir}")
+    print(f"artifact: {inspection.shards} shards; "
+          f"splits={sorted(inspection.splits)}; metadata valid")
     print(f"first shard: split={metadata['split']}, "
           f"modalities={sorted(arrays)}, signal_shape={arrays['signal'].shape}")
     print(f"reproducible config: {Path(out_dir) / 'config.json'}")

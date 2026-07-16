@@ -51,7 +51,7 @@ error handling and assert that their candidate and output pools are non-empty.
 
 Keep public interfaces synchronized across:
 
-- implementation and exports in `kuration/`;
+- implementation and exports in `src/kuration/`;
 - exact signatures in [docs/api.md](docs/api.md);
 - fluent behavior in [docs/pipeline.md](docs/pipeline.md);
 - runnable examples when the recommended workflow changes;
@@ -356,7 +356,7 @@ Run the same core checks as CI:
 ```bash
 python -m pytest tests/ -q
 python -m compileall -q kuration examples
-python -m ruff check kuration tests examples
+python -m ruff check src tests examples
 python -m mypy
 python -m build
 ```

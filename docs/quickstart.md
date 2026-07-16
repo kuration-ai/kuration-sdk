@@ -35,9 +35,13 @@ window: 12 steps (stride 6)
 selection: uniform-bins (count=12)
 execution: local; errors=raise; total-pool materialization=none
 optional extras: none (NumPy core)
+output: npz; shard_length=12; modalities=['fault', 'signal', 'temperature']
+estimate: about 42 candidate windows (bounded source sample)
+estimate: about 12 output shards; before short-policy drops and per-source split constraints
 input: 6 sessions, 288 rows
 curation: 42 candidate windows -> 12 selected
 output: 12 shards in quickstart-out
+artifact: 12 shards; splits=['test', 'train']; metadata valid
 first shard: split=test, modalities=['_present', 'fault', 'signal', 'temperature'], signal_shape=(12,)
 reproducible config: quickstart-out/config.json
 ```
@@ -63,7 +67,8 @@ pipeline = (
     .options(mode="strict", seed=7)
 )
 
-print(pipeline.explain().render())
+print(pipeline.output("quickstart-out", container="npz", shard_length=12,
+                      dry_run=True, inspect_sources=True).render())
 result = pipeline.output("quickstart-out", container="npz", shard_length=12)
 ```
 
@@ -81,8 +86,8 @@ Reading from top to bottom:
    the first twelve windows.
 7. Strict mode makes source errors and ambiguous output choices fail immediately. The seed makes
    selection and splitting repeatable.
-8. `explain()` confirms the resolved budget, execution behavior, materialization barriers, and
-   optional extras without reading source rows. Warnings include a concrete fix.
+8. The output dry run resolves the real output choice and optional extras without writing. With
+   `inspect_sources=True`, it samples sources to estimate candidate windows and shard count.
 9. `output(...)` writes NPZ shards plus manifests and the fully resolved configuration.
 
 The script constructs its small sessions in memory so the first run has no network or data-file
@@ -123,6 +128,13 @@ for arrays in iter_shards("quickstart-out", split="train"):
 The `_present` mask distinguishes real steps from padding. This example has fixed twelve-step
 windows and therefore needs no padding, but consumers can use the same field for variable-length
 data.
+
+For a concise artifact summary, then a full integrity check:
+
+```bash
+kur-inspect quickstart-out
+kur-inspect quickstart-out --verify
+```
 
 ## 5. Apply it to your data
 

@@ -199,6 +199,20 @@ shard's `source_id`/`entity_id`/`split`/`padded`. `shard_entries(dataset, split=
 `read_shard_arrays(entry, container)` are the building blocks if you want manifest entries or a
 single shard directly.
 
+Before handing an artifact to training, summarize it without the original job or input corpus:
+
+```python
+from kuration import inspect_dataset
+
+report = inspect_dataset("out/")                 # manifest/config metadata only
+verified = inspect_dataset("out/", verify=True) # decode every shard
+assert verified.verification["valid"]
+```
+
+The report includes split sizes and durations, modalities, padding, budget information, skipped
+source errors, provenance, and execution mode. The equivalent CLI is `kur-inspect out/`; use
+`kur-inspect out/ --verify` in handoff or CI and `--json` for automation.
+
 **PyTorch.**
 
 ```python

@@ -103,5 +103,5 @@ the dominant storage cost. For large runs, extract archives incrementally, use m
 files, and keep the emitted `config.json` with the shards for provenance.
 
 The example adapter lives in [`adapters/teapearce.py`](adapters/teapearce.py). It is deliberately
-outside `kuration/`: dataset-specific decoding belongs at the SDK's adapter and encoder seams,
+outside `src/kuration/`: dataset-specific decoding belongs at the SDK's adapter and encoder seams,
 not in the dataset-agnostic core.

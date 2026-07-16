@@ -67,7 +67,7 @@ full explanation. In particular:
 - `docs/quickstart.md` owns the complete first run; the README contains a short tested version.
 - `docs/pipeline.md` owns fluent operator behavior; the API reference owns exact signatures.
 - Layer guides own concepts and examples; `docs/api.md` links to them rather than repeating them.
-- `docs/jobs.md` explains the job format; `kuration/schemas/job.schema.json` is the
+- `docs/jobs.md` explains the job format; `src/kuration/schemas/job.schema.json` is the
   machine-readable key and validation authority.
 - `docs/architecture.md` explains design decisions, not ordinary usage.
 
@@ -79,12 +79,13 @@ pre-`1.0` API is frozen.
 
 ### Top-level Python API
 
-`kuration.__all__` is the machine-readable inventory for `from kuration import ...`. Its current
-95 names are grouped below by user task.
+`kuration.__all__` is the machine-readable inventory for `from kuration import ...`. Its names
+are grouped below by user task.
 
 - Entry and results: `input`, `Pipeline`, `infer_schema`, `curate`, `CurateResult`,
   `write_dataset`, `DatasetWriteResult`, `run_experiment`, `Arm`, `union_define`,
-  `ExperimentResult`, `dataset_report`, `DatasetReport`, `ExecutionPlan`, `ValidationResult`.
+  `ExperimentResult`, `dataset_report`, `DatasetReport`, `inspect_dataset`,
+  `DatasetInspection`, `ExecutionPlan`, `ValidationResult`.
 - Schema and canonical data: `SchemaSpec`, `FieldSpec`, `MediaSpec`, `Tick`, `WindowBuffer`,
   `build_window`, `empty_like`, `Segment`, `Segmenter`, `FrameRef`, `VideoMetadata`.
 - Metrics and scoring: `compile_metric`, `register_metric`, `register_compiled`, `FeatureEngine`,
@@ -142,12 +143,12 @@ are always internal.
 The installed commands are public end-user interfaces:
 
 - Run and analyze: `kur-curate`, `kur-experiment`, `kur-report`.
-- Validate and inspect: `kur-validate`, `kur-explain`.
+- Validate and inspect: `kur-validate`, `kur-explain`, `kur-inspect`.
 - Discover extensions: `kur-list`, `kur-describe`.
 - Upgrade documents: `kur-migrate`.
 
 Their command options and exit behavior belong in `docs/jobs.md` or a linked CLI reference. The
-JSON job contract is the shipped `kuration/schemas/job.schema.json`, including supported version
+JSON job contract is the shipped `src/kuration/schemas/job.schema.json`, including supported version
 and migration behavior. Internal functions under `kuration.cli` are not a supported Python API.
 
 ### Artifact interface

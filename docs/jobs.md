@@ -11,10 +11,15 @@ kur-explain    job.json [--json]           # budget, execution, extras, warnings
 kur-curate     job.json                    # curate job -> hours-budget shards
 kur-experiment job.json [--out cmp.json]   # experiment job -> per-arm JS-vs-baseline
 kur-report     job.json [--out rep.json]   # report job -> metric distribution profile
+kur-inspect    DATASET [--verify] [--json] # post-run artifact summary/integrity check
 ```
 
 Every CLI accepts `--debug`: failures normally print a one-line `error: ...` and exit 1;
 `--debug` re-raises for the full traceback.
+
+`kur-inspect` is the exception to the job-file model: it takes a written dataset directory or
+manifest, needs neither the original job nor input sources, and exits 2 when `--verify` finds a
+missing or corrupt shard.
 
 The job **kind** is inferred: `arms` present → experiment; `output`/`train_hours` present →
 curate; otherwise → report.

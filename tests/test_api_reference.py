@@ -24,7 +24,7 @@ def test_api_reference_covers_every_top_level_export():
 
 
 def test_api_reference_covers_every_public_pipeline_method():
-    tree = ast.parse((ROOT / "kuration" / "pipeline.py").read_text())
+    tree = ast.parse((ROOT / "src" / "kuration" / "pipeline.py").read_text())
     pipeline = next(
         node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "Pipeline")
     methods = [

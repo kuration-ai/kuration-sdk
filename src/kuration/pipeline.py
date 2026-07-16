@@ -1076,6 +1076,44 @@ class Pipeline:
                 extras.add(extra)
         return sorted(extras)
 
+    def _estimate_sources(self, *, max_sources: int = 3,
+                          max_ticks_per_source: int = 10_000) -> dict:
+        """Inspect a bounded source sample and estimate pool size without retaining rows."""
+        sampled = self.sources[:max_sources]
+        observed_ticks = 0
+        observed_candidates = 0
+        observed_entities = 0
+        truncated = False
+        segmenter = self._segmenter_or_default()
+        from itertools import islice
+        for source in sampled:
+            ticks = (
+                self.adapter.iter_ticks(source)
+                if hasattr(self.adapter, "iter_ticks")
+                and not getattr(self.adapter, "in_memory", False)
+                else iter(self.adapter.ticks(source))
+            )
+            batch = list(islice(ticks, max_ticks_per_source + 1))
+            if len(batch) > max_ticks_per_source:
+                truncated = True
+                batch = batch[:max_ticks_per_source]
+            count = len(batch)
+            observed_ticks += count
+            observed_candidates += max(0, 1 + (count - segmenter.window) // segmenter.stride)
+            observed_entities += len({entity for tick in batch for entity in tick.entities})
+        scale = len(self.sources) / len(sampled) if sampled else 0.0
+        return {
+            "sampled_sources": len(sampled), "total_sources": len(self.sources),
+            "max_ticks_per_source": max_ticks_per_source,
+            "ticks_observed": observed_ticks,
+            "candidate_windows_estimate": round(observed_candidates * scale),
+            "entities_per_source_estimate": (
+                observed_entities / len(sampled) if sampled else 0.0),
+            "lower_bound": truncated,
+            "basis": "bounded source sample" if truncated or len(sampled) < len(self.sources)
+                     else "all sources",
+        }
+
     # ---- inspectors (cheap, non-terminal) ------------------------------------------------
     def head(self, k: int = 5) -> list:
         """First k Ticks of the first source (reads only what it needs)."""
@@ -1111,7 +1149,7 @@ class Pipeline:
                              "no selection method or budget has been configured",
                              "hint": "Add .sample('equal', n=...) for a count or "
                                      ".sample('top-k', hours=..., weights=...) for duration."})
-        if inspect_sources and hasattr(self.adapter, "check_source"):
+        if inspect_sources and not self._in_memory and hasattr(self.adapter, "check_source"):
             for source in self.sources:
                 self.adapter.check_source(source)
         strategy = self._raw_strategy(require_method=False)
@@ -1126,6 +1164,8 @@ class Pipeline:
             {"kind": "count", "value": self._n} if self._n is not None else
             {"kind": "hours", "value": self._hours} if self._hours is not None else None)
         options["optional_extras"] = self._optional_extras()
+        if inspect_sources:
+            options["source_estimate"] = self._estimate_sources()
         return ExecutionPlan(source={"kind": type(self.adapter).__name__,
                                      "count": len(self.sources),
                                      "sources": [str(s) for s in self.sources]},
@@ -1222,11 +1262,14 @@ class Pipeline:
                short_policy: str = "keep", modalities: Optional[dict] = None,
                include=None, exclude=None, encoder=None, span_steps: Optional[int] = None,
                span_seconds: Optional[float] = None, categorical: Optional[str] = None,
-               preset_params: Optional[dict] = None) -> dict:
+               preset_params: Optional[dict] = None, dry_run: bool = False,
+               inspect_sources: bool = False):
         """Write shards + manifests + config.json. `.curate(hours=...)` routes through the
         hours-budget `write_dataset`; `.curate(n=...)` selects then writes each chosen
         segment as a sub-track. config.json gains a 'pipeline' key: the operator chain."""
         self._check_exec()
+        if not isinstance(dry_run, bool) or not isinstance(inspect_sources, bool):
+            raise ValueError("dry_run and inspect_sources must be true or false")
         path = str(path)
         if spec is not None and (preset is not None or modalities is not None or include is not None
                                  or exclude is not None or container is not None
@@ -1300,8 +1343,9 @@ class Pipeline:
                     if categorical == "error":
                         raise ValueError(f"output(): categorical field {fname!r} would be omitted; "
                                          "strict/error policy requires explicit modalities")
-                    print(f"  [output] categorical field {fname!r} skipped from default "
-                          f"modalities (pass modalities= to encode it)")
+                    if not dry_run:
+                        print(f"  [output] categorical field {fname!r} skipped from default "
+                              f"modalities (pass modalities= to encode it)")
                     continue
                 mods[fname] = {"dtype": "float32",
                                "shape": [len(fs.dims)] if fs.kind == "vector" else [],
@@ -1344,6 +1388,98 @@ class Pipeline:
             raise ValueError(f"selection method {strategy.method!r} has no declared "
                              "approximate physical implementation yet; use "
                              "approximation='exact'")
+
+        if dry_run:
+            if self._hours is None and opt["resume"]:
+                raise ValueError("resume is supported on the hours path only "
+                                 "(.sample(hours=...)); count output is deterministic")
+            if self._hours is None and self._n is None:
+                raise ValueError("output() needs .sample(n=...) or .sample(hours=...) first")
+            if span_steps is not None and span_seconds is not None:
+                raise ValueError("pass only one of span_steps or span_seconds")
+            if span_steps is not None and (
+                    not isinstance(span_steps, int) or isinstance(span_steps, bool)
+                    or span_steps < 1):
+                raise ValueError("span_steps must be a positive integer")
+            if span_seconds is not None and (
+                    not isinstance(span_seconds, (int, float))
+                    or isinstance(span_seconds, bool) or not math.isfinite(span_seconds)
+                    or span_seconds <= 0):
+                raise ValueError("span_seconds must be a finite positive number")
+            if self._hours is not None and (opt["sample_hz"] or self.schema.sample_hz) is None:
+                raise ValueError("hours output needs a sample rate; pass hz= to input(), "
+                                 ".at_rate(), or .options(sample_hz=...)")
+            effective_hz = opt["sample_hz"] or self.schema.sample_hz
+            span_len = span_steps if span_steps is not None else (
+                round(span_seconds * effective_hz)
+                if span_seconds is not None and effective_hz is not None else None)
+            if span_len is not None and span_len < 1:
+                raise ValueError("span_seconds is shorter than one sample at the effective "
+                                 "sample_hz")
+            if (span_len is not None and spec.short_policy == "drop"
+                    and span_len < spec.shard_length):
+                raise ValueError(
+                    f"span_steps={span_len} < shard_length={spec.shard_length} with "
+                    "short_policy='drop': every admitted span would chunk to zero shards "
+                    "while still consuming the hours budget")
+            if self._hours is None and opt["memory_budget"] is not None \
+                    and not self._can_run_bounded_count(strategy):
+                raise ValueError(
+                    "memory_budget requires a bounded exact count plan; currently supported "
+                    "only for local top-k/uniform-bins without global filters, scorers, tag "
+                    "coverage, or group caps (and with PyArrow installed)")
+            if self._hours is not None and opt["memory_budget"] is not None:
+                bounded_hours = (strategy.method in {"top-k", "weighted", "uniform-bins"}
+                                 and not strategy.filters and not strategy.scorers
+                                 and opt["executor"] == "local")
+                if bounded_hours:
+                    try:
+                        import pyarrow  # noqa: F401
+                    except ImportError:
+                        bounded_hours = False
+                if not bounded_hours:
+                    raise ValueError("memory_budget requires a bounded exact hours plan; use "
+                                     "local top-k/weighted/uniform-bins without global filters "
+                                     "or scorers, and install the scale extra")
+            from dataclasses import replace
+            plan = self.explain(inspect_sources=inspect_sources)
+            plan_options = dict(plan.options)
+            extras = set(plan_options.get("optional_extras") or ())
+            if spec.container == "hdf5":
+                extras.add("array")
+            elif spec.container == "parquet":
+                extras.add("parquet")
+            plan_options["optional_extras"] = sorted(extras)
+            estimate = plan_options.get("source_estimate")
+            if estimate:
+                if self._n is not None:
+                    selected = min(self._n, estimate["candidate_windows_estimate"])
+                    per_segment = max(1, -(-self._segmenter_or_default().window
+                                           // spec.shard_length))
+                    estimate["output_shards_estimate"] = round(
+                        selected * estimate["entities_per_source_estimate"] * per_segment)
+                else:
+                    effective_hz = opt["sample_hz"] or self.schema.sample_hz
+                    assert effective_hz is not None and self._hours is not None
+                    hz = float(effective_hz)
+                    seconds = float(self._hours + self._test_hours) * 3600.0
+                    estimate["output_shards_estimate"] = max(
+                        1, round(seconds * hz / spec.shard_length))
+                estimate["output_estimate_assumptions"] = (
+                    "before short-policy drops and per-source split constraints")
+            output_plan = {**spec.to_dict(), "path": path,
+                           "preset": preset_resolution, "write": False}
+            warnings = [w for w in plan.warnings
+                        if w.get("code") != "categorical-output-policy"]
+            omitted = [name for name, field in self.schema.fields.items()
+                       if field.kind == "categorical" and name not in spec.to_dict()["modalities"]]
+            if omitted:
+                warnings.append({"code": "categorical-fields-omitted",
+                                 "message": f"categorical fields {omitted} are not in output",
+                                 "hint": "Pass explicit modalities or an output preset with "
+                                         "categorical='integer-vocab' or 'encoder' to retain them."})
+            return replace(plan, output=output_plan, options=plan_options,
+                           warnings=tuple(warnings))
 
         if self._hours is not None:                       # ---- hours-budget path ----
             from .output.dataset import write_dataset
@@ -1535,6 +1671,7 @@ class Pipeline:
         cfg = build_config(self.schema, result.strategy, results=results, seed=seed)
         cfg["output"] = spec.to_dict()
         cfg["pipeline"] = list(self._ops)
+        cfg["errors"] = list(result.errors)
         write_config(f"{out_dir}/config.json", cfg)
         from .results import DatasetWriteResult
         return DatasetWriteResult(shards=entries, selected=len(result.selected), results=results,

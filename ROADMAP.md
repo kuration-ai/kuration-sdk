@@ -30,10 +30,14 @@ Status labels:
 - Confirm the public `kuration-sdk` project name and configure the PyPI trusted publisher.
 - Perform a clean-environment install, wheel/sdist inspection, and release-candidate smoke test.
 - Establish release notes and an explicit compatibility/deprecation policy for the beta series.
-- Decide whether to adopt the conventional `src/kuration/` repository layout as an isolated
-  structural change; the import package remains `kuration` either way.
-
 These items gate public publishing. Pipeline execution optimization does not gate `0.1`.
+
+## Delivered — product usability and artifact handoff
+
+- Conventional `src/kuration/` repository layout; the import package remains `kuration`.
+- Output-aware dry runs with optional bounded source, candidate-window, and shard estimates.
+- Post-run Python/CLI artifact inspection with full shard integrity verification.
+- Actionable CLI remedies, execution-path parity coverage, and a fluent-first documentation path.
 
 ## Delivered — synchronized video ingestion
 

@@ -7,6 +7,10 @@ for the fluent `input(...).operator(...)` API, [api.md](api.md) for every public
 [jobs.md](jobs.md) for the CLI job-spec keys, and [overview](overview.md) for the one-shot
 end-to-end example.
 
+For most new projects, begin with the fluent recipe in [quickstart.md](quickstart.md) and recipe
+16 below. Recipes 1–15 use the explicit building blocks when you need exact schema, adapter, or
+strategy control.
+
 Throughout, assume a schema and an adapter:
 
 ```python

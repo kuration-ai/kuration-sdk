@@ -1,4 +1,4 @@
-"""Fluent pipeline facade: input() -> operators -> terminals (kuration/pipeline.py).
+"""Fluent pipeline facade: input() -> operators -> terminals (src/kuration/pipeline.py).
 
 Data is synthesized in-memory with a controlled distribution: source s{i} has hp ~ 25*i
 (+ a small j%5 ripple), so filter/bin assertions are checkable. Every test that should

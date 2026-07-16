@@ -24,7 +24,8 @@ from pathlib import Path
 
 from ..output import OutputSpec
 from ..strategy import load_strategy
-from ._common import build_adapter, build_schema, build_segmenter, load_job_plugins, read_job
+from ._common import (build_adapter, build_schema, build_segmenter, format_error,
+                      load_job_plugins, read_job)
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "job.schema.json"
 
@@ -172,12 +173,12 @@ def main() -> None:
         if args.debug:
             raise
         # a missing optional dependency is an environment problem, not an invalid spec
-        print(f"error: {e}", file=sys.stderr)
+        print(format_error(e), file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         if args.debug:
             raise
-        print(f"INVALID: {type(e).__name__}: {e}", file=sys.stderr)
+        print(format_error(e, prefix="INVALID"), file=sys.stderr)
         sys.exit(1)
 
     bits = [f"kind={summary['kind']}", f"schema={summary['schema']}"]

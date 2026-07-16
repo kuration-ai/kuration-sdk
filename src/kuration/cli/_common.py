@@ -43,6 +43,36 @@ def cli_progress_for(*, quiet: bool = False):
     return cli_progress(file=sys.stderr)
 
 
+def error_hint(error: BaseException) -> str | None:
+    """Return one stable, actionable remedy for common user-facing failures."""
+    message = str(error).lower()
+    if "segment pool is empty" in message:
+        return ("Run kur-validate --check-sources, use on_error='raise', and confirm the "
+                "window is not longer than each source.")
+    if "undefined metric" in message or "unknown registered metric" in message:
+        return "Define the metric with measure()/strategy.define or register its plugin first."
+    if "missing value for output modality" in message:
+        return ("Inspect the field mapping and _present mask, or omit/encode fields that are "
+                "not defined for every present entity.")
+    if "categorical" in message and ("output" in message or "policy" in message):
+        return "Choose categorical='omit', 'integer-vocab', or 'encoder' explicitly."
+    if "memory_budget" in message or "bounded exact" in message:
+        return ("Use top-k/uniform-bins without global filters or scorers, or remove the "
+                "memory budget after sizing the pool.")
+    if isinstance(error, ImportError) and "pip install" not in message:
+        return "Install the optional extra named by the adapter, method, or output container."
+    if "resume=true" in message or "resume" in message and "fingerprint" in message:
+        return "Use a fresh output directory or restore the exact original inputs and options."
+    return None
+
+
+def format_error(error: BaseException, *, prefix: str = "error") -> str:
+    """Format a one-line error with a remedy when the failure class is recognized."""
+    rendered = f"{prefix}: {type(error).__name__}: {error}"
+    hint = error_hint(error)
+    return f"{rendered} | hint: {hint}" if hint else rendered
+
+
 def cli_run(body, *, debug: bool = False) -> None:
     """Error surface shared by the kur-* mains: a failure prints one `error:` line to stderr
     and exits 1; `--debug` re-raises so the full traceback is available on demand."""
@@ -51,7 +81,7 @@ def cli_run(body, *, debug: bool = False) -> None:
     except Exception as e:
         if debug:
             raise
-        print(f"error: {type(e).__name__}: {e}", file=sys.stderr)
+        print(format_error(e), file=sys.stderr)
         raise SystemExit(1)
 
 

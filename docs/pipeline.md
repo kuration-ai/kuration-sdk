@@ -63,7 +63,7 @@ Notes:
 
 `input()` calls `infer_schema(sample, ...)` on a small sample (`sample=200` rows by default)
 pulled by `sample_source`. It is deliberately conservative and loud: an ambiguous column
-raises rather than guessing. Summary (full behavior: [`kuration/infer.py`](../kuration/infer.py),
+raises rather than guessing. Summary (full behavior: [`src/kuration/infer.py`](../src/kuration/infer.py),
 concepts: [schema.md](schema.md)):
 
 - **Time column** — first case-insensitive match among `t, time, timestamp, ts, step, frame,
@@ -206,6 +206,8 @@ when the behavior belongs to one of those stages.
   physical plan: fused operators, pipeline/data-parallel mode, barriers and reasons, pass counts,
   materialization status, resources, checkpoint policy, implicit choices, and actionable
   warnings. `.render(detailed=True)` gives the stage-by-stage form.
+- `.explain(inspect_sources=True)` — additionally samples a bounded number of ticks to estimate
+  candidate windows. This reads source data; ordinary `.explain()` remains metadata-only.
 
 Execution tuning lives in `.options(...)`: `memory_budget` is a byte budget used by physical
 planning, `batch_size` bounds each segment batch, `max_in_flight` bounds producer/consumer
@@ -223,11 +225,14 @@ retain the compatible reference implementation and appear as materialization war
 | terminal | signature | routes to |
 |---|---|---|
 | `.collect` | `(n=None)` | `curate()` — count-path selection → `CurateResult` |
-| `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None)` | preset/direct spec → ordinary `OutputSpec`, then the existing writer |
+| `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, dry_run=False, inspect_sources=False)` | validate/estimate with `dry_run=True`, otherwise write through the ordinary `OutputSpec` path |
 | `.report` | `(**kw)` | feature pass only (no selection) → `dataset_report` |
 | `.experiment` | `(arms, n, baseline=None)` | `run_experiment`; `arms` maps name → `Pipeline` (its compiled strategy) or a raw strategy dict |
 
 `.output` details:
+- `dry_run=True` resolves and validates the actual output declaration without creating the
+  destination. Add `inspect_sources=True` for bounded candidate-window and shard estimates;
+  estimates state their sampling assumptions in the returned `ExecutionPlan`.
 - `container` defaults from the path's suffix (`.hdf5`/`.h5` → hdf5, `.npz` → npz, `.parquet`
   → parquet, `.json` → json; otherwise npz) or pass it explicitly.
 - Default `modalities` cover every **numeric** schema field (categorical fields are skipped
@@ -266,7 +271,7 @@ you'll hit directly:
 ```python
 from kuration import input, iter_shards
 
-result = (
+pipeline = (
     input({"s0": rows0, "s1": rows1}, time="t")   # multi-source in-memory rows
     .window(16)
     .measure("hp")
@@ -275,8 +280,15 @@ result = (
     .bin("action_entropy", bins=4)                  # diversity axis
     .sample("equal", n=12)                          # uniform-bins, count path
     .options(on_error="raise")
-    .output("out/run1", container="hdf5")           # needs the [array] extra
 )
+
+# Validate the output choice and estimate work before writing anything.
+print(
+    pipeline.output("out/run1", container="hdf5", dry_run=True,
+                    inspect_sources=True).render()
+)
+
+result = pipeline.output("out/run1", container="hdf5")  # needs the [array] extra
 
 for arrays in iter_shards("out/run1", split="train"):
     arrays["hp"]         # (16,) float32

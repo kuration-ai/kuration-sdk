@@ -4,7 +4,8 @@ import argparse
 import json
 import sys
 
-from ._common import build_adapter, build_schema, build_segmenter, load_job_plugins, read_job
+from ._common import (build_adapter, build_schema, build_segmenter, format_error,
+                      load_job_plugins, read_job)
 
 
 def explain_job(job: dict) -> dict:
@@ -120,7 +121,7 @@ def main() -> None:
     except Exception as error:
         if args.debug:
             raise
-        print(f"error: {type(error).__name__}: {error}", file=sys.stderr)
+        print(format_error(error), file=sys.stderr)
         raise SystemExit(1)
     print(json.dumps(plan, indent=2) if args.json else render_plan(plan))
 

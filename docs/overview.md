@@ -1,5 +1,9 @@
 # kuration — overview & end-to-end example
 
+> **Which path should I use?** Start with the fluent [quick start](quickstart.md) for ordinary
+> CSV, JSON, Parquet, arrays, or Python rows. This page is the advanced explicit API path for
+> custom schemas, adapters, strategies, and output specifications.
+
 `kuration` is a dataset-agnostic curation SDK: it turns a large time-series corpus into a
 curated, training-ready set of shards — *raw source → curated subset → encoded shards* — for
 **any** sequential dataset (game telemetry, robot trajectories, sensor logs, generic

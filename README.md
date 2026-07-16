@@ -57,7 +57,7 @@ inspect the resulting manifest, configuration, and arrays.
 | goal | start here |
 |---|---|
 | Try kuration or curate ordinary CSV/Parquet/row data | Fluent `input(...).window(...).sample(...).output(...)` and the [quickstart](docs/quickstart.md) |
-| Decide whether a planned run will fit and what it needs | `pipeline.explain().render(detailed=True)` before `output()` |
+| Decide whether a planned run will fit and what it needs | `pipeline.output(path, dry_run=True, inspect_sources=True)` before writing |
 | Run a checked, reproducible JSON job | `kur-validate job.json --check-sources`, then `kur-explain job.json` and `kur-curate job.json` |
 | Add a proprietary format, model, metric, or container | The [customization guide](docs/customization.md) and classic explicit API |
 | Find a task-specific variation | The [usage cookbook](docs/usage.md) |
@@ -215,6 +215,7 @@ kur-list operators                        # discover compositional pipeline oper
 kur-describe scorer action_residual       # parameter schema, capabilities, origin
 kur-explain job.json --json               # structured execution plan, no row reads
 kur-migrate old-job.json --out job.json   # deterministic format migration
+kur-inspect out/run1 --verify             # summarize an artifact and decode-check every shard
 ```
 
 `kur-validate` runs every load-time validator the real run would (schema, adapter field maps,

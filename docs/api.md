@@ -65,7 +65,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.sample` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | configure selection; exactly one of `n=`/`hours=` (`curate` remains as a compatibility alias) |
 | `Pipeline.curate` | `(method=None, **selection_options) -> Pipeline` | compatibility alias for `Pipeline.sample` |
 | `Pipeline.collect` | `(n=None) -> CurateResult` | terminal — count-path selection |
-| `Pipeline.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, preset_params=None) -> dict` | terminal — write shards + manifests + `config.json` (embeds `"pipeline"` provenance) |
+| `Pipeline.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, preset_params=None, dry_run=False, inspect_sources=False) -> DatasetWriteResult \| ExecutionPlan` | terminal — write shards + manifests + `config.json`; with `dry_run=True`, validate and estimate without writing |
 | `Pipeline.report` | `(**kw) -> dict` | terminal — feature pass only → `dataset_report` |
 | `Pipeline.experiment` | `(arms: dict, n: int, baseline=None) -> dict` | terminal — multi-arm comparison (`arms` maps name → `Pipeline` or raw strategy dict) |
 | `Pipeline.head` | `(k=5) -> list[Tick]` | inspector — first `k` ticks of the first source |
@@ -84,12 +84,14 @@ See [pipeline.md](pipeline.md) for accepted operator forms and validation behavi
 | `DatasetWriteResult` | dict-compatible; `.to_dict()` and attribute access | dataset write result returned by output paths |
 | `ExperimentResult` | dict-compatible; `.to_dict()` and attribute access | multi-arm experiment result |
 | `DatasetReport` | dict-compatible; `.to_dict()` and attribute access | distribution report result |
+| `DatasetInspection` | dict-compatible; `.to_dict()` and attribute access | artifact summary and optional shard-integrity result |
 | `ValidationResult` | dict-compatible; `.to_dict()` and attribute access | programmatic validation result used by the CLI layer |
 | `ExecutionPlan` | `(source, schema, window, strategy, output, options, stages=(), warnings=(), physical_plan=None)` | immutable mapping returned by `Pipeline.explain`; `.to_dict()` serializes and `.render(detailed=False)` formats text |
+| `inspect_dataset` | `(dataset, *, verify=False, container=None) -> DatasetInspection` | inspect manifests/config without original sources; `verify=True` decodes every shard |
 | `Arm` | `(name, strategy)` | one named `run_experiment` strategy arm |
 | `union_define` | `(arms) -> dict` | merge arm metric definitions, rejecting incompatible duplicate names |
 
-The four dict-compatible result types preserve ordinary key access while adding attribute access
+The dict-compatible result types preserve ordinary key access while adding attribute access
 during the typed-result transition. Consumers should use documented keys, not the concrete `dict`
 subclass implementation.
 

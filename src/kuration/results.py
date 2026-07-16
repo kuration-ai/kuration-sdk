@@ -30,6 +30,10 @@ class DatasetReport(TypedResult):
     pass
 
 
+class DatasetInspection(TypedResult):
+    """Metadata and optional integrity results for one written dataset artifact."""
+
+
 class ValidationResult(TypedResult):
     pass
 
@@ -69,6 +73,7 @@ class ExecutionPlan(Mapping[str, Any]):
         materializes = [stage["name"] for stage in stages
                         if stage.get("materializes_total_pool")]
         extras = self.options.get("optional_extras") or []
+        estimate = self.options.get("source_estimate")
         source_kind = {"_RowsAdapter": "in-memory rows", "_TickAdapter": "in-memory ticks",
                        "_JsonRowsAdapter": "JSON rows"}.get(
                            self.source["kind"], self.source["kind"])
@@ -83,7 +88,17 @@ class ExecutionPlan(Mapping[str, Any]):
                  f"{', '.join(materializes) if materializes else 'none'}",
                  f"optional extras: {', '.join(extras) if extras else 'none (NumPy core)'}"]
         if self.output:
-            lines.append(f"output: {self.output.get('container', 'unresolved')}")
+            modalities = sorted((self.output.get("modalities") or {}).keys())
+            lines.append(f"output: {self.output.get('container', 'unresolved')}; "
+                         f"shard_length={self.output.get('shard_length', 'unresolved')}; "
+                         f"modalities={modalities}")
+        if estimate:
+            qualifier = "at least " if estimate.get("lower_bound") else "about "
+            lines.append(f"estimate: {qualifier}{estimate['candidate_windows_estimate']} "
+                         f"candidate windows ({estimate['basis']})")
+            if "output_shards_estimate" in estimate:
+                lines.append(f"estimate: about {estimate['output_shards_estimate']} output "
+                             f"shards; {estimate['output_estimate_assumptions']}")
         for warning in self.warnings:
             lines.append(f"warning [{warning.get('code', 'general')}]: {warning['message']}")
             if warning.get("hint"):

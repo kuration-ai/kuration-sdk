@@ -60,13 +60,14 @@ kur-list = "kuration.cli.discovery:list_main"
 kur-describe = "kuration.cli.discovery:describe_main"
 kur-migrate = "kuration.cli.migrate:main"
 kur-explain = "kuration.cli.explain:main"
+kur-inspect = "kuration.cli.inspect:main"
 
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["kuration*"]
 
 [tool.setuptools.package-data]
@@ -85,7 +86,7 @@ ignore = ["E731", "E741"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["kuration"]
+files = ["src/kuration"]
 check_untyped_defs = true
 ignore_missing_imports = true
 no_implicit_optional = false
