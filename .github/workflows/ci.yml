@@ -25,9 +25,9 @@ jobs:
       - name: Test
         run: python -m pytest tests/ -q
       - name: Compile
-        run: python -m compileall -q kuration examples
+        run: python -m compileall -q src/kuration examples
       - name: Lint
-        run: python -m ruff check kuration tests examples
+        run: python -m ruff check src tests examples
       - name: Type check
         run: python -m mypy
       - name: Build wheel and sdist

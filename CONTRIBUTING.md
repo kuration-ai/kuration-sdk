@@ -355,7 +355,7 @@ Run the same core checks as CI:
 
 ```bash
 python -m pytest tests/ -q
-python -m compileall -q kuration examples
+python -m compileall -q src/kuration examples
 python -m ruff check src tests examples
 python -m mypy
 python -m build
