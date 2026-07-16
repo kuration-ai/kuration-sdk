@@ -1,0 +1,102 @@
+# kuration-sdk roadmap
+
+**This roadmap has not been reviewed and was generated as a placeholder.**
+
+This roadmap communicates direction, sequencing, and release gates. It is not a promise of dates.
+Detailed behavior belongs in `docs/`; completed implementation history remains in `PLAN.md`.
+
+Status labels:
+
+- **Shipped** — implemented and covered by the current test/documentation contract.
+- **Next** — required before or immediately after the first public SDK release.
+- **Planned** — agreed direction with a design, but not yet scheduled for implementation.
+- **Deferred** — useful work intentionally postponed until scale or demand justifies it.
+
+## Shipped — first SDK foundation
+
+- Schema-driven time-series ingestion and closed metric grammar.
+- Fluent immutable pipelines with schema inference, inspection, and loud validation.
+- Count- and hours-based selection, diversity binning, filters, learned scorers, tags, splits,
+  reports, and multi-arm experiments.
+- Local, cloud, streaming, parallel, resumable, and deterministic execution paths.
+- NPZ, JSON, HDF5, and Parquet outputs plus NumPy and PyTorch readers.
+- Discoverable extension registries for adapters, metrics, scorers, encoders, methods, filters,
+  containers, presets, and compositional operators.
+- Versioned jobs/artifacts, migrations, CLIs, runnable examples, CI, wheel builds, and PyPI
+  trusted-publishing automation.
+- Preferred fluent names `.bin()` and `.sample()` with compatibility aliases retained.
+
+## Next — public `0.1` release readiness
+
+- Resolve corporate license and author metadata and add the matching `LICENSE` file.
+- Confirm the public `kuration-sdk` project name and configure the PyPI trusted publisher.
+- Perform a clean-environment install, wheel/sdist inspection, and release-candidate smoke test.
+- Establish release notes and an explicit compatibility/deprecation policy for the beta series.
+- Decide whether to adopt the conventional `src/kuration/` repository layout as an isolated
+  structural change; the import package remains `kuration` either way.
+
+These items gate public publishing. Pipeline execution optimization does not gate `0.1`.
+
+## Planned — synchronized video ingestion
+
+- Let `input("*.mp4")` create a video-only pipeline whose `frame` media column is semantically
+  typed for compatible video transforms.
+- Pair each ordinary data source with an MP4 by frame index or presentation timestamp.
+- Add schema-level media metadata while representing frame values as lazy auxiliary references,
+  outside ordinary metric buffers.
+- Decode only selected or explicitly transformed frames in bounded batches.
+- Emit raw `uint8` frame tensors as their own output modality/column.
+- Add strict alignment validation, provenance, streaming behavior, and a generated video fixture.
+
+The first decoder is an optional `[video]` module. Installing the core SDK must not install a
+video or GPU framework.
+
+## Planned — optional device-aware transforms
+
+- Add a dependency-free batched-transform protocol and registry to the core.
+- Allow registered transforms to derive scalar selection features from fields or media batches.
+- Support explicit CPU/GPU resources, model fingerprints, preprocessing provenance, and bounded
+  batches.
+- Keep Torch, JAX, CUDA, model libraries, and hardware codecs in optional plugin packages.
+- Fail with an actionable installation hint when a requested implementation is absent; never
+  silently change model, device, dtype, or precision.
+
+GPU is an execution resource, not a required SDK dependency or a separate selection semantic.
+
+## Planned — optional Ray execution backend
+
+- Extract the current process-pool work behind a backend-neutral ordered executor.
+- Add an optional `[ray]` backend using tasks for source work and actors for stateful models.
+- Preserve local/Ray selection parity, canonical ordering, error semantics, progress, provenance,
+  and atomic output behavior.
+- Distribute decoding, scoring, transforms, and admitted-source writing without retaining an
+  entire video corpus in the Ray object store.
+
+The full staged design and acceptance criteria are in
+[docs/video-gpu-ray-plan.md](docs/video-gpu-ray-plan.md).
+
+## Deferred — scale and optimization work
+
+- Total-segment-pool spill or compact external feature tables for pools larger than driver RAM.
+- Count-path resume.
+- Decode-once caches shared by visual transforms and selected output.
+- Hardware video decoding, dynamic batching, and prefetching after representative benchmarks.
+- Ray Data-native video ingestion after its API and performance justify making it a backend
+  implementation detail.
+
+These optimizations should be driven by measured bottlenecks and must preserve the simple local
+path.
+
+## Toward `1.0`
+
+A stable `1.0` should require:
+
+- a documented and tested public Python, CLI, job, and artifact compatibility policy;
+- a deprecation window and migrations for renamed or serialized interfaces;
+- stable extension descriptors and plugin-loading behavior;
+- reproducibility and deterministic-selection guarantees across supported executors;
+- security, support, and release processes suitable for public use;
+- evidence from multiple real datasets and at least one external extension package.
+
+Roadmap proposals should include motivation, contract impact, optional dependencies, compute and
+memory implications, reproducibility risks, tests, documentation, and migration needs.

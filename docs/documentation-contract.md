@@ -58,6 +58,7 @@ The target structure below mostly reuses the existing pages. New pages are marke
 | Extension guides | `docs/customization.md`, relevant sections of `docs/architecture.md` | supported seams, registries, plugins, and design constraints |
 | Operations | `docs/jobs.md`, scale/reliability recipes in `docs/usage.md` | validation, CLI runs, streaming, parallelism, resume, cloud I/O |
 | Reference | `docs/api.md`, shipped `job.schema.json` | exact Python and job-spec contracts |
+| Roadmap | `ROADMAP.md`, linked detailed plans | release gates and sequenced future direction |
 | Maintainer contract | this page | documentation scope, ownership, and coverage rules |
 
 Content has one canonical home. Other pages summarize and link instead of maintaining a second
@@ -116,7 +117,7 @@ All non-underscore methods intentionally exposed by `Pipeline` are public:
 - Schema and resolution: `using`, `semantic`, `as_position`, `as_angular`, `as_bitmask`,
   `at_rate`.
 - Pipeline construction: `apply`, `window`, `measure`, `filter`, `bin`, `score`, `tag`,
-  `split`, `group`, `options`, `curate`.
+  `split`, `group`, `options`, `sample`; `organize` and `curate` remain compatibility aliases.
 - Inspection: `head`, `describe`, `explain`.
 - Terminals: `collect`, `report`, `experiment`, `output`.
 

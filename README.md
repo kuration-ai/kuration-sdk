@@ -128,6 +128,8 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | [docs/customization.md](docs/customization.md) | registries, descriptors, presets, versioning, and extension authoring |
 | [docs/documentation-contract.md](docs/documentation-contract.md) | documentation audiences, entry paths, information architecture, and public API boundary |
 | [docs/releasing.md](docs/releasing.md) | build, trusted-publishing setup, and public PyPI release checklist |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | contributor setup, design rules, checks, documentation, and pull requests |
+| [ROADMAP.md](ROADMAP.md) | release gates, planned video/GPU/Ray work, scale items, and path to 1.0 |
 
 Hitting a loud validation error? [docs/usage.md § Troubleshooting](docs/usage.md#17--troubleshooting--common-loud-failures)
 maps the common ones to causes and fixes.
@@ -214,8 +216,8 @@ strict/explore modes, structured execution plans, versioned artifacts/jobs, type
 results, and structured progress. The full suite passes in the development environment;
 optional-format tests skip when their corresponding extras are absent (`pytest tests/`).
 
-Deferred: a spill/external tier for *total* segment pools larger than RAM and count-path resume.
-See `PLAN.md`.
+Planned and deferred work is tracked in [ROADMAP.md](ROADMAP.md); the detailed video/GPU/Ray
+design is in [docs/video-gpu-ray-plan.md](docs/video-gpu-ray-plan.md).
 
 ## Tests
 
