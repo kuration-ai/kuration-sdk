@@ -111,6 +111,7 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
     emit(progress, "scoring", "start", total=len(items))
     if executor not in {"local", "ray"}:
         raise ValueError("executor must be 'local' or 'ray'")
+    results: list[Any]
     if executor == "ray":
         from .execution import RayExecutionBackend, ResourceSpec
         backend = RayExecutionBackend()
@@ -121,7 +122,7 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
     elif workers and workers > 1:
         context = mp.get_context("spawn")
         with ProcessPoolExecutor(max_workers=workers, mp_context=context) as ex:
-            results: list[Any] = [None] * len(items)
+            results = [None] * len(items)
             futures = {ex.submit(_score_one, item): i for i, item in enumerate(items)}
             done = 0
             for future in as_completed(futures):

@@ -77,9 +77,13 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
                 positions.append(i)
                 refs.append(rec[f"media:{m.src_arg}"])
         provider = ctx.get("media_provider")
-        if refs and provider is None:
-            raise ValueError(f"media:{m.src_arg} output needs the input adapter's media provider")
-        decoded = provider.decode_batch(refs) if refs else np.empty((0, *m.shape), dtype=m.dtype)
+        if refs:
+            if provider is None:
+                raise ValueError(
+                    f"media:{m.src_arg} output needs the input adapter's media provider")
+            decoded = provider.decode_batch(refs)
+        else:
+            decoded = np.empty((0, *m.shape), dtype=m.dtype)
         values = m.zeros(L)
         for pos, value in zip(positions, decoded):
             values[pos] = value

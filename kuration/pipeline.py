@@ -356,8 +356,8 @@ def _input_files(src, op, *, schema, fields, time, entity, hz, kinds, sample, gl
             raise ValueError("video input probes its media schema; schema/fields/time/entity "
                              "overrides are not supported (use input(adapter=...) instead)")
         from .media import VideoAdapter
-        ad = VideoAdapter(paths, **adapter_kw)
-        return Pipeline(schema=ad.schema, adapter=ad, sources=paths,
+        video_ad = VideoAdapter(paths, **adapter_kw)
+        return Pipeline(schema=video_ad.schema, adapter=video_ad, sources=paths,
                         in_memory=False, ops=[op])
     sample_data = None
     if schema is None:
