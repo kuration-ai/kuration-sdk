@@ -34,6 +34,7 @@ the right adapter, eagerly — a bad source fails at `input()` time, not mid-pip
 |---|---|
 | a path / glob string (`"a.csv"`, `"logs/*.parquet"`) | one sniffed adapter over the matched file(s); mixed extensions raise |
 | a list of path strings | same, all must sniff to the same kind |
+| an MP4/M4V/MOV path, glob, or list | `VideoAdapter`; one source per video with lazy `media:frame` references (`[video]`) |
 | a directory of `.parquet` parts | `ParquetDatasetAdapter` |
 | a pandas `DataFrame` (duck-typed via `.to_dict("records")`) | in-memory rows, one source `"mem"` |
 | `list[dict]` (row objects) | in-memory rows, one source `"mem"` |
@@ -46,7 +47,7 @@ the right adapter, eagerly — a bad source fails at `input()` time, not mid-pip
 File-kind sniffing (`kuration.infer.sniff`): `.csv`/`.parquet` → timeseries, `.jsonl` → JSONL
 (one row-object per line), `.json` → a JSON array of row objects *or* a columnar dict of
 equal-length lists, `.npz` → NpzAdapter, `.h5`/`.hdf5` → HDF5Adapter, a directory containing
-`.parquet` parts → `ParquetDatasetAdapter`. Anything else raises with a pointer at
+`.parquet` parts → `ParquetDatasetAdapter`; `.mp4`/`.m4v`/`.mov` → `VideoAdapter`. Anything else raises with a pointer at
 `adapter=`.
 
 Notes:
@@ -87,15 +88,17 @@ concepts: [schema.md](schema.md)):
 
 | operator | signature | compiles to |
 |---|---|---|
+| `.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None)` | a `JoinedMediaAdapter` with a resolved source→video mapping and lazy media column |
 | `.window` | `(window, stride=None, unit="steps")` | the `Segmenter` (stride defaults to `window`) |
 | `.measure` | `(name, spec=None, *, of=None, map=None, filter=None, scope=None)` | a `strategy.define[name]` entry — 4 forms below |
+| `.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params)` | a registered bounded batch transform whose scalar outputs become selection features |
 | `.filter` | `("anomaly"/"dedup", **knobs)` **or** `(metric, op, value)` | a pre-pass filter entry, or a `selection.predicates` entry |
 | `.bin` | `(metric, bins=4)` (or positional `(metric, n)`) | a `binning.axes` entry; `.organize` is a compatibility alias |
 | `.score` | `(name, out=None, **params)` | a `strategy.scorers` entry (output name defaults to `name`) |
 | `.tag` | `(*sources, min_frac=None)` | a `tags.from` entry; `min_frac` sets `selection.tag_coverage` |
 | `.split` | `(test=0.2)` | source-level test split (count path: `test_frac`; hours path: budget share) |
 | `.group` | `(fn)` | `group_of(source_id) -> key` (group cap + stratified splits) |
-| `.options` | `(workers=, on_error=, seed=, streaming=, resume=, sample_hz=, progress=)` | execution kwargs passed to the terminal |
+| `.options` | `(mode=, executor=, workers=, on_error=, seed=, streaming=, resume=, sample_hz=, progress=)` | execution kwargs passed to the terminal; executor is `"local"` or `"ray"` |
 | `.sample` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params)` | `selection.method` + knobs; exactly one of `n=`/`hours=`; `.curate` is a compatibility alias |
 | `.semantic` | `(field, "position"|"angular"|"bitmask", **metadata)` | a new validated `SchemaSpec` |
 | `.as_position/.as_angular/.as_bitmask` | semantic convenience wrappers | `.semantic(...)` |
@@ -113,13 +116,42 @@ concepts: [schema.md](schema.md)):
 A bare token auto-qualifies against the schema: an entity field becomes `<entity_axis>.field`,
 a global stays bare, an event-stream name raises (name a field on it: `"stream.field"`).
 
+### Media joins and batch transforms
+
+`input("clips/*.mp4")` produces media-only ticks with lazy `FrameRef` values. For multimodal
+sources, `.join_video()` accepts either a concrete `{source_id: video_uri}` mapping or a callable;
+the callable is resolved immediately and the concrete mapping is recorded in pipeline provenance.
+`on="frame_index"` is an exact one-to-one join. `on="timestamp"` chooses the nearest presentation
+timestamp within the required `tolerance`; drift and missing mappings fail unless
+`mismatch="drop"` is explicitly selected.
+
+```python
+pipeline = (
+    input("telemetry/*.parquet", time="timestamp")
+    .join_video(lambda source: source.replace(".parquet", ".mp4"), tolerance=0.020)
+    .window(64, stride=32)
+    .transform("acme/visual-novelty", inputs=["media:frame"],
+               batch_size=16, device="cuda")
+    .bin("visual_novelty", bins=8)
+    .sample("equal", n=5000)
+    .options(executor="ray", workers=32)
+)
+```
+
+Transforms are registered with `register_batch_transform()`/`register_transform()`. Inputs use
+`field:`, `feature:`, or `media:` prefixes; declared media semantics are checked before decode.
+Each output must be one finite scalar per stable segment ID, after which it is accepted anywhere
+a measure/scorer feature is accepted: predicates, bins, weights, and feature-space methods.
+Framework imports and model loading remain inside the optional transform implementation; core
+import and ordinary pipelines stay NumPy-only.
+
 `.sample`'s method resolution: an explicit `method=` (case-insensitive alias, e.g. `"equal"` →
 `uniform-bins`, `"top"`/`"topk"` → `top-k`) wins; otherwise `.bin(...)` axes present →
 `uniform-bins`; otherwise `weights=` given → `top-k`; otherwise it raises (name a method).
 
 `.filter`'s two shapes are disambiguated by the first argument: `"anomaly"`/`"dedup"` (with
 knob kwargs, no `op`/`value`) is a pre-pass filter; anything else needs `.filter(metric, op,
-value)` and the metric must already be a declared `.measure`/`.score` output. `op` accepts
+value)` and the metric must already be a declared `.measure`/`.score`/`.transform` output. `op` accepts
 aliases case-insensitively (`le`/`lte`/`leq`/`<=`, `ge`/`gte`/`geq`/`>=`, `lt`/`less`/`<`,
 `gt`/`greater`/`>`, `eq`/`equal`/`=`/`==`, `ne`/`neq`/`!=`). **Predicates are a universal
 pre-filter**: they gate every selection method (not only `"filter"`), on both the count and
@@ -205,12 +237,13 @@ same "closed grammar, loud validation" invariant as the classic API (see CLAUDE.
 you'll hit directly:
 - `.measure(name, ...)` on an unknown field/undeclared name, a bad DSL dict, or a duplicate
   `name` — raises immediately, not at `collect()`/`output()` time.
-- `.filter(metric, op, value)` on a metric that isn't a declared measure/callable/scorer
+- `.filter(metric, op, value)` on a metric that isn't a declared measure/callable/scorer/transform
   output, or an unrecognized `op` — raises with the known aliases listed.
 - `.bin(metric, ...)` on an unknown or already-used axis metric — raises.
 - `.sample()` with both `n=` and `hours=` (or neither), an unresolvable method, or an unknown
   method alias — raises.
-- `.options(**kw)` with an unknown key, or `on_error` outside `{"skip", "raise"}` — raises.
+- `.options(**kw)` with an unknown key, `executor` outside `{"local", "ray"}`, or `on_error`
+  outside `{"skip", "raise"}` — raises.
 - `.output(..., include=[...])`/`exclude=[...]` naming an unknown modality — raises.
 - `workers > 1` with in-memory input, or `resume=True` on the count path — raise at the
   terminal, with the reason and the fix.

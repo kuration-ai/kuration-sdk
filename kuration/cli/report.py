@@ -47,7 +47,8 @@ def _run(args) -> None:
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
         workers=job.get("workers", 1), on_error=job.get("on_error", "skip"),
-        streaming=job.get("streaming", False), progress=progress)
+        streaming=job.get("streaming", False), progress=progress,
+        executor=job.get("executor", "local"))
 
     if strategy.scorers:
         from ..scorers import apply_scorers

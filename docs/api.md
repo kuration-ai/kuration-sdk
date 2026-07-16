@@ -2,6 +2,7 @@
 
 Every name importable from `kuration` (plus `kuration.torch`), grouped by layer, with its real
 signature. Optional-extra requirements are tagged (`[methods]`, `[parquet]`, `[array]`,
+`[video]`, `[ray]`,
 `[cloud]`, `[torch]`, `[hf]`, `[zarr]`). For concepts and recipes see the per-layer docs
 ([schema](schema.md) · [dsl](dsl.md) · [adapters](adapters.md) · [strategies](strategies.md) ·
 [output](output.md)) and the [usage cookbook](usage.md).
@@ -17,14 +18,15 @@ objects as noted below.
 
 | name | signature | does |
 |---|---|---|
-| `curate` | `(*, schema, adapter, sources, strategy, segmenter, target_size, seed=0, group_of=None, tags_of=None, test_frac=0.0, workers=1, on_error="skip", streaming=False, progress=None) -> CurateResult` | score all sources, select a target **count** of segments |
-| `write_dataset` | `(out_dir, *, schema, adapter, sources, strategy, segmenter, spec, encoder=None, train_hours, test_hours=0.0, sample_hz=None, seed=0, group_of=None, tags_of=None, clip_aggregate="max", span_steps=None, span_seconds=None, workers=1, on_error="skip", resume=False, streaming=False, progress=None) -> dict` | score, fill a train/test **hour budget**, write shards + manifests + config |
-| `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None) -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
+| `curate` | `(*, schema, adapter, sources, strategy, segmenter, target_size, seed=0, group_of=None, tags_of=None, test_frac=0.0, workers=1, on_error="skip", streaming=False, progress=None, transforms=(), registry=None, executor="local") -> CurateResult` | score/transform all sources, select a target **count** of segments |
+| `write_dataset` | `(out_dir, *, schema, adapter, sources, strategy, segmenter, spec, encoder=None, train_hours, test_hours=0.0, sample_hz=None, seed=0, group_of=None, tags_of=None, clip_aggregate="max", span_steps=None, span_seconds=None, workers=1, on_error="skip", resume=False, streaming=False, progress=None, transforms=(), registry=None, executor="local") -> dict` | score/transform, fill a train/test **hour budget**, write shards + manifests + config |
+| `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local") -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
 | `dataset_report` | `(segments, *, metrics=None, hist_bins=10) -> dict` | per-metric distribution profile (+ tag/group counts) of a scored pool |
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
 cap and stratified splits); `tags_of(segment) -> iterable` overrides declarative tags;
-`workers` parallelizes the feature pass (deterministic); `on_error` is `"skip"` (log + collect)
+`executor` selects ordered local or optional Ray source work; `workers` parallelizes the local
+feature pass (deterministic); `on_error` is `"skip"` (log + collect)
 or `"raise"`; `streaming=True` is the out-of-core path; `progress(event_dict)` receives phase
 events without coupling execution to a particular UI.
 
@@ -42,6 +44,8 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `input` | `(src=None, *, schema=None, adapter=None, sources=None, fields=None, time=None, entity=None, hz=None, kinds=None, sample=200, globals=None, **adapter_kw) -> Pipeline` | sniff `src`, infer a schema (unless `schema=`), build the adapter — eagerly, loudly |
 | `infer_schema` | `(sample, *, name="inferred", time=None, entity=None, hz=None, kinds=None) -> (SchemaSpec, hints)` | classify a sample (rows/dict-of-arrays/ticks) into a schema + adapter `fields=` hints |
 | `Pipeline.window` | `(window, stride=None, unit="steps") -> Pipeline` | set the `Segmenter` |
+| `Pipeline.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None) -> Pipeline` | attach a strictly aligned lazy video media column |
+| `Pipeline.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params) -> Pipeline` | add a registered bounded scalar-feature transform |
 | `Pipeline.using` | `(registry) -> Pipeline` | resolve adapters, metrics, scorers, encoders, methods, filters, containers, and presets through an explicit `Registry` overlay |
 | `Pipeline.apply` | `(name, **params) -> Pipeline` | validate and expand a registered compositional operator; provenance retains its descriptor and ordinary-operator expansion |
 | `Pipeline.semantic` | `(field, semantics, *, dims=None, bits=None, max_rate=None) -> Pipeline` | refine an inferred field as `"position"`, `"angular"`, or `"bitmask"` |
@@ -57,7 +61,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.tag` | `(*sources, min_frac=None) -> Pipeline` | declarative tag sources (+ optional tag-coverage floor) |
 | `Pipeline.split` | `(test=0.2) -> Pipeline` | source-level test split |
 | `Pipeline.group` | `(fn) -> Pipeline` | `group_of(source_id) -> key` |
-| `Pipeline.options` | `(**kw) -> Pipeline` | `mode, workers, on_error, seed, streaming, resume, sample_hz, progress` |
+| `Pipeline.options` | `(**kw) -> Pipeline` | `mode, executor, workers, on_error, seed, streaming, resume, sample_hz, progress` |
 | `Pipeline.sample` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | configure selection; exactly one of `n=`/`hours=` (`curate` remains as a compatibility alias) |
 | `Pipeline.curate` | `(method=None, **selection_options) -> Pipeline` | compatibility alias for `Pipeline.sample` |
 | `Pipeline.collect` | `(n=None) -> CurateResult` | terminal — count-path selection |
@@ -110,7 +114,7 @@ subclass implementation.
 | `register_metric` | `@register_metric("name")` on `fn(WindowBuffer) -> float` | escape hatch: a Python per-segment metric |
 | `register_compiled` | `(name, fn)` | same, non-decorator form |
 | `FeatureEngine` | `(schema, *, define=None, registered=None, tags_spec=None)`; `.compute(ticks, segments)`, `.score_window(seg, window_ticks)` | runs all metrics over one buffer per segment |
-| `score_sources` | `(*, schema, adapter, sources, define, registered, segmenter, tags_spec=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False) -> (segments, errors, source_tracks)` | the shared parallel feature pass (raises on an empty pool) |
+| `score_sources` | `(*, schema, adapter, sources, define, registered, segmenter, tags_spec=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local") -> (segments, errors, source_tracks)` | the shared ordered feature pass (raises on an empty pool) |
 
 ## Input adapters
 
@@ -131,6 +135,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `schema_from_output` | `(output_spec_dict, *, name="curated", sample_hz=None, entity_axis="e") -> SchemaSpec` | derive a schema from a dataset's `config.json` output block |
 | `register_adapter` / `get_adapter` | `(name, factory, **metadata) -> None` / `(name, *, registry=None, **kwargs) -> InputAdapter` | declarative adapter registry |
 | `InputAdapter` | Protocol: `schema` + `ticks(uri)`; optional lazy `iter_ticks(uri)`, `check_source(uri)`, and `sources_are_paths` | the seam to implement for bespoke formats |
+| `VideoAdapter` / `JoinedMediaAdapter` | video-only sources / strict media join over another adapter | lazy MP4 media columns (`[video]` for PyAV provider) |
 
 ## Selection
 
@@ -183,10 +188,6 @@ lower-level `Registry.register(..., replace=True)` API is used. See
 
 ## Output
 
-`Pipeline.join_video(videos, *, column="frame", on="timestamp", tolerance=..., mismatch="error")`
-adds a strictly aligned lazy video column. `Pipeline.transform(name, *, using=None, inputs=None,
-batch_size=None, device="cpu", **params)` adds a registered bounded scalar-feature transform.
-
 Media contracts include `MediaSpec`, `FrameRef`, `VideoMetadata`, `MediaProvider`,
 `PyAVMediaProvider`, `VideoAdapter`, and `JoinedMediaAdapter`. Transform and execution contracts
 include `BatchTransform`, `register_batch_transform` (`register_transform` alias), `get_transform`,
@@ -198,11 +199,11 @@ executes resolved calls over canonical segments; `get_execution_backend` resolve
 |---|---|---|
 | `OutputSpec` | `.from_dict({shard_length, short_policy?, container?, presence_mask?, modalities})` | declared modalities + chunking; `_present` enabled by default ([output.md](output.md)) |
 | `Modality` | `(name, dtype, shape, src_kind, src_arg)` | one declared modality |
-| `OutputEncoder` / `PassthroughEncoder` | `timestep(record, ctx) -> {modality: array}` | the domain seam for derived tensors |
+| `OutputEncoder` / `PassthroughEncoder` | `timestep(record, ctx)` and optional `encode_batch(records, ctx)` | the domain seam for derived tensors |
 | `register_encoder` / `get_encoder` | `(name, factory)` / `(name, **kwargs)` | encoder registry |
 | `Track` | `(source_id, entity_id, records, meta={})` | one entity's timestep sequence — the output unit |
 | `tracks_from_ticks` | `(schema, ticks, source_id) -> list[Track]` | one track per entity |
-| `write_track` | `(out_dir, track, spec, *, encoder=None, schema=None, split="all", resume=False, name_suffix="") -> [manifest entries]` | low-level: write one track's shards |
+| `write_track` | `(out_dir, track, spec, *, encoder=None, schema=None, split="all", resume=False, name_suffix="", media_provider=None) -> [manifest entries]` | low-level: write one track's shards |
 | `fill_to_hours` | `(items, *, train_hours, test_hours, max_group_overshoot=None, tag_coverage=None, seed=0, return_stats=False)` | hours-budget fill; optional accounting as a third return value |
 | `Container` | `(extension, writer, reader)` | one shard-container implementation |
 | `register_container` | `(name, container=None, *, extension=None, writer=None, reader=None, **metadata)` | register a `Container` instance or its three parts |

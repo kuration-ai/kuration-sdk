@@ -187,6 +187,7 @@ rep["tags"], rep["groups"]
 
 ```python
 write_dataset("out/run1", ..., workers=8,        # parallel feature pass (deterministic)
+              executor="local",                  # or "ray" with the optional [ray] extra
               on_error="skip",                    # log + skip a bad source (default); "raise" to fail fast
               resume=True,                         # skip re-encoding shards that already exist
               streaming=True)                      # bounded memory with a streaming-capable adapter
@@ -233,7 +234,8 @@ CuratedDatasetAdapter("gs://bucket/run1")   # re-ingest straight from the bucket
 ## 14 · Extend at the seams
 
 ```python
-from kuration import register_adapter, register_metric, register_encoder, register_scorer
+from kuration import (register_adapter, register_metric, register_encoder, register_scorer,
+                      register_batch_transform)
 
 # (a) a new raw format -> Tick stream
 class RosbagAdapter:
@@ -265,7 +267,22 @@ class MyScorer:
 register_scorer("quality", MyScorer)
 # then in the strategy: "scorers": [{"name": "quality", "as": "quality"}],
 #                       "selection": {"weights": {"quality": 1.0}}
+
+# (e) bounded device/media inference -> BatchTransform
+@register_batch_transform("visual-quality", outputs=("visual_quality",),
+                          inputs=("media:frame",),
+                          media_requirements={"kind": "video-frame", "layout": "HWC"})
+class VisualQuality:
+    def __init__(self, device="cpu"):
+        self.model = load_model(device)
+    def transform_batch(self, batch, ctx):
+        return {"visual_quality": self.model(batch["media:frame"])}
+# fluent use: pipeline.transform("visual-quality", batch_size=16, device="cuda")
 ```
+
+For raw synchronized video, use `input("clips/*.mp4")` or attach it to ordinary telemetry with
+`.join_video(mapping_or_callable, on="timestamp", tolerance=...)`. Output selected RGB tensors
+with a modality whose source is `media:frame`; no custom encoder is required.
 
 ---
 

@@ -13,8 +13,9 @@ domain knowledge to the edges:
 
 - **Vocabulary → data.** A `SchemaSpec` declares fields and their semantics; the metric
   grammar validates against it. No field names are hardcoded in the engine.
-- **Format → two code seams.** An `InputAdapter` (raw → canonical) and an `OutputEncoder`
-  (derive a modality tensor). Everything between them is generic and never imports a domain.
+- **Format/model → explicit seams.** `InputAdapter` and `MediaProvider` produce canonical/lazy
+  input; `BatchTransform` derives bounded scalar features; `OutputEncoder` derives application
+  modalities. Orchestration between them remains generic.
 
 Everything else in this document follows from that.
 
@@ -24,7 +25,7 @@ The pipeline is a chain of stages connected by four small, explicit data types. 
 are the architecture — each stage only knows the type before and after it.
 
 ```
-                         SchemaSpec  (declared vocabulary; validates the grammar; in config.json)
+                         SchemaSpec  (ordinary vocabulary + auxiliary MediaSpec metadata)
                               │
  raw source ──[InputAdapter]──┼──▶  Tick stream          (canonical per-timestep records)
                               │
@@ -32,6 +33,7 @@ are the architecture — each stage only knows the type before and after it.
                               │
         ──[FeatureEngine]─────┼──▶  Segment.features      (built on a per-window WindowBuffer)
                               │        via compile_metric(spec, schema): fn(WindowBuffer)->float
+        ──[BatchTransform?]───┼──▶  Segment.features[…]   (bounded field/feature/media batches)
         ──[SegmentScorer?]────┼──▶  Segment.features[…]   (optional whole-pool / learned / action-aware
                               │        scoring — model-backed; outputs land as features)
         ──[bin_segments]──────┼──▶  Segment.bin           (quantile coordinates)
@@ -45,12 +47,13 @@ are the architecture — each stage only knows the type before and after it.
 
 | contract | produced by | consumed by | what it is |
 |---|---|---|---|
-| **`Tick`** | adapter | buffer builder | `{time, entities:{id→fields}, events, globals}` — the canonical record |
+| **`Tick`** | adapter | buffer builder/transforms/output | `{time, entities, events, globals, media}`; media values are lazy references |
 | **`WindowBuffer`** | `build_window` | compiled metrics | per-field `(T,E,D)` arrays + `valid` mask + vocabs + events/globals |
 | **`Segment`** | segmenter | binning, selection | window metadata + generic `features`/`bin`/`tags`/`group` |
 | **`Track`** | `tracks_from_ticks` | shard writer | one entity's record sequence — the indivisible output unit |
 
-The power of these contracts: an adapter only owes a `Tick` stream (no numpy, no metrics); a
+The power of these contracts: an adapter only owes a `Tick` stream; auxiliary frames stay lazy
+and outside ordinary buffers; a
 metric only sees a `WindowBuffer` (no raw format); selection only sees `Segment.features` by
 name (no schema); the writer only sees a `Track` + `OutputSpec` (no curation logic).
 
@@ -62,7 +65,8 @@ The seam that replaces hardcoded vocabulary with data. Fields carry a `kind`
 are load-bearing: they let *universal* maps stay type-safe without naming fields — `speed`
 accepts any `position` vector, `angle_delta` any `angular` field, `bit:` any `bitmask`. A
 field's `max_rate` is the outlier clamp. The schema is frozen, round-trippable, and embedded
-in `config.json`.
+in `config.json`. Its separate `media` namespace carries `MediaSpec` shape/layout/color/timing
+metadata without exposing image tensors to the metric grammar.
 
 ### `dsl/grammar.py` + `buffer.py` — the closed metric grammar
 `compile_metric(spec, schema)` returns `fn(WindowBuffer)->float`. The grammar is **closed**
@@ -87,7 +91,15 @@ than pickling a live object.
 Overlapping fixed-width windows, in steps or seconds (`sample_hz`). `Segment` holds *generic*
 state — `features`/`bin`/`tags`/`group` keyed by name — so adding a metric never touches the
 dataclass. The iterator-shaped interface is deliberately streaming-ready; the implementation
-is in-memory for now (a conscious "design for streaming, ship in-memory" choice).
+also has a bounded deque streaming implementation; streaming remains opt-in.
+
+### `media.py` + `transforms.py` — lazy media and bounded model execution
+`FrameRef` is a pickle-safe locator, not decoded pixels. `MediaProvider` probes streams, yields
+presentation-ordered references, and decodes only requested bounded batches. `VideoAdapter` and
+`JoinedMediaAdapter` expose the same `media:<column>` contract for video-only and multimodal
+sources. Registered `BatchTransform`s consume `field:`/`feature:`/`media:` inputs, validate media
+semantics before decode, load once per runner, and return finite scalar features aligned to stable
+segment IDs.
 
 ### `features.py` — FeatureEngine
 Compiles a strategy's `define` metrics against the schema, pulls registered metrics by name,
@@ -111,8 +123,9 @@ one split), seeded, group-stratified.
 ### `output/` — the output layer
 Mirrors the input side. A **Track** (one entity's timestep sequence) is the output unit —
 the generalization of a per-POV episode. `OutputSpec` declares modalities and routes each
-(`field:`/`segment:`/`encoder:`); the `OutputEncoder` is where domain logic (frame decode,
-action binning) lives as a plugin; `ShardWriter` does the generic mechanics (chunk,
+(`field:`/`segment:`/`encoder:`/`media:`); provider-backed media uses batch decode, while the
+`OutputEncoder` handles application derivations and may implement `timestep` or `encode_batch`;
+`ShardWriter` does the generic mechanics (chunk,
 short-policy keep/pad/drop, container write, manifest entry). `fill.py` is the hours-as-budget
 fill: rank tracks by their source's segment priority, fill train/test hour budgets with
 source-level leakage-free splits and a group cap. `dataset.py::write_dataset` ties it all
@@ -142,10 +155,12 @@ together and writes `dataset_manifest.json` + `config.json`.
 | to support… | implement / register | not |
 |---|---|---|
 | a new raw format | an `InputAdapter` (`ticks` → `Tick`s) | editing the engine |
-| a derived output tensor (frame, action) | an `OutputEncoder` (`timestep`) | core output code |
+| a new media decoder | a `MediaProvider` (`probe`/`iter_refs`/`decode_batch`) | eager frame fields |
+| a bounded model/device feature | a registered `BatchTransform` | repurposing the metric DSL |
+| a derived output tensor | an `OutputEncoder` (`timestep`/`encode_batch`) | core output code |
 | a per-segment metric the grammar can't express | `@register_metric` over a `WindowBuffer` | a grammar change |
 | a **whole-pool / learned / influence** metric | a `SegmentScorer` (`score(segments, ctx)`) | the closed grammar |
-| a new on-disk container | a `containers.write_shard` branch (extra) | the writer |
+| a new on-disk container | `register_container` | the writer |
 
 ### Plugin discovery
 
@@ -164,7 +179,7 @@ in run provenance. Plugin registration errors remain loud.
 ### Progress events
 
 `score_sources`, `curate`, `run_experiment`, and `write_dataset` accept `progress=callback`.
-Events always contain `phase` and `event`; phases are `provenance`, `scoring`, `scorers`,
+Events always contain `phase` and `event`; phases include `provenance`, `scoring`, `transforms`, `scorers`,
 `selection`, and `writing`, while events are `start`, `advance`, and `complete`. Advance events include
 `current`, `total`, and where applicable `source` and `status`. Pipeline users pass the same
 callback through `.options(progress=...)`.
@@ -191,7 +206,8 @@ sequence-level scoring; feature-only scorers pay nothing.)
 ## Parallelism & scale
 
 The feature pass (`scoring.py::score_sources`, shared by curate / experiment / write_dataset)
-runs per-source over a `ProcessPoolExecutor` when `workers>1`. Each worker **rebuilds the
+runs per-source over a `ProcessPoolExecutor` when local `workers>1`, or ordered Ray tasks when
+`executor="ray"`. Each local process **rebuilds the
 FeatureEngine in-process** — the compiled DSL metrics are closures and can't be pickled, so
 they're recompiled from the JSON `define` + schema (both picklable); the adapter and segmenter
 ship as-is. Determinism is preserved by sorting the pooled segments by `(source_id, start_idx)`

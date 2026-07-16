@@ -54,7 +54,7 @@ def _js(p: np.ndarray, q: np.ndarray) -> float:
 def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], segmenter,
                    target_size: int, seed: int = 0, baseline: str = None,
                    group_of=None, tags_of=None, workers: int = 1, on_error: str = "skip",
-                   streaming: bool = False, progress=None) -> dict:
+                   streaming: bool = False, progress=None, executor: str = "local") -> dict:
     """Score a shared source pool once and compare selections from multiple strategy arms.
 
     Returns an ``ExperimentResult`` containing ``baseline``, ``n_total_segments``, ``metrics``,
@@ -84,7 +84,8 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
     all_segments, _, _ = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=union, registered=registered,
         segmenter=segmenter, tags_spec=union_tags, group_of=group_of, tags_of=tags_of,
-        workers=workers, on_error=on_error, streaming=streaming, progress=progress)
+        workers=workers, on_error=on_error, streaming=streaming, progress=progress,
+        executor=executor)
 
     # Whole-pool scorers, unioned across arms (a shared output name must mean one scorer,
     # with one parameterization — otherwise the last arm's params would silently win).

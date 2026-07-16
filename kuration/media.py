@@ -7,12 +7,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Any, Iterable, Iterator, Mapping, Optional, Protocol, runtime_checkable
+from typing import Iterable, Iterator, Mapping, Optional, Protocol, runtime_checkable
 
 import numpy as np
 
 from .buffer import Tick
-from .schema import MediaSpec, SchemaSpec
+from .schema import SchemaSpec
 
 
 def _iter_provider_refs(provider, uri: str, source_id: str):
@@ -226,7 +226,8 @@ class JoinedMediaAdapter:
                 try:
                     ref = next(refs)
                 except StopIteration:
-                    if self.mismatch == "drop": break
+                    if self.mismatch == "drop":
+                        break
                     raise ValueError(f"source {source!r}: data has more rows than video frames")
                 count = i + 1
                 yield Tick(tick.time, tick.entities, tick.events, tick.globals,
@@ -253,7 +254,8 @@ class JoinedMediaAdapter:
             best = min(choices, key=lambda ref: (abs(ref.timestamp - target), ref.frame_index))
             drift = abs(best.timestamp - target)
             if drift > self.tolerance:
-                if self.mismatch == "drop": continue
+                if self.mismatch == "drop":
+                    continue
                 raise ValueError(f"source {source!r}: nearest video frame is {drift:.6g}s away, "
                                  f"beyond tolerance {self.tolerance}")
             yield Tick(tick.time, tick.entities, tick.events, tick.globals,

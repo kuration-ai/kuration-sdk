@@ -53,6 +53,9 @@ stays clean; pass `--quiet` to suppress interactive progress explicitly.
 | `clip_aggregate` | no (`"max"`) | `max`, `min`, or `mean` |
 
 **Python-API-only knobs:** arbitrary `group_of` / `tags_of` callables and encoder instances.
+Fluent `.join_video()` and `.transform()` calls are likewise recorded in Python pipeline
+provenance but are not serialized as job keys; declarative jobs can still use plugin adapters,
+scorers, and encoders.
 Registered/data-defined equivalents use names plus parameters. If you need arbitrary code, call
 `write_dataset(...)` directly — every job-spec key maps 1:1 onto its kwargs, so graduating
 from a job file to Python is mechanical.
@@ -90,7 +93,8 @@ configured whole-pool scorers are executed and included like other metrics.
   "output": {"shard_length": 64, "container": "npz",
              "modalities": {"pos": {"dtype": "float32", "shape": [3], "source": "field:pos"}}},
   "train_hours": 10, "test_hours": 1,
-  "out": "out/run1", "seed": 0, "workers": 8, "on_error": "skip", "resume": false
+  "out": "out/run1", "seed": 0, "executor": "local", "workers": 8,
+  "on_error": "skip", "resume": false
 }
 ```
 

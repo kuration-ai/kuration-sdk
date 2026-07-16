@@ -1,7 +1,8 @@
 # Input adapters — raw source → canonical ticks
 
-An `InputAdapter` is the *only* place a raw format's knowledge enters the SDK. Its contract is
-deliberately tiny: turn a source into an ordered stream of canonical `Tick`s. Everything
+An `InputAdapter` is the ordinary-record format seam; `MediaProvider` is the auxiliary-media
+format seam. The adapter contract is deliberately tiny: turn a source into an ordered stream
+of canonical `Tick`s. Everything
 downstream — buffer building, segmentation, metrics, selection, output — is generic and never
 knows which dataset it's looking at.
 
@@ -14,14 +15,38 @@ class InputAdapter(Protocol):
 ## The canonical `Tick`
 
 ```python
-Tick(time, entities, events={}, globals={})
+Tick(time, entities, events={}, globals={}, media={})
 #   entities: {entity_id -> {field_name -> value}}   value: number | (components...) | str
 #   events:   {stream -> [ {field -> value}, ... ]}
 #   globals:  {name -> scalar}
+#   media:    {column -> lazy media reference}; excluded from WindowBuffer/metric DSL
 ```
 
 Building the `(T,E,D)` `WindowBuffer` from a window of ticks (`build_window(schema, ticks)`)
 is generic SDK code — so an adapter only does parse + group-by-timestep, nothing numeric.
+
+## Video and synchronized media
+
+`input("clips/*.mp4")` recognizes MP4/M4V/MOV sources and constructs a `VideoAdapter` using
+the optional `[video]` PyAV provider. One video is one source; each presentation timestamp yields
+a tick with an empty ordinary entity and lazy `media["frame"]: FrameRef`. Probing establishes a
+`MediaSpec` without decoding the full recording, and ordinary metrics never decode or copy frames.
+
+```python
+from kuration import input
+
+video = input("clips/*.mp4").window(64)
+joined = input("telemetry/*.parquet", time="timestamp").join_video(
+    lambda source: source.replace(".parquet", ".mp4"),
+    on="timestamp", tolerance=0.020,
+)
+```
+
+`.join_video()` also accepts an explicit `{source_id: video_uri}` mapping. Frame-index joins are
+exact; timestamp joins select the nearest presentation timestamp within the explicit tolerance.
+The default mismatch policy is `error`; `drop` must be requested explicitly. Implement another
+decoder by satisfying `MediaProvider.probe`, `iter_refs`, and `decode_batch`; providers declare
+capabilities and return `(B,H,W,C)` arrays in bounded batches.
 
 ## The generic timeseries adapter (no per-dataset code)
 

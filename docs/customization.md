@@ -1,7 +1,8 @@
 # Customization and discovery
 
-Kuration resolves adapters, metrics, scorers, encoders, selection methods, pre-pass filters,
-containers, output presets, and compositional operators through the same descriptor model.
+Kuration resolves adapters, metrics, scorers, batch transforms, encoders, selection methods,
+pre-pass filters, containers, output presets, and compositional operators through the same
+descriptor model.
 Names may be simple built-in names or namespaced plugin names such as `acme/quality-v2`.
 Duplicate registration is loud.
 
@@ -24,6 +25,13 @@ A method returns one finite priority per segment. A filter accepts
 container supplies an extension plus writer and reader callables through `register_container`.
 Plugins loaded by a JSON job register the same names before preflight, so unknown names and bad
 parameters fail before source rows are read.
+
+A transform factory is registered with `register_batch_transform()` (or `register_transform`),
+declaring scalar outputs, `field:`/`feature:`/`media:` inputs, semantic media requirements, and
+resource hints. A pipeline invokes it with `.transform(...)`; its outputs then behave like any
+other scalar selection feature. Use `get_transform()` for direct lookup. Accelerator libraries
+must be imported inside the factory or execution method so discovery and `import kuration` remain
+dependency-light.
 
 Discover components without materializing a dataset:
 
@@ -67,8 +75,9 @@ pipeline = pipeline.apply("acme/balance-signal", field="signal", bins=6)
 ```
 
 The handler must return a pipeline derived from the one it receives and must add at least one
-ordinary operator. It cannot add a new execution stage. The named call and its expansion are
-both retained in pipeline provenance. Discover registrations with `kur-list operators` and
+ordinary operator. It may compose `.join_video()`/`.transform()` like any other ordinary
+operator, but cannot invent an unvalidated stage or terminal. The named call and its expansion
+are both retained in pipeline provenance. Discover registrations with `kur-list operators` and
 inspect their parameter contract with `kur-describe operator acme/balance-signal`.
 
 Artifacts and manifests carry `artifact_format_version`; jobs carry `job_schema_version`.

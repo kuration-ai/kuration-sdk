@@ -6,7 +6,7 @@ sequential dataset (game telemetry, robot trajectories, sensor logs, generic mul
 series).
 
 The core carries **no domain knowledge**. A dataset is described by a `SchemaSpec` (data) and
-reached through an `InputAdapter` / `OutputEncoder` (the only code seams). The metric language
+reached through documented input, media, transform, and output seams. The metric language
 is a **closed grammar** validated against the schema, selection is a **declarative strategy**,
 and the curated set + its full configuration are written reproducibly.
 
@@ -19,6 +19,8 @@ pip install -e '.[cloud]'                 # + fsspec  (gs:// / s3:// / az:// I/O
 pip install -e '.[torch]'                 # + torch   (kuration.torch.ShardDataset; read side)
 pip install -e '.[hf,zarr]'               # + datasets / zarr  (HuggingFace & Zarr input adapters)
 pip install -e '.[p2p]'                   # + protobuf  (Open P2P public-data example)
+pip install -e '.[video]'                 # + PyAV  (lazy CPU MP4 ingestion and decode)
+pip install -e '.[ray]'                   # + Ray  (ordered distributed source execution)
 ```
 
 ## Quick start
@@ -78,14 +80,15 @@ Every operator returns a new immutable `Pipeline`.
 | operators | purpose | recommended compute |
 |---|---|---|
 | `input(...)` | load files, rows, arrays, or a custom adapter; infer the schema | CPU; storage bandwidth matters for large sources |
+| `.join_video()` | align one lazy MP4 media column to each ordinary source by timestamp or frame index | CPU metadata scan; frames remain undecoded |
 | `.semantic()`, `.as_position()`, `.as_angular()`, `.as_bitmask()`, `.at_rate()` | refine inferred meaning and sample rate | negligible |
 | `.window()` | divide each source into candidate segments | CPU |
-| `.measure()`, `.score()`, `.tag()` | calculate metrics, whole-pool scores, and categorical coverage | CPU by default; accelerator only for custom learned scorers |
+| `.measure()`, `.score()`, `.transform()`, `.tag()` | calculate DSL metrics, whole-pool scores, bounded field/media transform features, and categorical coverage | CPU by default; transforms may explicitly request an accelerator |
 | `.filter()` | apply predicates or anomaly/dedup filters | CPU and RAM; `[methods]` filters may parallelize |
 | `.bin()`, `.group()`, `.split()` | create diversity bins, leakage groups, and train/test splits | CPU and RAM |
 | `.apply()` | expand a registered, reusable sequence of ordinary operators | depends on the expanded operators |
 | `.sample()` | choose a count or duration budget using a selection method | CPU and RAM; feature-space methods use `[methods]` |
-| `.options()` | set strictness, workers, seed, streaming, resume, and progress | use `workers` for multi-core feature scoring |
+| `.options()` | set strictness, local/Ray executor, workers, seed, streaming, resume, and progress | use `workers` locally or `executor="ray"` for optional Ray source execution |
 | `.head()`, `.describe()`, `.explain()` | inspect data or the execution plan before running | negligible; `.head()` reads a small source sample |
 | `.collect()`, `.output()`, `.report()`, `.experiment()` | select, write shards, profile data, or compare strategies | CPU plus storage I/O; experiments reuse one scoring pass |
 
@@ -104,7 +107,7 @@ API remains available for compatibility and declarative job specifications.
 
 ```
 raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
-   ─[FeatureEngine: closed-grammar DSL over the schema]→ per-segment features
+   ─[FeatureEngine DSL + optional bounded BatchTransform]→ per-segment features
    ─[binning]→ quantile bins ─[Strategy selection / hours-budget fill]→ chosen segments/tracks
    ─[OutputSpec + OutputEncoder + ShardWriter]→ shards + manifests + reproducible config
 ```
@@ -118,7 +121,7 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | [docs/pipeline.md](docs/pipeline.md) | the fluent `input(...).operator(...)` API — inference rules, every operator, terminals |
 | [docs/usage.md](docs/usage.md) | **cookbook** — task-oriented recipes across every capability |
 | [docs/architecture.md](docs/architecture.md) | design deep-dive: layers, data contracts, decisions, extension points |
-| [docs/schema.md](docs/schema.md) | authoring a `SchemaSpec` (fields, kinds, semantics tags) |
+| [docs/schema.md](docs/schema.md) | authoring a `SchemaSpec` (fields, media, kinds, semantics) |
 | [docs/dsl.md](docs/dsl.md) | the closed metric grammar (`SOURCE→MAP→FILTER→REDUCE×SCOPE`) |
 | [docs/adapters.md](docs/adapters.md) | input adapters; the generic timeseries adapter; writing your own |
 | [docs/strategies.md](docs/strategies.md) | declarative strategies, selection methods, binning, splits |
@@ -129,7 +132,7 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | [docs/documentation-contract.md](docs/documentation-contract.md) | documentation audiences, entry paths, information architecture, and public API boundary |
 | [docs/releasing.md](docs/releasing.md) | build, trusted-publishing setup, and public PyPI release checklist |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | contributor setup, design rules, checks, documentation, and pull requests |
-| [ROADMAP.md](ROADMAP.md) | release gates, planned video/GPU/Ray work, scale items, and path to 1.0 |
+| [ROADMAP.md](ROADMAP.md) | release gates, delivered optional execution extensions, scale items, and path to 1.0 |
 
 Hitting a loud validation error? [docs/usage.md § Troubleshooting](docs/usage.md#17--troubleshooting--common-loud-failures)
 maps the common ones to causes and fixes.
@@ -164,8 +167,8 @@ maps the common ones to causes and fixes.
   timestamps, budget accounting, and output spec live in `config.json`.
 - **Deterministic under parallelism** — canonical segment ordering before binning/selection
   makes seeded results worker-count-independent.
-- **Domain code only at the seams** — `InputAdapter`, `OutputEncoder`, a registered Python
-  metric, or a `SegmentScorer`; never in the core.
+- **Domain code only at the seams** — `InputAdapter`, `MediaProvider`, `BatchTransform`,
+  `OutputEncoder`, a registered metric, or a `SegmentScorer`; orchestration remains generic.
 
 ## CLIs
 
@@ -198,6 +201,8 @@ Every CLI prints a one-line `error:` on failure and exits 1; `--debug` shows the
 Implemented: schema + metric DSL, input adapters (timeseries CSV/Parquet, **HDF5**, **NPZ**,
 **JSONL**, **curated-dataset-as-source** — re-curate kuration's own output — plus
 **partitioned Parquet**, **HuggingFace datasets**, and **Zarr**), segmentation,
+lazy synchronized **MP4 media columns**, device-aware bounded **batch transforms**, optional
+ordered **Ray source execution**,
 feature engine, binning, declarative strategies (uniform-bins / weighted / top-k /
 target-distribution / **filter** + feature-space **cluster-balanced / k-center /
 facility-location / dsir / rare / typical**, plus **anomaly/dedup pre-pass filters** — the

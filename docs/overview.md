@@ -4,8 +4,7 @@
 curated, training-ready set of shards — *raw source → curated subset → encoded shards* — for
 **any** sequential dataset (game telemetry, robot trajectories, sensor logs, generic
 multivariate series). The core carries **no domain knowledge**; a dataset is described by a
-`SchemaSpec` (data) and reached through an `InputAdapter` / `OutputEncoder` (the only code
-seams).
+`SchemaSpec` (data) and reached through documented input, media, transform, and output seams.
 
 > **Status.** The full pipeline is implemented: schema + metric DSL; input adapters (timeseries
 > CSV/Parquet, HDF5, NPZ, JSONL, curated-dataset-as-source, partitioned Parquet, HuggingFace
@@ -16,7 +15,8 @@ seams).
 > for PyTorch); declarative tag-coverage; a stats report and a multi-arm experiment
 > harness; parallel / skip-and-log / resume / **out-of-core** execution (`streaming=True` handles
 > a source larger than RAM when its adapter supports lazy iteration); path-agnostic local +
-> cloud I/O; and the
+> cloud I/O; lazy synchronized MP4 media columns; device-aware bounded transforms; optional
+> ordered Ray source execution; and the
 > `kur-validate` / `kur-curate` / `kur-experiment` / `kur-report` CLIs (+ a shipped JSON
 > Schema). The remaining scale item is a
 > spill/external tier for a *total segment pool* larger than RAM. See `../PLAN.md`.
@@ -26,7 +26,7 @@ seams).
 ```
  raw source ─[InputAdapter]→ canonical Tick stream
    ─[Segmenter]→ overlapping windows (steps or seconds)
-   ─[FeatureEngine: closed-grammar DSL over the SchemaSpec]→ per-segment features
+   ─[FeatureEngine DSL + optional BatchTransform over fields/media]→ per-segment features
    ─[bin_segments]→ quantile bin coordinates
    ─[Strategy + selection / hours-budget fill]→ chosen segments / tracks
    ─[OutputSpec + OutputEncoder + ShardWriter]→ shards + manifests + reproducible config
@@ -43,6 +43,7 @@ pip install -e .                    # core (numpy only)
 pip install -e '.[methods]'         # + scikit-learn (feature-space selection, filters, scorers)
 pip install -e '.[parquet,array]'   # + pyarrow / h5py (Parquet & HDF5 containers/adapters)
 pip install -e '.[cloud]'           # + fsspec (gs:// / s3:// / az:// I/O; add a backend)
+pip install -e '.[video,ray]'       # + PyAV media provider / ordered Ray source backend
 ```
 
 ## End-to-end example (a generic dataset, zero domain code)
@@ -110,7 +111,7 @@ reproduces from its own directory alone.
 
 - [usage.md](usage.md) — cookbook: task-oriented recipes across every capability.
 - [architecture.md](architecture.md) — design deep-dive: layers, data contracts, decisions.
-- [schema.md](schema.md) — authoring a `SchemaSpec` (fields, kinds, semantics tags).
+- [schema.md](schema.md) — authoring a `SchemaSpec` (fields, media, kinds, semantics).
 - [dsl.md](dsl.md) — the closed metric grammar (`SOURCE→MAP→FILTER→REDUCE×SCOPE`).
 - [adapters.md](adapters.md) — input adapters; the generic timeseries adapter; writing your own.
 - [strategies.md](strategies.md) — declarative strategies, selection methods, binning, splits.
@@ -126,5 +127,5 @@ reproduces from its own directory alone.
   `config.json`.
 - **Deterministic under parallelism.** Segments are sorted to a canonical order before
   binning/selection, so seeded results are worker-count-independent.
-- **Domain code only at the seams.** `InputAdapter`, `OutputEncoder`, a registered Python
-  metric, or a `SegmentScorer` — never in the core.
+- **Domain code only at the seams.** `InputAdapter`, `MediaProvider`, `BatchTransform`,
+  `OutputEncoder`, a registered metric, or a `SegmentScorer` — never in orchestration core.

@@ -20,7 +20,8 @@ schema = SchemaSpec.from_dict({...})
 | key | required | meaning |
 |---|---|---|
 | `name` | yes | schema identifier (recorded in config). |
-| `fields` | yes | the per-entity, per-timestep observables (see below). |
+| `fields` | unless `media` is non-empty | the per-entity, per-timestep observables (see below). |
+| `media` | unless `fields` is non-empty | auxiliary semantic media columns, excluded from ordinary metric buffers |
 | `entity_axis` | no | name of the entity dimension (e.g. `"player"`, `"drone"`). Omit for single-stream data; then use one nominal entity. Field sources are written `<entity_axis>.<field>`. |
 | `sample_hz` | no | sampling rate; enables seconds-based windowing and scales `speed`. |
 | `event_streams` | no | sparse per-timestep events (see below). |
@@ -70,6 +71,23 @@ for a declared vector field raises instead of silently broadcasting across its d
 
 Events are referenced `grenade.type` (reduces: `rate`/`count`/`nunique`/`entropy`, optional
 filter `==<value>`); globals are referenced bare (`alive_count`, reduces only).
+
+## Media columns
+
+```jsonc
+"media": {
+  "frame": {
+    "kind": "video-frame", "dtype": "uint8", "shape": [1080, 1920, 3],
+    "layout": "HWC", "color_space": "RGB", "timing": "pts",
+    "capabilities": {"seeking": true, "variable_frame_rate": true, "streaming": true}
+  }
+}
+```
+
+The initial kind is `video-frame`; layout is `HWC` or `CHW` and must match the shape rank.
+Transforms declare required kind/layout/color/timing semantics and fail before decode when the
+column is incompatible. Media-only schemas use `"fields": {}`. `.tag()` remains selection-label
+coverage and is unrelated to semantic media types.
 
 ## Single-stream datasets
 

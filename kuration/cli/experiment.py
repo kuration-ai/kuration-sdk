@@ -43,7 +43,8 @@ def _run(args) -> None:
                          baseline=job.get("baseline"), seed=job.get("seed", 0),
                          workers=job.get("workers", 1), on_error=job.get("on_error", "skip"),
                          streaming=job.get("streaming", False),
-                         progress=cli_progress_for(quiet=args.quiet))
+                         progress=cli_progress_for(quiet=args.quiet),
+                         executor=job.get("executor", "local"))
 
     base = out["baseline"]
     print(f"baseline={base}  ({out['n_total_segments']} segments)\n")

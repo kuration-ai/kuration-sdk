@@ -6,8 +6,8 @@ bounded batch and writes a `(T, ...)` tensor. Encoders may implement optional
 
 The output layer mirrors the input side: a declarative `OutputSpec` (what each timestep holds)
 + a pluggable `OutputEncoder` (where domain logic lives) + a generic `ShardWriter` (chunking,
-short-policy, containers, manifests). The SDK ships the *mechanics*; the *semantics* (decoding
-a video frame, binning an action) are application encoder plugins — never core.
+short-policy, containers, manifests). Provider-backed `media:` columns are decoded generically;
+application-derived tensors such as action bins remain encoder plugins.
 
 ## The output unit: a Track
 
@@ -38,7 +38,7 @@ spec = OutputSpec.from_dict({
     "modalities": {
         "pos":    {"dtype": "float32", "shape": [3], "source": "field:pos"},
         "battery":{"dtype": "float32", "shape": [],  "source": "field:battery"},
-        "frame":  {"dtype": "uint8",   "shape": [150,280,3], "source": "encoder:frame"},
+        "frame":  {"dtype": "uint8",   "shape": [150,280,3], "source": "media:frame"},
         "label":  {"dtype": "int64",   "shape": [],  "source": "segment:label"}
     }
 })
@@ -50,6 +50,7 @@ spec = OutputSpec.from_dict({
 |---|---|
 | `field:<name>` | the track entity's schema field at that timestep |
 | `segment:<attr>` | a selected segment feature (count path) or span-aggregated feature (hours path); low-level `write_track` reads the same key from `track.meta` |
+| `media:<name>` | the schema's lazy media column, decoded by its provider in one bounded shard batch |
 | `encoder:<hook>` | an `OutputEncoder` — domain code |
 
 **`short_policy`:** `keep` → last shard is its (shorter) real tail; `pad` → last shard padded
@@ -80,9 +81,14 @@ class FrameEncoder:
     def timestep(self, record, ctx):
         # ctx = {"schema": ..., "track": {...meta, source_id, entity_id}}
         return {"frame": decode_my_frame(record)}   # -> {modality_name: array}
+
+    def encode_batch(self, records, ctx):
+        # Optional replacement for timestep(); arrays lead with len(records).
+        return {"frame": decode_many(records)}
 ```
 
-Core ships `PassthroughEncoder` (no `encoder:` modalities). Register custom ones for worker
+When present, `encode_batch` is preferred; `timestep` remains compatible. Core ships
+`PassthroughEncoder` (no `encoder:` modalities). Register custom ones for worker
 reconstruction with `register_encoder(name, factory)` / `get_encoder(name, **kw)`.
 
 ## Writing
@@ -131,7 +137,7 @@ With the `filter` method, spans whose segments all fail the predicates get `-inf
 are **never admitted**, even when the budget has room — the fill emits only predicate-passing
 data (an under-filled budget is reported, not silently topped up with rejects).
 
-**`workers` / `on_error` / `resume`**: `write_dataset(..., workers=8)` parallelizes the feature
+**`executor` / `workers` / `on_error` / `resume`**: `write_dataset(..., workers=8)` parallelizes the feature
 pass; `on_error="skip"` (default) skips+logs an unreadable source (but a *fully empty* segment
 pool raises — see the troubleshooting recipe); `resume=True` skips re-encoding shards that
 already exist. Resume is safe by construction: shards are written atomically (temp + rename,
@@ -139,6 +145,9 @@ locally and remotely — an interrupted run never leaves a partial shard at its 
 the resolved output spec is pinned in a `.kuration_output_spec.json` sidecar — resuming the
 same `out_dir` with a **different** spec raises rather than silently reusing stale shards under
 a fresh manifest.
+
+Pass `executor="ray"` for the optional ordered Ray source backend (`[ray]`); the default remains
+`"local"`. Canonical segment sorting keeps selection independent of task completion order.
 
 So the emitted N hours is the strategy's *best* N hours, not a random draw.
 

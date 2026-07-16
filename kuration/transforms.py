@@ -1,7 +1,6 @@
 """Device-neutral bounded batch transforms over segment windows and lazy media."""
 from __future__ import annotations
 
-import math
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
 import numpy as np

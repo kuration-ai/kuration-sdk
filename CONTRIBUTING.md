@@ -28,7 +28,8 @@ heavy integrations should be lazy and should raise a clear installation hint whe
 ## Design rules
 
 - Keep domain knowledge out of the core. Dataset-specific behavior belongs in an
-  `InputAdapter`, `OutputEncoder`, registered metric, `SegmentScorer`, or another documented
+  `InputAdapter`, `MediaProvider`, `OutputEncoder`, registered metric, `BatchTransform`,
+  `SegmentScorer`, or another documented
   extension seam.
 - Validate configuration early and loudly. Unknown fields, operators, methods, and parameters
   must not silently fall back.
@@ -201,9 +202,38 @@ must live in an importable module, not only in `__main__`. A scorer returns exac
 segment; declare `needs_buffers = False` when it uses only existing segment features so the SDK
 does not reread source windows.
 
+### Batch transforms and media
+
+Use a registered batch transform for bounded model/device work over ordinary fields, existing
+features, or lazy media. Declare scalar outputs and semantic media requirements at registration:
+
+```python
+from kuration import register_batch_transform
+
+
+@register_batch_transform(
+    "acme/frame-quality",
+    outputs=("frame_quality",),
+    inputs=("media:frame",),
+    media_requirements={"kind": "video-frame", "layout": "HWC", "color_space": "RGB"},
+    resources={"num_gpus": 1, "preferred_batch_size": 16},
+)
+class FrameQuality:
+    def __init__(self, *, device="cpu"):
+        self.model = load_model(device)  # optional framework import/load belongs here
+
+    def transform_batch(self, batch, ctx):
+        return {"frame_quality": self.model(batch["media:frame"])}
+```
+
+Outputs must be one finite scalar per input segment. Test bounded batch sizes, deterministic
+segment alignment, media semantic mismatches, missing optional dependencies, and CPU parity when
+the implementation supports CPU. Never silently change model, device, dtype, or precision.
+
 ### Output encoders
 
-An encoder derives declared `encoder:` modalities from one output record:
+An encoder derives declared `encoder:` modalities from one output record, or implements
+`encode_batch(records, ctx)` for bounded batched encoding:
 
 ```python
 import numpy as np

@@ -1154,7 +1154,8 @@ class Pipeline:
                               group_of=self._group_of, workers=self._options["workers"],
                               on_error=self._options["on_error"],
                               streaming=self._options["streaming"],
-                              progress=self._options["progress"])
+                              progress=self._options["progress"],
+                              executor=self._options["executor"])
 
     def output(self, path, *, preset: Optional[str] = None, spec=None,
                container: Optional[str] = None, shard_length: int = 64,

@@ -85,13 +85,17 @@ pre-`1.0` API is frozen.
 - Entry and results: `input`, `Pipeline`, `infer_schema`, `curate`, `CurateResult`,
   `write_dataset`, `DatasetWriteResult`, `run_experiment`, `Arm`, `union_define`,
   `ExperimentResult`, `dataset_report`, `DatasetReport`, `ExecutionPlan`, `ValidationResult`.
-- Schema and canonical data: `SchemaSpec`, `FieldSpec`, `Tick`, `WindowBuffer`, `build_window`,
-  `empty_like`, `Segment`, `Segmenter`.
+- Schema and canonical data: `SchemaSpec`, `FieldSpec`, `MediaSpec`, `Tick`, `WindowBuffer`,
+  `build_window`, `empty_like`, `Segment`, `Segmenter`, `FrameRef`, `VideoMetadata`.
 - Metrics and scoring: `compile_metric`, `register_metric`, `register_compiled`, `FeatureEngine`,
   `score_sources`, `SegmentScorer`, `register_scorer`, `get_scorer`, `apply_scorers`.
 - Inputs: `InputAdapter`, `TimeseriesAdapter`, `JsonlAdapter`, `HDF5Adapter`, `NpzAdapter`,
   `ParquetDatasetAdapter`, `HuggingFaceAdapter`, `ZarrAdapter`, `CuratedDatasetAdapter`,
+  `VideoAdapter`, `JoinedMediaAdapter`, `MediaProvider`, `PyAVMediaProvider`,
   `schema_from_output`, `register_adapter`, `get_adapter`.
+- Batch transforms and execution: `BatchTransform`, `register_batch_transform`,
+  `register_transform`, `get_transform`, `apply_transforms`, `ExecutionBackend`, `ResourceSpec`,
+  `LocalExecutionBackend`, `RayExecutionBackend`, `get_execution_backend`.
 - Strategies and selection: `Strategy`, `load_strategy`, `bin_segments`, `quantile_bins`,
   `select`, `segment_priorities`, `assign_splits`, `apply_filters`, `method_priorities`,
   `register_method`, `register_filter`.
