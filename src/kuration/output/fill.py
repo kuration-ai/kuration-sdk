@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from typing import Optional
+from typing import Any, Optional
 
 from ..select import assign_splits
 
@@ -69,8 +69,9 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
     target = {"train": train_t, "test": test_t}
     group_secs: Counter = Counter()
     admitted: set = set()
+    admission_reasons: dict = {}
 
-    def _try_admit(it) -> bool:
+    def _try_admit(it, reason: str = "priority") -> bool:
         if not math.isfinite(it["priority"]):
             return False   # -inf marks "never admit" (failed filter / no overlapping segments)
         if it["id"] in admitted:
@@ -84,6 +85,7 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
         secs[sp] += it["seconds"]
         group_secs[g] += it["seconds"]
         admitted.add(it["id"])
+        admission_reasons[it["id"]] = reason
         return True
 
     by_prio = sorted(items, key=lambda x: (-x["priority"], x["source_id"], str(x["id"])))
@@ -96,7 +98,7 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
             if tag in covered or reserved >= reserve_cap:
                 continue
             for it in by_prio:
-                if tag in it.get("tags", ()) and _try_admit(it):
+                if tag in it.get("tags", ()) and _try_admit(it, "tag-reserve"):
                     reserved += it["seconds"]
                     covered |= set(it.get("tags", ()))
                     break
@@ -120,6 +122,62 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
             if (it["id"] not in admitted and math.isfinite(it["priority"])
                     and group_secs[g] + it["seconds"] > max_per_group):
                 rejected_group_cap += 1
+    decision_counts: Counter = Counter()
+    decision_examples: dict[str, list[dict]] = {"admitted": [], "rejected": []}
+    priority_stats: dict[str, dict[str, Any]] = {
+        "admitted": {"count": 0, "min": None, "max": None, "sum": 0.0},
+        "rejected": {"count": 0, "min": None, "max": None, "sum": 0.0},
+    }
+
+    def jsonable(value):
+        if isinstance(value, tuple):
+            return [jsonable(item) for item in value]
+        if isinstance(value, dict):
+            return {str(key): jsonable(item) for key, item in value.items()}
+        if isinstance(value, (set, frozenset)):
+            return [jsonable(item) for item in sorted(value, key=str)]
+        if isinstance(value, list):
+            return [jsonable(item) for item in value]
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        return str(value)
+
+    for item in by_prio:
+        priority = float(item["priority"])
+        item_split = split[item["source_id"]]
+        if item["id"] in admitted:
+            reason, bucket = admission_reasons.get(item["id"], "priority"), "admitted"
+        elif not math.isfinite(priority):
+            reason, bucket = "nonfinite-priority", "rejected"
+        else:
+            group = item["group"] if item["group"] is not None else "\x00"
+            if math.isfinite(max_per_group) and group_secs[group] + item["seconds"] > max_per_group:
+                reason = "group-cap"
+            elif secs[item_split] >= target[item_split]:
+                reason = "budget-filled"
+            else:
+                reason = "lower-priority"
+            bucket = "rejected"
+        decision_counts[reason] += 1
+        if math.isfinite(priority):
+            summary = priority_stats[bucket]
+            summary["count"] += 1
+            summary["sum"] += priority
+            summary["min"] = priority if summary["min"] is None else min(summary["min"], priority)
+            summary["max"] = priority if summary["max"] is None else max(summary["max"], priority)
+        if len(decision_examples[bucket]) < 20:
+            decision_examples[bucket].append({
+                "id": jsonable(item["id"]), "source": item["source_id"],
+                "split": item_split, "priority": priority if math.isfinite(priority) else None,
+                "seconds": item["seconds"], "group": jsonable(item["group"]),
+                "tags": jsonable(item.get("tags", ())), "start": item.get("start"),
+                "end": item.get("end"), "decision": reason,
+            })
+    for summary in priority_stats.values():
+        count = summary.pop("count")
+        total_priority = summary.pop("sum")
+        summary["count"] = count
+        summary["mean"] = total_priority / count if count else None
     stats = {
         "requested_seconds": {"train": train_t, "test": test_t},
         "admitted_seconds": admitted_seconds,
@@ -130,5 +188,7 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
         "items_admitted": len(admitted),
         "items_rejected_nonfinite": sum(not math.isfinite(it["priority"]) for it in items),
         "items_rejected_group_cap": rejected_group_cap,
+        "review": {"decision_counts": dict(sorted(decision_counts.items())),
+                   "priority": priority_stats, "examples": decision_examples},
     }
     return (admitted, split, stats) if return_stats else (admitted, split)

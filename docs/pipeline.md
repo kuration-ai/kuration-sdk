@@ -209,6 +209,8 @@ when the behavior belongs to one of those stages.
   warnings. `.render(detailed=True)` gives the stage-by-stage form.
 - `.explain(inspect_sources=True)` — additionally samples a bounded number of ticks to estimate
   candidate windows. This reads source data; ordinary `.explain()` remains metadata-only.
+- `.expect(...)` — attach quality gates for previews and reviews. Input, selection, hours-budget,
+  and artifact expectations share one closed grammar; each report evaluates the applicable keys.
 
 Execution tuning lives in `.options(...)`: `memory_budget` is a byte budget used by physical
 planning, `batch_size` bounds each segment batch, `max_in_flight` bounds producer/consumer
@@ -226,7 +228,7 @@ retain the compatible reference implementation and appear as materialization war
 | terminal | signature | routes to |
 |---|---|---|
 | `.collect` | `(n=None)` | `curate()` — count-path selection → `CurateResult` |
-| `.review` | `(n=None, *, examples=10, hist_bins=10)` | reference count selection → candidate-vs-selected metrics, coverage, rationale, and examples |
+| `.review` | `(n=None, *, path=None, examples=10, hist_bins=10, **output_options)` | count selection review; hours selection writes to `path=` and reviews admission/budget decisions without rescoring |
 | `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, dry_run=False, inspect_sources=False)` | validate/estimate with `dry_run=True`, otherwise write through the ordinary `OutputSpec` path |
 | `.report` | `(**kw)` | feature pass only (no selection) → `dataset_report` |
 | `.experiment` | `(arms, n, baseline=None)` | `run_experiment`; `arms` maps name → `Pipeline` (its compiled strategy) or a raw strategy dict |
@@ -252,7 +254,17 @@ retain the compatible reference implementation and appear as materialization war
 
 `.review()` intentionally materializes the complete candidate pool so it can compare it with the
 selection. Run the output dry run first for a large corpus; use `preview()` when you only need a
-bounded look at raw input quality.
+bounded look at raw input quality. An hours review instead reuses the output writer's bounded
+decision summary:
+
+```python
+review = (
+    pipeline.sample("top-k", hours=10, test_hours=1, weights={"quality": 1})
+    .expect(min_budget_utilization=0.98, max_skipped_sources=0)
+    .review(path="out/run1", preset="numpy-timeseries", categorical="omit")
+)
+print(review.render())
+```
 
 ## Loud-error philosophy
 

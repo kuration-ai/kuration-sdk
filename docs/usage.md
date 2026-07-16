@@ -373,6 +373,63 @@ kur-diff out/baseline out/candidate --html review.html
 kur-inspect out/candidate --html inspection.html
 ```
 
+For an hours budget, `review(path=...)` writes the dataset and reuses the writer's admission
+decisions—there is no second scoring pass. It reports requested/candidate/admitted/emitted
+seconds, utilization and underfill by split, decision counts, priority summaries, and bounded
+admitted/rejected span examples.
+
+Turn those reports into quality gates with the closed `.expect(...)` grammar:
+
+```python
+checked = (
+    pipeline
+    .expect(
+        max_missing={"action": 0.01},
+        min_sources=20,
+        min_tag_coverage={"rare_event": 50},
+        max_group_fraction=0.25,
+        min_budget_utilization={"train": 0.98, "test": 0.95},
+        max_skipped_sources=0,
+    )
+)
+checked.preview()  # evaluates input-applicable gates
+checked.review()   # evaluates count-selection gates; raises QualityGateError on failure
+```
+
+| expectation | applies to | contract |
+|---|---|---|
+| `max_missing={field: fraction}` | preview | sampled missing fraction at or below each maximum |
+| `min_sources=n` | preview, selection, hours, artifact | source count at or above `n` |
+| `min_tag_coverage={tag: n}` | count review | selected occurrence floor per tag |
+| `max_group_fraction=f` | count review | largest selected group share at or below `f` |
+| `min_budget_utilization=f` or `{split: f}` | hours review, artifact | emitted/requested duration floor |
+| `max_budget_underfill_seconds=n` or `{split: n}` | hours review, artifact | emitted underfill ceiling |
+| `max_skipped_sources=n` | all reports | skipped source ceiling |
+| `require_modalities=[...]` | preview, artifact | every named field/modality exists |
+| `require_verified=true` | artifact | every shard was decoded successfully |
+| `min_shards=n` | artifact | emitted shard floor |
+
+A combined fluent policy is stage-aware: `preview()` evaluates input checks and `review()`
+evaluates selection or hours checks. A typo or invalid threshold is always an immediate error.
+
+Written artifacts use a JSON policy and a CI-friendly exit code (`0` pass, `2` gate failure):
+
+```json
+{
+  "require_verified": true,
+  "require_modalities": ["observation", "action", "_present"],
+  "min_sources": 20,
+  "min_shards": 100,
+  "min_budget_utilization": 0.98,
+  "max_skipped_sources": 0
+}
+```
+
+```bash
+kur-check out/candidate --policy quality.json --json
+kur-check out/candidate --policy quality.json --html quality.html
+```
+
 ---
 
 ## 18 · Troubleshooting — common loud failures

@@ -68,7 +68,8 @@ def test_head_and_describe():
     ticks = p.head(3)
     assert len(ticks) == 3 and hasattr(ticks[0], "entities")
     d = p.describe()
-    assert set(d) == {"schema", "strategy", "output", "segmenter", "options", "sources"}
+    assert set(d) == {"schema", "strategy", "output", "segmenter", "options", "sources",
+                      "expectations"}
     assert d["output"] is None
     assert d["segmenter"] == {"window": 64, "stride": 64, "unit": "steps"}
     assert d["sources"] == [f"s{i}" for i in range(N_SOURCES)]

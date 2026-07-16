@@ -64,6 +64,7 @@ inspect the resulting manifest, configuration, and arrays.
 | Decide whether a planned run will fit and what it needs | `pipeline.output(path, dry_run=True, inspect_sources=True)` before writing |
 | Check input quality and whether selection changed the data as intended | `pipeline.preview()` and `pipeline.review()` |
 | Compare two written datasets | `kur-diff BASELINE CANDIDATE --verify` |
+| Enforce dataset acceptance criteria in CI | `.expect(...)` and `kur-check DATASET --policy quality.json` |
 | Run a checked, reproducible JSON job | `kur-validate job.json --check-sources`, then `kur-explain job.json` and `kur-curate job.json` |
 | Add a proprietary format, model, metric, or container | The [customization guide](docs/customization.md) and classic explicit API |
 | Find a task-specific variation | The [usage cookbook](docs/usage.md) |
@@ -223,6 +224,7 @@ kur-explain job.json --json               # structured execution plan, no row re
 kur-migrate old-job.json --out job.json   # deterministic format migration
 kur-inspect out/run1 --verify             # summarize an artifact and decode-check every shard
 kur-diff out/baseline out/candidate       # compare schema, configuration, provenance, and size
+kur-check out/run1 --policy quality.json  # fail CI when artifact quality gates do not pass
 ```
 
 `kur-validate` runs every load-time validator the real run would (schema, adapter field maps,

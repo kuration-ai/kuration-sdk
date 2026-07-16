@@ -362,7 +362,8 @@ python -m build
 ```
 
 CI additionally installs the built wheel into a clean environment and verifies that `kuration`,
-the `kur-inspect`/`kur-diff` commands, `schemas/job.schema.json`, and `py.typed` work without the repository on
+the `kur-inspect`/`kur-diff`/`kur-check` commands, `schemas/job.schema.json`, and `py.typed`
+work without the repository on
 `sys.path`.
 
 For changes spanning the pipeline or output path, also run the relevant self-contained examples:

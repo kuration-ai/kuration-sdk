@@ -81,6 +81,7 @@ def inspect_dataset(dataset, *, verify: bool = False,
     provenance = config.get("provenance") or {}
     return DatasetInspection(
         dataset=base, container=resolved_container, shards=len(entries),
+        sources=len({str(entry.get("source_id")) for entry in entries}),
         splits=dict(sorted(splits.items())), modalities=modalities,
         budget=(config.get("results") or {}).get("budget"),
         errors=list(config.get("errors") or ()),

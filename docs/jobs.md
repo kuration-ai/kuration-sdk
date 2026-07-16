@@ -13,14 +13,16 @@ kur-experiment job.json [--out cmp.json]   # experiment job -> per-arm JS-vs-bas
 kur-report     job.json [--out rep.json]   # report job -> metric distribution profile
 kur-inspect    DATASET [--verify] [--json] [--html PATH] # artifact summary/integrity check
 kur-diff       LEFT RIGHT [--verify] [--json] [--html PATH] # compare two artifacts
+kur-check      DATASET --policy POLICY [--verify] [--json] [--html PATH] # quality gates
 ```
 
 Every CLI accepts `--debug`: failures normally print a one-line `error: ...` and exit 1;
 `--debug` re-raises for the full traceback.
 
-`kur-inspect` and `kur-diff` are exceptions to the job-file model: they take written dataset
+`kur-inspect`, `kur-diff`, and `kur-check` are exceptions to the job-file model: they take written dataset
 directories or manifests and need neither the original jobs nor input sources. `kur-inspect`
-exits 2 when `--verify` finds a missing or corrupt shard.
+exits 2 when `--verify` finds a missing or corrupt shard; `kur-check` exits 2 when any policy
+gate fails. A policy is a JSON object using the expectations listed in [usage.md](usage.md).
 
 The job **kind** is inferred: `arms` present → experiment; `output`/`train_hours` present →
 curate; otherwise → report.

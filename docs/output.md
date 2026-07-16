@@ -219,6 +219,15 @@ The result reports shard/split/modality changes and recursively identifies diffe
 strategy, output, fluent pipeline, results, and warnings. `kur-diff --html diff.html` writes the
 same structured comparison as a self-contained static document.
 
+For hours output, `hours_selection_review(result)` consumes the returned `DatasetWriteResult` and
+explains item admission, rejection reasons, priorities, split utilization, underfill, and bounded
+span examples without rescoring. The fluent shortcut is
+`pipeline.review(path="out/", **output_options)` after `.sample(hours=...)`.
+
+`kur-check DATASET --policy quality.json` evaluates artifact gates such as required modalities,
+minimum sources/shards, full verification, budget utilization, and skipped-source limits. It exits
+2 when a gate fails, making artifact approval usable directly from CI.
+
 **PyTorch.**
 
 ```python

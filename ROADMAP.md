@@ -40,6 +40,7 @@ These items gate public publishing. Pipeline execution optimization does not gat
 - Actionable CLI remedies, execution-path parity coverage, and a fluent-first documentation path.
 - Bounded input previews, candidate-vs-selected review, artifact diffing, and dependency-free
   static HTML reports.
+- Hours-budget admission review and reusable Python/CLI quality gates.
 
 ## Delivered — synchronized video ingestion
 

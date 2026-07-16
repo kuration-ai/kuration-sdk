@@ -50,7 +50,9 @@ from .pipeline import Pipeline, input
 from .plugins import load_plugins, loaded_plugin_modules, plugin_provenance
 from .progress import ProgressCallback
 from .report import dataset_report
-from .review import preview_dataset, selection_review
+from .review import hours_selection_review, preview_dataset, selection_review
+from .quality import (QualityGateError, check_quality, evaluate_quality,
+                      validate_expectations)
 from .scorers import SegmentScorer, apply_scorers, get_scorer, register_scorer
 from .output import (
     Container,
@@ -83,7 +85,8 @@ from .strategy import Strategy, load_strategy, segment_priorities, select
 from .registry import (ComponentDescriptor, Registry, default_registry, describe_component,
                        list_components, register_method, register_operator, register_preset)
 from .results import (DatasetComparison, DatasetInspection, DatasetPreview, DatasetReport,
-                      DatasetWriteResult, ExecutionPlan, ExperimentResult, SelectionReview,
+                      DatasetWriteResult, ExecutionPlan, ExperimentResult,
+                      HoursSelectionReview, QualityGateResult, SelectionReview,
                       ValidationResult)
 from .versioning import (ARTIFACT_FORMAT_VERSION, JOB_SCHEMA_VERSION, migrate,
                          migrate_config, migrate_job)
@@ -129,6 +132,9 @@ __all__ = [
     "iter_shards", "read_shard_arrays", "shard_entries",
     "inspect_dataset", "DatasetInspection", "compare_datasets", "DatasetComparison",
     "preview_dataset", "DatasetPreview", "selection_review", "SelectionReview",
+    "hours_selection_review", "HoursSelectionReview",
+    "evaluate_quality", "check_quality", "validate_expectations",
+    "QualityGateResult", "QualityGateError",
     "render_html_report", "write_html_report",
     "infer_schema", "Pipeline", "input",
     "load_plugins", "loaded_plugin_modules", "plugin_provenance", "ProgressCallback",

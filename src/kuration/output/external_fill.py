@@ -7,6 +7,7 @@ import os
 import pickle
 import sqlite3
 import tempfile
+from typing import Any
 
 from ..select import assign_splits
 
@@ -107,12 +108,13 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
         target = {"train": train_target, "test": test_target}
         group_seconds: Counter = Counter()
         admitted: set = set()
+        admission_reasons: dict[bytes, str] = {}
 
         def decode(row):
             identity, source_id, priority, duration, group_blob, tags_blob = row
             return identity, source_id, priority, duration, _load(group_blob), _load(tags_blob)
 
-        def try_admit(row) -> bool:
+        def try_admit(row, reason: str = "priority") -> bool:
             identity, source_id, priority, duration, group, _tags = decode(row)
             if not math.isfinite(priority) or identity in admitted:
                 return False
@@ -125,6 +127,7 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
             seconds[item_split] += duration
             group_seconds[group_key] += duration
             admitted.add(identity)
+            admission_reasons[identity] = reason
             return True
 
         select_rows = ("SELECT id_blob,source_id,priority,seconds,group_blob,tags_blob "
@@ -142,7 +145,7 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
                          "FROM items i JOIN item_tags t ON t.id_blob=i.id_blob WHERE t.tag=? "
                          "ORDER BY i.priority DESC,i.source_id,i.id_sort")
                 for row in connection.execute(query, (tag,)):
-                    if try_admit(row):
+                    if try_admit(row, "tag-reserve"):
                         reserved += row[3]
                         covered.update(map(str, _load(row[5])))
                         break
@@ -156,10 +159,40 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
         candidate_seconds = {"train": 0.0, "test": 0.0}
         nonfinite = 0
         rejected_group = 0
+        decision_counts: Counter = Counter()
+        decision_examples: dict[str, list[dict]] = {"admitted": [], "rejected": []}
+        priority_stats: dict[str, dict[str, Any]] = {
+            "admitted": {"count": 0, "min": None, "max": None, "sum": 0.0},
+            "rejected": {"count": 0, "min": None, "max": None, "sum": 0.0},
+        }
+
+        def jsonable(value):
+            if isinstance(value, tuple):
+                return [jsonable(item) for item in value]
+            if isinstance(value, dict):
+                return {str(key): jsonable(item) for key, item in value.items()}
+            if isinstance(value, (set, frozenset)):
+                return [jsonable(item) for item in sorted(value, key=str)]
+            if isinstance(value, list):
+                return [jsonable(item) for item in value]
+            if value is None or isinstance(value, (str, int, float, bool)):
+                return value
+            return str(value)
+
+        def add_priority(bucket: str, priority: float) -> None:
+            if not math.isfinite(priority):
+                return
+            stats = priority_stats[bucket]
+            stats["count"] += 1
+            stats["sum"] += priority
+            stats["min"] = priority if stats["min"] is None else min(stats["min"], priority)
+            stats["max"] = priority if stats["max"] is None else max(stats["max"], priority)
+
         for row in connection.execute(
-                "SELECT id_blob,source_id,priority,seconds,group_blob,start_idx,end_idx,meta_blob "
-                "FROM items"):
-            identity, source_id, priority, duration, group_blob, start, end, meta_blob = row
+                "SELECT id_blob,source_id,priority,seconds,group_blob,tags_blob,start_idx,"
+                "end_idx,meta_blob FROM items ORDER BY priority DESC,source_id,id_sort"):
+            (identity, source_id, priority, duration, group_blob, tags_blob,
+             start, end, meta_blob) = row
             item_split = split[source_id]
             if math.isfinite(priority):
                 candidate_seconds[item_split] += duration
@@ -169,12 +202,45 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
                 admitted_seconds[item_split] += duration
                 admitted_details[_load(identity)] = {"start": start, "end": end,
                                                       "meta": _load(meta_blob)}
+                reason = admission_reasons.get(identity, "priority")
+                bucket = "admitted"
             elif math.isfinite(max_per_group) and math.isfinite(priority):
                 group = _load(group_blob)
                 group_key = _dump(group if group is not None else "\x00")
                 if group_seconds[group_key] + duration > max_per_group:
                     rejected_group += 1
+                    reason = "group-cap"
+                elif seconds[item_split] >= target[item_split]:
+                    reason = "budget-filled"
+                else:
+                    reason = "lower-priority"
+                bucket = "rejected"
+            elif not math.isfinite(priority):
+                reason = "nonfinite-priority"
+                bucket = "rejected"
+            elif seconds[item_split] >= target[item_split]:
+                reason = "budget-filled"
+                bucket = "rejected"
+            else:
+                reason = "lower-priority"
+                bucket = "rejected"
+            decision_counts[reason] += 1
+            add_priority(bucket, priority)
+            if len(decision_examples[bucket]) < 20:
+                decision_examples[bucket].append({
+                    "id": jsonable(_load(identity)), "source": source_id,
+                    "split": item_split, "priority": priority if math.isfinite(priority) else None,
+                    "seconds": duration, "group": jsonable(_load(group_blob)),
+                    "tags": jsonable(_load(tags_blob)), "start": start, "end": end,
+                    "decision": reason,
+                })
         admitted_ids = set(admitted_details)
+        for priority_summary in priority_stats.values():
+            priority_count = priority_summary.pop("count")
+            total_priority = priority_summary.pop("sum")
+            priority_summary["count"] = priority_count
+            priority_summary["mean"] = (total_priority / priority_count
+                                        if priority_count else None)
         stats = {
             "requested_seconds": {"train": train_target, "test": test_target},
             "admitted_seconds": admitted_seconds,
@@ -182,7 +248,9 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
                                   for name in ("train", "test")},
             "candidate_seconds": candidate_seconds, "items_total": count,
             "items_admitted": len(admitted_ids), "items_rejected_nonfinite": nonfinite,
-            "items_rejected_group_cap": rejected_group}
+            "items_rejected_group_cap": rejected_group,
+            "review": {"decision_counts": dict(sorted(decision_counts.items())),
+                       "priority": priority_stats, "examples": decision_examples}}
         return admitted_ids, split, stats, admitted_details
     finally:
         connection.close()

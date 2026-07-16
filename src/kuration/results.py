@@ -74,6 +74,37 @@ class SelectionReview(TypedResult):
         return "\n".join(lines)
 
 
+class HoursSelectionReview(TypedResult):
+    """Hours-budget admission, rejection, utilization, split, and priority review."""
+
+    def render(self) -> str:
+        lines = [f"hours selection: {self['admitted_items']}/{self['candidate_items']} "
+                 "items admitted"]
+        for split, budget in self["budget"].items():
+            lines.append(
+                f"split {split}: requested={budget['requested_seconds']:.3f}s; "
+                f"admitted={budget['admitted_seconds']:.3f}s; "
+                f"emitted={budget['emitted_seconds']:.3f}s; "
+                f"utilization={budget['utilization']:.1%}")
+        decisions = ", ".join(f"{name}={count}" for name, count
+                              in self["decision_counts"].items())
+        lines.append(f"decisions: {decisions or 'none'}")
+        for warning in self["warnings"]:
+            lines.append(f"warning [{warning['code']}]: {warning['message']}")
+        return "\n".join(lines)
+
+
+class QualityGateResult(TypedResult):
+    """Pass/fail results for explicit dataset quality expectations."""
+
+    def render(self) -> str:
+        lines = [f"quality gates: {'PASS' if self['passed'] else 'FAIL'}"]
+        for check in self["checks"]:
+            marker = "PASS" if check["passed"] else "FAIL"
+            lines.append(f"{marker} {check['name']}: {check['message']}")
+        return "\n".join(lines)
+
+
 class DatasetComparison(TypedResult):
     """Structured differences between two curated dataset artifacts."""
 
@@ -142,6 +173,9 @@ class ExecutionPlan(Mapping[str, Any]):
                  f"total-pool materialization="
                  f"{', '.join(materializes) if materializes else 'none'}",
                  f"optional extras: {', '.join(extras) if extras else 'none (NumPy core)'}"]
+        if self.options.get("quality_expectations"):
+            lines.append("quality gates: " + ", ".join(
+                sorted(self.options["quality_expectations"])))
         if self.output:
             modalities = sorted((self.output.get("modalities") or {}).keys())
             lines.append(f"output: {self.output.get('container', 'unresolved')}; "

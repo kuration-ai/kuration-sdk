@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 
 from .report import dataset_report
-from .results import DatasetPreview, SelectionReview
+from .results import DatasetPreview, HoursSelectionReview, SelectionReview
 
 
 def _json_value(value: Any) -> Any:
@@ -191,3 +191,50 @@ def selection_review(result, *, seed: int = 0, examples: int = 10,
         errors=list(result.errors),
         warnings=([{"code": "source-errors", "message":
                     f"{len(result.errors)} source(s) were skipped"}] if result.errors else []))
+
+
+def hours_selection_review(result) -> HoursSelectionReview:
+    """Explain an hours-path ``DatasetWriteResult`` without another scoring pass."""
+    results = result.get("results") or {}
+    budget = results.get("budget") or {}
+    required = {"requested_seconds", "admitted_seconds", "candidate_seconds",
+                "items_total", "items_admitted"}
+    if not required <= set(budget):
+        raise ValueError("hours_selection_review needs an hours-path DatasetWriteResult")
+    emitted = budget.get("emitted_seconds") or budget["admitted_seconds"]
+    split_budget = {}
+    warnings = []
+    for split in ("train", "test"):
+        requested = float(budget["requested_seconds"].get(split, 0.0))
+        admitted = float(budget["admitted_seconds"].get(split, 0.0))
+        emitted_seconds = float(emitted.get(split, 0.0))
+        utilization = emitted_seconds / requested if requested > 0 else 1.0
+        split_budget[split] = {
+            "requested_seconds": requested, "candidate_seconds": float(
+                budget["candidate_seconds"].get(split, 0.0)),
+            "admitted_seconds": admitted, "emitted_seconds": emitted_seconds,
+            "underfill_seconds": max(0.0, requested - admitted),
+            "emitted_underfill_seconds": max(0.0, requested - emitted_seconds),
+            "emission_loss_seconds": max(0.0, admitted - emitted_seconds),
+            "utilization": utilization,
+        }
+        if requested > 0 and emitted_seconds < requested:
+            warnings.append({"code": "budget-underfill", "split": split,
+                             "message": f"{split} emitted {emitted_seconds:.3f}s of "
+                                        f"{requested:.3f}s requested"})
+    review = budget.get("review") or {}
+    return HoursSelectionReview(
+        candidate_items=int(budget["items_total"]),
+        admitted_items=int(budget["items_admitted"]),
+        rejected_items=int(budget["items_total"] - budget["items_admitted"]),
+        admission_rate=(budget["items_admitted"] / budget["items_total"]
+                        if budget["items_total"] else 0.0),
+        budget=split_budget,
+        decision_counts=dict(review.get("decision_counts") or {}),
+        priorities=dict(review.get("priority") or {}),
+        examples=dict(review.get("examples") or {"admitted": [], "rejected": []}),
+        source_splits={"train": sum(1 for value in result.get("split", {}).values()
+                                    if value == "train"),
+                       "test": sum(1 for value in result.get("split", {}).values()
+                                   if value == "test")},
+        errors=list(result.get("errors") or ()), warnings=warnings)

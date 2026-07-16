@@ -462,6 +462,7 @@ class Pipeline:
             "spill_dir": None, "approximation": "exact", "max_in_flight": 2}
         self._mode: Optional[str] = None
         self._explicit_options: set[str] = set()
+        self._expectations: dict = {}
         from .registry import default_registry
         self._registry = default_registry
 
@@ -471,7 +472,7 @@ class Pipeline:
         p.__dict__.update(self.__dict__)
         for attr in ("_ops", "_define", "_callables", "_predicates", "_prepass", "_axes",
                      "_tags", "_scorers", "_transforms", "_method_params", "_options",
-                     "_window_desc"):
+                     "_window_desc", "_expectations"):
             cur = getattr(self, attr)
             setattr(p, attr, type(cur)(cur))
         p._explicit_options = set(self._explicit_options)
@@ -873,6 +874,14 @@ class Pipeline:
         p._explicit_options.update(kw)
         return p
 
+    def expect(self, **expectations) -> "Pipeline":
+        """Attach explicit quality gates evaluated by ``preview()`` and ``review()``."""
+        from .quality import validate_expectations
+        resolved = validate_expectations(expectations)
+        p = self._next("expect", **resolved)
+        p._expectations.update(resolved)
+        return p
+
     def curate(self, method: Optional[str] = None, *, n: Optional[int] = None,
                hours: Optional[float] = None, test_hours: Optional[float] = None,
                weights: Optional[dict] = None, target=None, normalize: Optional[str] = None,
@@ -1128,28 +1137,50 @@ class Pipeline:
                 "options": {**{k: _jsonable(v) for k, v in self._options.items()},
                             "mode": self._mode,
                             "overrides": sorted(self._explicit_options)},
-                "sources": [str(s) for s in self.sources]}
+                "sources": [str(s) for s in self.sources],
+                "expectations": dict(self._expectations)}
 
     def preview(self, *, max_sources: int = 3, max_ticks_per_source: int = 10_000,
                 examples: int = 5):
         """Read a bounded source sample and summarize fields, missingness, and examples."""
         from .review import preview_dataset
-        return preview_dataset(schema=self.schema, adapter=self.adapter, sources=self.sources,
-                               max_sources=max_sources,
-                               max_ticks_per_source=max_ticks_per_source,
-                               examples=examples)
+        report = preview_dataset(schema=self.schema, adapter=self.adapter, sources=self.sources,
+                                 max_sources=max_sources,
+                                 max_ticks_per_source=max_ticks_per_source,
+                                 examples=examples)
+        if self._expectations:
+            from .quality import check_quality
+            report["quality"] = check_quality(report, self._expectations).to_dict()
+        return report
 
-    def review(self, n: Optional[int] = None, *, examples: int = 10,
-               hist_bins: int = 10):
-        """Run count selection and compare candidate and selected distributions/coverage.
+    def review(self, n: Optional[int] = None, *, path=None, examples: int = 10,
+               hist_bins: int = 10, **output_options):
+        """Review count selection, or write and review an hours-budget selection.
 
-        Review intentionally uses the reference ``collect`` path so it can expose the complete
-        candidate pool. Use output dry-run estimates for very large pools before reviewing.
+        Count review intentionally uses the reference ``collect`` path so it can expose the
+        complete candidate pool. Hours review needs ``path=`` because spans are defined by the
+        output declaration; it reuses the resulting writer decisions without rescoring.
         """
-        result = self.collect(n=n)
-        from .review import selection_review
-        return selection_review(result, seed=self._options["seed"], examples=examples,
-                                hist_bins=hist_bins)
+        report: Any
+        if self._hours is not None:
+            if n is not None:
+                raise ValueError("hours review does not accept n")
+            if path is None:
+                raise ValueError("hours review needs path= plus any output options")
+            result = self.output(path, **output_options)
+            from .review import hours_selection_review
+            report = hours_selection_review(result)
+        else:
+            if path is not None or output_options:
+                raise ValueError("path/output options are only used by hours review")
+            result = self.collect(n=n)
+            from .review import selection_review
+            report = selection_review(result, seed=self._options["seed"], examples=examples,
+                                      hist_bins=hist_bins)
+        if self._expectations:
+            from .quality import check_quality
+            report["quality"] = check_quality(report, self._expectations).to_dict()
+        return report
 
     def explain(self, *, inspect_sources: bool = False):
         """Return a stable, structured execution plan without reading rows by default."""
@@ -1185,6 +1216,7 @@ class Pipeline:
             {"kind": "count", "value": self._n} if self._n is not None else
             {"kind": "hours", "value": self._hours} if self._hours is not None else None)
         options["optional_extras"] = self._optional_extras()
+        options["quality_expectations"] = dict(self._expectations)
         if inspect_sources:
             options["source_estimate"] = self._estimate_sources()
         return ExecutionPlan(source={"kind": type(self.adapter).__name__,

@@ -35,11 +35,13 @@ jobs:
           assert package.joinpath("py.typed").is_file()
           assert "site-packages" in str(Path(kuration.__file__).resolve())
           for name in ("inspect_dataset", "compare_datasets", "DatasetPreview",
-                       "SelectionReview", "render_html_report"):
+                       "SelectionReview", "HoursSelectionReview", "QualityGateResult",
+                       "render_html_report"):
               assert hasattr(kuration, name)
           PY
           /tmp/kuration-wheel-smoke/bin/kur-inspect --help
           /tmp/kuration-wheel-smoke/bin/kur-diff --help
+          /tmp/kuration-wheel-smoke/bin/kur-check --help
       - uses: actions/upload-artifact@v4
         with:
           name: python-package-distributions

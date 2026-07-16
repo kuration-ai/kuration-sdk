@@ -62,6 +62,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.split` | `(test=0.2) -> Pipeline` | source-level test split |
 | `Pipeline.group` | `(fn) -> Pipeline` | `group_of(source_id) -> key` |
 | `Pipeline.options` | `(**kw) -> Pipeline` | `mode, executor, workers, on_error, seed, streaming, resume, sample_hz, progress` |
+| `Pipeline.expect` | `(**expectations) -> Pipeline` | attach closed-grammar quality gates evaluated by `preview()` or `review()` |
 | `Pipeline.sample` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | configure selection; exactly one of `n=`/`hours=` (`curate` remains as a compatibility alias) |
 | `Pipeline.curate` | `(method=None, **selection_options) -> Pipeline` | compatibility alias for `Pipeline.sample` |
 | `Pipeline.collect` | `(n=None) -> CurateResult` | terminal — count-path selection |
@@ -69,7 +70,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.report` | `(**kw) -> dict` | terminal — feature pass only → `dataset_report` |
 | `Pipeline.experiment` | `(arms: dict, n: int, baseline=None) -> dict` | terminal — multi-arm comparison (`arms` maps name → `Pipeline` or raw strategy dict) |
 | `Pipeline.head` | `(k=5) -> list[Tick]` | inspector — first `k` ticks of the first source |
-| `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources}`, no data touched |
+| `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources, expectations}`, no data touched |
 | `Pipeline.preview` | `(*, max_sources=3, max_ticks_per_source=10000, examples=5) -> DatasetPreview` | inspector — bounded field quality, source shape, and representative tick sample |
 | `Pipeline.review` | `(n=None, *, examples=10, hist_bins=10) -> SelectionReview` | terminal — compare the complete candidate pool with a count selection |
 | `Pipeline.explain` | `(*, inspect_sources=False) -> ExecutionPlan` | inspector — typed stage plan, requirements, implicit choices, and warnings; optionally preflight source metadata |
@@ -89,12 +90,19 @@ See [pipeline.md](pipeline.md) for accepted operator forms and validation behavi
 | `DatasetInspection` | dict-compatible; `.to_dict()` and attribute access | artifact summary and optional shard-integrity result |
 | `DatasetPreview` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | bounded source/field-quality preview |
 | `SelectionReview` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | candidate-versus-selected metrics, coverage, rationale, and examples |
+| `HoursSelectionReview` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | hours admission/rejection reasons, priorities, budget utilization, and examples |
+| `QualityGateResult` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | complete pass/fail checks for a quality policy |
+| `QualityGateError` | exception carrying `.result` | raised by `check_quality` and failing fluent expectations |
 | `DatasetComparison` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | structured differences between two curated artifacts |
 | `ValidationResult` | dict-compatible; `.to_dict()` and attribute access | programmatic validation result used by the CLI layer |
 | `ExecutionPlan` | `(source, schema, window, strategy, output, options, stages=(), warnings=(), physical_plan=None)` | immutable mapping returned by `Pipeline.explain`; `.to_dict()` serializes and `.render(detailed=False)` formats text |
 | `inspect_dataset` | `(dataset, *, verify=False, container=None) -> DatasetInspection` | inspect manifests/config without original sources; `verify=True` decodes every shard |
 | `preview_dataset` | `(*, schema, adapter, sources, max_sources=3, max_ticks_per_source=10000, examples=5) -> DatasetPreview` | classic-API form of the bounded data preview |
 | `selection_review` | `(result, *, seed=0, examples=10, hist_bins=10) -> SelectionReview` | review an existing `CurateResult` |
+| `hours_selection_review` | `(result) -> HoursSelectionReview` | review an hours-path `DatasetWriteResult` without rescoring |
+| `validate_expectations` | `(expectations) -> dict` | validate and copy the closed quality-policy grammar |
+| `evaluate_quality` | `(report, expectations=None, **kwargs) -> QualityGateResult` | evaluate every applicable gate without raising |
+| `check_quality` | `(report, expectations=None, **kwargs) -> QualityGateResult` | evaluate gates and raise `QualityGateError` on failure |
 | `compare_datasets` | `(left, right, *, verify=False) -> DatasetComparison` | compare artifact schema, output, pipeline, provenance, size, and integrity |
 | `render_html_report` | `(*reports, title="kuration review") -> str` | render typed/mapping reports as dependency-free static HTML |
 | `write_html_report` | `(path, *reports, title="kuration review") -> str` | write the static HTML report locally or through configured path I/O |
