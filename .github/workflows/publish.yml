@@ -39,9 +39,10 @@ jobs:
                        "render_html_report"):
               assert hasattr(kuration, name)
           PY
-          /tmp/kuration-wheel-smoke/bin/kur-inspect --help
-          /tmp/kuration-wheel-smoke/bin/kur-diff --help
-          /tmp/kuration-wheel-smoke/bin/kur-check --help
+          for command in kur-curate kur-experiment kur-report kur-validate kur-list \
+                         kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check; do
+            /tmp/kuration-wheel-smoke/bin/"$command" --help
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: python-package-distributions

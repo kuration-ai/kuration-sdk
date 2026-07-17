@@ -2,7 +2,8 @@
 
 The CI workflow builds a wheel and source distribution on every supported Python version, then
 installs the wheel in a clean environment and verifies imports, package data, typing metadata,
-and the `kur-inspect`/`kur-diff`/`kur-check` entry points. A published GitHub release runs
+and every `kur-*` entry point. Separate jobs smoke-test each optional integration not installed
+by the main test matrix. A published GitHub release runs
 `.github/workflows/publish.yml`, which builds both artifacts and publishes them to PyPI with
 OpenID Connect; no long-lived API token is stored in GitHub.
 
@@ -17,10 +18,14 @@ OpenID Connect; no long-lived API token is stored in GitHub.
 
 ## Release
 
-1. Update `project.version` in `pyproject.toml` and run the test suite.
-2. Build locally with `python -m build` and inspect `dist/`.
-3. Tag the same version and publish a GitHub release. Publishing the release triggers the PyPI
-   workflow.
+1. Set `project.version` to a release candidate such as `0.1.0rc1` and run the complete test and
+   static-check suite.
+2. Build the wheel and sdist, install the wheel in a clean environment outside the checkout, and
+   smoke-test imports, package data, and every `kur-*` command.
+3. Tag the release candidate and validate it through CI without publishing a final release.
+4. Once the candidate is accepted, set the final version, repeat the build and clean smoke test,
+   and tag that exact version.
+5. Publish the final GitHub release. Publishing the release triggers the PyPI workflow.
 
 The workflow can also be started manually after the trusted publisher is configured. PyPI will
 reject a filename/version that has already been uploaded, so every retry after a partial release

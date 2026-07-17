@@ -247,5 +247,5 @@ work.
 ## Tests
 
 ```bash
-pip install -e . && pytest tests/ -q
+python -m pip install -e . && python -m pytest tests/ -q
 ```

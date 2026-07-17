@@ -53,9 +53,10 @@ jobs:
                        "render_html_report"):
               assert hasattr(kuration, name)
           PY
-          /tmp/kuration-wheel-smoke/bin/kur-inspect --help
-          /tmp/kuration-wheel-smoke/bin/kur-diff --help
-          /tmp/kuration-wheel-smoke/bin/kur-check --help
+          for command in kur-curate kur-experiment kur-report kur-validate kur-list \
+                         kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check; do
+            /tmp/kuration-wheel-smoke/bin/"$command" --help
+          done
       - name: Run examples
         if: matrix.python == '3.11'
         run: |
@@ -63,3 +64,38 @@ jobs:
           python examples/02_robotics_action_aware.py
           python examples/03_compare_strategies.py
           python examples/04_operator_pipeline.py
+
+  optional-integrations:
+    name: Optional integration (${{ matrix.extra }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - extra: zarr
+            smoke: import zarr
+            tests: tests/test_adapters_tier1.py tests/test_check_source.py -k zarr
+          - extra: torch
+            smoke: import torch
+            tests: tests/test_loaders.py -k torch
+          - extra: hf
+            smoke: import datasets
+            tests: tests/test_adapters_tier1.py tests/test_check_source.py -k 'hf or huggingface'
+          - extra: video
+            smoke: import av; from kuration.media import _av; assert _av() is av
+            tests: tests/test_media_transforms_execution.py
+          - extra: ray
+            smoke: import ray
+            tests: tests/test_execution_backpressure.py
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install optional integration
+        run: python -m pip install -e '.[dev,${{ matrix.extra }}]'
+      - name: Import optional dependency
+        run: python -c '${{ matrix.smoke }}'
+      - name: Test optional integration
+        run: python -m pytest ${{ matrix.tests }} -q
