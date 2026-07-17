@@ -387,6 +387,25 @@ def test_arrays_to_ticks_length_mismatch_raises():
         arrays_to_ticks(SCHEMA, {"act": np.zeros(3), "pos": np.zeros((5, 2))})
 
 
+def test_arrays_to_ticks_accepts_shape_only_arrays():
+    from kuration.adapters.base import arrays_to_ticks
+
+    class ShapeOnlyArray:
+        def __init__(self, values):
+            self.values = np.asarray(values)
+            self.shape = self.values.shape
+
+        def __getitem__(self, index):
+            return self.values[index]
+
+    ticks = arrays_to_ticks(SCHEMA, {
+        "act": ShapeOnlyArray([1.0, 2.0]),
+        "pos": ShapeOnlyArray([[3.0, 4.0], [5.0, 6.0]]),
+    })
+    assert [tick.entities[0]["act"] for tick in ticks] == [1.0, 2.0]
+    assert ticks[1].entities[0]["pos"] == (5.0, 6.0)
+
+
 def test_timeseries_unordered_rows_raise():
     from kuration.adapters.timeseries import TimeseriesAdapter
     ad = TimeseriesAdapter(SCHEMA, fields={"act": "a"}, time_column="t", entity_column="e")

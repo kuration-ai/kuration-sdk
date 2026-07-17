@@ -95,11 +95,11 @@ no_implicit_optional = false
 warn_unused_configs = true
 follow_imports_for_stubs = true
 
-# NumPy wheels may ship interpreter-specific stubs using that interpreter's syntax
-# (for example PEP 695 `type` statements in the Python 3.13 wheel).  We intentionally
+# Optional libraries may ship interpreter-specific stubs using that interpreter's syntax
+# (for example PEP 695 `type` statements in NumPy or Zarr).  We intentionally
 # type-check kuration against its minimum Python 3.11 while CI runs under 3.11-3.13, so
-# parsing the host wheel's stubs can fail before our code is checked.  Keep NumPy as an
-# external typed boundary; every kuration module is still passed to mypy via `files`.
+# parsing the host wheel's stubs can fail before our code is checked.  Keep them as
+# external typed boundaries; every kuration module is still passed to mypy via `files`.
 [[tool.mypy.overrides]]
-module = ["numpy", "numpy.*"]
+module = ["numpy", "numpy.*", "zarr"]
 follow_imports = "skip"

@@ -29,8 +29,16 @@ class InputAdapter(Protocol):
 def iter_arrays_to_ticks(schema: SchemaSpec, arrs: dict, gl: dict = None):
     """Lazily build single-entity ticks from indexable per-field arrays."""
     gl = gl or {}
-    n = len(next(iter(arrs.values()))) if arrs else (len(next(iter(gl.values()))) if gl else 0)
-    mismatched = {k: len(a) for k, a in {**arrs, **gl}.items() if len(a) != n}
+    arrays = {**arrs, **gl}
+
+    def step_count(array) -> int:
+        # Zarr 3 arrays deliberately do not implement ``len``. Array stores do expose
+        # ``shape`` as metadata, while ordinary Python sequences still use ``len``.
+        shape = getattr(array, "shape", None)
+        return int(shape[0]) if shape else (0 if shape == () else len(array))
+
+    n = step_count(next(iter(arrays.values()))) if arrays else 0
+    mismatched = {k: step_count(a) for k, a in arrays.items() if step_count(a) != n}
     if mismatched:                       # silent truncation to the first field's length is worse
         raise ValueError(f"arrays_to_ticks: length mismatch — expected {n} steps, got "
                          f"{mismatched}")
