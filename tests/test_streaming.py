@@ -92,7 +92,7 @@ def _shards_by_name(out_dir):
     man = json.loads((out_dir / "dataset_manifest.json").read_text())
     out = {}
     for e in man["shards"]:
-        arr = np.load(e["path"])
+        arr = np.load(out_dir / e["path"])
         out[e["path"].split("/")[-1]] = (int(arr["_n_steps"]), arr["obs"])
     return out
 

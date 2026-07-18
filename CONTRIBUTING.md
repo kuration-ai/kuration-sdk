@@ -3,10 +3,14 @@
 Thanks for helping improve kuration-sdk. Contributions may include bug fixes, adapters,
 selection methods, documentation, tests, and runnable examples.
 
+For user and integrator questions, see [SUPPORT.md](SUPPORT.md). Project ownership, decisions,
+and release responsibilities are described in [GOVERNANCE.md](GOVERNANCE.md).
+
 ## Development setup
 
-kuration-sdk supports Python 3.11 and newer. From a repository checkout, create and activate a
-virtual environment, then install the package in editable mode:
+kuration-sdk requires Python 3.11 or newer. The supported-version CI matrix explicitly covers
+Python 3.11 through 3.14. From a repository checkout, create and activate a virtual environment,
+then install the package in editable mode:
 
 ```bash
 python -m venv .venv
@@ -362,9 +366,8 @@ python -m build
 ```
 
 CI additionally installs the built wheel into a clean environment and verifies that `kuration`,
-the `kur-inspect`/`kur-diff`/`kur-check` commands, `schemas/job.schema.json`, and `py.typed`
-work without the repository on
-`sys.path`.
+every installed `kur-*` console command, `schemas/job.schema.json`, and `py.typed` work without
+the repository on `sys.path`.
 
 For changes spanning the pipeline or output path, also run the relevant self-contained examples:
 

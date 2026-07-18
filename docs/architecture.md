@@ -226,10 +226,12 @@ skipped, or every source shorter than the window), scoring raises rather than le
 empty-but-valid-looking dataset propagate. `write_dataset(resume=True)` reuses a shard only when
 the file matches the byte size and SHA-256 in the previous committed manifest; missing, legacy,
 or modified shards are deterministically rebuilt. Two guards make that sound:
-shards are written **atomically** (temp + rename locally, staged upload remotely — a crash
-never leaves a partial file at the final path), and the resolved output spec is fingerprinted
-in a `.kuration_output_spec.json` sidecar, so resuming with a different spec raises instead of
-mixing stale shards with a fresh manifest.
+local shards use same-directory temp files plus replace, and remote shards publish a completed
+attempt object before moving it into place. The resolved output spec is fingerprinted in
+`.kuration_output_spec.json`, so resuming with a different spec raises. A separate
+`dataset.commit.json` changes to `state=writing` before shard replacement and is published last
+as `state=committed` with manifest/config checksums; readers therefore reject interrupted or
+mixed-generation metadata while resume can still checksum prior entries.
 
 The hot path (binning) stays vectorized rather than parallelized — IPC would cost more than the
 compute.

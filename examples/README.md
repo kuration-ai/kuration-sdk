@@ -28,6 +28,6 @@ python examples/05_custom_operators.py
 For the full recipe catalog (cloud I/O, streaming, filters, composition, custom adapters/
 encoders/metrics/scorers, the CLIs), see [`../docs/usage.md`](../docs/usage.md).
 
-For dataset provenance, bounded download instructions, and the offline structural demo, see
-[`public_data/README.md`](public_data/README.md) and
-[`public_data/open_p2p.md`](public_data/open_p2p.md).
+For dataset provenance, licensing notes, bounded download instructions, and offline structural
+demos, see [`public_data/open_p2p.md`](public_data/open_p2p.md) and
+[`public_data/teapearce_csgo.md`](public_data/teapearce_csgo.md).

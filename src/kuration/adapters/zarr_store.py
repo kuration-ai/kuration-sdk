@@ -31,19 +31,22 @@ class ZarrAdapter:
         for g in self.globals:
             if g not in schema.globals:
                 raise ValueError(f"global map references undeclared schema global {g!r}")
+        self.available_fields = frozenset(fields)
+        self.available_globals = frozenset(self.globals)
 
     def _open_group(self, source_uri: str):
         try:
             import zarr
         except ImportError as e:
-            raise ImportError("ZarrAdapter needs zarr: pip install -e '.[zarr]'") from e
+            raise ImportError("ZarrAdapter needs zarr: pip install 'kuration-sdk[zarr]'") from e
         from ..io import is_remote
         if is_remote(source_uri):
             try:
                 import fsspec
             except ImportError as e:
                 raise ImportError(
-                    f"remote zarr store {source_uri!r} needs fsspec: pip install -e '.[cloud]' "
+                    f"remote zarr store {source_uri!r} needs fsspec: "
+                    "pip install 'kuration-sdk[cloud]' "
                     f"(plus the backend, e.g. gcsfs for gs://)") from e
             store = fsspec.get_mapper(str(source_uri))   # remote store via the fsspec backend
         else:

@@ -47,28 +47,32 @@ def _build(schema, *, container, shard_length, short_policy, categorical=None,
                           categorical_vocabs=categorical_vocabs)
     if not mods:
         raise ValueError("output preset resolved to no modalities")
+    registry = _kw.pop("_registry", None)
     return OutputSpec.from_dict({"modalities": mods, "container": container,
                                  "shard_length": shard_length, "short_policy": short_policy,
                                  "presence_mask": presence_mask,
-                                 "vocabs": categorical_vocabs or {}})
+                                 "vocabs": categorical_vocabs or {}}, registry=registry)
 
 
-def _numpy(schema, **params):
+def _numpy(schema, _registry=None, **params):
     return _build(schema, container=params.pop("container", "npz"),
                   shard_length=params.pop("shard_length", 64),
-                  short_policy=params.pop("short_policy", "keep"), **params)
+                  short_policy=params.pop("short_policy", "keep"),
+                  _registry=_registry, **params)
 
 
-def _pytorch(schema, **params):
+def _pytorch(schema, _registry=None, **params):
     return _build(schema, container=params.pop("container", "npz"),
                   shard_length=params.pop("shard_length", 64),
-                  short_policy=params.pop("short_policy", "pad"), **params)
+                  short_policy=params.pop("short_policy", "pad"),
+                  _registry=_registry, **params)
 
 
-def _tabular(schema, **params):
+def _tabular(schema, _registry=None, **params):
     return _build(schema, container=params.pop("container", "parquet"),
                   shard_length=params.pop("shard_length", 1024),
-                  short_policy=params.pop("short_policy", "keep"), **params)
+                  short_policy=params.pop("short_policy", "keep"),
+                  _registry=_registry, **params)
 
 
 _PARAMS = {"type": "object", "properties": {
@@ -86,9 +90,24 @@ def output_preset(name: str, *, schema, registry=default_registry, **params) -> 
     ``params`` are checked against the preset's descriptor. Unknown presets, missing required
     parameters, and unexpected parameters raise ``ValueError``.
     """
+    if name not in registry.names("preset") and registry is default_registry:
+        from ..plugins import load_plugins
+        load_plugins()
     descriptor = registry.descriptor("preset", name)
     validate_parameters(descriptor, params)
-    return registry.get("preset", name)(schema, **params)
+    factory = registry.get("preset", name)
+    import inspect
+    signature = inspect.signature(factory)
+    accepts_registry = "_registry" in signature.parameters
+    resolved = factory(schema, **params,
+                       **({"_registry": registry} if accepts_registry else {}))
+    if isinstance(resolved, dict):
+        return OutputSpec.from_dict(resolved, registry=registry)
+    if not isinstance(resolved, OutputSpec):
+        raise ValueError(f"output preset {name!r} must return OutputSpec or dict, got "
+                         f"{type(resolved).__name__}")
+    # Reparse direct dataclass construction so it cannot bypass dtype/name/container checks.
+    return OutputSpec.from_dict(resolved.to_dict(), registry=registry)
 
 
 register_preset("numpy-timeseries", _numpy, description="NumPy NPZ time-series shards",
@@ -97,4 +116,4 @@ register_preset("pytorch-sequences", _pytorch, description="Padded sequence shar
                 parameters=_PARAMS, capabilities={"streaming": True}, version="1")
 register_preset("tabular", _tabular, description="Flat Parquet time-series shards",
                 parameters=_PARAMS, capabilities={"streaming": True}, extra="parquet",
-                install_hint="pip install -e '.[parquet]'", version="1")
+                install_hint="pip install 'kuration-sdk[parquet]'", version="1")

@@ -32,15 +32,18 @@ class NpzAdapter:
         for g in self.globals:
             if g not in schema.globals:
                 raise ValueError(f"global map references undeclared schema global {g!r}")
+        self.available_fields = frozenset(fields)
+        self.available_globals = frozenset(self.globals)
 
     supports_streaming = False
 
     def ticks(self, source_uri: str) -> list[Tick]:
         from ..io import local_copy
         with local_copy(source_uri) as p:
-            z = np.load(p, allow_pickle=False)
-            arrs = {fn: z[key] for fn, key in self.fields.items()}
-            gl = {gn: z[key] for gn, key in self.globals.items()}
+            with np.load(p, allow_pickle=False) as z:
+                # Materialize while the archive and any downloaded temporary file are open.
+                arrs = {fn: np.asarray(z[key]) for fn, key in self.fields.items()}
+                gl = {gn: np.asarray(z[key]) for gn, key in self.globals.items()}
         return arrays_to_ticks(self.schema, arrs, gl)
 
     def check_source(self, source_uri: str) -> None:

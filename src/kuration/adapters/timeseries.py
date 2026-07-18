@@ -10,6 +10,7 @@ Bespoke formats (ROS bags, proprietary logs, the CS2 `data.json`) still implemen
 """
 from __future__ import annotations
 
+import math
 from typing import Iterable, Optional
 
 from ..buffer import Tick
@@ -48,6 +49,25 @@ class TimeseriesAdapter:
         for g in self.globals:
             if g not in schema.globals:
                 raise ValueError(f"global map references undeclared schema global {g!r}")
+        for name, column in fields.items():
+            fs = schema.fields[name]
+            if fs.kind == "vector":
+                if (not isinstance(column, (list, tuple)) or len(column) != fs.width
+                        or any(not isinstance(c, str) or not c for c in column)):
+                    raise ValueError(f"vector field {name!r} needs exactly {fs.width} non-empty "
+                                     "column names")
+                if len(set(column)) != len(column):
+                    raise ValueError(f"vector field {name!r} maps duplicate columns {column!r}")
+            elif not isinstance(column, str) or not column:
+                raise ValueError(f"{fs.kind} field {name!r} needs one non-empty column name")
+        for name, column in self.globals.items():
+            if not isinstance(column, str) or not column:
+                raise ValueError(f"global {name!r} needs one non-empty column name")
+        for label, column in (("time_column", time_column), ("entity_column", entity_column)):
+            if column is not None and (not isinstance(column, str) or not column):
+                raise ValueError(f"{label} must be a non-empty string or None")
+        self.available_fields = frozenset(fields)
+        self.available_globals = frozenset(self.globals)
 
     # ---- value extraction ---------------------------------------------------
     def _value(self, row: dict, fname: str):
@@ -67,7 +87,16 @@ class TimeseriesAdapter:
                 raise ValueError(f"duplicate row for entity {eid!r} at time {time!r} — "
                                  f"the later row would silently overwrite the earlier one")
             entities[eid] = {f: self._value(row, f) for f in self.fields}
-        glb = {g: float(rows[0][c]) for g, c in self.globals.items()} if rows else {}
+        glb = {}
+        if rows:
+            for g, c in self.globals.items():
+                values = [float(row[c]) for row in rows]
+                if any(not math.isfinite(value) for value in values):
+                    raise ValueError(f"global {g!r} contains a non-finite value at time {time!r}")
+                if any(value != values[0] for value in values[1:]):
+                    raise ValueError(f"global {g!r} disagrees across entity rows at time "
+                                     f"{time!r}: {values!r}")
+                glb[g] = values[0]
         return Tick(time=_num_time(time), entities=entities, globals=glb)
 
     def _iter_rows_to_ticks(self, rows: Iterable[dict]):
@@ -78,8 +107,12 @@ class TimeseriesAdapter:
         cur = None
         group: list[dict] = []
         seen_times: set = set()
+        previous_ordered = None
         for row in rows:
             tv = row[self.time_column]
+            ordered = _num_time(tv)
+            if isinstance(ordered, float) and not math.isfinite(ordered):
+                raise ValueError(f"time column {self.time_column!r} contains non-finite {tv!r}")
             if group and tv != cur:
                 yield self._mk_tick(cur, group)
                 seen_times.add(cur)
@@ -88,8 +121,17 @@ class TimeseriesAdapter:
                     raise ValueError(
                         f"rows are not ordered by {self.time_column!r}: time {tv!r} reappears "
                         f"after its timestep closed — sort rows by time first")
+                try:
+                    decreasing = previous_ordered is not None and ordered < previous_ordered
+                except TypeError as error:
+                    raise ValueError(f"time column {self.time_column!r} contains values that "
+                                     f"cannot be ordered consistently: {tv!r}") from error
+                if decreasing:
+                    raise ValueError(f"rows are not ordered by {self.time_column!r}: time "
+                                     f"{tv!r} follows {cur!r}")
             group.append(row)
             cur = tv
+            previous_ordered = ordered
         if group:
             yield self._mk_tick(cur, group)
 
@@ -118,7 +160,7 @@ class TimeseriesAdapter:
                 import pyarrow.parquet as pq
             except ImportError as e:
                 raise ImportError("checking .parquet needs the optional extra: "
-                                  "pip install -e '.[parquet]'") from e
+                                  "pip install 'kuration-sdk[parquet]'") from e
             with local_copy(source_uri) as p:
                 cols = set(pq.ParquetFile(p).schema_arrow.names)
         else:
@@ -147,7 +189,7 @@ class TimeseriesAdapter:
                 import pyarrow.parquet as pq  # optional [parquet] extra
             except ImportError as e:
                 raise ImportError("reading .parquet needs the optional extra: "
-                                  "pip install -e '.[parquet]'") from e
+                                  "pip install 'kuration-sdk[parquet]'") from e
             with local_copy(source_uri) as p:
                 def rows():
                     for batch in pq.ParquetFile(p).iter_batches():

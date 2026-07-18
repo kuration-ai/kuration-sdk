@@ -37,8 +37,7 @@ def test_hours_review_reuses_writer_budget_and_decisions(tmp_path):
 
 
 def test_pipeline_expect_applies_to_preview_and_review():
-    checked = _pipeline().expect(max_missing={"x": 0}, min_sources=2,
-                                 min_tag_coverage={"unused": 0})
+    checked = _pipeline().expect(max_missing={"x": 0}, min_sources=2)
     assert checked.describe()["expectations"]["min_sources"] == 2
     preview = checked.preview()
     assert preview.quality["passed"] is True
@@ -47,7 +46,8 @@ def test_pipeline_expect_applies_to_preview_and_review():
     assert error.value.result["checks"][0]["name"] == "min_sources"
 
     review = _pipeline().expect(max_group_fraction=1.0,
-                                max_skipped_sources=0).review()
+                                max_skipped_sources=0,
+                                min_tag_coverage={"unused": 0}).review()
     assert review.quality["passed"] is True
 
 

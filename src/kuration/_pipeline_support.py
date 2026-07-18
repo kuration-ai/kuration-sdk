@@ -64,10 +64,7 @@ def auto_qualify(token: str, schema: SchemaSpec) -> str:
     if "." in token:
         return token
     if token in schema.fields:
-        if not schema.entity_axis:
-            raise ValueError(f"field {token!r}: schema {schema.name!r} declares no entity_axis, "
-                             "so entity fields cannot be referenced")
-        return f"{schema.entity_axis}.{token}"
+        return f"{schema.entity_axis}.{token}" if schema.entity_axis else token
     if token in schema.globals:
         return token
     if token in schema.event_streams:
@@ -112,6 +109,10 @@ class RowsAdapter(TimeseriesAdapter):
                              f"(have: {sorted(self._data)})")
         return self._rows_to_ticks([expand_row(row) for row in self._data[source_uri]])
 
+    def source_fingerprint(self, source_uri):
+        from .provenance import _state_hash
+        return _state_hash(self._data[source_uri])
+
 
 class TickAdapter:
     in_memory = True
@@ -125,6 +126,10 @@ class TickAdapter:
             raise ValueError(f"unknown in-memory source {source_uri!r} "
                              f"(have: {sorted(self._data)})")
         return self._data[source_uri]
+
+    def source_fingerprint(self, source_uri):
+        from .provenance import _state_hash
+        return _state_hash(self._data[source_uri])
 
 
 class JsonRowsAdapter(TimeseriesAdapter):

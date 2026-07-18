@@ -41,6 +41,8 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
                 or not math.isfinite(frac) or not 0 <= frac <= 1):
             raise ValueError("tag_coverage.min_tag_frac must be finite and in [0, 1]")
     required = {"id", "source_id", "priority", "seconds", "group"}
+    normalized = []
+    seen_ids = set()
     for i, it in enumerate(items):
         if not isinstance(it, dict) or not required <= set(it):
             missing = sorted(required - set(it)) if isinstance(it, dict) else sorted(required)
@@ -51,10 +53,17 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
             raise ValueError(f"item {i} seconds must be a finite positive number, "
                              f"got {seconds!r}")
         try:
-            float(it["priority"])
+            priority = float(it["priority"])
             hash(it["id"])
         except (TypeError, ValueError) as e:
             raise ValueError(f"item {i} needs a numeric priority and hashable id") from e
+        if it["id"] in seen_ids:
+            raise ValueError(f"duplicate fill item id {it['id']!r}")
+        seen_ids.add(it["id"])
+        item = dict(it)
+        item["priority"] = priority
+        normalized.append(item)
+    items = normalized
     train_t, test_t = train_hours * 3600.0, test_hours * 3600.0
     total = train_t + test_t
     source_groups = {it["source_id"]: it["group"] for it in items}

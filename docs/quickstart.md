@@ -10,14 +10,21 @@ repository is available locally.
 
 ## 1. Install
 
-Kuration currently installs from its repository. From the repository root, create or activate a
-Python 3.11 or newer environment, then run:
+Install the published NumPy-only core in a Python 3.11 or newer environment:
 
 ```bash
-python -m pip install -e .
+python -m pip install kuration-sdk
 ```
 
-The quick start needs no optional extras.
+The runnable example is kept in the repository. Clone it if you are not already in a checkout:
+
+```bash
+git clone https://github.com/aintropy-ai/kuration-sdk.git
+cd kuration-sdk
+```
+
+The quick start needs no optional extras. Contributors can instead install the checkout with
+`python -m pip install -e .`.
 
 ## 2. Run the pipeline
 
@@ -29,7 +36,7 @@ You should see output shaped like this:
 
 ```text
 preflight:
-source: in-memory rows (6 source(s))
+source: RowsAdapter (6 source(s))
 schema: inferred
 window: 12 steps (stride 6)
 selection: uniform-bins (count=12)

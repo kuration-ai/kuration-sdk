@@ -13,9 +13,8 @@ from pathlib import Path
 
 from ..report import dataset_report
 from ..scoring import score_sources
-from ..strategy import load_strategy
-from ._common import (build_adapter, build_schema, build_segmenter, cli_progress_for, cli_run,
-                      load_job_plugins, read_job, resolve_sources)
+from ._common import cli_progress_for, cli_run, read_job
+from .job import resolve_job
 
 
 def main() -> None:
@@ -30,13 +29,14 @@ def main() -> None:
 
 def _run(args) -> None:
     job = read_job(args.job)
-    load_job_plugins(job)
-    schema = build_schema(job)
-    adapter = build_adapter(job, schema)
-    schema = schema or adapter.schema
-    strategy = load_strategy(job["strategy"], schema)
-    segmenter = build_segmenter(job, schema)
-    sources = resolve_sources(job, adapter)
+    resolved = resolve_job(job)
+    # Reporting a fully specified curate job is an intentional convenience: all curate-only
+    # fields are validated/resolved above, then the report consumes its common scoring plan.
+    if resolved.kind not in {"report", "curate"}:
+        raise ValueError(f"kur-report requires a report or curate job, got {resolved.kind!r}")
+    schema, adapter, strategy = resolved.schema, resolved.adapter, resolved.strategy
+    if strategy is None or resolved.sources is None:  # guaranteed by the resolver for these kinds
+        raise RuntimeError("resolved report job is missing its strategy or sources")
     progress = cli_progress_for(quiet=args.quiet)
 
     # Scorer outputs are produced by the scorer stage, not the feature pass — exclude them
@@ -44,9 +44,9 @@ def _run(args) -> None:
     registered = [r for r in strategy.referenced_metrics()
                   if r not in strategy.define and r not in strategy.scorer_outputs()]
     segs, errors, _ = score_sources(
-        schema=schema, adapter=adapter, sources=sources, define=strategy.define,
-        registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
-        workers=job.get("workers", 1), on_error=job.get("on_error", "skip"),
+        schema=schema, adapter=adapter, sources=resolved.sources, define=strategy.define,
+        registered=registered, segmenter=resolved.segmenter, tags_spec=strategy.tags,
+        workers=job.get("workers", 1), on_error=resolved.on_error,
         streaming=job.get("streaming", False), progress=progress,
         executor=job.get("executor", "local"))
 

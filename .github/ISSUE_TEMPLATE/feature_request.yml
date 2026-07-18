@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a scoped capability or extension-point improvement.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and use case
+      description: Describe the user outcome, dataset shape, and why existing extension seams do not fit.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed contract
+      description: Include API, CLI/job, artifact, dependency, compute, and memory implications where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: compatibility
+    attributes:
+      label: Compatibility
+      options:
+        - label: I considered whether this belongs in an adapter, operator, transform, scorer, encoder, method, container, or preset.
+          required: true

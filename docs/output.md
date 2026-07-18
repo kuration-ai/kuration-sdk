@@ -141,11 +141,12 @@ data (an under-filled budget is reported, not silently topped up with rejects).
 pass; `on_error="skip"` (default) skips+logs an unreadable source (but a *fully empty* segment
 pool raises — see the troubleshooting recipe); `resume=True` reuses an existing shard only when
 its recorded byte size and SHA-256 still match. Missing, legacy, or corrupt shards are rebuilt.
-Resume is safe by construction: shards are written atomically (temp + rename,
-locally and remotely — an interrupted run never leaves a partial shard at its final path), and
-the resolved output spec is pinned in a `.kuration_output_spec.json` sidecar — resuming the
-same `out_dir` with a **different** spec raises rather than silently reusing stale shards under
-a fresh manifest.
+Resume is safe by construction: local shards use same-directory temp files plus replace; remote
+shards upload a complete attempt object before moving it into place. The resolved output spec is
+pinned in `.kuration_output_spec.json`, so a different run cannot silently reuse stale shards.
+Before any shard can be replaced, `dataset.commit.json` moves to `state=writing`; readers reject
+that dataset until the manifest and config are durable and the final checksummed
+`state=committed` record is published. Interrupted runs retain checksum-safe resume metadata.
 
 Pass `executor="ray"` for the optional ordered Ray source backend (`[ray]`); the default remains
 `"local"`. Canonical segment sorting keeps selection independent of task completion order.
@@ -160,6 +161,7 @@ out/
   test/<source>_<entity>[_spanNNN]_<hash12>_shard0000.npz, ...
   dataset_manifest.json         # shards plus requested/admitted/emitted budget accounting
   config.json                   # resolved job, results, timestamps, and full provenance
+  dataset.commit.json           # final state + manifest/config SHA-256 publication record
   .kuration_output_spec.json    # complete run fingerprint checked by resume
 ```
 
@@ -187,15 +189,17 @@ for arr in iter_shards("out/", split="train"):
 ```
 
 `iter_shards(dataset, *, split=None, modalities=None, trim=True, container=None, with_meta=False)`
-accepts a **dataset directory**, a path to its `dataset_manifest.json`, or an already-loaded
-manifest dict (pass `container=` for a bare dict — a directory reads it from `config.json`). It
+accepts a **dataset directory** or a path to its `dataset_manifest.json`. Legacy absolute-path
+manifest dictionaries remain usable, but current portable manifests must be loaded by path so
+their relative shard paths and commit sidecar can be resolved and verified. It
 handles all four containers, stages remote shards (`gs://`/`s3://`/…) automatically, **trims pad
 rows** to each shard's real `n_steps`, **reshapes** tensor modalities back to their declared
 rank (Parquet stores them flat), and **restores the declared dtype** (the json/parquet
 round-trips widen to float64/int64 on disk; the loaders cast back, so a `uint8` frame comes
 back `uint8` from every container). A dataset directory that has been **moved or copied**
-still loads: when the manifest's recorded shard paths no longer exist, they are rebased onto
-the directory you passed. `with_meta=True` yields `(arrays, entry)` so you also get the
+still loads: current entries are always relative to—and every legacy entry is independently
+rebased onto—the directory you passed, even when the original dataset still exists.
+`with_meta=True` yields `(arrays, entry)` so you also get the
 shard's `source_id`/`entity_id`/`split`/`padded`. `shard_entries(dataset, split=...)` and
 `read_shard_arrays(entry, container)` are the building blocks if you want manifest entries or a
 single shard directly.
@@ -232,7 +236,7 @@ minimum sources/shards, full verification, budget utilization, and skipped-sourc
 **PyTorch.**
 
 ```python
-from kuration.torch import ShardDataset            # pip install -e '.[torch]'
+from kuration.torch import ShardDataset            # pip install 'kuration-sdk[torch]'
 from torch.utils.data import DataLoader
 
 ds = ShardDataset("out/", split="train")           # one shard = one item, modalities -> tensors
@@ -245,6 +249,6 @@ With `short_policy="keep"` shards have **variable length** — supply a `collate
 `short_policy="pad"` (or an evenly-dividing `shard_length`) for default batching.
 
 **Remote output.** `out_dir` may be a cloud URL — `write_dataset("gs://bucket/run1", …)` writes
-shards, manifest, and config straight to the bucket (needs the `[cloud]` extra + a backend like
-`gcsfs`/`s3fs`/`adlfs`). The dataset is then re-ingestable with
-`CuratedDatasetAdapter("gs://bucket/run1")`. Local paths need nothing.
+shards, manifest, and config straight to the bucket (use `[s3]`, `[gcs]`, or `[azure]`; managed
+environments may use `[cloud]` plus their separately supplied backend). The dataset is then
+re-ingestable with `CuratedDatasetAdapter("gs://bucket/run1")`. Local paths need nothing.

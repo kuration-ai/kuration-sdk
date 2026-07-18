@@ -22,7 +22,6 @@ from typing import Any, Iterable, Optional
 import numpy as np
 
 from .dsl.grammar import compile_metric
-from .dsl.registry import METRICS
 from .schema import SchemaSpec
 from .segment import Segment
 from .select import enforce_group_cap, enforce_tag_coverage, group_by_bin, sample_uniform_bins
@@ -310,15 +309,17 @@ def load_strategy(name_or_spec, schema: SchemaSpec, *, registry=None, available_
     if strat.tags:
         from .tags import compile_tagger
         compile_tagger(strat.tags, schema)  # validate tag sources at load
+    from .registry import default_registry
+    active_registry = strat.registry or default_registry
     if strat.scorers:
-        from .scorers import has_scorer
-        from .registry import default_registry
-        active_registry = strat.registry or default_registry
         for name, _out, _p in strat.scorers:
-            if name not in active_registry.names("scorer") and not has_scorer(name):
+            if name not in active_registry.names("scorer"):
                 raise ValueError(f"strategy {strat.name!r} references unregistered scorer {name!r}")
-    # scorer outputs are produced at runtime, so they count as available metric references.
-    available = set(strat.define) | set(METRICS) | strat.scorer_outputs() | set(available_metrics)
+    # Scorer outputs are produced at runtime, so they count as available metric references.
+    # Registry overlays are the authoritative extension namespace; consulting only the legacy
+    # process-global mapping makes ``Pipeline.using(registry)`` fail during strategy loading.
+    available = (set(strat.define) | set(active_registry.names("metric"))
+                 | strat.scorer_outputs() | set(available_metrics))
     missing = [m for m in strat.referenced_metrics() if m not in available]
     if missing:
         raise ValueError(f"strategy {strat.name!r} references undefined metrics {sorted(missing)} "
@@ -329,6 +330,8 @@ def load_strategy(name_or_spec, schema: SchemaSpec, *, registry=None, available_
 # ---- scoring ----------------------------------------------------------------
 def _normalize(arr: np.ndarray, method: str) -> np.ndarray:
     n = arr.size
+    if not np.isfinite(arr).all():
+        raise ValueError("selection features must be finite before normalization")
     if n <= 1:
         return np.zeros(n, dtype=np.float64)
     if method == "minmax":
@@ -337,9 +340,18 @@ def _normalize(arr: np.ndarray, method: str) -> np.ndarray:
     if method == "zscore":
         mu, sd = arr.mean(), arr.std()
         return (arr - mu) / sd if sd > 0 else np.zeros(n, dtype=np.float64)
-    order = arr.argsort(kind="stable")        # quantile (default): ordinal rank -> [0,1]
+    # Quantile normalization uses the average ordinal rank for ties.  Assigning a different
+    # rank to equal values invents signal from input order; in particular, a constant feature
+    # must contribute nothing to a weighted selector.
+    order = arr.argsort(kind="stable")
+    sorted_values = arr[order]
+    if sorted_values[0] == sorted_values[-1]:
+        return np.zeros(n, dtype=np.float64)
+    starts = np.r_[0, np.flatnonzero(sorted_values[1:] != sorted_values[:-1]) + 1]
+    ends = np.r_[starts[1:], n]
     ranks = np.empty(n, dtype=np.float64)
-    ranks[order] = np.arange(n, dtype=np.float64)
+    for start, end in zip(starts, ends):
+        ranks[order[start:end]] = (start + end - 1) / 2.0
     return ranks / (n - 1)
 
 

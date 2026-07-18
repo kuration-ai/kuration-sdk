@@ -102,7 +102,7 @@ def _parquet_rows(path, n: int) -> list[dict]:
         import pyarrow.parquet as pq
     except ImportError as e:
         raise ImportError("sampling .parquet needs the optional extra: "
-                          "pip install -e '.[parquet]'") from e
+                          "pip install 'kuration-sdk[parquet]'") from e
     from .io import local_copy
     with local_copy(path) as p:
         batch = next(pq.ParquetFile(p).iter_batches(batch_size=n), None)
@@ -134,14 +134,14 @@ def sample_source(source, *, n: int = 200) -> tuple[str, object]:
     if kind == "npz":
         from .io import local_copy
         with local_copy(p) as lp:
-            z = np.load(lp, allow_pickle=False)
-            sample = {k: np.asarray(z[k][:n]) for k in z.files}
+            with np.load(lp, allow_pickle=False) as z:
+                sample = {k: np.asarray(z[k][:n]) for k in z.files}
         return kind, sample
     if kind == "hdf5":
         try:
             import h5py
         except ImportError as e:
-            raise ImportError("sampling HDF5 needs h5py: pip install -e '.[array]'") from e
+            raise ImportError("sampling HDF5 needs h5py: pip install 'kuration-sdk[array]'") from e
         from .io import local_copy
         with local_copy(p) as lp, h5py.File(lp, "r") as f:
             sample = {k: np.asarray(f[k][:n]) for k in f.keys()

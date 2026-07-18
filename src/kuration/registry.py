@@ -1,15 +1,55 @@
 """Typed, discoverable component registry with parent/overlay isolation."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
+import copy
 import hashlib
 import inspect
+import math
 import re
 from typing import Any, Callable, Optional
 
 _KINDS = {"adapter", "metric", "scorer", "encoder", "method", "filter", "container",
           "preset", "operator", "transform"}
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?$")
+
+
+def _freeze(value):
+    from .schema import FrozenDict
+    if isinstance(value, dict):
+        return FrozenDict({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
+def _plain(value):
+    if isinstance(value, dict):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_plain(item) for item in value]
+    return value
+
+
+def _validate_json(value, *, label: str) -> None:
+    if value is None or isinstance(value, (str, bool)):
+        return
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError(f"component {label} must not contain non-finite numbers")
+        return
+    if isinstance(value, dict):
+        if any(not isinstance(key, str) for key in value):
+            raise ValueError(f"component {label} object keys must be strings")
+        for item in value.values():
+            _validate_json(item, label=label)
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _validate_json(item, label=label)
+        return
+    raise ValueError(f"component {label} must contain JSON-compatible values, got "
+                     f"{type(value).__name__}")
 
 
 @dataclass(frozen=True)
@@ -30,8 +70,44 @@ class ComponentDescriptor:
     module: Optional[str] = None
     fingerprint: Optional[str] = None
 
+    def __post_init__(self) -> None:
+        if self.kind not in _KINDS:
+            raise ValueError(f"unknown component kind {self.kind!r}; expected {sorted(_KINDS)}")
+        if not isinstance(self.name, str) or not _NAME.fullmatch(self.name):
+            raise ValueError(f"invalid component name {self.name!r}; use 'name' or "
+                             "'namespace/name'")
+        if not isinstance(self.description, str):
+            raise ValueError("component description must be a string")
+        if not isinstance(self.parameters, dict):
+            raise ValueError("component parameters must be a JSON Schema object")
+        if not isinstance(self.capabilities, dict) or any(
+                not isinstance(name, str) or not isinstance(enabled, bool)
+                for name, enabled in self.capabilities.items()):
+            raise ValueError("component capabilities must map names to booleans")
+        if self.execution_traits is not None and not isinstance(self.execution_traits, dict):
+            raise ValueError("component execution_traits must be an object or None")
+        if (not isinstance(self.schema_version, int) or isinstance(self.schema_version, bool)
+                or self.schema_version < 1):
+            raise ValueError("component schema_version must be a positive integer")
+        for label in ("extra", "install_hint", "package", "version", "documentation",
+                      "module", "fingerprint"):
+            value = getattr(self, label)
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"component {label} must be a string or None")
+        if not isinstance(self.stability, str) or not self.stability:
+            raise ValueError("component stability must be a non-empty string")
+        _validate_json(self.parameters, label="parameters")
+        if self.execution_traits is not None:
+            _validate_json(self.execution_traits, label="execution_traits")
+        object.__setattr__(self, "parameters", _freeze(copy.deepcopy(self.parameters)))
+        object.__setattr__(self, "capabilities", _freeze(dict(self.capabilities)))
+        if self.execution_traits is not None:
+            object.__setattr__(self, "execution_traits",
+                               _freeze(copy.deepcopy(self.execution_traits)))
+
     def to_dict(self) -> dict:
-        return {k: v for k, v in asdict(self).items() if v is not None}
+        return {name: _plain(getattr(self, name)) for name in self.__dataclass_fields__
+                if getattr(self, name) is not None}
 
 
 @dataclass(frozen=True)
@@ -43,7 +119,14 @@ class _Entry:
 def _identity(component: Any) -> tuple[Optional[str], Optional[str]]:
     module = getattr(component, "__module__", None)
     try:
-        source = inspect.getsource(component).encode()
+        parts = [inspect.getsource(component)]
+        if inspect.isfunction(component):
+            parts.append(f"defaults={getattr(component, '__defaults__', None)!r}")
+            parts.append(f"kwdefaults={getattr(component, '__kwdefaults__', None)!r}")
+            closure = getattr(component, "__closure__", None) or ()
+            parts.append("closure=" + repr(tuple(
+                repr(cell.cell_contents) for cell in closure)))
+        source = "\n".join(parts).encode()
     except (OSError, TypeError):
         target = type(component)
         module = module or getattr(target, "__module__", None)
@@ -135,6 +218,49 @@ class Registry:
     def child(self) -> "Registry":
         return Registry(parent=self)
 
+    def snapshot(self) -> "Registry":
+        """Return an isolated, flattened snapshot of the currently visible components.
+
+        A registry is intentionally mutable while an application is configuring plugins.  A
+        resolved pipeline, however, must not change because some other part of the process later
+        registers or replaces a component.  Snapshots retain component objects but defensively
+        copy their descriptors and have no mutable parent link.
+        """
+        out = Registry()
+        for kind in sorted(_KINDS):
+            for name in self.names(kind):
+                out._entries[kind][name] = _Entry(
+                    copy.deepcopy(self.descriptor(kind, name)), self.get(kind, name))
+        return out
+
+    @classmethod
+    def merged(cls, *registries: "Registry") -> "Registry":
+        """Merge visible registry snapshots, rejecting semantic name collisions.
+
+        This is primarily useful for shared execution such as experiments: two arms may add
+        disjoint overlay components, but the same ``(kind, name)`` must still identify the same
+        descriptor and implementation in every arm.
+        """
+        if not registries:
+            return cls()
+        if any(not isinstance(registry, Registry) for registry in registries):
+            raise ValueError("Registry.merged() accepts only Registry instances")
+        out = cls()
+        for registry in registries:
+            for kind in sorted(_KINDS):
+                for name in registry.names(kind):
+                    descriptor = registry.descriptor(kind, name)
+                    existing = out._entries[kind].get(name)
+                    if existing is not None:
+                        if existing.descriptor != descriptor:
+                            raise ValueError(
+                                f"incompatible {kind} {name!r} across registry overlays; "
+                                "experiment arms must resolve a shared name identically")
+                        continue
+                    out._entries[kind][name] = _Entry(
+                        copy.deepcopy(descriptor), registry.get(kind, name))
+        return out
+
     def register_adapter(self, name: str, component: Any, **metadata) -> None:
         self.register("adapter", name, component, **metadata)
 
@@ -207,7 +333,9 @@ def validate_parameters(descriptor: ComponentDescriptor, params: dict) -> None:
     json_types = {
         "string": lambda value: isinstance(value, str),
         "integer": lambda value: isinstance(value, int) and not isinstance(value, bool),
-        "number": lambda value: isinstance(value, (int, float)) and not isinstance(value, bool),
+        "number": lambda value: (isinstance(value, (int, float))
+                                 and not isinstance(value, bool)
+                                 and math.isfinite(float(value))),
         "boolean": lambda value: isinstance(value, bool),
         "object": lambda value: isinstance(value, dict),
         "array": lambda value: isinstance(value, (list, tuple)),

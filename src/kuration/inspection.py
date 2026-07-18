@@ -20,7 +20,7 @@ def _base_path(dataset) -> str | None:
 
 
 def inspect_dataset(dataset, *, verify: bool = False,
-                    container: str | None = None) -> DatasetInspection:
+                    container: str | None = None, registry=None) -> DatasetInspection:
     """Summarize a curated artifact and optionally read every shard for integrity.
 
     ``dataset`` accepts the same directory, manifest path, or loaded manifest dictionary as
@@ -64,6 +64,10 @@ def inspect_dataset(dataset, *, verify: bool = False,
 
     verification_errors = []
     checked = 0
+    output = config.get("output") or {}
+    expected_modalities = dict(output.get("modalities") or {})
+    if output.get("presence_mask", True):
+        expected_modalities["_present"] = {"shape": [], "dtype": "bool"}
     for entry in entries:
         path = entry.get("path")
         if not exists(path):
@@ -71,6 +75,18 @@ def inspect_dataset(dataset, *, verify: bool = False,
             continue
         if verify:
             try:
+                if expected_modalities:
+                    expected_names = set(expected_modalities)
+                    manifest_names = set(entry.get("shape") or {})
+                    if manifest_names != expected_names:
+                        raise ValueError(f"manifest modalities mismatch: expected "
+                                         f"{sorted(expected_names)}, got {sorted(manifest_names)}")
+                    for name, expected in expected_modalities.items():
+                        shape = list((entry.get("shape") or {}).get(name, ()))
+                        dtype = str((entry.get("dtype") or {}).get(name))
+                        if shape != list(expected.get("shape") or ()) or dtype != expected["dtype"]:
+                            raise ValueError(f"manifest contract mismatch for {name!r}: "
+                                             f"shape={shape}, dtype={dtype}")
                 if entry.get("sha256"):
                     actual = file_integrity(path)
                     if actual["sha256"] != entry["sha256"]:
@@ -84,7 +100,9 @@ def inspect_dataset(dataset, *, verify: bool = False,
                             f"size mismatch: expected {entry['size_bytes']}, "
                             f"got {actual['size_bytes']}"
                         )
-                read_shard_arrays(entry, resolved_container)
+                read_shard_arrays(entry, resolved_container,
+                                  modalities=list(expected_modalities) or None,
+                                  registry=registry)
                 checked += 1
             except Exception as error:
                 verification_errors.append({"path": path, "error": repr(error)})

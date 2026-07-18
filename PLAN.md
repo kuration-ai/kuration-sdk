@@ -2,7 +2,7 @@
 
 Status: **built and standalone.** This is the design rationale + what shipped, kept as the
 project's roadmap record. For live API detail see `docs/` (architecture, schema, dsl, adapters,
-strategies, output) and `examples/`; for the orientation summary see `CLAUDE.md`.
+strategies, output) and `examples/`; for orientation see `README.md` and `docs/overview.md`.
 
 `kuration` was extracted from a CS2→world-model curation pipeline (`asg2diamond`) and
 generalized into a dataset-agnostic SDK. The original `asg2diamond` is a separate codebase and
@@ -39,7 +39,8 @@ format, reproducibly.
 4. **Right tool, measured.** Vectorize hot paths (binning); parallelize only where per-worker
    compute ≫ serialization (the feature pass).
 5. **Minimal core deps.** Core = numpy. scikit-learn (`[methods]`), pyarrow (`[parquet]`),
-   h5py (`[array]`), fsspec (`[cloud]`) are optional extras, lazily imported, loud-on-missing.
+   h5py (`[array]`) and fsspec/provider backends (`[s3]`, `[gcs]`, `[azure]`) are optional extras,
+   lazily imported, loud-on-missing.
 6. **Path-agnostic I/O.** Local and `gs://`/`s3://`/`az://` behind one interface (`io.py`).
 7. **Plugins are the only seams.** Domain code enters via an `InputAdapter`, `MediaProvider`,
    `OutputEncoder`, registered metric, `BatchTransform`, or `SegmentScorer` — never the core.
@@ -140,7 +141,7 @@ it to *consume* this SDK ("Phase G") is possible future work but **out of scope*
 
 ## 8. Decisions settled during the build
 
-- Standalone repo at `/home/songserver/kuration-sdk` (was a sibling dir in the asg workspace).
+- Standalone repository; the import and distribution names remain intentionally distinct.
 - Dist `kuration-sdk`, import `kuration`, console scripts `kur-*`.
 - Output model = declared modalities + encoder hooks + container (the chosen altitude).
 - Streaming shipped as **opt-in** (`streaming=True`); in-memory stays the default.

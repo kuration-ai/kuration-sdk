@@ -57,6 +57,10 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
     if spec.presence_mask:
         arrays["_present"] = np.zeros(L, dtype=np.bool_)
     enc_mods = [m for m in spec.modalities if m.src_kind == "encoder"]
+    if enc_mods and not (callable(getattr(encoder, "encode_batch", None))
+                         or callable(getattr(encoder, "timestep", None))):
+        raise ValueError(
+            "output encoder must implement encode_batch(records, ctx) or timestep(record, ctx)")
     clean_piece = [None if rec is None else
                    (rec if PRESENT_KEY not in rec else
                     {k: v for k, v in rec.items() if k != PRESENT_KEY}) for rec in piece]
@@ -81,7 +85,16 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
             if provider is None:
                 raise ValueError(
                     f"media:{m.src_arg} output needs the input adapter's media provider")
-            decoded = provider.decode_batch(refs)
+            decoded = np.asarray(provider.decode_batch(refs))
+            expected_shape = (len(refs), *m.shape)
+            if decoded.shape != expected_shape:
+                raise ValueError(
+                    f"media provider returned shape {decoded.shape} for media:{m.src_arg}; "
+                    f"expected {expected_shape}")
+            if decoded.dtype != np.dtype(m.dtype):
+                raise ValueError(
+                    f"media provider returned dtype {decoded.dtype} for media:{m.src_arg}; "
+                    f"expected {np.dtype(m.dtype)}")
         else:
             decoded = np.empty((0, *m.shape), dtype=m.dtype)
         values = m.zeros(L)
@@ -95,8 +108,15 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
         clean = rec if PRESENT_KEY not in rec else {k: v for k, v in rec.items() if k != PRESENT_KEY}
         if spec.presence_mask:
             arrays["_present"][t] = present
-        enc_out = ({k: np.asarray(v)[t] for k, v in enc_batch.items()} if enc_batch is not None
-                   else (encoder.timestep(clean, ctx) if enc_mods else {}))
+        if enc_batch is not None:
+            enc_out = {k: np.asarray(v)[t] for k, v in enc_batch.items()}
+        elif enc_mods:
+            timestep = getattr(encoder, "timestep", None)
+            if not callable(timestep):  # guarded above; keeps the union protocol type-safe
+                raise ValueError("output encoder has no callable timestep hook")
+            enc_out = timestep(clean, ctx)
+        else:
+            enc_out = {}
         if not isinstance(enc_out, dict):
             raise ValueError(f"output encoder must return a dict, got {type(enc_out).__name__} "
                              f"for source {ctx['track'].get('source_id')!r} at row {t}")
@@ -137,7 +157,8 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
 def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
                 encoder: Optional[OutputEncoder] = None, schema=None,
                 split: str = "all", resume: bool = False, name_suffix: str = "",
-                media_provider=None, resume_entries: Optional[dict] = None) -> list[dict]:
+                media_provider=None, resume_entries: Optional[dict] = None,
+                registry=None) -> list[dict]:
     """Write all shards for one track and return manifest entries.
 
     With ``resume=True``, a shard is reused only when its previous manifest checksum and size
@@ -154,7 +175,7 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
                                        "entity_id": track.entity_id},
            "media_provider": media_provider}
     name = track_name(track.source_id, track.entity_id, name_suffix)
-    ext = container_extension(spec.container)
+    ext = container_extension(spec.container, registry=registry)
     entries: list[dict] = []
     shape = {m.name: list(m.shape) for m in spec.modalities}
     dtype = {m.name: m.dtype for m in spec.modalities}
@@ -176,7 +197,7 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
             integrity = actual
         else:
             path = write_shard(base, spec.container, _build_arrays(piece, spec, encoder, ctx),
-                               real_len)
+                               real_len, registry=registry)
             integrity = file_integrity(path)
         entries.append({"path": path, "source_id": track.source_id,
                         "entity_id": str(track.entity_id), "split": split,

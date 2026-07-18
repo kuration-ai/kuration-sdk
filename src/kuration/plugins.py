@@ -9,7 +9,7 @@ import importlib
 import hashlib
 import inspect
 import sys
-from importlib.metadata import entry_points
+from importlib.metadata import PackageNotFoundError, entry_points, packages_distributions, version
 from threading import RLock
 
 ENTRY_POINT_GROUP = "kuration.plugins"
@@ -80,8 +80,9 @@ def loaded_plugin_modules() -> tuple[str, ...]:
 
 
 def plugin_provenance() -> list[dict]:
-    """Code fingerprints for loaded plugin modules, suitable for run provenance."""
+    """Host-independent code fingerprints for loaded plugin modules."""
     out = []
+    distributions = packages_distributions()
     for name in loaded_plugin_modules():
         module = sys.modules.get(name)
         path = getattr(module, "__file__", None)
@@ -92,5 +93,14 @@ def plugin_provenance() -> list[dict]:
                     digest = hashlib.sha256(f.read()).hexdigest()
             except OSError:
                 pass
-        out.append({"module": name, "path": path, "sha256": digest})
+        entry = {"module": name, "sha256": digest}
+        candidates = sorted(distributions.get(name.split(".", 1)[0], ()))
+        if candidates:
+            distribution = candidates[0]
+            entry["distribution"] = distribution
+            try:
+                entry["version"] = version(distribution)
+            except PackageNotFoundError:
+                pass
+        out.append(entry)
     return out

@@ -18,115 +18,38 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from pathlib import Path
 
-from ..output import OutputSpec
-from ..strategy import load_strategy
-from ._common import (build_adapter, build_schema, build_segmenter, format_error,
-                      load_job_plugins, read_job)
+from ._common import format_error, read_job
+from .job import job_kind as job_kind, resolve_job
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "job.schema.json"
-
-
-def job_kind(job: dict) -> str:
-    if "arms" in job:
-        return "experiment"
-    if "output" in job or "train_hours" in job:
-        return "curate"
-    return "report"
 
 
 def validate_job(job: dict, *, check_sources: bool = False) -> dict:
     """Run the SDK's load-time validators. Raises ValueError/etc on the first problem;
     returns a summary dict on success."""
-    kind = job_kind(job)
-    workers = job.get("workers", 1)
-    if not isinstance(workers, int) or isinstance(workers, bool) or workers < 1:
-        raise ValueError("workers must be a positive integer")
-    seed = job.get("seed", 0)
-    if not isinstance(seed, int) or isinstance(seed, bool):
-        raise ValueError("seed must be an integer")
-    if job.get("on_error", "skip") not in {"skip", "raise"}:
-        raise ValueError("on_error must be 'skip' or 'raise'")
-    if job.get("executor", "local") not in {"local", "ray"}:
-        raise ValueError("executor must be 'local' or 'ray'")
-    for flag in ("resume", "streaming"):
-        if flag in job and not isinstance(job[flag], bool):
-            raise ValueError(f"{flag} must be true or false")
-    load_job_plugins(job)
-    schema = build_schema(job)
-    adapter = build_adapter(job, schema)
-    schema = schema if schema is not None else getattr(adapter, "schema", None)
-    if schema is None:
-        raise ValueError("no 'schema' in job and the adapter exposes none")
-    build_segmenter(job, schema)                      # validates window/stride/unit/sample_hz
-
-    if kind == "experiment":
-        if not job.get("arms"):
-            raise ValueError("experiment job needs a non-empty 'arms'")
-        for a in job["arms"]:
-            if "name" not in a or "strategy" not in a:
-                raise ValueError(f"each arm needs 'name' and 'strategy' (offending: {a!r})")
-            load_strategy(a["strategy"], schema)      # compiles DSL, validates tags/scorers/refs
-        names = [a["name"] for a in job["arms"]]
-        if len(set(names)) != len(names):
-            raise ValueError("experiment arm names must be unique")
-        if "target_size" not in job:
-            raise ValueError("experiment job needs 'target_size'")
-        from ..strategy import validate_target_size
-        validate_target_size(job["target_size"])
-    else:
-        if "strategy" not in job:
-            raise ValueError("job needs a 'strategy'")
-        load_strategy(job["strategy"], schema)
-
-    if kind == "curate":
-        if "output" not in job and "output_preset" not in job:
-            raise ValueError("curate job needs 'output' or 'output_preset'")
-        if "output_preset" in job:
-            from ..output.presets import output_preset
-            raw = job["output_preset"]
-            raw = {"name": raw} if isinstance(raw, str) else dict(raw)
-            output = output_preset(raw.pop("name"), schema=schema, **raw)
-        else:
-            output = OutputSpec.from_dict(job["output"])
-        output.validate_schema(schema)
-        if "train_hours" not in job:
-            raise ValueError("curate job needs 'train_hours'")
-        for name in ("train_hours", "test_hours"):
-            value = job.get(name, 0.0)
-            if (not isinstance(value, (int, float)) or isinstance(value, bool)
-                    or not math.isfinite(value) or value < 0):
-                raise ValueError(f"{name} must be a finite non-negative number")
-        if "out" not in job:
-            raise ValueError("curate job needs an 'out' directory")
-        if job.get("mode") not in {None, "explore", "strict"}:
-            raise ValueError("mode must be 'explore' or 'strict'")
-
-    summary = {"kind": kind, "schema": schema.name}
-    if kind == "experiment":
-        summary["arms"] = [a["name"] for a in job["arms"]]
-    if job.get("sources"):
-        sources = list(job["sources"])
-    elif check_sources and hasattr(adapter, "sources"):
-        sources = list(adapter.sources())             # user opted into source I/O
-    else:
+    resolved = resolve_job(job, enumerate_sources=check_sources)
+    summary = {"kind": resolved.kind, "schema": resolved.schema.name}
+    if resolved.kind == "experiment":
+        summary["arms"] = [name for name, _strategy in resolved.arms]
+    if resolved.sources is None:
         # Enumerating adapter-resolved sources can be arbitrarily expensive (the HF adapter
         # materializes the whole dataset) — the no-data-read default must not touch them.
         summary["sources"] = "implicit (adapter-resolved; --check-sources enumerates)"
         from ..results import ValidationResult
         return ValidationResult(summary)
+    sources = list(resolved.sources)
     summary["n_sources"] = len(sources)
     if check_sources:                                 # existence failure IS fatal (propagates)
-        if getattr(adapter, "sources_are_paths", True):   # HF names / dataset-mode globs
+        if getattr(resolved.adapter, "sources_are_paths", True):   # HF names/dataset globs
             from ..io import exists                       # aren't statable paths
             missing = [s for s in sources if not exists(s)]
             if missing:
                 raise ValueError(f"{len(missing)} source(s) do not exist, e.g. {missing[0]!r}")
             summary["sources_exist"] = True
-        check = getattr(adapter, "check_source", None)
+        check = getattr(resolved.adapter, "check_source", None)
         if check is not None:                         # header/metadata sniff, no data rows read
             for s in sources:
                 check(s)
@@ -140,7 +63,7 @@ def _json_schema_check(job: dict) -> None:
         import jsonschema
     except ImportError as e:
         raise ImportError("--json-schema needs the optional extra: "
-                          "pip install -e '.[cli]'  (or: pip install jsonschema)") from e
+                          "pip install 'kuration-sdk[cli]'  (or: pip install jsonschema)") from e
     jsonschema.validate(job, json.loads(SCHEMA_PATH.read_text()))
 
 

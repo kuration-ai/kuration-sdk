@@ -82,7 +82,8 @@ def test_write_dataset_to_memory_and_reingest():
     # manifest + config + shards all landed on the remote fs
     man = json.loads(kio.read_text("memory://ds/dataset_manifest.json"))
     assert man["count"] == res["results"]["shards"]
-    assert kio.exists(man["shards"][0]["path"]) and man["shards"][0]["path"].startswith("memory://")
+    assert not man["shards"][0]["path"].startswith("memory://")
+    assert kio.exists(f"memory://ds/{man['shards'][0]['path']}")
 
     # re-ingest the remote dataset as a source
     adapter = CuratedDatasetAdapter("memory://ds")

@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from kuration.cli.validate import job_kind, validate_job
 
 
@@ -42,12 +44,29 @@ def test_job_kind():
     assert job_kind({"train_hours": 1}) == "curate"
     assert job_kind({"arms": []}) == "experiment"
     assert job_kind({"strategy": {}}) == "report"
+    assert job_kind({"output_preset": "numpy-timeseries"}) == "curate"
 
 
 def test_validate_good_curate_job(tmp_path):
     job = _curate_job(_csv(tmp_path), tmp_path / "out")
     summary = validate_job(job)
     assert summary["kind"] == "curate" and summary["schema"] == "j" and summary["n_sources"] == 1
+
+
+def test_validate_rejects_unknown_job_keys(tmp_path):
+    job = _curate_job(_csv(tmp_path), tmp_path / "out")
+    job["workerz"] = 99
+    import pytest
+    with pytest.raises(ValueError, match="unknown curate job key.*workerz"):
+        validate_job(job)
+
+
+def test_validate_accepts_bounded_execution_job_keys(tmp_path):
+    job = _curate_job(_csv(tmp_path), tmp_path / "out")
+    job.update({"memory_budget": 1024 * 1024, "batch_size": 16, "max_in_flight": 1,
+                "checkpoint_dir": str(tmp_path / "checkpoints"),
+                "spill_dir": str(tmp_path / "spill"), "approximation": "exact"})
+    assert validate_job(job)["kind"] == "curate"
 
 
 def test_validate_catches_bad_metric_reference(tmp_path):
@@ -146,6 +165,26 @@ def test_cli_print_schema():
     assert p.returncode == 0
     doc = json.loads(p.stdout)
     assert doc["title"] == "kuration job spec" and "strategy" in doc["properties"]
+
+
+def test_shipped_json_schema_is_valid_and_supports_media_only_jobs():
+    jsonschema = pytest.importorskip("jsonschema")
+    from kuration.cli.validate import SCHEMA_PATH
+    shipped = json.loads(SCHEMA_PATH.read_text())
+    jsonschema.Draft7Validator.check_schema(shipped)
+    job = {
+        "schema": {"name": "video", "media": {"frame": {
+            "kind": "video-frame", "dtype": "uint8", "shape": [2, 2, 3], "layout": "HWC"}}},
+        "adapter": {"type": "timeseries", "fields": {}},
+        "sources": ["video.csv"],
+        "segmenter": {"window": 2, "stride": 2},
+        "strategy": {"selection": {"method": "top-k", "weights": {}}},
+        "output": {"shard_length": 2, "modalities": {"frame": {
+            "dtype": "uint8", "shape": [2, 2, 3], "source": "media:frame"}}},
+        "train_hours": 1,
+        "out": "dataset"
+    }
+    jsonschema.validate(job, shipped)
 
 
 def test_validate_rejects_invalid_execution_numbers(tmp_path):

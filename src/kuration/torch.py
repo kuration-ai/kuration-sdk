@@ -33,7 +33,8 @@ class ShardDataset:
         try:
             import torch
         except ImportError as e:
-            raise ImportError("kuration.torch needs PyTorch: pip install -e '.[torch]'") from e
+            raise ImportError("kuration.torch needs PyTorch: "
+                              "pip install 'kuration-sdk[torch]'") from e
         self._torch = torch
         self.entries, self.container = shard_entries(dataset, split=split, container=container)
         self.modalities = modalities

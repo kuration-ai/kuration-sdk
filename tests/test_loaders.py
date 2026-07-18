@@ -121,8 +121,9 @@ def test_resolve_by_dir_jsonpath_and_dict(tmp_path):
     man = json.loads((tmp_path / "dataset_manifest.json").read_text())
     by_dir = list(iter_shards(out))
     by_json = list(iter_shards(f"{out}/dataset_manifest.json"))
-    by_dict = list(iter_shards(man, container="npz"))   # a bare dict carries no config -> pass container
-    assert len(by_dir) == len(by_json) == len(by_dict) > 0
+    with pytest.raises(ValueError, match="pass the dataset directory"):
+        list(iter_shards(man, container="npz"))
+    assert len(by_dir) == len(by_json) > 0
 
 
 def test_read_shard_reshapes_flattened_parquet_tensor(tmp_path):

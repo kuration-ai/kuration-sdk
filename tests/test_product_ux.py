@@ -63,7 +63,7 @@ def test_inspect_dataset_summarizes_and_verifies_written_artifact(tmp_path):
     assert report["modalities"]["x"] == {"shape": [], "dtype": "float32"}
     assert report["verification"] == {"requested": True, "checked": 3,
                                       "valid": True, "errors": []}
-    assert report["provenance_fingerprint"] is None  # count path has no resume provenance
+    assert len(report["provenance_fingerprint"]) == 64
 
     shard_path = next(destination.glob("train/*.npz"))
     shard_path.write_bytes(b"corrupt")

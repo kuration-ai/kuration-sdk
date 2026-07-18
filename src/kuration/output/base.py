@@ -6,20 +6,29 @@ application plugin implementing this one-method protocol. The SDK never imports 
 """
 from __future__ import annotations
 
-from typing import Callable, Protocol, runtime_checkable
+from typing import Callable, Protocol, TypeAlias, runtime_checkable
 
 import numpy as np
 
 
 @runtime_checkable
-class OutputEncoder(Protocol):
+class TimestepOutputEncoder(Protocol):
     def timestep(self, record: dict, ctx: dict) -> dict[str, np.ndarray]:
         """Return {modality_name -> array} for one timestep's `encoder:` modalities.
         `ctx` carries {'schema', 'track'} (the track's metadata)."""
         ...
 
-    # Optional: encode_batch(records, ctx) -> {hook: array with leading batch dimension}.
-    # ShardWriter detects this capability dynamically and otherwise uses timestep().
+
+@runtime_checkable
+class BatchOutputEncoder(Protocol):
+    def encode_batch(self, records: list, ctx: dict) -> dict[str, np.ndarray]:
+        """Return arrays with a leading ``len(records)`` dimension."""
+        ...
+
+
+# Encoders implement either hook.  A batch-only encoder is a first-class, type-correct
+# implementation (the writer already prefers it when both are present).
+OutputEncoder: TypeAlias = TimestepOutputEncoder | BatchOutputEncoder
 
 
 class PassthroughEncoder:
@@ -49,6 +58,10 @@ def get_encoder(name: str, *, registry=None, **kwargs) -> OutputEncoder:
     ``kwargs`` are passed to the factory. An unknown name raises ``ValueError``.
     """
     if registry is not None:
+        from ..registry import default_registry
+        if name not in registry.names("encoder") and registry is default_registry:
+            from ..plugins import load_plugins
+            load_plugins()
         return registry.get("encoder", name)(**kwargs)
     if name not in _ENCODERS:
         from ..plugins import load_plugins

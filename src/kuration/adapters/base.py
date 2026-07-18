@@ -12,6 +12,7 @@ pickles the configured adapter into spawned workers.
 """
 from __future__ import annotations
 
+import re
 from typing import Callable, Iterable, Protocol, runtime_checkable
 
 import numpy as np
@@ -26,9 +27,64 @@ class InputAdapter(Protocol):
     def ticks(self, source_uri: str) -> Iterable[Tick]: ...
 
 
+def validate_adapter_availability(adapter, schema: SchemaSpec, *, define: dict | None = None,
+                                  tags_spec: dict | None = None, output_spec=None) -> None:
+    """Reject plans that depend on schema values a configured adapter cannot emit.
+
+    Third-party adapters that do not declare ``available_fields``/``available_globals`` retain
+    the protocol's historical promise that they can emit the full schema. Built-in configured
+    adapters expose these sets, allowing a typo or partial mapping to fail before data is read
+    instead of becoming an all-missing buffer that reduces to a plausible zero.
+    """
+    available_fields = getattr(adapter, "available_fields", None)
+    available_globals = getattr(adapter, "available_globals", None)
+    if available_fields is None and available_globals is None:
+        return
+    available_fields = set(schema.fields if available_fields is None else available_fields)
+    available_globals = set(schema.globals if available_globals is None else available_globals)
+    required_fields: set[str] = set()
+    required_globals: set[str] = set()
+    for spec in (define or {}).values():
+        if not isinstance(spec, dict):
+            continue
+        source = spec.get("source")
+        if isinstance(source, str):
+            parts = source.split(".")
+            if schema.entity_axis is not None and len(parts) >= 2 and parts[0] == schema.entity_axis:
+                required_fields.add(parts[1])
+            elif source in schema.globals:
+                required_globals.add(source)
+        filter_expr = spec.get("filter")
+        if isinstance(filter_expr, str):
+            identifiers = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", filter_expr))
+            required_fields.update(identifiers & set(schema.fields))
+            required_globals.update(identifiers & set(schema.globals))
+    for source in ((tags_spec or {}).get("from") or ()):
+        if source in schema.fields:
+            required_fields.add(source)
+        elif source in schema.globals:
+            required_globals.add(source)
+    if output_spec is not None:
+        for modality in output_spec.modalities:
+            if modality.src_kind == "field":
+                required_fields.add(modality.src_arg)
+    missing_fields = sorted(required_fields - available_fields)
+    missing_globals = sorted(required_globals - available_globals)
+    if missing_fields or missing_globals:
+        details = []
+        if missing_fields:
+            details.append(f"fields {missing_fields}")
+        if missing_globals:
+            details.append(f"globals {missing_globals}")
+        raise ValueError(f"{type(adapter).__name__} does not map required " + " and ".join(details))
+
+
 def iter_arrays_to_ticks(schema: SchemaSpec, arrs: dict, gl: dict = None):
     """Lazily build single-entity ticks from indexable per-field arrays."""
     gl = gl or {}
+    overlap = sorted(set(arrs) & set(gl))
+    if overlap:
+        raise ValueError(f"arrays_to_ticks: names cannot be both fields and globals: {overlap}")
     arrays = {**arrs, **gl}
 
     def step_count(array) -> int:
@@ -42,6 +98,24 @@ def iter_arrays_to_ticks(schema: SchemaSpec, arrs: dict, gl: dict = None):
     if mismatched:                       # silent truncation to the first field's length is worse
         raise ValueError(f"arrays_to_ticks: length mismatch — expected {n} steps, got "
                          f"{mismatched}")
+    import math
+    for fn, arr in arrs.items():
+        if fn not in schema.fields:
+            raise ValueError(f"arrays_to_ticks: undeclared schema field {fn!r}")
+        shape = tuple(getattr(arr, "shape", np.asarray(arr).shape))
+        width = math.prod(shape[1:]) if shape else 0
+        expected = schema.fields[fn].width
+        if width != expected:
+            raise ValueError(f"arrays_to_ticks: field {fn!r} has per-step width {width}, "
+                             f"expected {expected} for {schema.fields[fn].kind}")
+    for gn, arr in gl.items():
+        if gn not in schema.globals:
+            raise ValueError(f"arrays_to_ticks: undeclared schema global {gn!r}")
+        shape = tuple(getattr(arr, "shape", np.asarray(arr).shape))
+        width = math.prod(shape[1:]) if shape else 0
+        if width != 1:
+            raise ValueError(f"arrays_to_ticks: global {gn!r} has per-step width {width}, "
+                             "expected 1")
     for t in range(n):
         ent: dict[str, object] = {}
         for fn, arr in arrs.items():
@@ -71,6 +145,10 @@ def check_mapped_arrays(schema: SchemaSpec, fields: dict, globals_: dict, source
     width matches the schema (a wide array mapped to a scalar would silently truncate to its
     first component at run time — loud beats masked)."""
     import math
+    overlap = sorted(set(fields) & set(globals_))
+    if overlap:
+        raise ValueError(f"source {source_uri!r}: names cannot be both fields and globals: "
+                         f"{overlap}")
     keys = {**fields, **globals_}                # mapped name -> store key
     shapes, missing = {}, []
     for key in keys.values():
@@ -86,8 +164,6 @@ def check_mapped_arrays(schema: SchemaSpec, fields: dict, globals_: dict, source
         raise ValueError(f"source {source_uri!r}: mapped arrays disagree on step count: {lens}")
     for f, key in fields.items():
         fs = schema.fields[f]
-        if fs.kind == "categorical":             # string/object arrays — width has no meaning
-            continue
         width = math.prod(shapes[key][1:])
         if width != fs.width:
             raise ValueError(f"source {source_uri!r}: array {key!r} has per-step width {width}, "

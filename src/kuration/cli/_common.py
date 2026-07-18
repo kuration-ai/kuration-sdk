@@ -22,6 +22,8 @@ def read_job(path: str) -> dict:
         raise FileNotFoundError(f"job spec not found: {path}")
     try:
         job = json.loads(p.read_text())
+        if not isinstance(job, dict):
+            raise ValueError(f"job spec {path} must contain a JSON object")
         from ..versioning import check_version
         check_version(job.get("job_schema_version"), kind="job")
         return job
@@ -68,7 +70,10 @@ def error_hint(error: BaseException) -> str | None:
 
 def format_error(error: BaseException, *, prefix: str = "error") -> str:
     """Format a one-line error with a remedy when the failure class is recognized."""
-    rendered = f"{prefix}: {type(error).__name__}: {error}"
+    # Parser and plugin exceptions may contain newlines or tabs. Normal CLI mode stays
+    # log- and shell-friendly; ``--debug`` is the explicit multiline traceback surface.
+    message = " ".join(str(error).split()) or "<no message>"
+    rendered = f"{prefix}: {type(error).__name__}: {message}"
     hint = error_hint(error)
     return f"{rendered} | hint: {hint}" if hint else rendered
 

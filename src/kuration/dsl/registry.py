@@ -38,3 +38,5 @@ def register_compiled(name: str, fn: WindowMetric) -> None:
     block recompiles to an equivalent fn and workers re-register per run, so last-wins is
     correct (not a collision)."""
     METRICS[name] = fn
+    from ..registry import default_registry
+    default_registry.register("metric", name, fn, replace=True)
