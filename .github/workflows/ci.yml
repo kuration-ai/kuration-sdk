@@ -99,3 +99,20 @@ jobs:
         run: python -c '${{ matrix.smoke }}'
       - name: Test optional integration
         run: python -m pytest ${{ matrix.tests }} -q
+
+  required-ci:
+    name: Required CI
+    if: ${{ always() }}
+    needs: [test, optional-integrations]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          OPTIONAL_RESULT: ${{ needs.optional-integrations.result }}
+        run: |
+          echo "test: $TEST_RESULT"
+          echo "optional-integrations: $OPTIONAL_RESULT"
+          if [ "$TEST_RESULT" != "success" ] || [ "$OPTIONAL_RESULT" != "success" ]; then
+            exit 1
+          fi
