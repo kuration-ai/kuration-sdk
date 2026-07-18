@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" role="img" aria-labelledby="title desc">
+  <title id="title">Kuration pipeline</title>
+  <desc id="desc">Sources become canonical ticks, candidate windows, measured features, a selected subset, and verified training shards.</desc>
+  <defs>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#14b8a6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#7c8cf8"/></marker>
+  </defs>
+  <rect width="1200" height="260" rx="24" fill="#f8fafc" stroke="#e2e8f0"/>
+  <path d="M188 112h67M402 112h67M616 112h67M830 112h67" stroke="url(#line)" stroke-width="4" marker-end="url(#arrow)"/>
+  <g font-family="Inter,ui-sans-serif,system-ui,sans-serif" text-anchor="middle">
+    <g transform="translate(32 54)"><rect width="156" height="116" rx="18" fill="#ecfeff" stroke="#2dd4bf"/><text x="78" y="40" font-size="16" font-weight="700" fill="#0f766e">SOURCES</text><text x="78" y="68" font-size="14" fill="#334155">files · rows · video</text><text x="78" y="91" font-size="13" fill="#64748b">schema-aware input</text></g>
+    <g transform="translate(246 54)"><rect width="156" height="116" rx="18" fill="#f0fdfa" stroke="#5eead4"/><text x="78" y="40" font-size="16" font-weight="700" fill="#0f766e">WINDOWS</text><text x="78" y="68" font-size="14" fill="#334155">segment · align</text><text x="78" y="91" font-size="13" fill="#64748b">candidate pool</text></g>
+    <g transform="translate(460 54)"><rect width="156" height="116" rx="18" fill="#eef2ff" stroke="#a5b4fc"/><text x="78" y="40" font-size="16" font-weight="700" fill="#4338ca">FEATURES</text><text x="78" y="68" font-size="14" fill="#334155">measure · transform</text><text x="78" y="91" font-size="13" fill="#64748b">validated signals</text></g>
+    <g transform="translate(674 54)"><rect width="156" height="116" rx="18" fill="#f5f3ff" stroke="#c4b5fd"/><text x="78" y="40" font-size="16" font-weight="700" fill="#6d28d9">SELECTION</text><text x="78" y="68" font-size="14" fill="#334155">filter · bin · rank</text><text x="78" y="91" font-size="13" fill="#64748b">count or hours</text></g>
+    <g transform="translate(888 42)"><rect width="280" height="140" rx="20" fill="#1e1b4b" stroke="#8b5cf6"/><text x="140" y="39" font-size="16" font-weight="700" fill="#ddd6fe">DATASET ARTIFACT</text><text x="140" y="69" font-size="14" fill="#f8fafc">train/test shards · manifest</text><text x="140" y="93" font-size="14" fill="#f8fafc">resolved config · provenance</text><text x="140" y="119" font-size="13" fill="#5eead4">SHA-256 verified</text></g>
+    <text x="600" y="224" font-size="14" fill="#64748b">Deterministic decisions and identity are preserved from source to shard.</text>
+  </g>
+</svg>

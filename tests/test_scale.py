@@ -70,6 +70,9 @@ def test_bad_source_skipped_and_logged(capsys):
                  strategy=load_strategy(STRAT, SCHEMA), segmenter=Segmenter(4, 4),
                  target_size=100, seed=0, on_error="skip")
     assert [e["source"] for e in res.errors] == ["s3"]
+    assert res.errors[0]["error_type"] == "builtins.RuntimeError"
+    assert res.errors[0]["message"] == "boom"
+    assert "raise RuntimeError(\"boom\")" in res.errors[0]["traceback"]
     assert not any(s.source_id == "s3" for s in res.all_segments)   # the bad one is gone
     assert {s.source_id for s in res.all_segments} == {"s1", "s2", "s4"}
     assert "skip" in capsys.readouterr().err.lower()
@@ -91,7 +94,7 @@ def _spec():
                                                         "source": "field:pos"}}})
 
 
-def test_resume_skips_existing_shards(tmp_path):
+def test_resume_repairs_corrupt_existing_shards(tmp_path):
     data = _data(range(1, 5))
     common = dict(schema=SCHEMA, adapter=MemAdapter(SCHEMA, data), sources=list(data),
                   strategy=load_strategy(STRAT, SCHEMA), segmenter=Segmenter(4, 4),
@@ -99,13 +102,19 @@ def test_resume_skips_existing_shards(tmp_path):
     first = write_dataset(str(tmp_path / "out"), **common)
     assert first["results"]["shards"] > 0
 
-    # Corrupt one written shard; a resume run must NOT re-encode it (file left as-is).
+    assert all(entry.get("sha256") and entry.get("size_bytes", 0) > 0
+               for entry in first["shards"])
+    # A matching run may reuse valid shards, but a corrupt payload must be rewritten.
     victim = first["shards"][0]["path"]
     with open(victim, "wb") as f:
         f.write(b"CORRUPT")
     second = write_dataset(str(tmp_path / "out"), resume=True, **common)
     assert second["results"]["shards"] == first["results"]["shards"]   # same manifest
-    assert open(victim, "rb").read() == b"CORRUPT"                      # skipped, not rewritten
+    assert open(victim, "rb").read() != b"CORRUPT"
+    from kuration.io import file_integrity
+    repaired = next(entry for entry in second["shards"] if entry["path"] == victim)
+    assert file_integrity(victim) == {
+        "sha256": repaired["sha256"], "size_bytes": repaired["size_bytes"]}
 
 
 def test_no_resume_overwrites(tmp_path):

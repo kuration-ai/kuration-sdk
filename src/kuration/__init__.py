@@ -8,6 +8,13 @@ skip-and-log / resume / out-of-core execution, path-agnostic local + cloud I/O, 
 inference, and a fluent `input(...).operator(...)` pipeline API.
 See README.md, docs/, and PLAN.md.
 """
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("kuration-sdk")
+except PackageNotFoundError:  # source tree imported before installation
+    __version__ = "0+unknown"
+
 from .adapters import (
     CuratedDatasetAdapter,
     HDF5Adapter,
@@ -92,6 +99,7 @@ from .versioning import (ARTIFACT_FORMAT_VERSION, JOB_SCHEMA_VERSION, migrate,
                          migrate_config, migrate_job)
 
 __all__ = [
+    "__version__",
     "SchemaSpec", "FieldSpec", "MediaSpec",
     "WindowBuffer", "Tick", "build_window", "empty_like",
     "SegmentBatch", "IDENTITY_COLUMNS", "iter_segment_batches",

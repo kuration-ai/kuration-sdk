@@ -18,6 +18,7 @@ objects as noted below.
 
 | name | signature | does |
 |---|---|---|
+| `__version__` | `str` | installed `kuration-sdk` distribution version |
 | `curate` | `(*, schema, adapter, sources, strategy, segmenter, target_size, seed=0, group_of=None, tags_of=None, test_frac=0.0, workers=1, on_error="skip", streaming=False, progress=None, transforms=(), registry=None, executor="local") -> CurateResult` | score/transform all sources, select a target **count** of segments |
 | `write_dataset` | `(out_dir, *, schema, adapter, sources, strategy, segmenter, spec, encoder=None, train_hours, test_hours=0.0, sample_hz=None, seed=0, group_of=None, tags_of=None, clip_aggregate="max", span_steps=None, span_seconds=None, workers=1, on_error="skip", resume=False, streaming=False, progress=None, transforms=(), registry=None, executor="local") -> dict` | score/transform, fill a train/test **hour budget**, write shards + manifests + config |
 | `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local") -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
@@ -257,7 +258,7 @@ executes resolved calls over canonical segments; `get_execution_backend` resolve
 | `register_encoder` / `get_encoder` | `(name, factory)` / `(name, **kwargs)` | encoder registry |
 | `Track` | `(source_id, entity_id, records, meta={})` | one entity's timestep sequence — the output unit |
 | `tracks_from_ticks` | `(schema, ticks, source_id) -> list[Track]` | one track per entity |
-| `write_track` | `(out_dir, track, spec, *, encoder=None, schema=None, split="all", resume=False, name_suffix="", media_provider=None) -> [manifest entries]` | low-level: write one track's shards |
+| `write_track` | `(out_dir, track, spec, *, encoder=None, schema=None, split="all", resume=False, name_suffix="", media_provider=None, resume_entries=None) -> [manifest entries]` | low-level: write one track's shards; `resume_entries` supplies a previously committed checksummed manifest for verified reuse |
 | `fill_to_hours` | `(items, *, train_hours, test_hours, max_group_overshoot=None, tag_coverage=None, seed=0, return_stats=False)` | hours-budget fill; optional accounting as a third return value |
 | `Container` | `(extension, writer, reader)` | one shard-container implementation |
 | `register_container` | `(name, container=None, *, extension=None, writer=None, reader=None, **metadata)` | register a `Container` instance or its three parts |

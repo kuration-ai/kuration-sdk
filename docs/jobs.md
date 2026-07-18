@@ -69,7 +69,7 @@ stays clean; pass `--quiet` to suppress interactive progress explicitly.
 | `train_hours` | yes | train budget in hours (the emitted set is the strategy's *best* N hours) |
 | `test_hours` | no (0) | test budget; sources split leakage-free |
 | `out` | yes | output directory — local path or cloud URL |
-| `resume` | no (false) | skip existing shards only when the complete run/source provenance fingerprint matches |
+| `resume` | no (false) | verify and reuse checksummed shards only when the complete run/source provenance fingerprint matches; rebuild missing or corrupt shards |
 | `encoder` | no | `{"name": registered_name, "params": {...}}` |
 | `span_steps` / `span_seconds` | no | declarative sub-track spans (mutually exclusive) |
 | `clip_aggregate` | no (`"max"`) | `max`, `min`, or `mean` |

@@ -1,34 +1,55 @@
-# kuration — overview & end-to-end example
+# Core concepts
 
-> **Which path should I use?** Start with the fluent [quick start](quickstart.md) for ordinary
-> CSV, JSON, Parquet, arrays, or Python rows. This page is the advanced explicit API path for
-> custom schemas, adapters, strategies, and output specifications.
+Kuration is a dataset curation system for sequential data. It sits between raw collection and
+training: it decides which windows should enter a dataset, preserves why they were chosen, and
+writes the arrays a training loop consumes.
 
-`kuration` is a dataset-agnostic curation SDK: it turns a large time-series corpus into a
-curated, training-ready set of shards — *raw source → curated subset → encoded shards* — for
-**any** sequential dataset (game telemetry, robot trajectories, sensor logs, generic
-multivariate series). The core carries **no domain knowledge**; a dataset is described by a
-`SchemaSpec` (data) and reached through documented input, media, transform, and output seams.
+Start with the [guided quickstart](quickstart.md) if you want to run a pipeline now. This page
+builds the mental model and then shows the explicit API used for custom schemas, adapters,
+strategies, and output contracts.
 
-The [API reference](api.md) is the supported-surface inventory. Deferred work belongs in the
-[roadmap](../ROADMAP.md), keeping this guide focused on concepts and usage.
+## The product model
 
-## The pipeline
+<p align="center">
+  <img src="assets/curation-flow.svg" alt="Sources become candidate windows, measured features, selected data, and verified artifacts" width="96%">
+</p>
 
-```
- raw source ─[InputAdapter]→ canonical Tick stream
-   ─[Segmenter]→ overlapping windows (steps or seconds)
-   ─[FeatureEngine DSL + optional BatchTransform over fields/media]→ per-segment features
-   ─[bin_segments]→ quantile bin coordinates
-   ─[Strategy + selection / hours-budget fill]→ chosen segments / tracks
-   ─[OutputSpec + OutputEncoder + ShardWriter]→ shards + manifests + reproducible config
-```
+Five concepts carry through every fluent pipeline, Python API call, and JSON job:
 
-Two entry points sit on top:
-- **`curate(...)`** — score + select a target **count** of segments (returns a `CurateResult`).
-- **`write_dataset(...)`** — score + fill an **hour budget** (train/test) + write shards to disk.
+1. **Source** — one leakage boundary such as a session, trajectory, recording, or clip. An
+   adapter presents every source as canonical timestamped ticks.
+2. **Candidate window** — a fixed-width view over a source. Windows can overlap and are the unit
+   measured and selected by count-based pipelines.
+3. **Feature** — a finite scalar describing a window. Features come from the closed metric DSL,
+   scorers, or bounded batch transforms over fields and media.
+4. **Selection** — predicates remove invalid candidates; bins, tags, weights, and methods decide
+   what best satisfies the dataset goal. Source/group splits prevent leakage.
+5. **Dataset artifact** — encoded train/test shards plus a manifest and resolved configuration.
+   The artifact records identity, selection context, provenance, budgets, and integrity metadata.
 
-## Install
+The candidate pool is not the output dataset. `preview()` inspects raw source quality,
+`review()` compares candidates with a proposed count selection, and `inspect`/`diff`/`check`
+operate on written artifacts. This separation lets a team answer three different questions:
+
+| Question | Tool |
+|---|---|
+| Is the source data usable? | `pipeline.preview()` |
+| Did selection change the distribution as intended? | `pipeline.review()` |
+| Is the delivered artifact intact and acceptable? | `kur-inspect`, `kur-diff`, `kur-check` |
+
+## Two selection outcomes
+
+- **Count selection** chooses up to `n` windows and returns a `CurateResult`; it is ideal while
+  designing and reviewing selection behavior.
+- **Duration selection** admits the best spans until separate training and test hour budgets are
+  filled, then writes the dataset artifact. It is the production path when emitted training
+  volume is the real constraint.
+
+The fluent `Pipeline` is the default authoring interface. The explicit `curate(...)` and
+`write_dataset(...)` functions expose the same engine for declarative jobs and custom low-level
+components.
+
+## Install only what the plan needs
 
 ```bash
 pip install -e .                    # core (numpy only)
@@ -38,7 +59,10 @@ pip install -e '.[cloud]'           # + fsspec (gs:// / s3:// / az:// I/O; add a
 pip install -e '.[video,ray]'       # + PyAV media provider / ordered Ray source backend
 ```
 
-## End-to-end example (a generic dataset, zero domain code)
+The NumPy-only core handles ordinary in-memory, CSV, and JSON workflows. Optional dependencies
+are lazy and loud: preflight names the missing extra instead of silently changing behavior.
+
+## Explicit end-to-end example
 
 Curating drone-flight logs (CSV) into 64-step position/attitude shards, preferring dynamic,
 high-turn-rate windows:
@@ -99,20 +123,13 @@ write_dataset(
 `config.json` embeds the **resolved job, source/component provenance, and output spec**, so the dataset
 reproduces from its own directory alone.
 
-## Reference docs
+## Where to go next
 
-- [quickstart.md](quickstart.md) — the fluent, network-independent first run.
-- [pipeline.md](pipeline.md) — the primary fluent API and output-aware dry runs.
-- [usage.md](usage.md) — cookbook: task-oriented recipes across every capability.
-- [architecture.md](architecture.md) — design deep-dive: layers, data contracts, decisions.
-- [schema.md](schema.md) — authoring a `SchemaSpec` (fields, media, kinds, semantics).
-- [dsl.md](dsl.md) — the closed metric grammar (`SOURCE→MAP→FILTER→REDUCE×SCOPE`).
-- [adapters.md](adapters.md) — input adapters; the generic timeseries adapter; writing your own.
-- [strategies.md](strategies.md) — declarative strategies, selection methods, binning, splits.
-- [output.md](output.md) — output specs, encoders, containers, the hours-budget fill.
-- [api.md](api.md) — API reference: every public name with its real signature.
-- [jobs.md](jobs.md) — job-spec reference: every JSON key the `kur-*` CLIs accept.
-- [customization.md](customization.md) — component discovery and extension registration.
+- Build a fluent pipeline in the [pipeline guide](pipeline.md).
+- Package a reviewed workflow in [building operators](operators.md).
+- Find task variations in the [cookbook](usage.md).
+- Learn the artifact contract in [outputs and integrity](output.md).
+- Browse every path from the [documentation home](index.md).
 
 ## Design invariants
 

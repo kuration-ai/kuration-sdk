@@ -4,7 +4,7 @@ version = "0.1.0rc1"
 description = "Dataset-agnostic curation SDK: raw source -> curated subset -> training shards."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["numpy"]
+dependencies = ["numpy>=1.24"]
 keywords = ["dataset", "curation", "time-series", "data-selection", "shards", "training-data"]
 # license / authors: pending the corporate decision — add `license` + a License classifier
 # (and LICENSE file) before any public release or PyPI upload.
@@ -16,6 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Operating System :: OS Independent",
     "Typing :: Typed",
@@ -25,31 +26,40 @@ classifiers = [
 # lazily imported and loud-on-missing (the asg2diamond convention).
 [project.optional-dependencies]
 methods = ["scikit-learn>=1.4"]   # feature-space selection methods
-parquet = ["pyarrow"]             # Parquet input adapter / output container
-scale = ["pyarrow"]               # Arrow IPC feature tables and bounded execution
-array = ["h5py"]                  # tensor shard container
-cloud = ["fsspec"]                # gs:// / s3:// / az:// I/O (plus a backend: gcsfs/s3fs/adlfs)
-torch = ["torch"]                 # PyTorch ShardDataset over a curated dataset (kuration.torch)
-hf = ["datasets"]                 # HuggingFace datasets input adapter
-zarr = ["zarr"]                   # Zarr array-store input adapter
+parquet = ["pyarrow>=15"]         # Parquet input adapter / output container
+scale = ["pyarrow>=15"]           # Arrow IPC feature tables and bounded execution
+array = ["h5py>=3.10"]            # tensor shard container
+cloud = ["fsspec>=2024.2"]        # gs:// / s3:// / az:// I/O (plus a backend: gcsfs/s3fs/adlfs)
+torch = ["torch>=2.2"]            # PyTorch ShardDataset over a curated dataset (kuration.torch)
+hf = ["datasets>=2.18"]           # HuggingFace datasets input adapter
+zarr = ["zarr>=2.17"]             # Zarr array-store input adapter
 video = ["av>=12"]                # optional CPU MP4 provider
 ray = ["ray>=2.20"]               # optional distributed execution backend
-p2p = ["protobuf"]                # Open P2P worked example (annotation.proto parsing)
-cli = ["jsonschema"]              # kur-validate --json-schema (JSON Schema cross-check)
+p2p = ["protobuf>=4.25"]          # Open P2P worked example (annotation.proto parsing)
+cli = ["jsonschema>=4.21"]        # kur-validate --json-schema (JSON Schema cross-check)
 all = [
     "scikit-learn>=1.4",
-    "pyarrow",
-    "h5py",
-    "fsspec",
-    "torch",
-    "datasets",
-    "zarr",
-    "protobuf",
-    "jsonschema",
+    "pyarrow>=15",
+    "h5py>=3.10",
+    "fsspec>=2024.2",
+    "torch>=2.2",
+    "datasets>=2.18",
+    "zarr>=2.17",
+    "protobuf>=4.25",
+    "jsonschema>=4.21",
     "av>=12",
     "ray>=2.20",
 ]                                   # every runtime capability in one install
-dev = ["pytest", "jsonschema", "ruff>=0.5", "mypy>=1.10", "build>=1.2"]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "hypothesis>=6.100",
+    "jsonschema>=4.21",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "build>=1.2",
+]
+docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5"]
 
 [project.scripts]
 kur-curate = "kuration.cli.curate:main"
@@ -80,8 +90,8 @@ target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
-ignore = ["E731", "E741"]
+select = ["E4", "E7", "E9", "F", "B"]
+ignore = ["E731", "E741", "B007", "B008", "B023", "B904", "B905"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E401", "E402", "E731", "F401"]
@@ -93,6 +103,9 @@ check_untyped_defs = true
 ignore_missing_imports = true
 no_implicit_optional = false
 warn_unused_configs = true
+warn_redundant_casts = true
+warn_unreachable = true
+strict_equality = true
 follow_imports_for_stubs = true
 
 # Optional libraries may ship interpreter-specific stubs using that interpreter's syntax

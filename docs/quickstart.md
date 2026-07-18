@@ -51,7 +51,7 @@ passed to `--out`.
 
 ## 3. What the pipeline did
 
-The runnable source is [`examples/quickstart.py`](../examples/quickstart.py). Its central pipeline
+The runnable source is [`examples/quickstart.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/quickstart.py). Its central pipeline
 is:
 
 ```python
@@ -168,6 +168,7 @@ JSON-safe typed results with concise `.render()` output; combine them into a sha
 Next:
 
 - Learn every fluent operator in the [pipeline guide](pipeline.md).
+- Package a repeatable selection decision in [building operators](operators.md).
 - Find task-oriented variations in the [usage cookbook](usage.md).
 - Use explicit schemas and adapters in the [end-to-end classic API example](overview.md).
 - Look up exact signatures in the [Python API reference](api.md).

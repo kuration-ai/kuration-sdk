@@ -1,6 +1,7 @@
 """Device-neutral bounded batch transforms over segment windows and lazy media."""
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
 import numpy as np
@@ -112,16 +113,44 @@ def resolve_transform(name, *, using, inputs, batch_size, device, params, schema
             "params": factory_params, "resources": meta["resources"]}
 
 
-def _construct(factory, params, device):
+def _binds(callable_, *args, **kwargs) -> bool:
+    """Return whether a Python callable accepts arguments without executing user code."""
     try:
+        inspect.signature(callable_).bind(*args, **kwargs)
+    except TypeError:
+        return False
+    except (ValueError, AttributeError) as error:
+        raise TypeError(
+            f"cannot inspect callable {callable_!r}; plugin callables need an inspectable "
+            "Python signature"
+        ) from error
+    return True
+
+
+def _construct(factory, params, device):
+    if _binds(factory, device=device, **params):
         return factory(device=device, **params)
-    except TypeError as first:
-        try:
-            return factory(**params)
-        except TypeError:
-            if isinstance(factory, type):
-                raise first
+    if _binds(factory, **params):
+        return factory(**params)
+    if not isinstance(factory, type):
+        # A registered transform function is already the runnable component.
+        if _binds(factory, {}, {}):
             return factory
+    raise TypeError(
+        f"transform factory {factory!r} accepts neither (device=..., **params) nor **params"
+    )
+
+
+def _invoke(transform, batch, ctx):
+    """Invoke a transform exactly once using its declared one- or two-argument shape."""
+    fn = getattr(transform, "transform_batch", transform)
+    if _binds(fn, batch, ctx):
+        return fn(batch, ctx)
+    if _binds(fn, batch):
+        return fn(batch)
+    raise TypeError(
+        f"transform {fn!r} must accept (batch, ctx) or the compatibility form (batch)"
+    )
 
 
 def _field_window(ticks, field):
@@ -201,11 +230,7 @@ class _TransformRunner:
                             [provider.decode_batch(group) for group in refs])
                 ctx = {"device": call["device"], "schema": adapter.schema,
                        "transform": call["name"], "seed": call["params"].get("seed")}
-                fn = getattr(transform, "transform_batch", transform)
-                try:
-                    result = fn(batch, ctx)
-                except TypeError:
-                    result = fn(batch)
+                result = _invoke(transform, batch, ctx)
                 if not isinstance(result, Mapping):
                     if len(call["outputs"]) != 1:
                         raise ValueError(

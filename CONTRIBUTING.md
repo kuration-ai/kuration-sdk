@@ -374,6 +374,7 @@ python examples/01_timeseries_to_shards.py
 python examples/02_robotics_action_aware.py
 python examples/03_compare_strategies.py
 python examples/04_operator_pipeline.py
+python examples/05_custom_operators.py
 ```
 
 The examples synthesize their own data. Do not commit their generated shards or manifests.
