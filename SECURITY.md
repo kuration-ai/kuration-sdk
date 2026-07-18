@@ -8,14 +8,19 @@ issue.
 
 ## Reporting a vulnerability
 
-Use GitHub's **Report a vulnerability** form in the repository Security tab. Please do not open
-a public issue for an undisclosed vulnerability. Include the affected version, a minimal
-reproduction, impact, and any suggested mitigation. If private vulnerability reporting is not
-available, contact the repository owner privately through their GitHub profile.
+Use GitHub's [private vulnerability reporting
+form](https://github.com/aintropy-ai/kuration-sdk/security/advisories/new). Please do not open a
+public issue containing vulnerability details. Include the affected version, a minimal
+reproduction, impact, and any suggested mitigation.
 
-The maintainer will acknowledge a report, assess impact, coordinate a fix and disclosure, and
-credit reporters who want attribution. No response-time SLA is promised while the project is
-maintained by one person.
+If GitHub's private form is unavailable, open a public issue that asks the maintainers to provide
+a private reporting channel, but include no exploit, reproduction, sensitive log, credential, or
+other vulnerability detail in that issue. Wait for a private channel before sharing the report.
+
+Maintainers will triage reports, coordinate remediation and disclosure, and credit reporters who
+want attribution. Formal acknowledgement and remediation targets require a company-approved
+security owner and private contact channel; those targets are not published yet, so no
+response-time SLA is currently offered.
 
 ## Trust boundaries
 

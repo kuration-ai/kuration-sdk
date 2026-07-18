@@ -30,6 +30,8 @@ class HDF5Adapter:
         for g in self.globals:
             if g not in schema.globals:
                 raise ValueError(f"global map references undeclared schema global {g!r}")
+        self.available_fields = frozenset(fields)
+        self.available_globals = frozenset(self.globals)
 
     def ticks(self, source_uri: str) -> list[Tick]:
         return list(self.iter_ticks(source_uri))
@@ -38,7 +40,7 @@ class HDF5Adapter:
         try:
             import h5py
         except ImportError as e:
-            raise ImportError("HDF5Adapter needs h5py: pip install -e '.[array]'") from e
+            raise ImportError("HDF5Adapter needs h5py: pip install 'kuration-sdk[array]'") from e
         from ..io import local_copy
         with local_copy(source_uri) as p, h5py.File(p, "r") as f:   # remote staged to tempfile
             arrs = {fn: f[ds] for fn, ds in self.fields.items()}
@@ -52,7 +54,7 @@ class HDF5Adapter:
         try:
             import h5py
         except ImportError as e:
-            raise ImportError("HDF5Adapter needs h5py: pip install -e '.[array]'") from e
+            raise ImportError("HDF5Adapter needs h5py: pip install 'kuration-sdk[array]'") from e
         from ..io import local_copy
         with local_copy(source_uri) as p, h5py.File(p, "r") as f:
             check_mapped_arrays(self.schema, self.fields, self.globals, source_uri,

@@ -155,7 +155,7 @@ class ActionResidualScorer:
             from sklearn.neighbors import KNeighborsRegressor
         except ImportError as e:
             raise ImportError("scorer 'action_residual' needs scikit-learn: "
-                              "pip install -e '.[methods]'") from e
+                              "pip install 'kuration-sdk[methods]'") from e
         bufs = ctx["buffers"]
 
         def pooled(w, field):

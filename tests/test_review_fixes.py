@@ -262,6 +262,60 @@ def test_moved_dataset_reloads(tmp_path):
     assert len(ad.ticks(ad.sources()[0])) > 0
 
 
+def test_copied_dataset_prefers_its_own_shards_while_original_exists(tmp_path):
+    _write(tmp_path, out="orig")
+    manifest = json.loads((tmp_path / "orig" / "dataset_manifest.json").read_text())
+    assert manifest["shards"][0]["path"].startswith("train/")
+    assert not Path(manifest["shards"][0]["path"]).is_absolute()
+    shutil.copytree(tmp_path / "orig", tmp_path / "copy")
+    copied, cont = shard_entries(str(tmp_path / "copy"), split="train")
+    original, _ = shard_entries(str(tmp_path / "orig"), split="train")
+    assert copied and copied[0]["path"].startswith(str(tmp_path / "copy"))
+    assert copied[0]["path"] != original[0]["path"]
+    # Removing the original proves the already-resolved copied entries remain self-contained.
+    shutil.rmtree(tmp_path / "orig")
+    assert read_shard_arrays(copied[0], cont)["obs"].shape[1] == 2
+
+
+def test_dataset_commit_sidecar_rejects_incomplete_or_changed_metadata(tmp_path):
+    _write(tmp_path, out="complete")
+    root = tmp_path / "complete"
+    manifest = json.loads((root / "dataset_manifest.json").read_text())
+    commit = json.loads((root / "dataset.commit.json").read_text())
+    assert manifest["commit_protocol"] == commit["protocol"] == "sidecar-v1"
+    assert commit["state"] == "committed"
+    assert set(commit["files"]) == {"dataset_manifest.json", "config.json"}
+
+    shutil.copytree(root, tmp_path / "writing")
+    from kuration.manifest import begin_dataset
+    from kuration.output.dataset import _resume_entries
+    begin_dataset(str(tmp_path / "writing"))
+    with pytest.raises(ValueError, match="commit state"):
+        shard_entries(str(tmp_path / "writing"))
+    assert _resume_entries(str(tmp_path / "writing"), True)
+
+    shutil.copytree(root, tmp_path / "missing-commit")
+    (tmp_path / "missing-commit" / "dataset.commit.json").unlink()
+    with pytest.raises(ValueError, match="incomplete"):
+        shard_entries(str(tmp_path / "missing-commit"))
+
+    shutil.copytree(root, tmp_path / "changed-after-commit")
+    config = tmp_path / "changed-after-commit" / "config.json"
+    config.write_text(config.read_text() + "\n")
+    with pytest.raises(ValueError, match="changed after the commit"):
+        shard_entries(str(tmp_path / "changed-after-commit"))
+
+
+def test_shard_loader_rejects_missing_modality_and_count_mismatch(tmp_path):
+    _write(tmp_path, out="ds")
+    entries, cont = shard_entries(str(tmp_path / "ds"), split="train")
+    with pytest.raises(KeyError, match="missing requested modalities"):
+        read_shard_arrays(entries[0], cont, modalities=["typo"])
+    bad = {**entries[0], "n_steps": entries[0]["n_steps"] + 1}
+    with pytest.raises(ValueError, match="n_steps mismatch"):
+        read_shard_arrays(bad, cont)
+
+
 def test_curated_unknown_shard_raises(tmp_path):
     _write(tmp_path, out="d1")
     ad = CuratedDatasetAdapter(str(tmp_path / "d1"))

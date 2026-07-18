@@ -111,7 +111,9 @@ is one trajectory/episode, and it keeps the per-source train/test split leakage-
 treats **all parts as one source** (rows concatenated, sorted by `time_column` if set). In
 `"dataset"` mode, parts that overlap in time need an `entity_column` distinguishing their rows —
 same-time rows for the same entity raise rather than silently last-write-win. Reuses the
-`[parquet]` extra — no new dependency. Remote globs (`gs://…/**/*.parquet`) work via `[cloud]`.
+`[parquet]` extra — no new dependency. Remote globs (`gs://…/**/*.parquet`) use the matching
+provider extra (`[gcs]`, `[s3]`, or `[azure]`), or `[cloud]` when the environment supplies its own
+fsspec backend.
 
 ```python
 from kuration import ParquetDatasetAdapter
@@ -140,7 +142,7 @@ list-valued column.)
 
 `ZarrAdapter` mirrors HDF5/NPZ for chunked Zarr stores: one store = one source, one entity, each
 mapped array `(T, *shape)`. Needs the `[zarr]` extra; remote stores (`gs://`, `s3://`, …) open via
-fsspec (`[cloud]` + a backend).
+fsspec (the matching `[gcs]`, `[s3]`, or `[azure]` extra; `[cloud]` is fsspec-only).
 
 ```python
 from kuration import ZarrAdapter

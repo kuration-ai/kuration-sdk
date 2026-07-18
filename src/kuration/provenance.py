@@ -8,6 +8,7 @@ import marshal
 import pickle
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 
 def _sha(data: bytes) -> str:
@@ -60,11 +61,27 @@ def component_identity(obj) -> dict | None:
     return out
 
 
+def _source_reference(source: str) -> dict[str, str]:
+    """Portable, publishable source reference without credentials or host-local directories."""
+    if "://" in source and not source.startswith("file://"):
+        parsed = urlsplit(source)
+        host = parsed.hostname or ""
+        if parsed.port is not None:
+            host = f"{host}:{parsed.port}"
+        visible = urlunsplit((parsed.scheme, host, parsed.path, "", ""))
+        return {"source": visible, "source_id_sha256": _sha(source.encode())}
+    path = source[7:] if source.startswith("file://") else source
+    if "/" in path or "\\" in path:
+        return {"source": Path(path).name, "source_id_sha256": _sha(source.encode())}
+    return {"source": source}
+
+
 def source_descriptor(source, adapter) -> dict:
     """Best available source identity without reading the source payload a second time."""
     custom = getattr(adapter, "source_fingerprint", None)
+    reference = _source_reference(str(source))
     if custom is not None:
-        return {"source": str(source), "fingerprint": custom(source)}
+        return {**reference, "fingerprint": custom(source), "strength": "adapter"}
 
     from .io import is_remote
     s = str(source)
@@ -80,27 +97,57 @@ def source_descriptor(source, adapter) -> dict:
                               if meta.get("type") != "directory"]
             encoded = json.dumps(remote_entries, sort_keys=True,
                                  separators=(",", ":")).encode()
-            return {"source": s, "metadata": {"is_dir": True,
-                                                  "entries": len(remote_entries),
-                                                  "tree_sha256": _sha(encoded)}}
-        return {"source": s, "metadata": {k: str(info[k]) for k in keep if k in info}}
+            return {**reference, "metadata": {"is_dir": True,
+                                                "entries": len(remote_entries),
+                                                "tree_sha256": _sha(encoded)},
+                    "strength": "remote-metadata"}
+        metadata = {k: str(info[k]) for k in keep if k in info}
+        strong = any(key in info for key in ("etag", "ETag", "checksum", "version_id",
+                                             "generation"))
+        return {**reference, "metadata": metadata,
+                "strength": "remote-version" if strong else "remote-metadata"}
     p = Path(s[7:] if s.startswith("file://") else s)
     if p.exists():
         st = p.stat()
         if p.is_dir():
-            local_entries: list[tuple[str, int, int]] = []
+            local_entries: list[tuple[str, int, str]] = []
             for child in sorted(p.rglob("*")):
                 if child.is_file():
                     child_stat = child.stat()
+                    digest = hashlib.sha256()
+                    with child.open("rb") as stream:
+                        while chunk := stream.read(1024 * 1024):
+                            digest.update(chunk)
                     local_entries.append((child.relative_to(p).as_posix(), child_stat.st_size,
-                                          child_stat.st_mtime_ns))
+                                          digest.hexdigest()))
             encoded = json.dumps(local_entries, separators=(",", ":")).encode()
-            return {"source": s, "metadata": {"is_dir": True,
-                                                  "entries": len(local_entries),
-                                                  "tree_sha256": _sha(encoded)}}
-        return {"source": s, "metadata": {"size": st.st_size, "mtime_ns": st.st_mtime_ns,
-                                             "is_dir": p.is_dir()}}
-    return {"source": s, "metadata": {"non_path": True}}
+            return {**reference, "metadata": {"is_dir": True,
+                                                "entries": len(local_entries),
+                                                "tree_sha256": _sha(encoded)},
+                    "strength": "content"}
+        digest = hashlib.sha256()
+        with p.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+        return {**reference, "metadata": {"size": st.st_size,
+                                           "content_sha256": digest.hexdigest(),
+                                           "is_dir": False}, "strength": "content"}
+    return {**reference, "metadata": {"non_path": True}, "strength": "identifier"}
+
+
+def source_descriptors(sources, adapter) -> list[dict]:
+    """Return canonical descriptors in the order used by run provenance."""
+    return sorted((source_descriptor(source, adapter) for source in sources),
+                  key=lambda value: (value["source"], value.get("source_id_sha256", "")))
+
+
+def assert_sources_unchanged(sources, adapter, expected: list[dict]) -> None:
+    """Fail before publication if a fingerprintable input changed during the run."""
+    current = source_descriptors(sources, adapter)
+    if current != list(expected):
+        raise ValueError(
+            "one or more input sources changed between planning and output; shards were left "
+            "uncommitted—rerun against an immutable snapshot or versioned source")
 
 
 def sdk_version() -> str:
@@ -146,8 +193,7 @@ def build_run_signature(*, schema, strategy, spec, segmenter, sources, adapter, 
         "transforms": list(transforms),
         "plugins": plugin_provenance(),
         "extensions": extensions,
-        "sources": sorted((source_descriptor(s, adapter) for s in sources),
-                          key=lambda d: d["source"]),
+        "sources": source_descriptors(sources, adapter),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
     return {"fingerprint": _sha(encoded), "payload": payload}

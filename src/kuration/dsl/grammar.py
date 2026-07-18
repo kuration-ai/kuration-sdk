@@ -550,10 +550,16 @@ def compile_metric(spec: dict, schema: SchemaSpec) -> Callable[[WindowBuffer], f
     if "." not in src:
         if src in schema.globals:
             return _compile_global(src, spec, schema)
-        raise ValueError(f"unknown source {src!r} (no such global; declared: {sorted(schema.globals)})")
+        if schema.entity_axis is None and src in schema.fields:
+            return _compile_entity(src, spec, schema)
+        expected = sorted(set(schema.globals) | (set(schema.fields) if schema.entity_axis is None
+                                                 else set()))
+        raise ValueError(f"unknown source {src!r} (declared unqualified sources: {expected})")
     ns, rest = src.split(".", 1)
     if schema.entity_axis and ns == schema.entity_axis:
         return _compile_entity(rest, spec, schema)
+    if schema.entity_axis is None and ns in schema.fields:
+        return _compile_entity(src, spec, schema)
     if ns in schema.event_streams:
         return _compile_event(ns, rest, spec, schema)
     raise ValueError(

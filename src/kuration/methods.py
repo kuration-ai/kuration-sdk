@@ -41,7 +41,7 @@ def _require_sklearn():
         import sklearn  # noqa: F401
     except ImportError as e:
         raise ImportError("this method/filter needs scikit-learn (optional): "
-                          "pip install -e '.[methods]'") from e
+                          "pip install 'kuration-sdk[methods]'") from e
 
 
 def resolve_feature_space(strategy) -> list[str]:
@@ -72,12 +72,9 @@ def feature_matrix(segments: list[Segment], names: Sequence[str], *,
     if normalize == "none" or n <= 1:
         return X
     if normalize == "quantile":
+        from .strategy import _normalize
         for j in range(d):
-            col = X[:, j]
-            order = col.argsort(kind="stable")
-            ranks = np.empty(n, dtype=np.float64)
-            ranks[order] = np.arange(n, dtype=np.float64)
-            X[:, j] = ranks / (n - 1)
+            X[:, j] = _normalize(X[:, j], "quantile")
         return X
     mu, sd = X.mean(axis=0), X.std(axis=0)
     sd[sd == 0] = 1.0

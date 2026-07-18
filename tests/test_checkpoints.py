@@ -65,3 +65,8 @@ def test_commit_files_are_canonical_and_attempts_are_not_left_behind(tmp_path):
     assert len(commits) == 1
     assert json.loads(commits[0].read_text())["data_file"] == commit.data_file
     assert not list((tmp_path / "features" / "attempts").glob("*.arrow"))
+
+
+def test_checkpoint_rejects_stage_path_traversal(tmp_path):
+    with pytest.raises(ValueError, match="safe"):
+        StageCheckpoint(str(tmp_path), "../outside", _identity())

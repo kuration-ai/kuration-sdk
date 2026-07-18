@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/kuration-hero.svg" alt="Kuration turns raw sequential data into selected, verified training shards" width="100%">
+  <img src="https://raw.githubusercontent.com/aintropy-ai/kuration-sdk/main/docs/assets/kuration-hero.svg" alt="Kuration turns raw sequential data into selected, verified training shards" width="100%">
 </p>
 
 # kuration-sdk
@@ -44,34 +44,46 @@ and SHA-256 integrity metadata.
 | Move from laptop to scale | Streaming sources, bounded Arrow checkpoints, process workers, cloud paths, and optional Ray execution |
 
 <p align="center">
-  <img src="docs/assets/curation-flow.svg" alt="Sources flow through windows, features, selection, and verified dataset artifacts" width="95%">
+  <img src="https://raw.githubusercontent.com/aintropy-ai/kuration-sdk/main/docs/assets/curation-flow.svg" alt="Sources flow through windows, features, selection, and verified dataset artifacts" width="95%">
 </p>
+
+## Install
+
+```bash
+python -m pip install kuration-sdk
+```
+
+The NumPy-only core handles in-memory, CSV, JSON, and NPZ workflows. Add only the integrations a
+pipeline needs:
+
+```bash
+python -m pip install 'kuration-sdk[methods,parquet]'  # selection methods + Parquet
+python -m pip install 'kuration-sdk[video]'            # PyAV video frames
+python -m pip install 'kuration-sdk[ray]'              # distributed source execution
+python -m pip install 'kuration-sdk[s3]'               # fsspec + the S3 backend
+python -m pip install 'kuration-sdk[all]'              # every runtime integration/backend
+```
+
+`pipeline.explain()` reports the extras required by a planned run before it reads the full
+dataset. The provider-specific cloud extras are `s3`, `gcs`, and `azure`; `cloud` installs only
+the backend-neutral fsspec layer for environments that manage provider packages separately.
 
 ## Try it in five minutes
 
 The repository includes a deterministic, download-free sensor example using only NumPy:
 
 ```bash
-python -m pip install -e .
+git clone https://github.com/aintropy-ai/kuration-sdk.git
+cd kuration-sdk
+python -m pip install .
 python examples/quickstart.py --out quickstart-out
 kur-inspect quickstart-out --verify
 ```
 
 It creates six tiny sessions, scores 42 candidate windows, selects 12 across activity and fault
 patterns, writes train/test NPZ shards, and reads one back. Follow the
-**[guided quickstart](docs/quickstart.md)** for the operator-by-operator explanation.
-
-Install capabilities only when a pipeline needs them:
-
-```bash
-python -m pip install -e '.[methods,parquet]'  # selection methods + Parquet
-python -m pip install -e '.[video]'            # PyAV video frames
-python -m pip install -e '.[ray]'              # distributed source execution
-python -m pip install -e '.[all]'              # every runtime integration
-```
-
-`pipeline.explain()` reports the extras required by a planned run before it reads the full
-dataset.
+**[guided quickstart](https://aintropy-ai.github.io/kuration-sdk/quickstart/)** for the
+operator-by-operator explanation.
 
 ## A dataset you can inspect and defend
 
@@ -79,6 +91,7 @@ dataset.
 out/training-v1/
 ├── config.json                 # resolved job, pipeline, versions, and provenance
 ├── dataset_manifest.json       # shard index, splits, shapes, sizes, and SHA-256
+├── dataset.commit.json         # final atomic-publication state and metadata checksums
 ├── train/
 │   └── <source>_<entity>_<hash>_shard0000.npz
 └── test/
@@ -130,57 +143,61 @@ The parameter contract is checked when the operator is added. The named call, de
 fingerprint, and expanded ordinary operations are retained in provenance. For computation over
 whole windows or video frames, pair an operator with a registered bounded batch transform.
 
-See **[Building operators](docs/operators.md)** for compositional, transform-backed, testing,
+See **[Building operators](https://aintropy-ai.github.io/kuration-sdk/operators/)** for compositional, transform-backed, testing,
 discovery, and packaging examples, or run
-[`examples/05_custom_operators.py`](examples/05_custom_operators.py).
+[`examples/05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py).
 
 ## Choose your path
 
 | I want to… | Start here |
 |---|---|
-| Build my first curated dataset | [Quickstart](docs/quickstart.md) |
-| Understand the product and its data model | [Core concepts](docs/overview.md) |
-| Find the right pipeline operation | [Fluent pipeline guide](docs/pipeline.md) |
-| Solve a task such as streaming, cloud output, or comparison | [Recipe cookbook](docs/usage.md) |
-| Integrate a data format | [Adapters](docs/adapters.md) |
-| Build a reusable operator or transform | [Operators](docs/operators.md) |
-| Run checked JSON jobs and CLIs | [Job and CLI reference](docs/jobs.md) |
-| Operate or audit generated artifacts | [Output and integrity](docs/output.md) |
-| Look up an exact Python signature | [API reference](docs/api.md) |
-| Understand internals and extension boundaries | [Architecture](docs/architecture.md) |
+| Build my first curated dataset | [Quickstart](https://aintropy-ai.github.io/kuration-sdk/quickstart/) |
+| Understand the product and its data model | [Core concepts](https://aintropy-ai.github.io/kuration-sdk/overview/) |
+| Find the right pipeline operation | [Fluent pipeline guide](https://aintropy-ai.github.io/kuration-sdk/pipeline/) |
+| Solve a task such as streaming, cloud output, or comparison | [Recipe cookbook](https://aintropy-ai.github.io/kuration-sdk/usage/) |
+| Integrate a data format | [Adapters](https://aintropy-ai.github.io/kuration-sdk/adapters/) |
+| Build a reusable operator or transform | [Operators](https://aintropy-ai.github.io/kuration-sdk/operators/) |
+| Run checked JSON jobs and CLIs | [Job and CLI reference](https://aintropy-ai.github.io/kuration-sdk/jobs/) |
+| Operate or audit generated artifacts | [Output and integrity](https://aintropy-ai.github.io/kuration-sdk/output/) |
+| Look up an exact Python signature | [API reference](https://aintropy-ai.github.io/kuration-sdk/api/) |
+| Understand internals and extension boundaries | [Architecture](https://aintropy-ai.github.io/kuration-sdk/architecture/) |
 
-The **[documentation home](docs/index.md)** groups the complete documentation by getting
+The **[documentation home](https://aintropy-ai.github.io/kuration-sdk/)** groups the complete documentation by getting
 started, guides, extensions, operations, and reference.
 
 ## Realistic examples
 
 | Example | Demonstrates |
 |---|---|
-| [`quickstart.py`](examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection |
-| [`02_robotics_action_aware.py`](examples/02_robotics_action_aware.py) | Action-aware scoring composed with geometric and phase coverage |
-| [`05_custom_operators.py`](examples/05_custom_operators.py) | A compositional operator and a transform-backed operator with discovery metadata |
-| [TeaPearce Counter-Strike](examples/public_data/teapearce_csgo.md) | HDF5 adaptation, rare-event coverage, and optional image output |
-| [Open P2P](examples/public_data/open_p2p.md) | Protobuf annotations, cross-game action coverage, corrections, instructions, and video joins |
+| [`quickstart.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection |
+| [`02_robotics_action_aware.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Action-aware scoring composed with geometric and phase coverage |
+| [`05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py) | A compositional operator and a transform-backed operator with discovery metadata |
+| [TeaPearce Counter-Strike](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | HDF5 adaptation, rare-event coverage, and optional image output |
+| [Open P2P](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Protobuf annotations, cross-game action coverage, corrections, instructions, and video joins |
 
 ## Reliability and project status
 
-Kuration currently targets Python 3.11–3.14 and is tested against declared minimum dependencies
-and current optional integrations. CI covers more than 500 tests, property-based invariants,
-clean wheel installation, all CLI entry points, and real Zarr, PyTorch, Hugging Face, PyAV, and
-Ray integration paths.
+Kuration currently targets Python 3.11–3.14 and tests optional integrations at both declared
+minimums and current versions. CI covers more than 500 tests, property-based invariants, clean
+wheel installation, all CLI entry points, and real Zarr, PyTorch, Hugging Face, PyAV, and Ray
+integration paths.
 
 The SDK is a `0.x` beta. The supported surface and deprecation rules are documented in the
-**[compatibility policy](docs/compatibility.md)**. See [SECURITY.md](SECURITY.md) for private
-reporting and runtime trust boundaries, [CHANGELOG.md](CHANGELOG.md) for notable changes, and
-[ROADMAP.md](ROADMAP.md) for the remaining public-release gates.
+**[compatibility policy](https://aintropy-ai.github.io/kuration-sdk/compatibility/)**. See
+[SECURITY.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/SECURITY.md) for private
+reporting and runtime trust boundaries,
+[CHANGELOG.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CHANGELOG.md) for notable
+changes, and [ROADMAP.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/ROADMAP.md) for the
+remaining public-release gates.
 
 ## Contributing
 
 ```bash
-python -m pip install -e '.[dev,methods,parquet,array,cloud,p2p]'
+python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p]'
 python -m pytest tests/ -q
 python -m ruff check src tests examples
 python -m mypy
 ```
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a component or public contract change.
+Read [CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md)
+before proposing a component or public contract change.

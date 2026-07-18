@@ -1,0 +1,48 @@
+name: Bug report
+description: Report reproducible incorrect SDK or CLI behavior.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, private data, or vulnerability details. Use SECURITY.md for security reports.
+  - type: input
+    id: version
+    attributes:
+      label: Kuration version
+      description: Output of `python -c "import kuration; print(kuration.__version__)"`.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, operating system, installed extras, and execution backend.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Prefer a runnable example with synthetic data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and traceback
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and removed confidential information.
+          required: true

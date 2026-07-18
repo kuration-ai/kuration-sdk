@@ -28,6 +28,7 @@ class CurateResult:
     strategy: Strategy
     splits: dict = field(default_factory=dict)   # source_id -> "train"/"test" (if test_frac>0)
     errors: list = field(default_factory=list)   # [{source, error}] for skipped sources
+    source_tracks: dict = field(default_factory=dict)  # source -> [(entity_id, n_steps)]
     execution: Optional[dict] = None
 
 
@@ -52,11 +53,15 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     transform_outputs = {o for t in transforms for o in t["outputs"]}
     registered = [r for r in referenced if r not in strategy.define
                   and r not in strategy.scorer_outputs() and r not in transform_outputs]
-    all_segments, errors, _ = score_sources(
+    transform_fields = {
+        token.split(":", 1)[1]
+        for call in transforms for token in call["inputs"] if token.startswith("field:")}
+    all_segments, errors, source_tracks = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=registered, segmenter=segmenter, tags_spec=strategy.tags,
         group_of=group_of, tags_of=tags_of, workers=workers, on_error=on_error,
-        streaming=streaming, progress=progress, executor=executor)
+        streaming=streaming, progress=progress, executor=executor,
+        registry=registry or strategy.registry, required_fields=transform_fields)
 
     if transforms:
         from .transforms import apply_transforms
@@ -85,4 +90,5 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
         source_groups = {s.source_id: s.group for s in all_segments}
         splits = assign_splits(source_groups, test_frac, seed)
     return CurateResult(selected=selected, all_segments=all_segments, schema=schema,
-                        strategy=strategy, splits=splits, errors=errors)
+                        strategy=strategy, splits=splits, errors=errors,
+                        source_tracks=source_tracks)

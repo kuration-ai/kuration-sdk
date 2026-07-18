@@ -124,6 +124,8 @@ def test_kur_experiment_runs(tmp_path):
     csv_path = _make_csv(tmp_path)
     job = tmp_path / "exp.json"
     spec = _job(csv_path, tmp_path / "unused")
+    for key in ("strategy", "output", "train_hours", "test_hours", "out"):
+        spec.pop(key)
     spec.update({
         "target_size": 6, "baseline": "base",
         "arms": [
@@ -140,3 +142,10 @@ def test_kur_experiment_runs(tmp_path):
     assert p.returncode == 0, p.stderr
     out = json.loads(cmp_out.read_text())
     assert out["baseline"] == "base" and "hi" in out["arms"]
+
+
+def test_cli_error_formatter_enforces_one_line_contract():
+    from kuration.cli._common import format_error
+    rendered = format_error(ValueError("first line\nsecond\tline"))
+    assert rendered == "error: ValueError: first line second line"
+    assert len(rendered.splitlines()) == 1

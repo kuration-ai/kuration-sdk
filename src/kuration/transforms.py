@@ -28,11 +28,17 @@ def register_batch_transform(name: str, factory: Callable | None = None, *, outp
                          or getattr(component, "outputs", ()))
         if not declared or any(not isinstance(x, str) or not x for x in declared):
             raise ValueError("batch transform registration needs non-empty scalar output names")
-        _TRANSFORM_META[name] = {"outputs": declared, "inputs": tuple(inputs),
-                                 "media_requirements": dict(media_requirements or {}),
-                                 "resources": dict(resources or {})}
+        if len(set(declared)) != len(declared):
+            raise ValueError(f"batch transform registration has duplicate outputs {declared!r}")
+        meta = {"outputs": declared, "inputs": tuple(inputs),
+                "media_requirements": dict(media_requirements or {}),
+                "resources": dict(resources or {})}
         from .registry import default_registry
+        # Registry registration can fail (most commonly on a duplicate name).  Publish the
+        # companion execution metadata only after that succeeds so discovery and execution
+        # cannot observe two different components under the same name.
         default_registry.register_transform(name, component, **metadata)
+        _TRANSFORM_META[name] = meta
         return component
     return decorate if factory is None else decorate(factory)
 
@@ -61,7 +67,8 @@ def _metadata(name, component):
     return meta
 
 
-def resolve_transform(name, *, using, inputs, batch_size, device, params, schema, registry):
+def resolve_transform(name, *, using, inputs, batch_size, device, params, schema, registry,
+                      available_features=()):
     from .plugins import load_plugins
     implementation = using if isinstance(using, str) and using in registry.names("transform") else name
     if implementation not in registry.names("transform"):
@@ -96,7 +103,11 @@ def resolve_transform(name, *, using, inputs, batch_size, device, params, schema
             if field not in schema.fields and field not in schema.globals:
                 raise ValueError(f"transform {implementation!r}: unknown field {field!r}")
         elif token.startswith("feature:"):
-            pass
+            feature = token.split(":", 1)[1]
+            if not feature or feature not in set(available_features):
+                raise ValueError(
+                    f"transform {implementation!r}: feature input {feature!r} has no earlier "
+                    f"producer; available: {sorted(available_features)}")
         else:
             raise ValueError(f"transform input {token!r} must use field:/feature:/media:")
     if batch_size is None:

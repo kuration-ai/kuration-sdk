@@ -10,7 +10,7 @@ train/test split leakage-free). Needs the `[hf]` extra (`datasets`).
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from ..buffer import Tick
 from ..schema import SchemaSpec
@@ -31,6 +31,9 @@ class HuggingFaceAdapter(TimeseriesAdapter):
         self.source_column = source_column
         self.load_kwargs = load_kwargs or {}
         self._rows: Optional[list[dict]] = None      # cached after first load (per process)
+        self._dataset: Any = None
+        self._source_indices: Optional[dict[str, list[int]]] = None
+        self._source_rows: Optional[dict[str, list[dict]]] = None
 
     # HF sources are dataset/split names (or source_column values), not filesystem paths —
     # tells `kur-validate --check-sources` to skip the existence stat and rely on check_source.
@@ -39,21 +42,55 @@ class HuggingFaceAdapter(TimeseriesAdapter):
     def sources(self) -> list[str]:
         if self.source_column is None:
             return [f"{self.dataset_name}:{self.split}"]
-        return sorted({str(r[self.source_column]) for r in self._iter_rows()})
+        self._build_source_index()
+        index = self._source_indices if self._source_indices is not None else self._source_rows
+        return sorted(index or {})
+
+    def _load_dataset(self):
+        if self._rows is not None:
+            return None
+        if self._dataset is not None:
+            return self._dataset
+        try:
+            from datasets import load_dataset
+        except ImportError as e:
+            raise ImportError("HuggingFaceAdapter needs the datasets library: "
+                              "pip install 'kuration-sdk[hf]'") from e
+        self._dataset = load_dataset(self.dataset_name, self.config, split=self.split,
+                                     **self.load_kwargs)
+        return self._dataset
+
+    def _build_source_index(self) -> None:
+        if self.source_column is None or self._source_indices is not None \
+                or self._source_rows is not None:
+            return
+        if self._rows is not None:
+            index: dict[str, list[int]] = {}
+            for position, row in enumerate(self._rows):
+                index.setdefault(str(row[self.source_column]), []).append(position)
+            self._source_indices = index
+            return
+        dataset = self._load_dataset()
+        if hasattr(dataset, "select") and hasattr(dataset, "__len__"):
+            index = {}
+            # Read only the source column once. This is O(rows), after which each source is an
+            # Arrow index selection instead of a fresh full-split scan.
+            for position, value in enumerate(dataset[self.source_column]):
+                index.setdefault(str(value), []).append(position)
+            self._source_indices = index
+            return
+        rows: dict[str, list[dict]] = {}
+        for row in dataset:  # streaming datasets cannot random-select; partition in one pass
+            rows.setdefault(str(row[self.source_column]), []).append(row)
+        self._source_rows = rows
 
     def _iter_rows(self):
         if self._rows is not None:
             yield from self._rows
             return
-        try:
-            from datasets import load_dataset
-        except ImportError as e:
-            raise ImportError("HuggingFaceAdapter needs the datasets library: "
-                              "pip install -e '.[hf]'") from e
         # A datasets.Dataset is Arrow-backed and iterable without converting the whole split
         # into a Python list. Users may also pass streaming=True through load_kwargs.
-        yield from load_dataset(self.dataset_name, self.config, split=self.split,
-                                **self.load_kwargs)
+        yield from self._load_dataset()
 
     def check_source(self, source_uri: str) -> None:
         """Preflight the dataset's declared features against the column map without
@@ -71,7 +108,7 @@ class HuggingFaceAdapter(TimeseriesAdapter):
                 from datasets import load_dataset_builder
             except ImportError as e:
                 raise ImportError("HuggingFaceAdapter needs the datasets library: "
-                                  "pip install -e '.[hf]'") from e
+                                  "pip install 'kuration-sdk[hf]'") from e
             features = load_dataset_builder(self.dataset_name, self.config).info.features
             if features is None:
                 return
@@ -85,9 +122,24 @@ class HuggingFaceAdapter(TimeseriesAdapter):
         return list(self.iter_ticks(source_uri))
 
     def iter_ticks(self, source_uri: str):
-        rows = self._iter_rows()
-        if self.source_column is not None:
-            rows = (r for r in rows if str(r[self.source_column]) == str(source_uri))
+        if self.source_column is None:
+            rows = self._iter_rows()
+        else:
+            self._build_source_index()
+            key = str(source_uri)
+            if self._source_indices is not None:
+                indices = self._source_indices.get(key)
+                if indices is None:
+                    raise KeyError(f"unknown Hugging Face source {source_uri!r}")
+                if self._rows is not None:
+                    rows = (self._rows[index] for index in indices)
+                else:
+                    rows = iter(self._load_dataset().select(indices))
+            else:
+                source_rows = self._source_rows or {}
+                if key not in source_rows:
+                    raise KeyError(f"unknown Hugging Face source {source_uri!r}")
+                rows = iter(source_rows[key])
         yield from self._iter_rows_to_ticks(rows)
 
 

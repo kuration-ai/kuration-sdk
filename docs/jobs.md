@@ -14,6 +14,9 @@ kur-report     job.json [--out rep.json]   # report job -> metric distribution p
 kur-inspect    DATASET [--verify] [--json] [--html PATH] # artifact summary/integrity check
 kur-diff       LEFT RIGHT [--verify] [--json] [--html PATH] # compare two artifacts
 kur-check      DATASET --policy POLICY [--verify] [--json] [--html PATH] # quality gates
+kur-list       KIND [--json]                  # list adapters, transforms, and other components
+kur-describe   KIND NAME [--json]             # inspect one component contract
+kur-migrate    JOB_OR_CONFIG [--out PATH]     # migrate a versioned JSON document
 ```
 
 Every CLI accepts `--debug`: failures normally print a one-line `error: ...` and exit 1;
@@ -73,13 +76,18 @@ stays clean; pass `--quiet` to suppress interactive progress explicitly.
 | `encoder` | no | `{"name": registered_name, "params": {...}}` |
 | `span_steps` / `span_seconds` | no | declarative sub-track spans (mutually exclusive) |
 | `clip_aggregate` | no (`"max"`) | `max`, `min`, or `mean` |
+| `memory_budget` | no | positive byte budget that requires an exact bounded execution plan |
+| `batch_size` | no (1024) | maximum segment rows in one bounded feature batch |
+| `max_in_flight` | no (2) | maximum queued producer/consumer batches |
+| `checkpoint_dir` / `spill_dir` | no | explicit non-empty local paths for reusable partitions and bounded scratch data |
+| `approximation` | no (`"exact"`) | `"exact"` or `"approximate"`; unsupported approximate plans fail rather than changing semantics |
 
 **Python-API-only knobs:** arbitrary `group_of` / `tags_of` callables and encoder instances.
 Fluent `.join_video()` and `.transform()` calls are likewise recorded in Python pipeline
 provenance but are not serialized as job keys; declarative jobs can still use plugin adapters,
 scorers, and encoders.
 Registered/data-defined equivalents use names plus parameters. If you need arbitrary code, call
-`write_dataset(...)` directly — every job-spec key maps 1:1 onto its kwargs, so graduating
+`write_dataset(...)` directly — every supported job-spec execution key maps onto its kwargs, so graduating
 from a job file to Python is mechanical.
 
 ## Experiment jobs (`kur-experiment`)

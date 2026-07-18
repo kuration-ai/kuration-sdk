@@ -1,6 +1,7 @@
 """Disk-backed exact reducers over checkpointed segment feature tables."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import heapq
 import json
@@ -11,7 +12,7 @@ import random
 import sqlite3
 import struct
 import tempfile
-from typing import Iterable
+from typing import Any, Iterable
 
 import numpy as np
 
@@ -38,6 +39,21 @@ def _database(spill_dir: str | None):
     connection.execute("PRAGMA synchronous=OFF")
     connection.execute("PRAGMA temp_store=FILE")
     return connection, handle.name
+
+
+def _materialize_selected_rows(selected):
+    """Load each selected Arrow partition once while retaining reducer result order."""
+    grouped: dict[Any, list[Any]] = {}
+    for output_index, (path, row_idx, *metadata) in enumerate(selected):
+        grouped.setdefault(path, []).append((output_index, row_idx, metadata))
+
+    materialized: list[Any] = [None] * len(selected)
+    for path, requests in grouped.items():
+        batch = SegmentBatch.read_ipc(path)
+        for output_index, row_idx, metadata in requests:
+            segment = batch.slice(row_idx, 1).to_segments()[0]
+            materialized[output_index] = (segment, *metadata)
+    return materialized
 
 
 def external_quantile_edges(partitions: Iterable[PartitionCommit | str], feature: str,
@@ -85,8 +101,8 @@ def external_top_k(partitions: Iterable[PartitionCommit | str], *, weights: dict
                    spill_dir: str | None = None) -> list:
     """Exact stable top-k using a disk-backed feature index.
 
-    Only the selected ``k`` Python ``Segment`` objects are materialized. Quantile ranks use
-    canonical stable-key order to match the local reference's stable sort.
+    Only the selected ``k`` Python ``Segment`` objects are materialized. Equal feature values
+    receive their shared average rank, matching the local tie-aware quantile normalization.
     """
     if not isinstance(target_size, int) or isinstance(target_size, bool) or target_size < 1:
         raise ValueError("target_size must be a positive integer")
@@ -140,15 +156,18 @@ def external_top_k(partitions: Iterable[PartitionCommit | str], *, weights: dict
             if not math.isfinite(weight):
                 raise ValueError("top-k weights must be finite")
             if normalize == "quantile":
-                denominator = max(1, total - 1)
-                connection.execute(
-                    "WITH ranked AS ("
-                    " SELECT f.candidate_id AS id, "
-                    " CAST(ROW_NUMBER() OVER (ORDER BY f.value,c.source_id,c.start_idx,c.end_idx)-1 "
-                    " AS REAL)/? AS norm FROM features f JOIN candidates c ON c.id=f.candidate_id "
-                    " WHERE f.name=?"
-                    ") UPDATE candidates SET score=score + ?*(SELECT norm FROM ranked "
-                    "WHERE ranked.id=candidates.id)", (denominator, name, weight))
+                low, high = connection.execute(
+                    "SELECT MIN(value),MAX(value) FROM features WHERE name=?", (name,)
+                ).fetchone()
+                if total > 1 and high > low:
+                    connection.execute(
+                        "WITH ranked AS ("
+                        " SELECT f.candidate_id AS id,("
+                        " CAST(RANK() OVER (ORDER BY f.value)-1 AS REAL)"
+                        " +(COUNT(*) OVER (PARTITION BY f.value)-1)/2.0)/? AS norm"
+                        " FROM features f WHERE f.name=?"
+                        ") UPDATE candidates SET score=score + ?*(SELECT norm FROM ranked "
+                        "WHERE ranked.id=candidates.id)", (total - 1, name, weight))
             elif normalize == "minmax":
                 low, high = connection.execute(
                     "SELECT MIN(value),MAX(value) FROM features WHERE name=?", (name,)
@@ -175,10 +194,7 @@ def external_top_k(partitions: Iterable[PartitionCommit | str], *, weights: dict
         selected = connection.execute(
             "SELECT data_file,row_idx FROM candidates ORDER BY score DESC,source_id,start_idx,end_idx "
             "LIMIT ?", (target_size,)).fetchall()
-        out = []
-        for path, row_idx in selected:
-            out.extend(SegmentBatch.read_ipc(path).slice(row_idx, 1).to_segments())
-        return out
+        return [segment for segment, in _materialize_selected_rows(selected)]
     finally:
         connection.close()
         if os.path.exists(db_path):
@@ -275,8 +291,7 @@ def external_uniform_bins(partitions: Iterable[PartitionCommit | str], *,
             "JOIN candidates c ON c.id=s.candidate_id JOIN bins b ON b.bin_key=s.bin_key "
             "ORDER BY s.position,b.bin_order LIMIT ?", (target_size,)).fetchall()
         out = []
-        for path, row_idx, bin_key in selected:
-            segment = SegmentBatch.read_ipc(path).slice(row_idx, 1).to_segments()[0]
+        for segment, bin_key in _materialize_selected_rows(selected):
             segment.bin = tuple(json.loads(bin_key))
             out.append(segment)
         return out
@@ -374,10 +389,11 @@ def iter_external_uniform_priorities(partitions: Iterable[PartitionCommit | str]
             os.unlink(db_path)
 
 
-def iter_external_top_k_priorities(partitions: Iterable[PartitionCommit | str], *,
-                                   weights: dict[str, float], normalize: str = "quantile",
-                                   spill_dir: str | None = None):
-    """Yield every segment and its exact normalized top-k priority in canonical order."""
+@contextmanager
+def _top_k_priority_index(partitions: Iterable[PartitionCommit | str], *,
+                          weights: dict[str, float], normalize: str,
+                          spill_dir: str | None):
+    """Build one reusable disk-backed normalized-priority index."""
     if not weights:
         raise ValueError("top-k priorities require at least one feature weight")
     if normalize not in {"quantile", "minmax", "zscore", "none"}:
@@ -413,65 +429,87 @@ def iter_external_top_k_priorities(partitions: Iterable[PartitionCommit | str], 
                 "INSERT INTO candidates(id,source_id,start_idx,end_idx,data_file,row_idx) "
                 "VALUES (?,?,?,?,?,?)", candidates)
             connection.executemany("INSERT INTO features VALUES (?,?,?)", features)
+        connection.execute("CREATE INDEX feature_lookup ON features(name,value)")
         total = candidate_id
-        for name, weight in weights.items():
-            weight = float(weight)
-            if normalize == "quantile":
-                connection.execute(
-                    "WITH ranked AS (SELECT f.candidate_id AS id,CAST(ROW_NUMBER() OVER "
-                    "(ORDER BY f.value,c.source_id,c.start_idx,c.end_idx)-1 AS REAL)/? AS norm "
-                    "FROM features f JOIN candidates c ON c.id=f.candidate_id WHERE f.name=?) "
-                    "UPDATE candidates SET score=score+?*(SELECT norm FROM ranked WHERE "
-                    "ranked.id=candidates.id)", (max(1, total - 1), name, weight))
-            elif normalize in {"minmax", "zscore"}:
-                low, high, mean, mean_square = connection.execute(
-                    "SELECT MIN(value),MAX(value),AVG(value),AVG(value*value) FROM features "
-                    "WHERE name=?", (name,)).fetchone()
-                if normalize == "minmax":
-                    center, scale = low, high - low
+        if total:
+            for name, weight in weights.items():
+                weight = float(weight)
+                if not math.isfinite(weight):
+                    raise ValueError("top-k weights must be finite")
+                if normalize == "quantile":
+                    low, high = connection.execute(
+                        "SELECT MIN(value),MAX(value) FROM features WHERE name=?", (name,)
+                    ).fetchone()
+                    if total > 1 and high > low:
+                        connection.execute(
+                            "WITH ranked AS (SELECT f.candidate_id AS id,("
+                            "CAST(RANK() OVER (ORDER BY f.value)-1 AS REAL)"
+                            "+(COUNT(*) OVER (PARTITION BY f.value)-1)/2.0)/? AS norm "
+                            "FROM features f WHERE f.name=?) "
+                            "UPDATE candidates SET score=score+?*(SELECT norm FROM ranked WHERE "
+                            "ranked.id=candidates.id)", (total - 1, name, weight))
+                elif normalize in {"minmax", "zscore"}:
+                    low, high, mean, mean_square = connection.execute(
+                        "SELECT MIN(value),MAX(value),AVG(value),AVG(value*value) FROM features "
+                        "WHERE name=?", (name,)).fetchone()
+                    if normalize == "minmax":
+                        center, scale = low, high - low
+                    else:
+                        center, scale = mean, math.sqrt(max(0.0, mean_square - mean * mean))
+                    connection.execute(
+                        "UPDATE candidates SET score=score+?*COALESCE((SELECT CASE WHEN ?>0 THEN "
+                        "(value-?)/? ELSE 0 END FROM features WHERE candidate_id=candidates.id "
+                        "AND name=?),0)", (weight, scale, center, scale or 1.0, name))
                 else:
-                    center, scale = mean, math.sqrt(max(0.0, mean_square - mean * mean))
-                connection.execute(
-                    "UPDATE candidates SET score=score+?*COALESCE((SELECT CASE WHEN ?>0 THEN "
-                    "(value-?)/? ELSE 0 END FROM features WHERE candidate_id=candidates.id "
-                    "AND name=?),0)", (weight, scale, center, scale or 1.0, name))
-            else:
-                connection.execute(
-                    "UPDATE candidates SET score=score+?*(SELECT value FROM features WHERE "
-                    "candidate_id=candidates.id AND name=?)", (weight, name))
+                    connection.execute(
+                        "UPDATE candidates SET score=score+?*(SELECT value FROM features WHERE "
+                        "candidate_id=candidates.id AND name=?)", (weight, name))
         connection.commit()
-        cached_path, cached_batch = None, None
-        query = ("SELECT data_file,row_idx,score FROM candidates "
-                 "ORDER BY source_id,start_idx,end_idx")
-        for path, row_idx, priority in connection.execute(query):
-            if path != cached_path:
-                cached_path, cached_batch = path, SegmentBatch.read_ipc(path)
-            assert cached_batch is not None
-            segment = cached_batch.slice(row_idx, 1).to_segments()[0]
-            yield segment, float(priority)
+        yield connection, total
     finally:
         connection.close()
         if os.path.exists(db_path):
             os.unlink(db_path)
 
 
+def _iter_indexed_priorities(connection):
+    """Materialize one partition at a time from a normalized-priority index."""
+    cached_path, cached_batch = None, None
+    query = ("SELECT data_file,row_idx,score FROM candidates "
+             "ORDER BY source_id,start_idx,end_idx")
+    for path, row_idx, priority in connection.execute(query):
+        if path != cached_path:
+            cached_path, cached_batch = path, SegmentBatch.read_ipc(path)
+        assert cached_batch is not None
+        segment = cached_batch.slice(row_idx, 1).to_segments()[0]
+        yield segment, float(priority)
+
+
+def iter_external_top_k_priorities(partitions: Iterable[PartitionCommit | str], *,
+                                   weights: dict[str, float], normalize: str = "quantile",
+                                   spill_dir: str | None = None):
+    """Yield every segment and its exact normalized top-k priority in canonical order."""
+    with _top_k_priority_index(
+            partitions, weights=weights, normalize=normalize,
+            spill_dir=spill_dir) as (connection, _total):
+        yield from _iter_indexed_priorities(connection)
+
+
 def iter_external_weighted_priorities(partitions: Iterable[PartitionCommit | str], *,
                                       weights: dict[str, float], normalize: str = "quantile",
                                       seed: int = 0, spill_dir: str | None = None):
     """Yield exact reference-compatible Gumbel weighted priorities canonically."""
-    paths = _paths(partitions)
-    minimum = float("inf")
-    for _segment, score in iter_external_top_k_priorities(
-            paths, weights=weights, normalize=normalize, spill_dir=spill_dir):
-        minimum = min(minimum, score)
-    if minimum == float("inf"):
-        return
-    rng = np.random.default_rng(seed)
-    for segment, score in iter_external_top_k_priorities(
-            paths, weights=weights, normalize=normalize, spill_dir=spill_dir):
-        weight = score - minimum + 1e-9
-        gumbel = -math.log(-math.log(float(rng.random())))
-        yield segment, math.log(weight) + gumbel
+    with _top_k_priority_index(
+            partitions, weights=weights, normalize=normalize,
+            spill_dir=spill_dir) as (connection, total):
+        if not total:
+            return
+        minimum = float(connection.execute("SELECT MIN(score) FROM candidates").fetchone()[0])
+        rng = np.random.default_rng(seed)
+        for segment, score in _iter_indexed_priorities(connection):
+            weight = score - minimum + 1e-9
+            gumbel = -math.log(-math.log(float(rng.random())))
+            yield segment, math.log(weight) + gumbel
 
 
 def external_weighted(partitions: Iterable[PartitionCommit | str], *, weights: dict[str, float],

@@ -274,7 +274,8 @@ print(review.render())
 ## Loud-error philosophy
 
 Every operator validates eagerly against the schema and the chain's own declared names — the
-same "closed grammar, loud validation" invariant as the classic API (see CLAUDE.md). Examples
+same "closed grammar, loud validation" invariant as the classic API (see the
+[architecture invariants](architecture.md#invariants-dont-break-these)). Examples
 you'll hit directly:
 - `.measure(name, ...)` on an unknown field/undeclared name, a bad DSL dict, or a duplicate
   `name` — raises immediately, not at `collect()`/`output()` time.

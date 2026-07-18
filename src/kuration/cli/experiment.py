@@ -13,9 +13,8 @@ import json
 from pathlib import Path
 
 from ..experiment import Arm, run_experiment
-from ..strategy import load_strategy
-from ._common import (build_adapter, build_schema, build_segmenter, cli_progress_for, cli_run,
-                      load_job_plugins, read_job, resolve_sources)
+from ._common import cli_progress_for, cli_run, read_job
+from .job import resolve_job
 
 
 def main() -> None:
@@ -30,18 +29,16 @@ def main() -> None:
 
 def _run(args) -> None:
     job = read_job(args.job)
-    load_job_plugins(job)
-    schema = build_schema(job)
-    adapter = build_adapter(job, schema)
-    schema = schema or adapter.schema
-    segmenter = build_segmenter(job, schema)
-    sources = resolve_sources(job, adapter)
-    arms = [Arm(a["name"], load_strategy(a["strategy"], schema)) for a in job["arms"]]
+    resolved = resolve_job(job)
+    if resolved.kind != "experiment":
+        raise ValueError(f"kur-experiment requires an experiment job, got {resolved.kind!r}")
+    arms = [Arm(name, strategy) for name, strategy in resolved.arms]
 
-    out = run_experiment(schema=schema, adapter=adapter, sources=sources, arms=arms,
-                         segmenter=segmenter, target_size=job["target_size"],
+    out = run_experiment(schema=resolved.schema, adapter=resolved.adapter,
+                         sources=resolved.sources, arms=arms,
+                         segmenter=resolved.segmenter, target_size=job["target_size"],
                          baseline=job.get("baseline"), seed=job.get("seed", 0),
-                         workers=job.get("workers", 1), on_error=job.get("on_error", "skip"),
+                         workers=job.get("workers", 1), on_error=resolved.on_error,
                          streaming=job.get("streaming", False),
                          progress=cli_progress_for(quiet=args.quiet),
                          executor=job.get("executor", "local"))

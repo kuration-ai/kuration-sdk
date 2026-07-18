@@ -37,20 +37,31 @@ def register_container(name, container=None, *, extension=None, writer=None, rea
     _register(name, obj, **metadata)
 
 
-def container_extension(name: str) -> str:
+def _container_handler(name: str, registry=None):
+    from ..registry import default_registry
+    registry = registry or default_registry
+    handler = registry.get("container", name)
+    if not (isinstance(getattr(handler, "extension", None), str)
+            and callable(getattr(handler, "writer", None))
+            and callable(getattr(handler, "reader", None))):
+        raise ValueError(
+            f"registered container {name!r} must be a Container-like object with "
+            "extension, writer, and reader")
+    return handler
+
+
+def container_extension(name: str, *, registry=None) -> str:
     if name in CONTAINER_EXT:
         return CONTAINER_EXT[name]
-    from ..registry import default_registry
-    return default_registry.get("container", name).extension
+    return _container_handler(name, registry).extension
 
 
 def write_shard(path_no_ext: str, container: str, arrays: dict[str, np.ndarray],
-                n_steps: int) -> str:
+                n_steps: int, *, registry=None) -> str:
     """Write one shard's modality arrays; returns the written path (local or remote URL).
     All formats stage through `staged_write`, so a `gs://`/`s3://`/… destination just works."""
     if container not in CONTAINER_EXT:
-        from ..registry import default_registry
-        handler = default_registry.get("container", container)
+        handler = _container_handler(container, registry)
         path = path_no_ext + handler.extension
         handler.writer(path, arrays, n_steps)
         return path
@@ -66,7 +77,8 @@ def write_shard(path_no_ext: str, container: str, arrays: dict[str, np.ndarray],
             try:
                 import h5py
             except ImportError as e:
-                raise ImportError("container 'hdf5' needs h5py: pip install -e '.[array]'") from e
+                raise ImportError("container 'hdf5' needs h5py: "
+                                  "pip install 'kuration-sdk[array]'") from e
             with h5py.File(local, "w") as f:
                 for k, v in arrays.items():
                     f.create_dataset(k, data=v, compression="gzip")
@@ -76,7 +88,8 @@ def write_shard(path_no_ext: str, container: str, arrays: dict[str, np.ndarray],
                 import pyarrow as pa
                 import pyarrow.parquet as pq
             except ImportError as e:
-                raise ImportError("container 'parquet' needs pyarrow: pip install -e '.[parquet]'") from e
+                raise ImportError("container 'parquet' needs pyarrow: "
+                                  "pip install 'kuration-sdk[parquet]'") from e
             # scalar modality -> column of values; tensor modality -> column of flattened lists.
             cols = {k: (pa.array(v) if v.ndim == 1
                         else pa.array([row.reshape(-1).tolist() for row in v]))
@@ -86,35 +99,38 @@ def write_shard(path_no_ext: str, container: str, arrays: dict[str, np.ndarray],
     return path
 
 
-def read_shard(path: str, container: str) -> tuple[dict[str, np.ndarray], int]:
+def read_shard(path: str, container: str, *, registry=None) -> tuple[dict[str, np.ndarray], int]:
     """Inverse of `write_shard`: load a shard's modality arrays + real `n_steps` from any
     container. Remote shards (gs://, s3://, …) are staged to a tempfile. Arrays come back
     as stored — a tensor modality written to Parquet is flat `(L, prod(shape))`; reshape it
     with the manifest's per-modality `shape` if you need the original rank (the loaders do)."""
     if container not in CONTAINER_EXT:
-        from ..registry import default_registry
-        return default_registry.get("container", container).reader(path)
+        return _container_handler(container, registry).reader(path)
     from ..io import local_copy, read_text
     if container == "json":
         data = json.loads(read_text(path))
         return {k: np.asarray(v) for k, v in data["modalities"].items()}, int(data["_n_steps"])
     with local_copy(path) as p:
         if container == "npz":
-            z = np.load(p)
-            # exclude exactly the in-band length key — a modality may legitimately start with '_'
-            return {k: z[k] for k in z.files if k != "_n_steps"}, int(z["_n_steps"])
+            with np.load(p, allow_pickle=False) as z:
+                # Materialize before the archive (and a possible remote tempfile) is closed.
+                arrays = {k: np.asarray(z[k]) for k in z.files if k != "_n_steps"}
+                n_steps = int(z["_n_steps"])
+            return arrays, n_steps
         if container == "hdf5":
             try:
                 import h5py
             except ImportError as e:
-                raise ImportError("reading hdf5 shards needs h5py: pip install -e '.[array]'") from e
+                raise ImportError("reading hdf5 shards needs h5py: "
+                                  "pip install 'kuration-sdk[array]'") from e
             with h5py.File(p, "r") as f:
                 return {k: f[k][:] for k in f.keys()}, int(f.attrs["n_steps"])
         # parquet
         try:
             import pyarrow.parquet as pq
         except ImportError as e:
-            raise ImportError("reading parquet shards needs pyarrow: pip install -e '.[parquet]'") from e
+            raise ImportError("reading parquet shards needs pyarrow: "
+                              "pip install 'kuration-sdk[parquet]'") from e
         t = pq.read_table(p)
         meta = t.schema.metadata or {}
         if b"_n_steps" not in meta:

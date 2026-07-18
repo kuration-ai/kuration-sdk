@@ -110,12 +110,13 @@ def evaluate_quality(report, expectations: dict | None = None,
 
     if "max_missing" in policy:
         available = {**(data.get("fields") or {}), **(data.get("globals") or {})}
-        if available:
-            for field, maximum in policy["max_missing"].items():
-                actual = (available.get(field) or {}).get("missing_fraction")
-                passed = actual is not None and actual <= maximum
-                add(f"max_missing.{field}", passed, actual, maximum,
-                    f"{field} missing fraction is {actual!r}; maximum is {maximum}")
+        for field, maximum in policy["max_missing"].items():
+            actual = (available.get(field) or {}).get("missing_fraction")
+            passed = actual is not None and actual <= maximum
+            message = (f"{field} missing fraction is {actual!r}; maximum is {maximum}"
+                       if actual is not None else
+                       f"missing-fraction evidence for {field!r} is unavailable")
+            add(f"max_missing.{field}", passed, actual, maximum, message)
 
     if "min_sources" in policy:
         if isinstance(data.get("sources"), dict):
@@ -134,73 +135,96 @@ def evaluate_quality(report, expectations: dict | None = None,
 
     if "min_tag_coverage" in policy:
         selected_coverage = ((data.get("coverage") or {}).get("selected") or {})
-        if selected_coverage:
-            tags = selected_coverage.get("tags") or {}
-            for tag, minimum in policy["min_tag_coverage"].items():
-                actual = int(tags.get(str(tag), 0))
-                add(f"min_tag_coverage.{tag}", actual >= minimum, actual, minimum,
-                    f"tag {tag!r} appears {actual} time(s); minimum is {minimum}")
+        tags = selected_coverage.get("tags") if selected_coverage else None
+        for tag, minimum in policy["min_tag_coverage"].items():
+            actual = int(tags.get(str(tag), 0)) if tags is not None else None
+            message = (f"tag {tag!r} appears {actual} time(s); minimum is {minimum}"
+                       if actual is not None else "selected-tag coverage evidence is unavailable")
+            add(f"min_tag_coverage.{tag}", actual is not None and actual >= minimum,
+                actual, minimum, message)
 
     if "max_group_fraction" in policy:
         selected_coverage = ((data.get("coverage") or {}).get("selected") or {})
-        if selected_coverage:
-            groups = selected_coverage.get("groups") or {}
+        groups = selected_coverage.get("groups") if selected_coverage else None
+        if isinstance(groups, dict) and groups:
             total = sum(groups.values())
-            actual = max(groups.values(), default=0) / total if total else None
-            maximum = float(policy["max_group_fraction"])
-            add("max_group_fraction", actual is not None and actual <= maximum, actual, maximum,
-                f"largest group fraction is {actual!r}; maximum is {maximum}")
+            actual = max(groups.values()) / total if total else None
+        else:
+            actual = None
+        maximum = float(policy["max_group_fraction"])
+        message = (f"largest group fraction is {actual!r}; maximum is {maximum}"
+                   if actual is not None else "selected-group coverage evidence is unavailable")
+        add("max_group_fraction", actual is not None and actual <= maximum, actual, maximum,
+            message)
 
     if "min_budget_utilization" in policy:
-        for split, values in budget_splits.items():
-            if not isinstance(values, dict) or "utilization" not in values:
-                continue
+        requested = policy["min_budget_utilization"]
+        splits = (tuple(requested) if isinstance(requested, dict)
+                  else tuple(budget_splits) or ("train", "test"))
+        for split in splits:
+            values = budget_splits.get(split) or {}
             minimum = _threshold(policy["min_budget_utilization"], split, 0.0)
-            actual = values["utilization"]
-            add(f"min_budget_utilization.{split}", actual >= minimum, actual, minimum,
-                f"{split} utilization is {actual:.1%}; minimum is {minimum:.1%}")
+            actual = values.get("utilization")
+            message = (f"{split} utilization is {actual:.1%}; minimum is {minimum:.1%}"
+                       if actual is not None else
+                       f"budget-utilization evidence for {split!r} is unavailable")
+            add(f"min_budget_utilization.{split}",
+                actual is not None and actual >= minimum, actual, minimum, message)
 
     if "max_budget_underfill_seconds" in policy:
-        for split, values in budget_splits.items():
-            if not isinstance(values, dict):
-                continue
+        requested = policy["max_budget_underfill_seconds"]
+        splits = (tuple(requested) if isinstance(requested, dict)
+                  else tuple(budget_splits) or ("train", "test"))
+        for split in splits:
+            values = budget_splits.get(split) or {}
             actual = values.get("emitted_underfill_seconds", values.get("underfill_seconds"))
-            if actual is None:
-                continue
             maximum = _threshold(policy["max_budget_underfill_seconds"], split, float("inf"))
-            add(f"max_budget_underfill_seconds.{split}", actual <= maximum, actual, maximum,
-                f"{split} underfill is {actual:.3f}s; maximum is {maximum:.3f}s")
+            message = (f"{split} underfill is {actual:.3f}s; maximum is {maximum:.3f}s"
+                       if actual is not None else
+                       f"budget-underfill evidence for {split!r} is unavailable")
+            add(f"max_budget_underfill_seconds.{split}",
+                actual is not None and actual <= maximum, actual, maximum, message)
 
     if "max_skipped_sources" in policy:
-        actual = data.get("sources_skipped")
-        if actual is None:
+        if "sources_skipped" in data:
+            actual = data.get("sources_skipped")
+        elif "errors" in data:
             actual = len(data.get("errors") or ())
+        else:
+            actual = None
         maximum = policy["max_skipped_sources"]
-        add("max_skipped_sources", actual <= maximum, actual, maximum,
-            f"skipped sources: {actual}; maximum is {maximum}")
+        add("max_skipped_sources", actual is not None and actual <= maximum, actual, maximum,
+            (f"skipped sources: {actual}; maximum is {maximum}" if actual is not None
+             else "skipped-source evidence is unavailable"))
 
     if "require_modalities" in policy:
-        if "modalities" in data or "fields" in data:
-            modality_available = set(data.get("modalities") or data.get("fields") or ())
-            modality_required = set(policy["require_modalities"])
-            missing = sorted(modality_required - modality_available)
-            add("require_modalities", not missing, sorted(modality_available),
-                sorted(modality_required),
-                f"missing required modalities: {missing}")
+        has_evidence = "modalities" in data or "fields" in data
+        modality_available = set(data.get("modalities") or data.get("fields") or ())
+        modality_required = set(policy["require_modalities"])
+        missing = sorted(modality_required - modality_available)
+        add("require_modalities", has_evidence and not missing,
+            sorted(modality_available) if has_evidence else None, sorted(modality_required),
+            (f"missing required modalities: {missing}" if has_evidence
+             else "modality evidence is unavailable"))
 
-    if policy.get("require_verified") and "verification" in data:
+    if "require_verified" in policy:
         verification = data.get("verification") or {}
-        actual = bool(verification.get("requested") and verification.get("valid"))
-        add("require_verified", actual, actual, True,
-            "artifact verification completed successfully" if actual
-            else "artifact has not passed full shard verification")
+        actual = bool(verification.get("requested") and verification.get("valid")) \
+            if "verification" in data else None
+        required = policy["require_verified"]
+        passed = not required or actual is True
+        add("require_verified", passed, actual, required,
+            ("artifact verification is not required" if not required else
+             "artifact verification completed successfully" if actual else
+             "artifact has not passed full shard verification" if actual is False else
+             "artifact-verification evidence is unavailable"))
 
     if "min_shards" in policy:
         actual = data.get("shards")
         minimum = policy["min_shards"]
-        if actual is not None:
-            add("min_shards", actual >= minimum, actual, minimum,
-                f"shard count is {actual!r}; minimum is {minimum}")
+        add("min_shards", actual is not None and actual >= minimum, actual, minimum,
+            (f"shard count is {actual!r}; minimum is {minimum}" if actual is not None
+             else "shard-count evidence is unavailable"))
 
     if policy and not checks:
         raise ValueError("quality policy does not apply to this report type")

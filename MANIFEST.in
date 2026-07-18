@@ -1,6 +1,8 @@
 include CONTRIBUTING.md
 include CHANGELOG.md
 include SECURITY.md
+include SUPPORT.md
+include GOVERNANCE.md
 include ROADMAP.md
 include mkdocs.yml
 recursive-include docs *.md *.svg

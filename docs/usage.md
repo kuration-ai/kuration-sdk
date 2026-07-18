@@ -229,8 +229,9 @@ write_dataset("out/run1", ..., span_seconds=4.0)   # or span_steps=N; admits spa
 
 ## 13 · Cloud I/O (GCS / S3 / Azure)
 
-Any source, shard, or manifest path may be a cloud URL — needs the `[cloud]` extra + a backend
-(`gcsfs` / `s3fs` / `adlfs`). Local needs nothing.
+Any source, shard, or manifest path may be a cloud URL. Install `[s3]`, `[gcs]`, or `[azure]` to
+get fsspec plus the matching backend. The lower-level `[cloud]` extra installs only fsspec for
+managed environments that provide `s3fs`, `gcsfs`, or `adlfs` separately. Local needs nothing.
 
 ```python
 write_dataset("gs://bucket/run1", schema=schema, adapter=adapter,
@@ -451,7 +452,7 @@ dataset. The ones you're most likely to meet, and what they mean:
 | `span_steps=... < shard_length=... with short_policy='drop'` | every admitted span would chunk to zero shards while consuming the hours budget | raise `span_steps`, lower `shard_length`, or use `short_policy: "keep"/"pad"` |
 | `binning axis '...': N NaN feature value(s)` | a registered metric or scorer produced NaN on some window; NaN would poison the quantile edges | make the metric total (return 0.0 for degenerate windows), or drop those segments with a pre-pass filter |
 | `dataset ... lacks modalities [...]` | mixing curated datasets with different modalities under a schema derived from the first | pass an explicit `schema=` covering only the shared modalities |
-| `needs fsspec` / `needs h5py` / `needs pyarrow` / `needs zarr` | an optional capability was reached without its extra installed | install the named extra, e.g. `pip install -e '.[cloud]'` |
+| `needs fsspec` / `needs h5py` / `needs pyarrow` / `needs zarr` | an optional capability was reached without its extra installed | install the named published extra, e.g. `pip install 'kuration-sdk[s3]'` |
 | `write_dataset needs sample_hz ... for the hours budget` | fluent-pipeline `.sample(hours=...).output(...)` on a source whose schema has no `sample_hz` (inference found no numeric time column, or duplicate/no-gap timestamps) | pass `hz=` to `input()`, or `.options(sample_hz=...)` before `.output(...)` |
 | `workers>1 is not supported for in-memory sources` | `.options(workers=2)` on a `Pipeline` built from in-memory rows/ticks/DataFrame — parallel workers rebuild adapters by name per process and can't see in-process data | keep `workers=1` for in-memory input, or write the data to files first and `input()` the paths |
 

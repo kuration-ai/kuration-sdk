@@ -2,6 +2,7 @@
 import numpy as np
 import pytest
 
+import kuration.external as external_module
 from kuration import (Segment, SegmentBatch, external_quantile_edges, external_top_k,
                        external_uniform_bins, external_weighted, iter_external_span_items,
                        iter_external_hash_dedup, iter_external_top_k_priorities,
@@ -45,6 +46,18 @@ def _reference_scores(segments, weights, normalize):
     return score
 
 
+def _track_ipc_reads(monkeypatch):
+    original = SegmentBatch.read_ipc.__func__
+    calls = []
+
+    def tracked(cls, path, *, columns=None):
+        calls.append((str(path), None if columns is None else tuple(columns)))
+        return original(cls, path, columns=columns)
+
+    monkeypatch.setattr(SegmentBatch, "read_ipc", classmethod(tracked))
+    return calls
+
+
 def test_external_quantiles_match_numpy_exactly(tmp_path):
     segments, paths = _partitions(tmp_path)
     values = np.asarray([segment.features["x"] for segment in segments])
@@ -64,6 +77,24 @@ def test_external_top_k_matches_exact_stable_reference(tmp_path, normalize):
                               normalize=normalize, spill_dir=str(tmp_path / "spill"))
     assert [(segment.source_id, segment.start_idx) for segment in selected] == [
         (segments[index].source_id, segments[index].start_idx) for index in expected]
+
+
+def test_external_top_k_materializes_each_selected_partition_once(tmp_path, monkeypatch):
+    segments, paths = _partitions(tmp_path)
+    calls = _track_ipc_reads(monkeypatch)
+    weights = {"x": 0.7, "y": -0.2}
+    scores = _reference_scores(segments, weights, "quantile")
+    expected = np.argsort(-scores, kind="stable")
+
+    selected = external_top_k(
+        paths, weights=weights, target_size=len(segments), normalize="quantile",
+        spill_dir=str(tmp_path / "spill"))
+
+    assert [segment.start_idx for segment in selected] == [
+        segments[index].start_idx for index in expected]
+    full_reads = [path for path, columns in calls if columns is None]
+    assert sorted(full_reads) == sorted(paths)
+    assert all(full_reads.count(path) == 1 for path in paths)
 
 
 def test_external_reducers_reject_nonfinite_features(tmp_path):
@@ -107,6 +138,31 @@ def test_external_uniform_bins_matches_seeded_reference_exactly(tmp_path):
                                    seed=17, spill_dir=str(tmp_path / "spill"))
     assert [(s.source_id, s.start_idx) for s in actual] == [
         (s.source_id, s.start_idx) for s in expected]
+
+
+def test_external_uniform_materializes_each_selected_partition_once(tmp_path, monkeypatch):
+    import random
+    from kuration.binning import bin_segments
+    from kuration.select import sample_uniform_bins
+
+    segments, paths = _partitions(tmp_path)
+    reference = [Segment(segment.source_id, segment.start_idx, segment.end_idx,
+                         segment.time_range, dict(segment.features)) for segment in segments]
+    axes = [("x", 3), ("y", 2)]
+    bin_segments(reference, axes)
+    expected = sample_uniform_bins(
+        reference, target_size=len(reference), rng=random.Random(17))
+    calls = _track_ipc_reads(monkeypatch)
+
+    actual = external_uniform_bins(
+        paths, axes=axes, target_size=len(segments), seed=17,
+        spill_dir=str(tmp_path / "spill"))
+
+    assert [(segment.start_idx, segment.bin) for segment in actual] == [
+        (segment.start_idx, segment.bin) for segment in expected]
+    full_reads = [path for path, columns in calls if columns is None]
+    assert sorted(full_reads) == sorted(paths)
+    assert all(full_reads.count(path) == 1 for path in paths)
 
 
 def test_external_uniform_priorities_match_hours_reference_exactly(tmp_path):
@@ -194,6 +250,25 @@ def test_external_weighted_priorities_and_selection_match_reference(tmp_path):
                                  normalize="quantile", seed=seed,
                                  spill_dir=str(tmp_path / "spill"))
     assert [segment.start_idx for segment in selected] == [segments[i].start_idx for i in expected]
+
+
+def test_external_weighted_priorities_build_one_reducer_index(tmp_path, monkeypatch):
+    _segments, paths = _partitions(tmp_path)
+    calls = 0
+    original = external_module._database
+
+    def tracked(spill_dir):
+        nonlocal calls
+        calls += 1
+        return original(spill_dir)
+
+    monkeypatch.setattr(external_module, "_database", tracked)
+    priorities = list(iter_external_weighted_priorities(
+        paths, weights={"x": 0.7, "y": -0.2}, normalize="quantile", seed=31,
+        spill_dir=str(tmp_path / "spill")))
+
+    assert len(priorities) == 6
+    assert calls == 1
 
 
 def test_external_exact_hash_dedup_is_canonical_and_group_scoped(tmp_path):

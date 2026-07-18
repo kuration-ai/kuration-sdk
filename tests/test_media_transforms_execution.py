@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -128,6 +131,25 @@ def test_pyav_real_roundtrip(tmp_path):
     assert frames.shape == (3, 16, 16, 3)
     assert frames.dtype == np.uint8
     assert np.diff(frames.mean(axis=(1, 2, 3))).min() > 40
+
+
+def test_pyav_provider_reuses_and_cleans_remote_staging(monkeypatch):
+    opens = []
+
+    def open_file(uri, mode):
+        opens.append((uri, mode))
+        return io.BytesIO(b"video-bytes")
+
+    monkeypatch.setattr("kuration.io.is_remote", lambda uri: str(uri).startswith("s3://"))
+    monkeypatch.setattr("kuration.io.open_file", open_file)
+    provider = PyAVMediaProvider(remote_cache_size=1)
+    with provider._local_path("s3://bucket/clip.mp4") as first:
+        assert Path(first).read_bytes() == b"video-bytes"
+    with provider._local_path("s3://bucket/clip.mp4") as second:
+        assert second == first
+    assert len(opens) == 1
+    provider.close()
+    assert not Path(first).exists()
 
 
 def test_internal_transform_type_error_is_not_retried():

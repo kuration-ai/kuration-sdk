@@ -124,8 +124,11 @@ class StageCheckpoint:
     """Checkpoint namespace for one physical stage and one execution identity."""
 
     def __init__(self, root: str, stage_id: str, identity: CheckpointIdentity):
-        if not isinstance(stage_id, str) or not stage_id:
-            raise ValueError("stage_id must be a non-empty string")
+        if (not isinstance(stage_id, str)
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", stage_id)
+                or stage_id in {".", ".."}):
+            raise ValueError("stage_id must be a safe non-empty name using letters, digits, "
+                             "dot, underscore, or hyphen")
         self.root = str(root).rstrip("/")
         self.stage_id = stage_id
         self.identity = identity
@@ -180,22 +183,32 @@ class StageCheckpoint:
             return reusable
         final_path, commit_path = self._paths(partition_id)
         attempt_path = self._attempt_path(partition_id)
-        metadata = batch.write_ipc(attempt_path)
-        # Validate the attempt before it can become visible through a commit.
-        attempt = SegmentBatch.read_ipc(attempt_path)
-        if len(attempt) != len(batch) or attempt.column_names != batch.column_names:
-            raise RuntimeError(f"checkpoint attempt validation failed for {partition_id!r}")
-        _publish_attempt(attempt_path, final_path)
-        commit = PartitionCommit(
-            partition_id=partition_id, identity=self.identity.fingerprint,
-            data_file=final_path, rows=len(batch), sha256=metadata["sha256"],
-            columns=batch.column_names, size_bytes=metadata["size_bytes"], key_range=key_range,
-            reducer_state=dict(reducer_state) if reducer_state is not None else None,
-            errors=tuple(dict(error) for error in errors))
-        _atomic_json(commit_path, commit.to_dict())
-        if not self.validate(partition_id):
-            raise RuntimeError(f"published checkpoint validation failed for {partition_id!r}")
-        return commit
+        try:
+            metadata = batch.write_ipc(attempt_path)
+            # Validate the attempt before it can become visible through a commit.
+            attempt = SegmentBatch.read_ipc(attempt_path)
+            if len(attempt) != len(batch) or attempt.column_names != batch.column_names:
+                raise RuntimeError(f"checkpoint attempt validation failed for {partition_id!r}")
+            _publish_attempt(attempt_path, final_path)
+            commit = PartitionCommit(
+                partition_id=partition_id, identity=self.identity.fingerprint,
+                data_file=final_path, rows=len(batch), sha256=metadata["sha256"],
+                columns=batch.column_names, size_bytes=metadata["size_bytes"], key_range=key_range,
+                reducer_state=dict(reducer_state) if reducer_state is not None else None,
+                errors=tuple(dict(error) for error in errors))
+            _atomic_json(commit_path, commit.to_dict())
+            if not self.validate(partition_id):
+                raise RuntimeError(f"published checkpoint validation failed for {partition_id!r}")
+            return commit
+        finally:
+            # A failed validation must not accumulate attempts indefinitely.
+            if exists(attempt_path):
+                if is_remote(attempt_path):
+                    from .io import _fs
+                    _fs(attempt_path).rm(attempt_path)
+                else:
+                    from .io import _local
+                    Path(_local(attempt_path)).unlink(missing_ok=True)
 
     def committed(self, partition_ids) -> tuple[PartitionCommit, ...]:
         commits = []

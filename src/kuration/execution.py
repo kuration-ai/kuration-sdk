@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+import math
 from typing import Any, Callable, Iterable, Protocol
 
 
@@ -16,6 +17,16 @@ class ResourceSpec:
     num_cpus: float = 1.0
     num_gpus: float = 0.0
     memory: int | None = None
+
+    def __post_init__(self):
+        for name, value in (("num_cpus", self.num_cpus), ("num_gpus", self.num_gpus)):
+            if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                    or not math.isfinite(value) or value < 0):
+                raise ValueError(f"{name} must be a finite non-negative number")
+        if (self.memory is not None
+                and (not isinstance(self.memory, int) or isinstance(self.memory, bool)
+                     or self.memory < 1)):
+            raise ValueError("memory must be a positive integer number of bytes or None")
 
 
 class ExecutionBackend(Protocol):

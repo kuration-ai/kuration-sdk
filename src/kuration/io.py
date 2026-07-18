@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -31,7 +32,8 @@ def _fs(path):
         import fsspec
     except ImportError as e:
         raise ImportError(
-            f"remote path {path!r} needs fsspec: pip install -e '.[cloud]' (plus the backend, "
+            f"remote path {path!r} needs fsspec: pip install 'kuration-sdk[cloud]' "
+            "(plus the backend, "
             f"e.g. gcsfs for gs://, s3fs for s3://, adlfs for az://)") from e
     return fsspec.filesystem(str(path).split("://", 1)[0])
 
@@ -39,7 +41,11 @@ def _fs(path):
 @contextmanager
 def open_file(path, mode: str = "rb"):
     if is_remote(path):
-        import fsspec  # error surfaced by _fs if missing
+        try:
+            import fsspec
+        except ImportError as error:
+            raise ImportError(f"remote path {path!r} needs fsspec and the matching backend; "
+                              "install kuration-sdk[cloud]") from error
         with fsspec.open(str(path), mode) as f:
             yield f
     else:
@@ -57,15 +63,21 @@ def read_text(path) -> str:
 
 
 def write_text(path, text: str) -> None:
-    """Write text to a local path or fsspec URL, creating local parent directories."""
-    with open_file(path, "wt") as f:
-        f.write(text)
+    """Atomically publish UTF-8 text to a local path or staged remote destination."""
+    with staged_write(path) as temporary:
+        with open(temporary, "wt", encoding="utf-8") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
 
 
 def write_bytes(path, data: bytes) -> None:
-    """Write bytes to a local path or fsspec URL, creating local parent directories."""
-    with open_file(path, "wb") as f:
-        f.write(data)
+    """Atomically publish bytes to a local path or staged remote destination."""
+    with staged_write(path) as temporary:
+        with open(temporary, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
 
 
 def exists(path) -> bool:
@@ -110,7 +122,8 @@ def local_copy(path):
             fs.get_file(str(path), tmp.name)
             yield tmp.name
         finally:
-            os.unlink(tmp.name)
+            if os.path.exists(tmp.name):
+                os.unlink(tmp.name)
     else:
         yield _local(path)
 
@@ -125,20 +138,44 @@ def staged_write(path):
         suffix = os.path.splitext(str(path))[1]
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
         tmp.close()
+        remote_attempt = f"{str(path)}.kuration-attempt-{uuid.uuid4().hex}"
         try:
             yield tmp.name
-            fs.put_file(tmp.name, str(path))
+            # Upload under a unique invisible-to-manifest name, then publish only the completed
+            # object. Object-store moves may be copy+delete, but consumers can never observe a
+            # partially uploaded final payload.
+            fs.put_file(tmp.name, remote_attempt)
+            if fs.exists(str(path)):
+                fs.rm(str(path))
+            fs.mv(remote_attempt, str(path))
         finally:
-            os.unlink(tmp.name)
+            if fs.exists(remote_attempt):
+                fs.rm(remote_attempt)
+            if os.path.exists(tmp.name):
+                os.unlink(tmp.name)
     else:
         p = _local(path)
         Path(p).parent.mkdir(parents=True, exist_ok=True)
-        # Keep the real extension on the temp name (np.savez appends '.npz' if missing).
+        # A securely created same-directory file keeps the real extension (np.savez appends
+        # '.npz' otherwise) and makes os.replace atomic without cross-filesystem surprises.
         root, ext = os.path.splitext(p)
-        tmp_p = f"{root}.__tmp__{ext}"
+        handle = tempfile.NamedTemporaryFile(dir=str(Path(p).parent),
+                                             prefix=f".{Path(root).name}.", suffix=ext,
+                                             delete=False)
+        tmp_p = handle.name
+        handle.close()
         try:
             yield tmp_p
             os.replace(tmp_p, p)
+            # Persist the directory entry where the platform supports directory fsync.
+            try:
+                directory_fd = os.open(str(Path(p).parent), os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except OSError:
+                pass
         finally:
             if os.path.exists(tmp_p):
                 os.unlink(tmp_p)

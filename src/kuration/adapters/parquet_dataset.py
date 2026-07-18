@@ -46,7 +46,7 @@ class ParquetDatasetAdapter(TimeseriesAdapter):
             import pyarrow.parquet as pq
         except ImportError as e:
             raise ImportError("reading .parquet needs the optional extra: "
-                              "pip install -e '.[parquet]'") from e
+                              "pip install 'kuration-sdk[parquet]'") from e
         from ..io import local_copy
         with local_copy(parquet_path) as p:
             return pq.read_table(p).to_pylist()

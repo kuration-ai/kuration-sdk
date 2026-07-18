@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import sys
 from typing import Any, Callable, Iterable
+
+import numpy as np
 
 from .checkpoints import PartitionCommit, StageCheckpoint
 from .columnar import SegmentBatch
@@ -17,6 +20,75 @@ _OPS = {
     "==": lambda left, right: left == right,
     "!=": lambda left, right: left != right,
 }
+
+
+def _deep_size(value, seen: set[int] | None = None) -> int:
+    """Conservative size of one live window's Python/NumPy payload."""
+    seen = set() if seen is None else seen
+    identity = id(value)
+    if identity in seen:
+        return 0
+    seen.add(identity)
+    size = sys.getsizeof(value)
+    if isinstance(value, np.ndarray):
+        return max(size, int(value.nbytes))
+    if isinstance(value, dict):
+        return size + sum(_deep_size(key, seen) + _deep_size(item, seen)
+                          for key, item in value.items())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return size + sum(_deep_size(item, seen) for item in value)
+    values = getattr(value, "__dict__", None)
+    return size + (_deep_size(values, seen) if values is not None else 0)
+
+
+def _buffer_bytes(schema, ticks: int, entities: int) -> int:
+    entities = max(1, entities)
+    numeric_width = sum(field.width for field in schema.fields.values()
+                        if field.kind != "categorical")
+    categorical = sum(field.kind == "categorical" for field in schema.fields.values())
+    # WindowBuffer uses float64 numeric/global arrays, int64 categorical arrays, and a bool
+    # validity mask.  A factor of three covers the buffer plus reducer/transform staging.
+    arrays = ticks * (entities * (8 * numeric_width + 8 * categorical + 1)
+                      + 8 * len(schema.globals))
+    return 3 * arrays
+
+
+def _minimum_window_bytes(schema, window: int) -> int:
+    # Python Tick/entity containers have a non-zero cost even for an otherwise empty schema.
+    return 4096 + window * 256 + _buffer_bytes(schema, window, 1)
+
+
+def _window_working_bytes(schema, window) -> int:
+    entities = len({entity for tick in window for entity in tick.entities})
+    return 4096 + _deep_size(window) + _buffer_bytes(schema, len(window), entities)
+
+
+def resolve_bounded_memory_limits(*, schema, segmenter, memory_budget: int | None,
+                                  batch_size: int, max_in_flight: int,
+                                  transforms=()) -> dict[str, int | None]:
+    """Resolve enforceable feature-stage batching limits from a byte budget.
+
+    A budgeted run deliberately uses one in-flight batch: dynamic entity rosters make a safe
+    multi-batch reservation unknowable before windows are read.  Batches are then shortened
+    at runtime using measured Python payload plus schema-derived array working space.
+    """
+    if memory_budget is None:
+        return {"memory_budget": None, "batch_size": batch_size,
+                "max_in_flight": max_in_flight, "batch_memory_limit": None,
+                "declared_transform_memory": 0}
+    declared = max((int((call.get("resources") or {}).get("memory_bytes") or 0)
+                    for call in transforms), default=0)
+    minimum = _minimum_window_bytes(schema, segmenter.window)
+    available = memory_budget - declared
+    if available < minimum:
+        raise ValueError(
+            f"memory_budget={memory_budget} bytes cannot hold one feature window "
+            f"(estimated minimum {minimum + declared} bytes, including "
+            f"{declared} bytes declared by transforms)")
+    return {"memory_budget": memory_budget,
+            "batch_size": min(batch_size, max(1, available // minimum)),
+            "max_in_flight": 1, "batch_memory_limit": available,
+            "declared_transform_memory": declared}
 
 
 def _passes(segment, predicates) -> bool:
@@ -59,7 +131,8 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
                              group_of: Callable | None = None,
                              tags_of: Callable | None = None,
                              on_error: str = "skip", progress=None,
-                             max_in_flight: int = 2) -> FeatureStageResult:
+                             max_in_flight: int = 2, memory_budget: int | None = None,
+                             retain_predicate_failures: bool = False) -> FeatureStageResult:
     """Run a fused feature island with bounded batches and producer backpressure.
 
     Matching partition commits skip feature and transform computation on restart. Sources are
@@ -73,6 +146,26 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
     if (not isinstance(max_in_flight, int) or isinstance(max_in_flight, bool)
             or max_in_flight < 1):
         raise ValueError("max_in_flight must be a positive integer")
+    if memory_budget is not None and (not isinstance(memory_budget, int)
+                                      or isinstance(memory_budget, bool) or memory_budget < 1):
+        raise ValueError("memory_budget must be a positive integer or None")
+    if not isinstance(retain_predicate_failures, bool):
+        raise ValueError("retain_predicate_failures must be true or false")
+    from .adapters.base import validate_adapter_availability
+    validate_adapter_availability(adapter, schema, define=define, tags_spec=tags_spec)
+    limits = resolve_bounded_memory_limits(
+        schema=schema, segmenter=segmenter, memory_budget=memory_budget,
+        batch_size=batch_size, max_in_flight=max_in_flight, transforms=transforms)
+    resolved_batch_size = limits["batch_size"]
+    resolved_max_in_flight = limits["max_in_flight"]
+    resolved_transform_memory = limits["declared_transform_memory"]
+    assert isinstance(resolved_batch_size, int)
+    assert isinstance(resolved_max_in_flight, int)
+    assert isinstance(resolved_transform_memory, int)
+    effective_batch_size = resolved_batch_size
+    effective_max_in_flight = resolved_max_in_flight
+    batch_memory_limit = limits["batch_memory_limit"]
+    declared_transform_memory = resolved_transform_memory
     if transforms and registry is None:
         from .registry import default_registry
         registry = default_registry
@@ -89,12 +182,14 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
     transform_runner = None
     checkpoint_hits = 0
     checkpoint_misses = 0
+    estimated_peak_live_bytes = 0
+    largest_window_bytes = 0
 
     for source_index, source in enumerate(sources, 1):
         source_commits: list[PartitionCommit] = []
         try:
             engine = FeatureEngine(schema, define=define, registered=list(registered),
-                                   tags_spec=tags_spec)
+                                   tags_spec=tags_spec, registry=registry)
             seen, entity_order, tick_count = set(), [], 0
 
             def tracked(ticks):
@@ -113,18 +208,45 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
             group = group_of(source) if group_of else None
 
             def batches():
-                pending_segments, pending_windows = [], []
+                nonlocal estimated_peak_live_bytes, largest_window_bytes
+                pending_segments: list[Any] = []
+                pending_windows: list[Any] = []
+                pending_bytes = 0
                 partition_index = 0
                 for segment, window in segmenter.stream(source, tracked(ticks)):
-                    segment.group = group
-                    pending_segments.append(segment)
-                    pending_windows.append(window)
-                    if len(pending_segments) == batch_size:
+                    window_bytes = (_window_working_bytes(schema, window)
+                                    if batch_memory_limit is not None else 0)
+                    largest_window_bytes = max(largest_window_bytes, window_bytes)
+                    if batch_memory_limit is not None and window_bytes > batch_memory_limit:
+                        raise MemoryError(
+                            f"one feature window needs an estimated {window_bytes} bytes, "
+                            f"exceeding memory_budget={memory_budget} bytes after reserved "
+                            f"transform memory; reduce window width/entity density or raise "
+                            "memory_budget")
+                    if (pending_segments and batch_memory_limit is not None
+                            and pending_bytes + window_bytes > batch_memory_limit):
+                        estimated_peak_live_bytes = max(
+                            estimated_peak_live_bytes, pending_bytes + declared_transform_memory)
                         yield (f"{source!s}:{partition_index:08d}",
                                pending_segments, pending_windows)
                         partition_index += 1
                         pending_segments, pending_windows = [], []
+                        pending_bytes = 0
+                    segment.group = group
+                    pending_segments.append(segment)
+                    pending_windows.append(window)
+                    pending_bytes += window_bytes
+                    if len(pending_segments) == effective_batch_size:
+                        estimated_peak_live_bytes = max(
+                            estimated_peak_live_bytes, pending_bytes + declared_transform_memory)
+                        yield (f"{source!s}:{partition_index:08d}",
+                               pending_segments, pending_windows)
+                        partition_index += 1
+                        pending_segments, pending_windows = [], []
+                        pending_bytes = 0
                 if pending_segments:
+                    estimated_peak_live_bytes = max(
+                        estimated_peak_live_bytes, pending_bytes + declared_transform_memory)
                     yield (f"{source!s}:{partition_index:08d}",
                            pending_segments, pending_windows)
 
@@ -146,14 +268,15 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
                     transform_runner.apply(pending_segments, pending_windows, progress=None)
                 selected = [segment for segment in pending_segments
                             if _passes(segment, predicates)]
+                written = pending_segments if retain_predicate_failures else selected
                 if tags_of:
-                    for segment in selected:
+                    for segment in written:
                         segment.tags = frozenset(tags_of(segment))
-                batch = SegmentBatch.from_segments(selected, feature_names=feature_names)
+                batch = SegmentBatch.from_segments(written, feature_names=feature_names)
                 key_range = None
-                if selected:
+                if written:
                     keys = [(str(segment.source_id), segment.start_idx, segment.end_idx)
-                            for segment in selected]
+                            for segment in written]
                     key_range = (keys[0], keys[-1])
                 return checkpoint.write_partition(
                     partition_id, batch, key_range=key_range,
@@ -162,7 +285,7 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
 
             from .execution import LocalExecutionBackend
             source_commits.extend(LocalExecutionBackend().iter_batches(
-                batches(), process, max_in_flight=max_in_flight, workers=1))
+                batches(), process, max_in_flight=effective_max_in_flight, workers=1))
             # A source is the error-isolation unit.  Do not expose partitions from a source
             # that failed after one or more batches had already committed; those files may
             # remain reusable on restart, but they are not candidates in this run.
@@ -173,7 +296,14 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
         except Exception as error:
             if on_error == "raise":
                 raise RuntimeError(f"bounded feature source {source!r} failed: {error!r}") from error
-            errors.append({"source": source, "error": repr(error)})
+            from .scoring import _redact_diagnostic
+            errors.append({
+                "source": _redact_diagnostic(source) if isinstance(source, str) else source,
+                "error": _redact_diagnostic(repr(error)),
+                "error_type": f"{type(error).__module__}.{type(error).__qualname__}",
+                "message": _redact_diagnostic(str(error)),
+                "phase": "bounded-feature-stage",
+            })
             emit(progress, "scoring", "advance", current=source_index,
                  total=len(sources), source=source, status="err")
     if sources and not commits:
@@ -187,6 +317,15 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
                  "candidate_rows": sum(int((commit.reducer_state or {}).get(
                      "candidate_rows", commit.rows)) for commit in commits),
                  "output_rows": sum(commit.rows for commit in commits),
-                 "batch_size": batch_size, "max_in_flight": max_in_flight}
+                 "batch_size": effective_batch_size,
+                 "max_in_flight": effective_max_in_flight,
+                 "requested_batch_size": batch_size,
+                 "requested_max_in_flight": max_in_flight,
+                 "memory_budget": memory_budget,
+                 "estimated_peak_live_bytes": (estimated_peak_live_bytes
+                                               if memory_budget is not None else None),
+                 "largest_window_bytes": (largest_window_bytes
+                                          if memory_budget is not None else None),
+                 "declared_transform_memory": declared_transform_memory}
     return FeatureStageResult(commits=tuple(commits), errors=tuple(errors),
                               source_tracks=tracks, telemetry=telemetry)

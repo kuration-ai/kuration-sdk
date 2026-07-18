@@ -72,7 +72,7 @@ def test_bad_source_skipped_and_logged(capsys):
     assert [e["source"] for e in res.errors] == ["s3"]
     assert res.errors[0]["error_type"] == "builtins.RuntimeError"
     assert res.errors[0]["message"] == "boom"
-    assert "raise RuntimeError(\"boom\")" in res.errors[0]["traceback"]
+    assert "traceback" not in res.errors[0]  # portable artifacts omit private stack paths
     assert not any(s.source_id == "s3" for s in res.all_segments)   # the bad one is gone
     assert {s.source_id for s in res.all_segments} == {"s1", "s2", "s4"}
     assert "skip" in capsys.readouterr().err.lower()
@@ -85,6 +85,30 @@ def test_on_error_raise_propagates():
         curate(schema=SCHEMA, adapter=adapter, sources=list(data),
                strategy=load_strategy(STRAT, SCHEMA), segmenter=Segmenter(4, 4),
                target_size=100, seed=0, on_error="raise")
+
+
+@pytest.mark.parametrize("callback", ["group_of", "tags_of"])
+def test_callback_failures_use_the_same_per_source_error_policy(callback):
+    data = _data(range(1, 4))
+
+    def group_of(source):
+        if source == "s2":
+            raise RuntimeError("bad grouping")
+        return "ok"
+
+    def tags_of(segment):
+        if segment.source_id == "s2":
+            raise RuntimeError("bad tagging")
+        return ()
+
+    kwargs = {callback: group_of if callback == "group_of" else tags_of}
+    result = curate(
+        schema=SCHEMA, adapter=MemAdapter(SCHEMA, data), sources=list(data),
+        strategy=load_strategy(STRAT, SCHEMA), segmenter=Segmenter(4, 4),
+        target_size=100, seed=0, on_error="skip", **kwargs)
+    assert {segment.source_id for segment in result.all_segments} == {"s1", "s3"}
+    assert [(error["source"], error["phase"]) for error in result.errors] == [
+        ("s2", callback)]
 
 
 # ---- resume -----------------------------------------------------------------

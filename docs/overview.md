@@ -52,15 +52,17 @@ components.
 ## Install only what the plan needs
 
 ```bash
-pip install -e .                    # core (numpy only)
-pip install -e '.[methods]'         # + scikit-learn (feature-space selection, filters, scorers)
-pip install -e '.[parquet,array]'   # + pyarrow / h5py (Parquet & HDF5 containers/adapters)
-pip install -e '.[cloud]'           # + fsspec (gs:// / s3:// / az:// I/O; add a backend)
-pip install -e '.[video,ray]'       # + PyAV media provider / ordered Ray source backend
+pip install kuration-sdk                       # core (numpy only)
+pip install 'kuration-sdk[methods]'             # + scikit-learn selection/filter methods
+pip install 'kuration-sdk[parquet,array]'       # + pyarrow / h5py containers and adapters
+pip install 'kuration-sdk[s3]'                  # + fsspec and the S3 provider backend
+pip install 'kuration-sdk[video,ray]'           # + PyAV media / ordered Ray source backend
 ```
 
 The NumPy-only core handles ordinary in-memory, CSV, and JSON workflows. Optional dependencies
 are lazy and loud: preflight names the missing extra instead of silently changing behavior.
+Provider-specific cloud installs are `[s3]`, `[gcs]`, and `[azure]`; `[cloud]` is the
+backend-neutral fsspec layer for managed environments that provide a backend separately.
 
 ## Explicit end-to-end example
 

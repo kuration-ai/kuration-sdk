@@ -11,17 +11,18 @@ from __future__ import annotations
 
 from ..io import exists as _exists, file_integrity
 from .base import PassthroughEncoder
-from .containers import CONTAINER_EXT, write_shard
+from .containers import container_extension, write_shard
 from .shardwriter import _build_arrays, track_name
 from .track import PRESENT_KEY
 
 
 def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dict], *,
                          schema, spec, encoder=None, resume: bool = False, media_provider=None,
-                         resume_entries=None) -> list[dict]:
+                         resume_entries=None, registry=None, expected_ticks: int | None = None,
+                         expected_entities=None) -> list[dict]:
     """`jobs`: [{eid, span_index, start, end, split, name_suffix, group}] for this source."""
     encoder = encoder or PassthroughEncoder()
-    ext = CONTAINER_EXT[spec.container]
+    ext = container_extension(spec.container, registry=registry)
     shape = {m.name: list(m.shape) for m in spec.modalities}
     dtype = {m.name: m.dtype for m in spec.modalities}
     if spec.presence_mask:
@@ -32,7 +33,7 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
         st[(j["eid"], j["span_index"])] = {
             "buf": [], "shard": 0, "entries": [], "start": j["start"], "end": j["end"],
             "split": j["split"], "eid": j["eid"], "suffix": j.get("name_suffix", ""),
-            "group": j.get("group"), "meta": dict(j.get("meta") or {})}
+            "group": j.get("group"), "meta": dict(j.get("meta") or {}), "consumed": 0}
 
     def _flush(key, pad_to=None):
         s = st[key]
@@ -59,7 +60,8 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
             path = candidate
             integrity = actual
         else:
-            path = write_shard(base, spec.container, _build_arrays(piece, spec, encoder, ctx), real_len)
+            path = write_shard(base, spec.container, _build_arrays(piece, spec, encoder, ctx),
+                               real_len, registry=registry)
             integrity = file_integrity(path)
         s["entries"].append({"path": path, "source_id": source_id, "entity_id": str(s["eid"]),
                              "split": s["split"], "shard_index": s["shard"], "n_steps": real_len,
@@ -67,7 +69,11 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
         s["shard"] += 1
         s["buf"] = []
 
+    observed_ticks = 0
+    observed_entities = set()
     for t, tk in enumerate(tick_iter):
+        observed_ticks = t + 1
+        observed_entities.update(tk.entities)
         for key, s in st.items():
             if s["start"] <= t < s["end"]:
                 rec = dict(tk.entities.get(s["eid"]) or {})
@@ -77,8 +83,27 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
                     rec[f"media:{mname}"] = ref
                 rec[PRESENT_KEY] = s["eid"] in tk.entities
                 s["buf"].append(rec)
+                s["consumed"] += 1
                 if len(s["buf"]) == spec.shard_length:
                     _flush(key)
+    expected_entity_set = (None if expected_entities is None else set(expected_entities))
+    source_mismatch = []
+    if expected_ticks is not None and observed_ticks != expected_ticks:
+        source_mismatch.append(f"tick count {observed_ticks} != expected {expected_ticks}")
+    if expected_entity_set is not None and observed_entities != expected_entity_set:
+        source_mismatch.append(
+            f"entity roster {sorted(map(str, observed_entities))} != expected "
+            f"{sorted(map(str, expected_entity_set))}")
+    invalid = [
+        {"entity_id": str(s["eid"]), "start": s["start"], "end": s["end"],
+         "consumed": s["consumed"]}
+        for s in st.values()
+        if observed_ticks < s["end"] or s["consumed"] != s["end"] - s["start"]]
+    if invalid or source_mismatch:
+        raise ValueError(
+            f"source {source_id!r} changed or ended early while writing selected spans: "
+            f"observed {observed_ticks} ticks; source mismatch {source_mismatch}; "
+            f"incomplete jobs {invalid}")
     for key, s in st.items():
         if s["buf"]:
             if spec.short_policy == "drop":

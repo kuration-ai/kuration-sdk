@@ -20,7 +20,7 @@ objects as noted below.
 |---|---|---|
 | `__version__` | `str` | installed `kuration-sdk` distribution version |
 | `curate` | `(*, schema, adapter, sources, strategy, segmenter, target_size, seed=0, group_of=None, tags_of=None, test_frac=0.0, workers=1, on_error="skip", streaming=False, progress=None, transforms=(), registry=None, executor="local") -> CurateResult` | score/transform all sources, select a target **count** of segments |
-| `write_dataset` | `(out_dir, *, schema, adapter, sources, strategy, segmenter, spec, encoder=None, train_hours, test_hours=0.0, sample_hz=None, seed=0, group_of=None, tags_of=None, clip_aggregate="max", span_steps=None, span_seconds=None, workers=1, on_error="skip", resume=False, streaming=False, progress=None, transforms=(), registry=None, executor="local") -> dict` | score/transform, fill a train/test **hour budget**, write shards + manifests + config |
+| `write_dataset` | `(out_dir, *, schema, adapter, sources, strategy, segmenter, spec, encoder=None, train_hours, test_hours=0.0, sample_hz=None, seed=0, group_of=None, tags_of=None, clip_aggregate="max", span_steps=None, span_seconds=None, workers=1, on_error="skip", resume=False, streaming=False, progress=None, transforms=(), registry=None, executor="local", memory_budget=None, batch_size=1024, checkpoint_dir=None, spill_dir=None, approximation="exact", max_in_flight=2) -> dict` | score/transform, fill a train/test **hour budget**, write shards + manifests + config; a memory budget selects the exact bounded checkpoint path |
 | `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local") -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
 | `dataset_report` | `(segments, *, metrics=None, hist_bins=10) -> dict` | per-metric distribution profile (+ tag/group counts) of a scored pool |
 
@@ -31,7 +31,8 @@ feature pass (deterministic); `on_error` is `"skip"` (log + collect)
 or `"raise"`; `streaming=True` is the out-of-core path; `progress(event_dict)` receives phase
 events without coupling execution to a particular UI.
 
-- `CurateResult` — dataclass: `selected`, `all_segments`, `schema`, `strategy`, `splits`, `errors`.
+- `CurateResult` — dataclass: `selected`, `all_segments`, `schema`, `strategy`, `splits`, `errors`,
+  scored `source_tracks`, and optional bounded-execution metadata in `execution`.
 - `write_dataset` returns `{"shards": [entries], "split": {source -> "train"/"test"}, "admitted": set, "results": {...counts}, "errors": [...]}`.
 - `Arm(name, strategy)` — one experiment arm; `union_define(arms) -> dict` merges their `define`s.
 
@@ -73,7 +74,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.head` | `(k=5) -> list[Tick]` | inspector — first `k` ticks of the first source |
 | `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources, expectations}`, no data touched |
 | `Pipeline.preview` | `(*, max_sources=3, max_ticks_per_source=10000, examples=5) -> DatasetPreview` | inspector — bounded field quality, source shape, and representative tick sample |
-| `Pipeline.review` | `(n=None, *, examples=10, hist_bins=10) -> SelectionReview` | terminal — compare the complete candidate pool with a count selection |
+| `Pipeline.review` | `(n=None, *, path=None, examples=10, hist_bins=10, **output_options) -> SelectionReview \| HoursSelectionReview` | terminal — compare a complete count-selection pool, or write/review an hours selection when `path=` is supplied |
 | `Pipeline.explain` | `(*, inspect_sources=False) -> ExecutionPlan` | inspector — typed stage plan, requirements, implicit choices, and warnings; optionally preflight source metadata |
 
 All operators are immutable: each returns a new pipeline. `semantic` fails if a semantic is
@@ -84,7 +85,7 @@ See [pipeline.md](pipeline.md) for accepted operator forms and validation behavi
 
 | name | signature / stable fields | does |
 |---|---|---|
-| `CurateResult` | `(selected, all_segments, schema, strategy, splits={}, errors=[])` | typed count-path result |
+| `CurateResult` | `(selected, all_segments, schema, strategy, splits={}, errors=[], source_tracks={}, execution=None)` | typed count-path result, including the scored source roster/length contract and bounded execution metadata when applicable |
 | `DatasetWriteResult` | dict-compatible; `.to_dict()` and attribute access | dataset write result returned by output paths |
 | `ExperimentResult` | dict-compatible; `.to_dict()` and attribute access | multi-arm experiment result |
 | `DatasetReport` | dict-compatible; `.to_dict()` and attribute access | distribution report result |
@@ -118,9 +119,10 @@ subclass implementation.
 
 | name | signature | does |
 |---|---|---|
-| `SchemaSpec` | `.from_dict(d)` / `.to_dict()`; fields: `name, fields, entity_axis, sample_hz, event_streams, globals` | the declared vocabulary ([schema.md](schema.md)) |
+| `SchemaSpec` | `.from_dict(d)` / `.to_dict()`; fields: `name, fields, entity_axis, sample_hz, event_streams, globals, media` | the declared vocabulary ([schema.md](schema.md)); fields or media may independently be non-empty |
 | `FieldSpec` | `(name, kind, dims=(), semantics=None, bits={}, max_rate=None)` | one field: `kind` scalar/vector/categorical + semantics tag |
-| `Tick` | `(time, entities, events={}, globals={})` | canonical per-timestep record — the adapter contract |
+| `MediaSpec` | `(name, kind, dtype, shape, layout="HWC", color_space="RGB", timing="pts", capabilities={})` | one lazy auxiliary media-column contract |
+| `Tick` | `(time, entities, events={}, globals={}, media={})` | canonical per-timestep record — the adapter contract |
 | `WindowBuffer` | `.numeric_field(name) -> (T,E,D)`, `.categorical_field(name) -> (codes, vocab)`, `.valid (T,E)`, `.events`, `.globals` | one window's arrays — what metrics see |
 | `build_window` | `(schema, ticks) -> WindowBuffer` | generic, schema-driven extraction |
 | `empty_like` | `(schema, T, E) -> WindowBuffer` | NaN/-1-initialized buffer (adapters/tests) |
@@ -135,7 +137,7 @@ subclass implementation.
 | `register_metric` | `@register_metric("name")` on `fn(WindowBuffer) -> float` | escape hatch: a Python per-segment metric |
 | `register_compiled` | `(name, fn)` | same, non-decorator form |
 | `FeatureEngine` | `(schema, *, define=None, registered=None, tags_spec=None)`; `.compute(ticks, segments)`, `.score_window(seg, window_ticks)` | runs all metrics over one buffer per segment |
-| `score_sources` | `(*, schema, adapter, sources, define, registered, segmenter, tags_spec=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local") -> (segments, errors, source_tracks)` | the shared ordered feature pass (raises on an empty pool) |
+| `score_sources` | `(*, schema, adapter, sources, define, registered, segmenter, tags_spec=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local", registry=None, required_fields=()) -> (segments, errors, source_tracks)` | the shared ordered feature pass (raises on an empty pool) |
 
 ## Input adapters
 
@@ -151,7 +153,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `NpzAdapter` | `(schema, *, fields, globals=None)` | `.npz` (dep-free) |
 | `ParquetDatasetAdapter` | `(schema, *, fields, path, source_per="part", time_column=None, entity_column=None, globals=None)`; `.sources()` | a directory/glob of Parquet parts (`[parquet]`) |
 | `HuggingFaceAdapter` | `(schema, *, fields, dataset, split="train", config=None, time_column=None, entity_column=None, globals=None, source_column=None, load_kwargs=None)`; `.sources()` | a HF dataset (`[hf]`) |
-| `ZarrAdapter` | `(schema, *, fields, globals=None)` | a Zarr store (`[zarr]`; remote via `[cloud]`) |
+| `ZarrAdapter` | `(schema, *, fields, globals=None)` | a Zarr store (`[zarr]`; remote via `[gcs]`, `[s3]`, or `[azure]`) |
 | `CuratedDatasetAdapter` | `(dataset_dir_or_list, schema=None)`; `.sources()`, `.dataset_of` | kuration's own output, re-curatable |
 | `schema_from_output` | `(output_spec_dict, *, name="curated", sample_hz=None, entity_axis="e") -> SchemaSpec` | derive a schema from a dataset's `config.json` output block |
 | `register_adapter` / `get_adapter` | `(name, factory, **metadata) -> None` / `(name, *, registry=None, **kwargs) -> InputAdapter` | declarative adapter registry |
@@ -162,7 +164,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 
 | name | signature | does |
 |---|---|---|
-| `load_strategy` | `(dict_or_json_path, schema) -> Strategy` | parse + validate a declarative strategy ([strategies.md](strategies.md)) |
+| `load_strategy` | `(dict_or_json_path, schema, *, registry=None, available_metrics=()) -> Strategy` | parse + validate a declarative strategy ([strategies.md](strategies.md)) |
 | `Strategy` | fields: `define, axes, method, weights, normalize, target, tag_coverage, group_cap, predicates, feature_space, method_params, filters, tags, scorers, resolved` | the loaded strategy (its `.resolved` dict lands in `config.json`) |
 | `bin_segments` | `(segments, axes) -> None` | assign quantile-bin tuples in place (tie-robust, NaN-loud) |
 | `quantile_bins` | `(values, n_bins) -> edges` | raw equal-frequency edges |
@@ -177,8 +179,8 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | name | signature | does |
 |---|---|---|
 | `SegmentScorer` | Protocol: `score(segments, ctx) -> array`; optional `needs_buffers=True` | the learned/whole-pool seam |
-| `register_scorer` / `get_scorer` | `(name, factory)` / `(name, **kwargs)` | registry (`action_residual` ships, `[methods]`) |
-| `apply_scorers` | `(entries, segments, *, schema, adapter, seed=0) -> None` | run parsed scorers, write outputs into `seg.features` |
+| `register_scorer` / `get_scorer` | `(name, factory, **metadata)` / `(name, *, registry=None, **kwargs)` | registry (`action_residual` ships, `[methods]`) |
+| `apply_scorers` | `(entries, segments, *, schema, adapter, seed=0, progress=None, registry=None) -> None` | run parsed scorers, write outputs into `seg.features` |
 
 ## Plugins and progress
 
@@ -202,8 +204,8 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `register_filter` | `(name, fn, **metadata) -> None` | register a pre-pass filter |
 | `register_operator` | `(name, fn=None, **metadata)` | register a `(pipeline, **params) -> Pipeline` composition directly or as a decorator |
 
-Registry kinds are `adapter`, `metric`, `scorer`, `encoder`, `method`, `filter`, `container`, and
-`preset`, plus compositional `operator`. Names accept `name` or `namespace/name`; duplicate registrations raise unless the
+Registry kinds are `adapter`, `metric`, `scorer`, `encoder`, `method`, `filter`, `container`,
+`preset`, `transform`, and compositional `operator`. Names accept `name` or `namespace/name`; duplicate registrations raise unless the
 lower-level `Registry.register(..., replace=True)` API is used. See
 [customization.md](customization.md) for descriptors, parameter schemas, and plugin packaging.
 
@@ -228,7 +230,7 @@ remain the Python convenience boundary.
 | `PartitionCommit` | `(partition_id, identity, data_file, rows, sha256, columns, ...)` | checksum-protected committed partition metadata |
 | `StageCheckpoint` | `(root, stage_id, identity)` | validate, reuse, publish, and finalize independent partition commits |
 | `canonical_hash` | `(value) -> str` | deterministic SHA-256 over canonical JSON |
-| `FeatureStageResult` | `(commits, errors, source_tracks)` | bounded feature-island result without a total Python segment pool |
+| `FeatureStageResult` | `(commits, errors, source_tracks, telemetry={})` | bounded feature-island result without a total Python segment pool |
 | `checkpoint_feature_stage` | `(*, schema, adapter, sources, define, registered, segmenter, checkpoint, batch_size=1024, ...) -> FeatureStageResult` | stream segmentation, metrics, predicates, and transforms into checkpoint partitions |
 | `external_quantile_edges` | `(partitions, feature, n_bins, *, spill_dir=None) -> ndarray` | exact NumPy-compatible quantiles with disk-proportional state |
 | `external_top_k` | `(partitions, *, weights, target_size, normalize="quantile", spill_dir=None) -> list[Segment]` | exact stable top-k that materializes only selected segments |
@@ -236,7 +238,7 @@ remain the Python convenience boundary.
 | `iter_external_uniform_priorities` | `(partitions, *, axes, seed=0, spill_dir=None) -> Iterator[tuple[Segment, float]]` | exact disk-backed uniform-bin priorities for hours filling |
 | `iter_external_top_k_priorities` | `(partitions, *, weights, normalize="quantile", spill_dir=None)` | stream every canonical segment with its exact disk-backed normalized priority |
 | `iter_external_span_items` | `(prioritized_segments, source_tracks, *, sample_hz, span_len=None, clip_aggregate="max", group_of=None, spill_dir=None)` | aggregate overlapping segment priorities/features into a bounded span-item stream |
-| `iter_external_weighted_priorities` | `(partitions, *, weights, normalize="quantile", seed=0, spill_dir=None)` | stream exact canonical Gumbel weighted priorities using two bounded passes |
+| `iter_external_weighted_priorities` | `(partitions, *, weights, normalize="quantile", seed=0, spill_dir=None)` | stream exact canonical Gumbel priorities from one disk-backed score index and one partition-at-a-time materialization pass |
 | `external_weighted` | `(partitions, *, weights, target_size, normalize="quantile", seed=0, spill_dir=None) -> list[Segment]` | select exact hours-path Gumbel priorities while retaining only the selected heap; count-weighted sampling has a distinct NumPy contract |
 | `iter_external_hash_dedup` | `(partitions, *, feature_names=None, per_group=False, spill_dir=None)` | exact disk-backed feature-vector dedup with full-payload collision resolution and canonical retention |
 | `apply_transforms_to_windows` | `(calls, segments, windows, *, adapter, registry, progress=None)` | bounded transform execution over already-extracted windows without source rereads |
@@ -258,7 +260,7 @@ executes resolved calls over canonical segments; `get_execution_backend` resolve
 | `register_encoder` / `get_encoder` | `(name, factory)` / `(name, **kwargs)` | encoder registry |
 | `Track` | `(source_id, entity_id, records, meta={})` | one entity's timestep sequence — the output unit |
 | `tracks_from_ticks` | `(schema, ticks, source_id) -> list[Track]` | one track per entity |
-| `write_track` | `(out_dir, track, spec, *, encoder=None, schema=None, split="all", resume=False, name_suffix="", media_provider=None, resume_entries=None) -> [manifest entries]` | low-level: write one track's shards; `resume_entries` supplies a previously committed checksummed manifest for verified reuse |
+| `write_track` | `(out_dir, track, spec, *, encoder=None, schema=None, split="all", resume=False, name_suffix="", media_provider=None, resume_entries=None, registry=None) -> [manifest entries]` | low-level: write one track's shards; `resume_entries` supplies a previously committed checksummed manifest for verified reuse and `registry` resolves overlay containers |
 | `fill_to_hours` | `(items, *, train_hours, test_hours, max_group_overshoot=None, tag_coverage=None, seed=0, return_stats=False)` | hours-budget fill; optional accounting as a third return value |
 | `Container` | `(extension, writer, reader)` | one shard-container implementation |
 | `register_container` | `(name, container=None, *, extension=None, writer=None, reader=None, **metadata)` | register a `Container` instance or its three parts |

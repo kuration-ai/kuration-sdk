@@ -384,6 +384,11 @@ def compile_physical_plan(pipeline, *, memory_budget: int | None = None,
                                      default=None),
             max_batch_size=min((op.traits.resources.max_batch_size for op in group
                                 if op.traits.resources.max_batch_size is not None), default=None))
+        if (memory_budget is not None and resources.memory_bytes is not None
+                and resources.memory_bytes > memory_budget):
+            raise ValueError(
+                f"stage {group[0].name!r} declares a minimum of "
+                f"{resources.memory_bytes} memory bytes, exceeding memory_budget={memory_budget}")
         stages.append(PhysicalStage(
             id=f"stage{index:03d}",
             mode="data_parallel" if any(op.traits.scope == "global" for op in group)

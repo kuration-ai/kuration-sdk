@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Iterable, Iterator, Mapping, Optional, Protocol, runtime_checkable
+from typing import Any, Iterable, Iterator, Mapping, Optional, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -71,13 +71,124 @@ def _av():
 
 
 class PyAVMediaProvider:
-    """CPU RGB provider backed by the optional PyAV package."""
+    """CPU RGB provider backed by PyAV, with bounded reuse of staged remote videos."""
     capabilities = {"seeking": True, "variable_frame_rate": True, "streaming": True}
+
+    def __init__(self, *, remote_cache_size: int = 4):
+        if (not isinstance(remote_cache_size, int) or isinstance(remote_cache_size, bool)
+                or remote_cache_size < 0):
+            raise ValueError("remote_cache_size must be a non-negative integer")
+        from collections import OrderedDict
+        from threading import RLock
+        self.remote_cache_size = remote_cache_size
+        self._remote_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._remote_cache_lock = RLock()
+
+    def __getstate__(self):
+        # Worker processes receive their own secure cache; host temp paths and locks are not
+        # portable or pickleable.
+        return {"remote_cache_size": self.remote_cache_size}
+
+    def __setstate__(self, state):
+        PyAVMediaProvider.__init__(self, remote_cache_size=state["remote_cache_size"])
+
+    def _download_remote(self, uri: str) -> str:
+        import os
+        import shutil
+        import tempfile
+        from pathlib import Path
+        from urllib.parse import urlsplit
+        from .io import open_file
+        suffix = Path(urlsplit(uri).path).suffix
+        handle = tempfile.NamedTemporaryFile(prefix="kuration-media-", suffix=suffix,
+                                             delete=False)
+        try:
+            with open_file(uri, "rb") as source:
+                shutil.copyfileobj(source, handle, length=1024 * 1024)
+            handle.flush()
+            os.fsync(handle.fileno())
+            return handle.name
+        except Exception:
+            handle.close()
+            try:
+                os.unlink(handle.name)
+            except FileNotFoundError:
+                pass
+            raise
+        finally:
+            if not handle.closed:
+                handle.close()
+
+    def _evict_remote_locked(self) -> None:
+        import os
+        while len(self._remote_cache) > self.remote_cache_size:
+            victim = next((uri for uri, entry in self._remote_cache.items()
+                           if entry["uses"] == 0), None)
+            if victim is None:
+                return
+            entry = self._remote_cache.pop(victim)
+            try:
+                os.unlink(entry["path"])
+            except FileNotFoundError:
+                pass
+
+    def _local_path(self, uri: str):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def resolved():
+            from .io import is_remote, local_copy
+            if not is_remote(uri) or self.remote_cache_size == 0:
+                with local_copy(uri) as path:
+                    yield path
+                return
+            with self._remote_cache_lock:
+                entry = self._remote_cache.get(uri)
+                if entry is None:
+                    entry = {"path": self._download_remote(uri), "uses": 0}
+                    self._remote_cache[uri] = entry
+                else:
+                    self._remote_cache.move_to_end(uri)
+                entry["uses"] += 1
+            try:
+                yield entry["path"]
+            finally:
+                with self._remote_cache_lock:
+                    entry["uses"] -= 1
+                    self._evict_remote_locked()
+
+        return resolved()
+
+    def close(self) -> None:
+        """Release every staged remote video owned by this provider."""
+        import os
+        cache = getattr(self, "_remote_cache", None)
+        lock = getattr(self, "_remote_cache_lock", None)
+        if cache is None or lock is None:
+            return
+        with lock:
+            for entry in cache.values():
+                try:
+                    os.unlink(entry["path"])
+                except FileNotFoundError:
+                    pass
+            cache.clear()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        self.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def probe(self, uri: str) -> VideoMetadata:
         av = _av()
-        from .io import local_copy
-        with local_copy(uri) as path, av.open(path) as container:
+        with self._local_path(uri) as path, av.open(path) as container:
             stream = next((s for s in container.streams if s.type == "video"), None)
             if stream is None:
                 raise ValueError(f"video {uri!r} contains no video stream")
@@ -91,8 +202,7 @@ class PyAVMediaProvider:
 
     def iter_refs(self, uri: str, *, source_id: Optional[str] = None) -> Iterator[FrameRef]:
         av = _av()
-        from .io import local_copy
-        with local_copy(uri) as path, av.open(path) as container:
+        with self._local_path(uri) as path, av.open(path) as container:
             stream = next((s for s in container.streams if s.type == "video"), None)
             if stream is None:
                 raise ValueError(f"video {uri!r} contains no video stream")
@@ -114,22 +224,35 @@ class PyAVMediaProvider:
             return np.empty((0,), dtype=np.uint8)
         uris = {r.uri for r in refs}
         if len(uris) != 1:
-            chunks = [self.decode_batch([r]) for r in refs]
-            return np.concatenate(chunks, axis=0)
+            grouped: dict[str, list[tuple[int, FrameRef]]] = {}
+            for position, ref in enumerate(refs):
+                grouped.setdefault(ref.uri, []).append((position, ref))
+            values: list[Optional[np.ndarray]] = [None] * len(refs)
+            for group in grouped.values():
+                decoded = self.decode_batch([ref for _, ref in group])
+                for (position, _), value in zip(group, decoded):
+                    values[position] = value
+            return np.stack(values)  # type: ignore[arg-type]
         wanted: dict[int, list[int]] = {}
         for i, ref in enumerate(refs):
             wanted.setdefault(ref.frame_index, []).append(i)
         out: list[Optional[np.ndarray]] = [None] * len(refs)
         av = _av()
-        from .io import local_copy
         uri = refs[0].uri
-        with local_copy(uri) as path, av.open(path) as container:
+        with self._local_path(uri) as path, av.open(path) as container:
             stream = next((s for s in container.streams
                            if s.type == "video" and s.index == refs[0].stream_index), None)
             if stream is None:
                 raise ValueError(f"video {uri!r}: stream {refs[0].stream_index} is unavailable")
+            wanted_pts = ({int(ref.pts): positions for ref, positions in
+                           ((refs[indexes[0]], indexes) for indexes in wanted.values())
+                           if ref.pts is not None})
+            use_pts = len(wanted_pts) == len(wanted)
+            if use_pts:
+                container.seek(min(wanted_pts), stream=stream, backward=True, any_frame=False)
             for i, frame in enumerate(container.decode(stream)):
-                positions = wanted.get(i)
+                positions = wanted_pts.get(int(frame.pts)) if use_pts and frame.pts is not None \
+                    else wanted.get(i)
                 if positions:
                     value = frame.to_ndarray(format="rgb24")
                     for pos in positions:
@@ -195,6 +318,11 @@ class JoinedMediaAdapter:
         if on == "timestamp" and (tolerance is None or tolerance < 0):
             raise ValueError("timestamp video alignment needs a non-negative tolerance")
         self.adapter, self.videos = adapter, dict(videos)
+        cls = type(adapter)
+        overrides_ticks_only = "ticks" in cls.__dict__ and "iter_ticks" not in cls.__dict__
+        self.supports_streaming = (getattr(adapter, "supports_streaming", True)
+                                   and hasattr(adapter, "iter_ticks")
+                                   and not overrides_ticks_only)
         self.provider = provider or PyAVMediaProvider()
         self.column, self.on, self.tolerance, self.mismatch = column, on, tolerance, mismatch
         if not self.videos:
@@ -216,9 +344,8 @@ class JoinedMediaAdapter:
         return self.videos[source]
 
     def iter_ticks(self, source):
-        # ``ticks`` is the adapter contract and may itself be lazy. Some adapters inherit a
-        # file-oriented ``iter_ticks`` while overriding ``ticks`` for in-memory sources.
-        ticks = iter(self.adapter.ticks(source))
+        ticks = iter(self.adapter.iter_ticks(source) if self.supports_streaming
+                     else self.adapter.ticks(source))
         refs = iter(_iter_provider_refs(self.provider, self._uri(source), source))
         if self.on == "frame_index":
             count = 0
