@@ -5,6 +5,7 @@ import time
 import pytest
 
 from kuration import LocalExecutionBackend, RayExecutionBackend
+from kuration.versioning import _major
 
 
 def test_local_iter_batches_bounds_work_and_preserves_input_order():
@@ -83,3 +84,14 @@ def test_ray_iter_batches_bounds_submissions_and_preserves_input_order():
     assert next(iterator) == 0
     assert produced == 2
     assert list(iterator) == [3, 6, 9, 12, 15]
+
+
+def test_real_ray_backend_roundtrip():
+    ray = pytest.importorskip("ray")
+    ray.shutdown()
+    try:
+        backend = RayExecutionBackend(num_cpus=1, include_dashboard=False,
+                                      log_to_driver=False)
+        assert backend.map_sources(["1.0", "2.3", "7.1"], _major) == [1, 2, 7]
+    finally:
+        ray.shutdown()

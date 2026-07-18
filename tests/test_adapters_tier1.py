@@ -105,6 +105,19 @@ def test_hf_single_source_default():
     assert len(ad.ticks("org/name:train")) == 4              # 4 distinct, ordered time values
 
 
+def test_hf_real_dataset_object(monkeypatch):
+    datasets = pytest.importorskip("datasets")
+    dataset = datasets.Dataset.from_list(_hf_rows())
+    monkeypatch.setattr(datasets, "load_dataset", lambda *args, **kwargs: dataset)
+    ad = HuggingFaceAdapter(SCHEMA, dataset="local-test",
+                            fields={"pos": ["x", "y"], "act": "act"},
+                            time_column="t", source_column="ep")
+    assert ad.sources() == ["ep1", "ep2"]
+    ticks = ad.ticks("ep2")
+    assert len(ticks) == 4
+    assert ticks[-1].entities[0]["pos"] == (3.0, 2.0)
+
+
 def test_hf_missing_lib_is_loud(monkeypatch):
     # source_column set -> sources() must load (no cache), and absent `datasets` -> loud hint
     import sys

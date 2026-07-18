@@ -9,7 +9,7 @@ short_policy (keep/pad/drop) is applied to each accumulator's tail at end-of-str
 """
 from __future__ import annotations
 
-from ..io import exists as _exists
+from ..io import exists as _exists, file_integrity
 from .base import PassthroughEncoder
 from .containers import CONTAINER_EXT, write_shard
 from .shardwriter import _build_arrays, track_name
@@ -17,7 +17,8 @@ from .track import PRESENT_KEY
 
 
 def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dict], *,
-                         schema, spec, encoder=None, resume: bool = False, media_provider=None) -> list[dict]:
+                         schema, spec, encoder=None, resume: bool = False, media_provider=None,
+                         resume_entries=None) -> list[dict]:
     """`jobs`: [{eid, span_index, start, end, split, name_suffix, group}] for this source."""
     encoder = encoder or PassthroughEncoder()
     ext = CONTAINER_EXT[spec.container]
@@ -47,13 +48,22 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
                "media_provider": media_provider}
         name = track_name(source_id, s["eid"], s["suffix"])
         base = f"{out_dir}/{s['split']}/{name}_shard{s['shard']:04d}" + ("_padded" if padded else "")
-        if resume and _exists(base + ext):
-            path = base + ext
+        candidate = base + ext
+        previous = (resume_entries or {}).get(candidate)
+        reusable = False
+        if resume and previous and _exists(candidate) and previous.get("sha256"):
+            actual = file_integrity(candidate)
+            reusable = (actual["sha256"] == previous["sha256"]
+                        and actual["size_bytes"] == previous.get("size_bytes"))
+        if reusable:
+            path = candidate
+            integrity = actual
         else:
             path = write_shard(base, spec.container, _build_arrays(piece, spec, encoder, ctx), real_len)
+            integrity = file_integrity(path)
         s["entries"].append({"path": path, "source_id": source_id, "entity_id": str(s["eid"]),
                              "split": s["split"], "shard_index": s["shard"], "n_steps": real_len,
-                             "padded": padded, "shape": shape, "dtype": dtype})
+                             "padded": padded, "shape": shape, "dtype": dtype, **integrity})
         s["shard"] += 1
         s["buf"] = []
 

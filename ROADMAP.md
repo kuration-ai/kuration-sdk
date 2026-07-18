@@ -22,14 +22,16 @@ Status labels:
   containers, presets, and compositional operators.
 - Versioned jobs/artifacts, migrations, CLIs, runnable examples, CI, wheel builds, and PyPI
   trusted-publishing automation.
+- Python 3.11–3.14 and declared-minimum dependency testing, real optional integration tests,
+  coverage artifacts, checksummed resume repair, and structured worker diagnostics.
+- Release notes, a beta compatibility/deprecation policy, and a security reporting policy.
 - Preferred fluent names `.bin()` and `.sample()` with compatibility aliases retained.
 
 ## Next — public `0.1` release readiness
 
 - Resolve corporate license and author metadata and add the matching `LICENSE` file.
 - Confirm the public `kuration-sdk` project name and configure the PyPI trusted publisher.
-- Perform a clean-environment install, wheel/sdist inspection, and release-candidate smoke test.
-- Establish release notes and an explicit compatibility/deprecation policy for the beta series.
+- Perform the final release-candidate smoke test and tag the accepted build.
 These items gate public publishing. Pipeline execution optimization does not gate `0.1`.
 
 ## Delivered — product usability and artifact handoff

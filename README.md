@@ -156,6 +156,9 @@ raw source ─[InputAdapter]→ canonical ticks ─[Segmenter]→ windows
 | [docs/customization.md](docs/customization.md) | registries, descriptors, presets, versioning, and extension authoring |
 | [docs/documentation-contract.md](docs/documentation-contract.md) | documentation audiences, entry paths, information architecture, and public API boundary |
 | [docs/releasing.md](docs/releasing.md) | build, trusted-publishing setup, and public PyPI release checklist |
+| [docs/compatibility.md](docs/compatibility.md) | supported surfaces, beta compatibility, and deprecation policy |
+| [SECURITY.md](SECURITY.md) | private vulnerability reporting and runtime trust boundaries |
+| [CHANGELOG.md](CHANGELOG.md) | release notes and notable unreleased changes |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | contributor setup, design rules, checks, documentation, and pull requests |
 | [ROADMAP.md](ROADMAP.md) | release gates, delivered optional execution extensions, scale items, and path to 1.0 |
 
@@ -182,10 +185,10 @@ maps the common ones to causes and fixes.
   deterministic regardless of worker count.
 - **Skip-and-log** — `on_error="skip"` (default) logs + skips a source that fails to read and
   collects it in the result's `errors`; `on_error="raise"` is fail-fast.
-- **Resume** — `write_dataset(resume=True)` skips re-encoding shards that already exist, so an
-  interrupted run only does the missing work. Safe by construction: shards are written
-  atomically (a crash never leaves a partial file at the final path), and resuming with a
-  different run/source/component fingerprint raises instead of reusing stale shards.
+- **Resume** — `write_dataset(resume=True)` verifies the recorded size and SHA-256 of existing
+  shards before reusing them; a missing, legacy, or corrupt shard is re-encoded. Shards are
+  written atomically, and a different run/source/component fingerprint raises instead of
+  reusing stale data.
 - **Plugins + progress** — jobs load registration modules through `plugins`, installed packages
   use the `kuration.plugins` entry-point group, and all execution APIs emit structured progress
   events (rendered automatically by run CLIs on interactive stderr).

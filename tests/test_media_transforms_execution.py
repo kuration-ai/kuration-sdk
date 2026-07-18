@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from kuration import (FrameRef, MediaSpec, SchemaSpec, VideoMetadata, input, iter_shards,
-                      register_batch_transform)
+from kuration import (FrameRef, MediaSpec, PyAVMediaProvider, SchemaSpec, VideoMetadata,
+                      input, iter_shards, register_batch_transform)
 
 
 class FakeVideoProvider:
@@ -38,6 +38,26 @@ class FrameMean:
 
     def transform_batch(self, batch, ctx):
         return {"brightness": batch["media:frame"].mean(axis=(1, 2, 3, 4))}
+
+
+@register_batch_transform("tests/internal-type-error", outputs=("broken",),
+                          inputs=("field:value",))
+class InternalTypeError:
+    calls = 0
+
+    def transform_batch(self, batch, ctx):
+        type(self).calls += 1
+        raise TypeError("plugin implementation failed")
+
+
+@register_batch_transform("tests/constructor-type-error", outputs=("broken",),
+                          inputs=("field:value",))
+class ConstructorTypeError:
+    calls = 0
+
+    def __init__(self, device="cpu"):
+        type(self).calls += 1
+        raise TypeError("constructor implementation failed")
 
 
 def test_media_only_schema_round_trip():
@@ -82,3 +102,51 @@ def test_timestamp_join_fails_on_drift():
         {"mem": "clip.mp4"}, provider=provider, tolerance=0.01)
     with pytest.raises(ValueError, match="beyond tolerance"):
         list(pipeline.adapter.ticks("mem"))
+
+
+def test_pyav_real_roundtrip(tmp_path):
+    av = pytest.importorskip("av")
+    path = tmp_path / "tiny.mp4"
+    with av.open(str(path), "w") as container:
+        stream = container.add_stream("mpeg4", rate=4)
+        stream.width = 16
+        stream.height = 16
+        stream.pix_fmt = "yuv420p"
+        for value in (10, 80, 160):
+            pixels = np.full((16, 16, 3), value, dtype=np.uint8)
+            for packet in stream.encode(av.VideoFrame.from_ndarray(pixels, format="rgb24")):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
+
+    provider = PyAVMediaProvider()
+    metadata = provider.probe(str(path))
+    refs = list(provider.iter_refs(str(path), source_id="tiny"))
+    frames = provider.decode_batch(refs)
+    assert (metadata.width, metadata.height) == (16, 16)
+    assert [ref.source_id for ref in refs] == ["tiny"] * 3
+    assert frames.shape == (3, 16, 16, 3)
+    assert frames.dtype == np.uint8
+    assert np.diff(frames.mean(axis=(1, 2, 3))).min() > 40
+
+
+def test_internal_transform_type_error_is_not_retried():
+    InternalTypeError.calls = 0
+    pipeline = (input([{"value": float(i)} for i in range(4)])
+                .window(2, stride=2)
+                .transform("tests/internal-type-error")
+                .sample("top-k", n=2, weights={"broken": 1.0}))
+    with pytest.raises(TypeError, match="plugin implementation failed"):
+        pipeline.collect()
+    assert InternalTypeError.calls == 1
+
+
+def test_internal_constructor_type_error_is_not_retried():
+    ConstructorTypeError.calls = 0
+    pipeline = (input([{"value": float(i)} for i in range(4)])
+                .window(2, stride=2)
+                .transform("tests/constructor-type-error")
+                .sample("top-k", n=2, weights={"broken": 1.0}))
+    with pytest.raises(TypeError, match="constructor implementation failed"):
+        pipeline.collect()
+    assert ConstructorTypeError.calls == 1

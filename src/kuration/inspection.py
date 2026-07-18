@@ -5,7 +5,7 @@ from collections import defaultdict
 import json
 from typing import Any
 
-from .io import exists, read_text
+from .io import exists, file_integrity, read_text
 from .loaders import read_shard_arrays, shard_entries
 from .results import DatasetComparison, DatasetInspection
 from .versioning import check_version
@@ -71,6 +71,19 @@ def inspect_dataset(dataset, *, verify: bool = False,
             continue
         if verify:
             try:
+                if entry.get("sha256"):
+                    actual = file_integrity(path)
+                    if actual["sha256"] != entry["sha256"]:
+                        raise ValueError(
+                            f"checksum mismatch: expected {entry['sha256']}, "
+                            f"got {actual['sha256']}"
+                        )
+                    if (entry.get("size_bytes") is not None
+                            and actual["size_bytes"] != entry["size_bytes"]):
+                        raise ValueError(
+                            f"size mismatch: expected {entry['size_bytes']}, "
+                            f"got {actual['size_bytes']}"
+                        )
                 read_shard_arrays(entry, resolved_container)
                 checked += 1
             except Exception as error:

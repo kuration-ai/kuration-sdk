@@ -223,9 +223,9 @@ A source that raises during scoring is **skipped-and-logged** (`on_error="skip"`
 + collected in the result's `errors` + a summary), never silently dropped; `on_error="raise"`
 restores fail-fast. Total failure is still loud: if the pool ends up **empty** (every source
 skipped, or every source shorter than the window), scoring raises rather than letting an
-empty-but-valid-looking dataset propagate. `write_dataset(resume=True)` skips re-encoding any
-shard whose file already exists (chunk boundaries are deterministic, so the manifest entry is
-still recorded), so an interrupted run only does the missing work. Two guards make that sound:
+empty-but-valid-looking dataset propagate. `write_dataset(resume=True)` reuses a shard only when
+the file matches the byte size and SHA-256 in the previous committed manifest; missing, legacy,
+or modified shards are deterministically rebuilt. Two guards make that sound:
 shards are written **atomically** (temp + rename locally, staged upload remotely — a crash
 never leaves a partial file at the final path), and the resolved output spec is fingerprinted
 in a `.kuration_output_spec.json` sidecar, so resuming with a different spec raises instead of

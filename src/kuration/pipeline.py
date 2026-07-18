@@ -34,161 +34,24 @@ from .dsl.grammar import compile_metric
 from .dsl.registry import register_compiled
 from .schema import SchemaSpec
 from .segment import Segmenter
+from ._pipeline_support import (
+    FILTER_TYPES as _FILTER_TYPES,
+    GLOB_CHARS as _GLOB_CHARS,
+    METHOD_ALIASES as _METHOD_ALIASES,
+    OP_ALIASES as _OP_ALIASES,
+    OPTION_KEYS as _OPTION_KEYS,
+    SUFFIX_CONTAINER as _SUFFIX_CONTAINER,
+    TABULAR_KINDS as _TABULAR_KINDS,
+    JsonRowsAdapter as _JsonRowsAdapter,
+    RowsAdapter as _RowsAdapter,
+    TickAdapter as _TickAdapter,
+    auto_qualify as _auto_qualify,
+    default_field_map as _default_field_map,
+    describe_src as _describe_src,
+    jsonable as _jsonable,
+)
 
 __all__ = ["Pipeline", "input"]
-
-_GLOB_CHARS = set("*?[")
-_FILTER_TYPES = {"anomaly", "dedup"}
-_OPTION_KEYS = {"workers", "on_error", "seed", "streaming", "resume", "sample_hz", "progress",
-                "mode", "executor", "memory_budget", "batch_size", "checkpoint_dir",
-                "spill_dir", "approximation", "max_in_flight"}
-_TABULAR_KINDS = {"timeseries", "jsonl", "json-rows", "parquet-dataset"}
-_SUFFIX_CONTAINER = {".hdf5": "hdf5", ".h5": "hdf5", ".npz": "npz",
-                     ".parquet": "parquet", ".json": "json"}
-
-# predicate-op aliases (matched case-insensitively) -> canonical strategy op
-_OP_ALIASES = {
-    "<=": "<=", "le": "<=", "lte": "<=", "lessorequal": "<=", "leq": "<=",
-    ">=": ">=", "ge": ">=", "gte": ">=", "greaterorequal": ">=", "geq": ">=",
-    "<": "<", "lt": "<", "less": "<",
-    ">": ">", "gt": ">", "greater": ">",
-    "==": "==", "eq": "==", "equal": "==", "=": "==",
-    "!=": "!=", "ne": "!=", "neq": "!=", "notequal": "!=",
-}
-
-# sample() method aliases (matched case-insensitively) -> canonical strategy method
-_METHOD_ALIASES = {
-    "equal": "uniform-bins", "uniform": "uniform-bins", "uniform-bins": "uniform-bins",
-    "top": "top-k", "top-k": "top-k", "topk": "top-k",
-    "target": "target-distribution", "target-distribution": "target-distribution",
-    "cluster": "cluster-balanced", "cluster-balanced": "cluster-balanced",
-    "facility": "facility-location", "facility-location": "facility-location",
-    "weighted": "weighted", "k-center": "k-center", "dsir": "dsir",
-    "rare": "rare", "typical": "typical", "filter": "filter",
-}
-
-
-# ======================================================================================
-# provenance helpers
-# ======================================================================================
-def _jsonable(v):
-    """JSON-safe view of an operator argument for the `_ops` provenance list; anything not
-    JSON-native is repr()'d (truncated — provenance, not a data store)."""
-    if v is None or isinstance(v, (bool, int, float, str)):
-        return v
-    if isinstance(v, (list, tuple)):
-        return [_jsonable(x) for x in v]
-    if isinstance(v, dict):
-        return {str(k): _jsonable(x) for k, x in v.items()}
-    r = repr(v)
-    return r if len(r) <= 200 else r[:200] + "..."
-
-
-def _describe_src(src) -> Any:
-    """Compact provenance form of input()'s src (in-memory data is summarized, not embedded)."""
-    if isinstance(src, str):
-        return src
-    if isinstance(src, (list, tuple)) and src and all(isinstance(x, str) for x in src):
-        return list(src)
-    return f"<in-memory {type(src).__name__}>"
-
-
-# ======================================================================================
-# schema helpers
-# ======================================================================================
-def _auto_qualify(tok: str, schema: SchemaSpec) -> str:
-    """Resolve a bare measure token to a DSL source. Loud on anything unknown."""
-    if "." in tok:
-        return tok
-    if tok in schema.fields:
-        if not schema.entity_axis:
-            raise ValueError(f"field {tok!r}: schema {schema.name!r} declares no entity_axis, "
-                             f"so entity fields cannot be referenced")
-        return f"{schema.entity_axis}.{tok}"
-    if tok in schema.globals:
-        return tok
-    if tok in schema.event_streams:
-        raise ValueError(
-            f"{tok!r} is an event stream — name a field: '{tok}.<field>' "
-            f"(fields: {sorted(schema.event_streams[tok]['fields'])})")
-    raise ValueError(f"unknown metric source {tok!r}; schema fields: "
-                     f"{sorted(schema.fields)}, globals: {sorted(schema.globals)}")
-
-
-def _default_field_map(schema: SchemaSpec, *, tabular: bool) -> dict:
-    """Identity column mapping for an explicit schema with no fields= given. Tabular sources
-    address vector components as '<field>.<i>' columns; array stores map the whole array."""
-    out: dict = {}
-    for name, fs in schema.fields.items():
-        if tabular and fs.kind == "vector":
-            out[name] = [f"{name}.{i}" for i in range(len(fs.dims))]
-        else:
-            out[name] = name
-    return out
-
-
-# ======================================================================================
-# in-memory adapters (module-level so they pickle; still not worker-rebuildable — the
-# pipeline raises loudly on .options(workers>1) with in-memory data)
-# ======================================================================================
-def _expand_row(row: dict) -> dict:
-    """Expand list/tuple/1-D-array cells into '<col>.<i>' keys (how vector fields are
-    addressed by the inferred column mapping). Scalars pass through."""
-    out = dict(row)
-    for k, v in row.items():
-        if isinstance(v, np.ndarray) and v.ndim == 1:
-            v = v.tolist()
-        if isinstance(v, (list, tuple)):
-            for i, x in enumerate(v):
-                out[f"{k}.{i}"] = x
-    return out
-
-
-class _RowsAdapter(TimeseriesAdapter):
-    """In-memory {source_id -> [row dict, ...]} as curation sources."""
-    in_memory = True
-
-    def __init__(self, schema, *, data: dict, fields: dict, time_column=None,
-                 entity_column=None, globals=None):
-        super().__init__(schema, fields=fields, time_column=time_column,
-                         entity_column=entity_column, globals=globals)
-        self._data = data
-
-    def ticks(self, source_uri):
-        if source_uri not in self._data:
-            raise ValueError(f"unknown in-memory source {source_uri!r} "
-                             f"(have: {sorted(self._data)})")
-        return self._rows_to_ticks([_expand_row(r) for r in self._data[source_uri]])
-
-
-class _TickAdapter:
-    """In-memory {source_id -> [Tick, ...]} as curation sources."""
-    in_memory = True
-
-    def __init__(self, schema, data: dict):
-        self.schema = schema
-        self._data = data
-
-    def ticks(self, source_uri):
-        if source_uri not in self._data:
-            raise ValueError(f"unknown in-memory source {source_uri!r} "
-                             f"(have: {sorted(self._data)})")
-        return self._data[source_uri]
-
-
-class _JsonRowsAdapter(TimeseriesAdapter):
-    """Plain .json sources (array-of-rows or columnar dict), loaded lazily per source."""
-
-    def ticks(self, source_uri):
-        from .infer import load_rows
-        return self._rows_to_ticks([_expand_row(r) for r in load_rows(source_uri)])
-
-    def iter_ticks(self, source_uri):
-        # TimeseriesAdapter.iter_ticks treats every non-Parquet path as CSV.  JSON arrays
-        # necessarily materialize through load_rows, but must still expose the correct tick
-        # stream to bounded execution, which prefers iter_ticks when it exists.
-        yield from self.ticks(source_uri)
-
 
 # ======================================================================================
 # input() — the factory (intentionally shadows builtins.input in this module)
@@ -1396,9 +1259,6 @@ class Pipeline:
                     if categorical == "error":
                         raise ValueError(f"output(): categorical field {fname!r} would be omitted; "
                                          "strict/error policy requires explicit modalities")
-                    if not dry_run:
-                        print(f"  [output] categorical field {fname!r} skipped from default "
-                              f"modalities (pass modalities= to encode it)")
                     continue
                 mods[fname] = {"dtype": "float32",
                                "shape": [len(fs.dims)] if fs.kind == "vector" else [],

@@ -22,6 +22,7 @@ worker-count-independent. Scale caps are logged, never silent.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Sequence
 
 import numpy as np
@@ -32,6 +33,7 @@ from .registry import default_registry as _default_registry
 
 _DEFAULT_CLUSTERS = 2048
 _DSIR_BINS = 8
+logger = logging.getLogger(__name__)
 
 
 def _require_sklearn():
@@ -90,7 +92,7 @@ def cluster_labels(X, n_clusters, *, seed=0, workers=1):
     n = X.shape[0]
     k = max(1, min(n_clusters, n))
     if k < n_clusters:
-        print(f"  [methods] clusters capped {n_clusters} -> {k} (only {n} segments)")
+        logger.info("clusters capped %s -> %s (only %s segments)", n_clusters, k, n)
     # batch_size is fixed (not a function of `workers`): it changes the clustering, and the
     # selection must stay worker-count-independent (determinism invariant). `workers` only
     # tunes sklearn's n_jobs elsewhere, which doesn't affect results.
@@ -315,8 +317,8 @@ def anomaly_filter(segments, names, *, contamination=0.02, normalize="zscore",
     keep = IsolationForest(contamination=contamination, random_state=seed,
                            n_jobs=(workers or 1)).fit_predict(X) == 1
     kept = [s for s, k in zip(segments, keep) if k]
-    print(f"  [filter:anomaly] removed {len(segments) - len(kept)} / {len(segments)} "
-          f"(contamination={contamination})")
+    logger.info("anomaly filter removed %s / %s segments (contamination=%s)",
+                len(segments) - len(kept), len(segments), contamination)
     return kept
 
 
@@ -347,8 +349,8 @@ def dedup_filter(segments, names, *, threshold=0.98, n_clusters=_DEFAULT_CLUSTER
             else:
                 keep_mask[i] = False
     kept = [s for s, k in zip(segments, keep_mask) if k]
-    print(f"  [filter:dedup] removed {len(segments) - len(kept)} / {len(segments)} "
-          f"near-duplicates (cos>={threshold})")
+    logger.info("dedup filter removed %s / %s near-duplicates (cos>=%s)",
+                len(segments) - len(kept), len(segments), threshold)
     return kept
 
 

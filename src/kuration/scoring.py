@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import sys
+import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Any
 
@@ -75,8 +76,13 @@ def _score_one(args):
         engine.compute(ticks, segs)
         track_lens = [(eid, len(ticks)) for eid in _entities_in_order(ticks)]
         return ("ok", source, segs, track_lens)
-    except Exception as e:
-        return ("err", source, repr(e), None)
+    except Exception as error:
+        return ("err", source, {
+            "type": f"{type(error).__module__}.{type(error).__qualname__}",
+            "message": str(error),
+            "repr": repr(error),
+            "traceback": traceback.format_exc(),
+        }, None)
 
 
 def score_sources(*, schema, adapter, sources, define, registered, segmenter,
@@ -145,10 +151,15 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
             all_segments.extend(payload)
             source_tracks[src] = track_lens
         elif on_error == "raise":
-            raise RuntimeError(f"scoring source {src!r} failed: {payload}")
+            raise RuntimeError(
+                f"scoring source {src!r} failed with {payload['type']}: "
+                f"{payload['message']}\n{payload['traceback']}"
+            )
         else:
-            print(f"  [skip] source {src!r}: {payload}", file=sys.stderr)
-            errors.append({"source": src, "error": payload})
+            print(f"  [skip] source {src!r}: {payload['repr']}", file=sys.stderr)
+            errors.append({"source": src, "error": payload["repr"],
+                           "error_type": payload["type"], "message": payload["message"],
+                           "traceback": payload["traceback"]})
     if errors:
         print(f"  [skip] {len(errors)} source(s) skipped due to errors", file=sys.stderr)
     if items and not all_segments:

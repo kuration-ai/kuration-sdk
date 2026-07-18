@@ -9,6 +9,7 @@ backend-agnostic without special-casing each cloud.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 from contextlib import contextmanager
@@ -72,6 +73,17 @@ def exists(path) -> bool:
     if is_remote(path):
         return _fs(path).exists(str(path))
     return Path(_local(path)).exists()
+
+
+def file_integrity(path, *, chunk_size: int = 1024 * 1024) -> dict[str, int | str]:
+    """Return a path-agnostic SHA-256 and byte size without materializing the payload."""
+    digest = hashlib.sha256()
+    size = 0
+    with open_file(path, "rb") as stream:
+        while chunk := stream.read(chunk_size):
+            digest.update(chunk)
+            size += len(chunk)
+    return {"sha256": digest.hexdigest(), "size_bytes": size}
 
 
 def glob(pattern) -> list[str]:

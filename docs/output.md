@@ -139,8 +139,9 @@ data (an under-filled budget is reported, not silently topped up with rejects).
 
 **`executor` / `workers` / `on_error` / `resume`**: `write_dataset(..., workers=8)` parallelizes the feature
 pass; `on_error="skip"` (default) skips+logs an unreadable source (but a *fully empty* segment
-pool raises — see the troubleshooting recipe); `resume=True` skips re-encoding shards that
-already exist. Resume is safe by construction: shards are written atomically (temp + rename,
+pool raises — see the troubleshooting recipe); `resume=True` reuses an existing shard only when
+its recorded byte size and SHA-256 still match. Missing, legacy, or corrupt shards are rebuilt.
+Resume is safe by construction: shards are written atomically (temp + rename,
 locally and remotely — an interrupted run never leaves a partial shard at its final path), and
 the resolved output spec is pinned in a `.kuration_output_spec.json` sidecar — resuming the
 same `out_dir` with a **different** spec raises rather than silently reusing stale shards under

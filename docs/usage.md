@@ -198,7 +198,7 @@ rep["tags"], rep["groups"]
 write_dataset("out/run1", ..., workers=8,        # parallel feature pass (deterministic)
               executor="local",                  # or "ray" with the optional [ray] extra
               on_error="skip",                    # log + skip a bad source (default); "raise" to fail fast
-              resume=True,                         # skip re-encoding shards that already exist
+              resume=True,                         # verify and reuse intact shards
               streaming=True)                      # bounded memory with a streaming-capable adapter
 ```
 `streaming=True` reads each source as a lazy tick stream on both the feature pass and the shard
@@ -206,8 +206,9 @@ write (also available on `curate(...)` / `run_experiment(...)`). CSV/JSONL/singl
 HDF5, Zarr, and HuggingFace inputs support it. NPZ and partitioned-Parquet dataset mode reject
 the option because they cannot guarantee bounded memory.
 
-`resume=True` is safe against crashes and drift: shards are written atomically (no partial
-file ever sits at the final path), and a complete run fingerprint is pinned in a sidecar.
+`resume=True` is safe against crashes, corruption, and drift: shards are written atomically (no
+partial file ever sits at the final path), existing shards are reused only when their recorded
+size and SHA-256 match, and a complete run fingerprint is pinned in a sidecar.
 Changes to sources, schema, strategy, segmentation, budgets, adapter/encoder code or state,
 callbacks (including captured closure/default values), seed, or output spec reject resume. To
 change a run, use a fresh `out_dir`.

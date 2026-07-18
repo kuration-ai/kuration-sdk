@@ -55,6 +55,17 @@ def _check_resume_run(out_dir: str, signature: dict, resume: bool) -> None:
                                        "output": signature["payload"]["output"]}, indent=2))
 
 
+def _resume_entries(out_dir: str, resume: bool) -> dict[str, dict]:
+    """Load checksum-bearing entries from the last committed manifest, if any."""
+    from ..io import exists, read_text
+    path = f"{out_dir}/dataset_manifest.json"
+    if not resume or not exists(path):
+        return {}
+    manifest = json.loads(read_text(path))
+    return {entry["path"]: entry for entry in manifest.get("shards", [])
+            if isinstance(entry, dict) and isinstance(entry.get("path"), str)}
+
+
 def _registered_features(strategy, transforms):
     transform_outputs = {output for call in transforms for output in call["outputs"]}
     return [name for name in strategy.referenced_metrics()
@@ -307,6 +318,7 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         clip_aggregate=clip_aggregate, group_of=group_of, tags_of=tags_of,
         transforms=transforms, registry=registry)
     _check_resume_run(out_dir, signature, resume)
+    resume_entries = _resume_entries(out_dir, resume)
     emit(progress, "provenance", "complete", current=len(sources), total=len(sources),
          detail=signature["fingerprint"][:12])
     if bounded:
@@ -357,7 +369,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                          else adapter.ticks(src))
             entries += stream_source_shards(out_dir, src, tick_iter, jobs,
                                             schema=schema, spec=spec, encoder=encoder, resume=resume,
-                                            media_provider=getattr(adapter, "provider", None))
+                                            media_provider=getattr(adapter, "provider", None),
+                                            resume_entries=resume_entries)
             emit(progress, "writing", "advance", current=source_i, total=len(by_source),
                  source=src, status="ok")
             continue
@@ -375,7 +388,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             entries += write_track(out_dir, sub, spec, encoder=encoder, schema=schema,
                                    split=split.get(src, "train"), resume=resume,
                                    name_suffix=suffix(k),
-                                   media_provider=getattr(adapter, "provider", None))
+                                   media_provider=getattr(adapter, "provider", None),
+                                   resume_entries=resume_entries)
         emit(progress, "writing", "advance", current=source_i, total=len(by_source),
              source=src, status="ok")
     emit(progress, "writing", "complete", current=len(by_source), total=len(by_source),
