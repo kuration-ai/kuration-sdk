@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Kuration</title>
+  <desc id="desc">Turn raw sequential data into selected, verified training datasets.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#11172a"/>
+      <stop offset="1" stop-color="#251447"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#55d6be"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="420" rx="28" fill="url(#bg)"/>
+  <circle cx="1040" cy="60" r="190" fill="#7c3aed" opacity=".12"/>
+  <circle cx="125" cy="390" r="170" fill="#14b8a6" opacity=".08"/>
+  <g transform="translate(82 76)">
+    <path d="M0 12h26v62l58-62h34L63 69l60 79H90L45 88l-19 19v41H0z" fill="url(#accent)"/>
+    <text x="145" y="82" fill="#f8fafc" font-family="Inter,ui-sans-serif,system-ui,sans-serif" font-size="78" font-weight="700" letter-spacing="-3">kuration</text>
+    <text x="145" y="142" fill="#cbd5e1" font-family="Inter,ui-sans-serif,system-ui,sans-serif" font-size="25">Build training datasets you can inspect, reproduce, and trust.</text>
+  </g>
+  <g transform="translate(82 276)" font-family="Inter,ui-sans-serif,system-ui,sans-serif" font-size="17">
+    <g><rect width="185" height="66" rx="14" fill="#1e293b" stroke="#475569"/><text x="22" y="28" fill="#94a3b8">RAW SOURCES</text><text x="22" y="50" fill="#f8fafc">telemetry · video</text></g>
+    <path d="M198 33h43" stroke="#55d6be" stroke-width="3"/><path d="m238 26 10 7-10 7" fill="none" stroke="#55d6be" stroke-width="3"/>
+    <g transform="translate(258)"><rect width="185" height="66" rx="14" fill="#1e293b" stroke="#475569"/><text x="22" y="28" fill="#94a3b8">CURATION</text><text x="22" y="50" fill="#f8fafc">measure · select</text></g>
+    <path d="M456 33h43" stroke="#8b9cfb" stroke-width="3"/><path d="m496 26 10 7-10 7" fill="none" stroke="#8b9cfb" stroke-width="3"/>
+    <g transform="translate(516)"><rect width="210" height="66" rx="14" fill="#1e293b" stroke="#475569"/><text x="22" y="28" fill="#94a3b8">DATASET ARTIFACT</text><text x="22" y="50" fill="#f8fafc">shards · provenance</text></g>
+    <g transform="translate(760 6)"><rect width="262" height="54" rx="27" fill="#211b43" stroke="url(#accent)" stroke-width="2"/><circle cx="30" cy="27" r="8" fill="#55d6be"/><text x="51" y="33" fill="#e2e8f0">verified and reproducible</text></g>
+  </g>
+</svg>

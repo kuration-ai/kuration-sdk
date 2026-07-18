@@ -1,0 +1,28 @@
+:root {
+  --md-primary-fg-color: #5b21b6;
+  --md-accent-fg-color: #0f9f8f;
+}
+
+.md-typeset h1 {
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+
+.md-typeset h2 {
+  font-weight: 680;
+  letter-spacing: -0.015em;
+}
+
+.md-typeset table:not([class]) {
+  border-radius: 0.65rem;
+  box-shadow: 0 1px 0.25rem rgb(15 23 42 / 8%);
+  overflow: hidden;
+}
+
+.md-typeset code {
+  border-radius: 0.3rem;
+}
+
+.md-typeset img[src$=".svg"] {
+  border-radius: 1rem;
+}

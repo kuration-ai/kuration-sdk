@@ -2,7 +2,7 @@
 
 The primary way to drive the SDK for the common case: no explicit `SchemaSpec`,
 no explicit adapter, no raw strategy dict. `kuration.input(...)` sniffs a source, infers a
-schema (via [`kuration.infer`](#schema-inference)), and returns an immutable `Pipeline`; every
+schema (via [`kuration.infer`](#schema-inference-kurationinfer)), and returns an immutable `Pipeline`; every
 operator returns a *new* `Pipeline` (nothing is mutated in place); a terminal compiles the
 chain into the classic strategy dict and calls the existing engine
 (`curate` / `write_dataset` / `dataset_report` / `run_experiment` — see [api.md](api.md)).
@@ -62,7 +62,7 @@ Notes:
 
 `input()` calls `infer_schema(sample, ...)` on a small sample (`sample=200` rows by default)
 pulled by `sample_source`. It is deliberately conservative and loud: an ambiguous column
-raises rather than guessing. Summary (full behavior: [`src/kuration/infer.py`](../src/kuration/infer.py),
+raises rather than guessing. Summary (full behavior: [`src/kuration/infer.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/src/kuration/infer.py),
 concepts: [schema.md](schema.md)):
 
 - **Time column** — first case-insensitive match among `t, time, timestamp, ts, step, frame,
@@ -83,7 +83,9 @@ concepts: [schema.md](schema.md)):
 (SchemaSpec, hints)` is public if you want the inferred schema without going through
 `input()`; `hints["fields"]` is exactly the `fields=` mapping `TimeseriesAdapter` expects.
 
-## Operators (each returns a new `Pipeline`)
+## Operator reference
+
+Each operator returns a new `Pipeline`; the pipeline being extended is never mutated.
 
 | operator | signature | compiles to |
 |---|---|---|
@@ -194,6 +196,9 @@ This is deliberately a composition seam, not a native execution-stage seam: a ha
 introduce a new terminal or bypass the validation and execution contracts of existing operators.
 Use registered metrics, scorers, filters, methods, adapters, encoders, containers, or presets
 when the behavior belongs to one of those stages.
+
+See [building operators](operators.md) for transform-backed computation, contract tests,
+discovery, and plugin packaging.
 
 ## Inspectors (cheap, no data touched / minimal read)
 

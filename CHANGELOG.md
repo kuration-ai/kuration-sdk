@@ -11,6 +11,10 @@ change documented APIs with the notice and deprecation process in `docs/compatib
   mismatches.
 - Added a runtime `kuration.__version__`, a security policy, and an explicit compatibility
   policy.
+- Reworked the README and documentation around product outcomes and user journeys, added a
+  searchable documentation site, editable diagrams, and compositional/transform-backed operator
+  examples.
+- Fixed bounded columnar execution against the declared PyArrow 15 minimum.
 
 ## 0.1.0rc1
 

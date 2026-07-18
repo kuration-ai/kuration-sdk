@@ -119,7 +119,10 @@ class SegmentBatch:
             columns[f"bin:{name}"] = pa.array(
                 [segment.bin[index] if index < len(segment.bin) else None
                  for segment in segments])
-        return cls(pa.record_batch(columns))
+        # ``pa.record_batch(mapping)`` was not accepted by every supported PyArrow release
+        # (notably our declared 15.x minimum). The explicit arrays/names constructor is stable
+        # across the full compatibility range.
+        return cls(pa.RecordBatch.from_arrays(list(columns.values()), names=list(columns)))
 
     @classmethod
     def from_record_batch(cls, record_batch) -> "SegmentBatch":

@@ -47,38 +47,14 @@ descriptors and parameters are included in run provenance.
 
 ## Compositional operators
 
-Use an operator when you want to name and reuse a sequence of ordinary fluent operations:
+Use an operator when you want to name and reuse a sequence of ordinary fluent operations. The
+handler must return a pipeline derived from the one it receives and add at least one ordinary
+operator. It may compose `.join_video()` and `.transform()`, but cannot invent an unvalidated
+stage or terminal. The named call and its expansion are both retained in provenance.
 
-```python
-from kuration import register_operator
-
-@register_operator(
-    "acme/balance-signal",
-    description="Measure and balance signal intensity",
-    parameters={
-        "type": "object",
-        "properties": {
-            "field": {"type": "string"},
-            "bins": {"type": "integer", "minimum": 1},
-        },
-        "required": ["field"],
-        "additionalProperties": False,
-    },
-    version="1",
-)
-def balance_signal(pipeline, *, field, bins=8):
-    return (pipeline
-            .measure("signal_level", "mean", of=field)
-            .bin("signal_level", bins=bins))
-
-pipeline = pipeline.apply("acme/balance-signal", field="signal", bins=6)
-```
-
-The handler must return a pipeline derived from the one it receives and must add at least one
-ordinary operator. It may compose `.join_video()`/`.transform()` like any other ordinary
-operator, but cannot invent an unvalidated stage or terminal. The named call and its expansion
-are both retained in pipeline provenance. Discover registrations with `kur-list operators` and
-inspect their parameter contract with `kur-describe operator acme/balance-signal`.
+The complete [operator guide](operators.md) owns registration, transform-backed computation,
+contract testing, discovery, and plugin-packaging examples. The runnable companion is
+[`examples/05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py).
 
 Artifacts and manifests carry `artifact_format_version`; jobs carry `job_schema_version`.
 Unversioned documents are legacy `0.0`, current documents are `1.0`, and unsupported future

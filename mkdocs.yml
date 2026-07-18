@@ -1,0 +1,77 @@
+site_name: Kuration
+site_description: Build reproducible training datasets from sequential data.
+docs_dir: docs
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Use dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Use light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Start:
+      - Core concepts: overview.md
+      - Quickstart: quickstart.md
+      - Fluent pipeline: pipeline.md
+      - Cookbook: usage.md
+  - Build datasets:
+      - Schemas: schema.md
+      - Adapters and inputs: adapters.md
+      - Metrics DSL: dsl.md
+      - Selection strategies: strategies.md
+      - Outputs and integrity: output.md
+  - Extend:
+      - Operators: operators.md
+      - Customization and discovery: customization.md
+      - Architecture: architecture.md
+  - Operate:
+      - Jobs and CLI: jobs.md
+      - Compatibility: compatibility.md
+      - Releasing: releasing.md
+  - Reference:
+      - Python API: api.md
+      - Documentation contract: documentation-contract.md
+
+copyright: Kuration SDK documentation

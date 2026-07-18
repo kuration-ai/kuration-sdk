@@ -18,7 +18,7 @@ primary reader and outcome.
 |---|---|---|---|
 | Evaluator | “Will this help me curate my data?” | Produces and inspects a curated dataset in ten minutes | README → quick start |
 | Practitioner | “How do I solve a real curation task?” | Adapts a worked example to a local or public dataset | worked examples → cookbook |
-| Extender | “How do I support a new format or method?” | Implements and registers one supported extension seam | customization and adapter guides |
+| Extender | “How do I support a new format, operator, or method?” | Implements, tests, and discovers one supported extension seam | operator, customization, and adapter guides |
 | Operator | “How do I run and reproduce this reliably?” | Validates, runs, resumes, and inspects a job or artifact | CLI/job and output guides |
 
 Reference readers are a behavior rather than a separate audience: any of the four may need an
@@ -34,9 +34,10 @@ the complete manual.
 2. **See it on real data** — bounded worked examples for public datasets, beginning with
    TeaPearce Counter-Strike and Open P2P.
 3. **Build a pipeline** — task-oriented recipes and the fluent-pipeline guide.
-4. **Customize it** — the classic API, schemas, adapters, metric DSL, strategies, output seams,
+4. **Package a decision** — operator and batch-transform examples for reusable workflows.
+5. **Customize it** — the classic API, schemas, adapters, metric DSL, strategies, output seams,
    and registries.
-5. **Look something up** — the Python API, CLI/job-spec, and artifact references.
+6. **Look something up** — the Python API, CLI/job-spec, and artifact references.
 
 The fluent API is the default teaching interface. The classic API is the explicit path for
 custom adapters, encoders, strategies, and lower-level control. JSON jobs and the `kur-*` CLIs
@@ -49,13 +50,14 @@ The target structure below mostly reuses the existing pages. New pages are marke
 
 | layer | canonical content | purpose |
 |---|---|---|
-| Landing | `README.md` | value proposition, minimal quick-start excerpt, route to all entry paths |
-| Getting started | `docs/quickstart.md` (**new**) | complete tested ten-minute path |
-| Worked examples | `examples/README.md`, `examples/public_data/` (**new**) | runnable synthetic and public-data examples |
+| Landing | `README.md` | outcome-oriented product page, minimal quick-start excerpt, proof points, and routes |
+| Documentation home | `docs/index.md` | journey-based navigation across guides, extensions, operations, and reference |
+| Getting started | `docs/quickstart.md` | complete tested ten-minute path |
+| Worked examples | `examples/README.md`, `examples/public_data/` | runnable synthetic and public-data examples |
 | Task guides | `docs/usage.md`, `docs/pipeline.md` | recipes and the fluent operator workflow |
 | Concepts | `docs/overview.md`, `docs/schema.md`, `docs/dsl.md`, `docs/strategies.md` | mental model and core data contracts |
 | Inputs and outputs | `docs/adapters.md`, `docs/output.md` | supported storage, mapping, encoding, and artifacts |
-| Extension guides | `docs/customization.md`, relevant sections of `docs/architecture.md` | supported seams, registries, plugins, and design constraints |
+| Extension guides | `docs/operators.md`, `docs/customization.md`, relevant sections of `docs/architecture.md` | reusable operators, supported seams, registries, plugins, and design constraints |
 | Operations | `docs/jobs.md`, scale/reliability recipes in `docs/usage.md` | validation, CLI runs, streaming, parallelism, resume, cloud I/O |
 | Reference | `docs/api.md`, shipped `job.schema.json` | exact Python and job-spec contracts |
 | Roadmap | `ROADMAP.md`, linked detailed plans | release gates and sequenced future direction |
@@ -113,7 +115,7 @@ are grouped below by user task.
   `plugin_provenance`, `ProgressCallback`, `register_operator`.
 - Manifests and I/O: `build_config`, `dump_segment_manifest`, `write_config`, `read_text`,
   `write_text`, `write_bytes`, `exists`, `local_copy`.
-- Versioning and migration: `ARTIFACT_FORMAT_VERSION`, `JOB_SCHEMA_VERSION`, `migrate`,
+- Versioning and migration: `__version__`, `ARTIFACT_FORMAT_VERSION`, `JOB_SCHEMA_VERSION`, `migrate`,
   `migrate_job`, `migrate_config`.
 
 A documentation coverage check should compare the reference inventory to `kuration.__all__` so
@@ -125,9 +127,10 @@ All non-underscore methods intentionally exposed by `Pipeline` are public:
 
 - Schema and resolution: `using`, `semantic`, `as_position`, `as_angular`, `as_bitmask`,
   `at_rate`.
-- Pipeline construction: `apply`, `window`, `measure`, `filter`, `bin`, `score`, `tag`,
-  `split`, `group`, `options`, `sample`; `organize` and `curate` remain compatibility aliases.
-- Inspection: `head`, `describe`, `explain`.
+- Pipeline construction: `apply`, `window`, `join_video`, `transform`, `measure`, `filter`,
+  `bin`, `score`, `tag`, `split`, `group`, `options`, `expect`, `sample`; `organize` and
+  `curate` remain compatibility aliases.
+- Inspection: `head`, `describe`, `preview`, `review`, `explain`.
 - Terminals: `collect`, `report`, `experiment`, `output`.
 
 The reference must cover these methods even though they are not individual members of
