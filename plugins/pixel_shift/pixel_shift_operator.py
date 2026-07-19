@@ -207,10 +207,15 @@ except ImportError:
 if register_batch_transform is not None:
 
     @register_batch_transform(
-        "aintropy/pixel_shift",
+        "aintropy/pixel-shift",
+        description="Per-segment pixel-shift statistics (min/max/mean/n_instances per "
+                     "control) for every isolated key/mouse press found in the window -- "
+                     "no consistency judgment, just what pixel motion happened",
         outputs=OUTPUT_KEYS,
         inputs=("media:frame", "field:action"),
         media_requirements={"kind": "video-frame", "layout": "HWC"},
+        resources={"num_gpus": 0},
+        version="1",
     )
     class PixelShift:
         def __init__(self, controls: list = None):
@@ -227,7 +232,7 @@ if register_batch_transform is not None:
             return {key: np.array([row[key] for row in rows], dtype=np.float64) for key in OUTPUT_KEYS}
 
     @register_operator(
-        "aintropy/pixel_shift",
+        "aintropy/pixel-shift",
         description="Measure pixel shift for every isolated key/mouse press -- no "
                      "consistency judgment, just what happened",
         parameters={
@@ -242,4 +247,4 @@ if register_batch_transform is not None:
         version="1",
     )
     def pixel_shift(pipeline, *, controls=None):
-        return pipeline.transform("aintropy/pixel_shift", controls=controls)
+        return pipeline.transform("aintropy/pixel-shift", controls=controls)

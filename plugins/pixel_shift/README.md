@@ -28,34 +28,32 @@ hardcoded), kept out of this contribution.
 ## Usage
 
 ```python
-import contrib.pixel_shift.pixel_shift_operator as pixel_shift
+import plugins.pixel_shift.pixel_shift_operator as pixel_shift
 
 pipeline = (
     input(telemetry, fields={"action": action_columns}, time="t")
     .join_video({"my_source": "clip.mp4"}, on="frame_index")
     .window(32, stride=32)
-    .apply("aintropy/pixel_shift", controls=["W", "S", "A", "D"])
+    .apply("aintropy/pixel-shift", controls=["W", "S", "A", "D"])
 )
 result = pipeline.collect(n=1000)
 pixel_shift.print_report()
 ```
 
-## Why this lives in `contrib/`, not `src/kuration/` or `examples/`
+Registered under `aintropy/pixel-shift` for both the batch transform (`kur-describe
+transform aintropy/pixel-shift`) and the compositional operator (`kur-describe operator
+aintropy/pixel-shift`) -- the Python module itself stays `pixel_shift` (import-identifier
+convention), only the registration string is hyphenated.
+
+## Why this lives in `plugins/`, not `src/kuration/` or `examples/`
 
 This is intentionally domain-specific — it only works on datasets using the DIAMOND
 action-vector layout, and (unlike `examples/02_robotics_action_aware.py`) it has no
 synthetic self-contained demo mode; it's meant to run against real recorded gameplay.
 `CONTRIBUTING.md`'s own design rule keeps domain knowledge out of the shared core, and the
 existing `examples/` are all self-generated-data demonstrations, not real-dataset tooling.
-`contrib/` is a new top-level location for exactly this situation — genuinely reusable
-across any dataset in this specific action-vector format (not proprietary to any one
-dataset), but not appropriate for the dataset-agnostic core or the synthetic examples.
-
-Open question for maintainers: is `contrib/` the right long-term home for this, or should
-it instead be packaged as a separate downstream plugin distributed via the
-`kuration.plugins` entry-point mechanism described in `CONTRIBUTING.md`? Flagging this
-explicitly rather than deciding unilaterally.
-
-Validated end-to-end against a real installed copy of this package (not just matched
-against its documented API): real MP4 decoded through the SDK's own PyAV media provider,
-joined to real action telemetry, windowed, and run through this operator with zero errors.
+`plugins/` is registered through the `kuration.plugins` entry-point mechanism described in
+`CONTRIBUTING.md` (see `pyproject.toml`'s `[project.entry-points."kuration.plugins"]`), so
+`kur-list`/`kur-describe` discover it automatically on install, the same as any other
+installed plugin -- confirmed against a real, clean, non-editable install (see the test
+plan in the PR description).

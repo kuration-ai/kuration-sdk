@@ -76,6 +76,9 @@ dev = [
 ]
 docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5"]
 
+[project.entry-points."kuration.plugins"]
+pixel_shift = "plugins.pixel_shift.pixel_shift_operator"
+
 [project.scripts]
 kur-curate = "kuration.cli.curate:main"
 kur-experiment = "kuration.cli.experiment:main"
@@ -94,8 +97,9 @@ requires = ["setuptools>=80,<84"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src"]
-include = ["kuration*"]
+where = ["src", "."]
+include = ["kuration*", "plugins*"]
+exclude = ["tests*", "examples*", "contrib*"]
 
 [tool.setuptools.package-data]
 kuration = ["schemas/*.json", "py.typed"]   # shipped JSON Schema (kur-validate) + PEP 561 marker
