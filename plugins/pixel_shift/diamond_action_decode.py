@@ -17,8 +17,24 @@ every control, not just whichever one a process was launched with.
 """
 from __future__ import annotations
 
-import cv2
 import numpy as np
+
+# cv2 is imported lazily, inside the two functions that actually touch a frame -- this
+# module is imported unconditionally by kur-list/kur-describe (entry-point scanning loads
+# every registered plugin module to read its descriptors), so an eager top-level `import
+# cv2` would break plugin discovery for EVERY kuration-sdk user the moment opencv isn't
+# installed, not just users of this plugin. Matches this repo's own stated convention
+# (pyproject.toml: "heavy capabilities are opt-in extras, lazily imported and
+# loud-on-missing -- the asg2diamond convention").
+def _require_cv2():
+    try:
+        import cv2
+        return cv2
+    except ImportError as e:
+        raise ImportError(
+            "pixel_shift requires opencv (cv2) for optical-flow measurement. "
+            "Install it with `pip install opencv-python-headless` (or `opencv-python`)."
+        ) from e
 
 KEY_NAMES = ["W", "A", "S", "D", "SPACE", "CTRL", "SHIFT", "1", "2", "3", "R"]
 N_KEYS = 11
@@ -168,6 +184,7 @@ def find_isolated_press_sequences(Y: np.ndarray, control: str, press_len: int):
 
 
 def _prep_gray(img: np.ndarray) -> np.ndarray:
+    cv2 = _require_cv2()
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     h = gray.shape[0]
     return gray[: int(h * (1 - BOTTOM_CROP_FRAC)), :]
@@ -210,6 +227,9 @@ def release_transition_displacement(frames: np.ndarray, actions: np.ndarray, con
     (e.g. a mouse control's actual delta value at that frame) without re-deriving it."""
     sequences = find_isolated_press_sequences(actions, control, press_len)
     out = []
+    if not sequences:
+        return out
+    cv2 = _require_cv2()
     for start, end in sequences:
         release_idx = start + press_len - 1
         if release_idx + 1 > end:

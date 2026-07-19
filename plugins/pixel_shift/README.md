@@ -25,6 +25,24 @@ hardcoded), kept out of this contribution.
    count, an ASCII histogram of the shift values, and which clips (by source + frame
    range) each instance came from.
 
+## Install
+
+This operator measures optical flow with `cv2`, which is *not* part of kuration-sdk's core
+dependencies (the core stays free of heavy, domain-specific libraries -- see "Why this lives
+in `plugins/`" below). Install it with:
+
+```bash
+pip install "kuration-sdk[pixel_shift]"
+```
+
+`cv2` is imported lazily, only inside the functions that actually touch a frame -- so
+installing kuration-sdk *without* this extra still works fine for everything else,
+including `kur-list`/`kur-describe` (which import every registered plugin module to read
+its descriptors, this one included). Calling into this operator's flow-measuring code
+without the extra installed raises a clear `ImportError` telling you to install it, rather
+than either crashing plugin discovery for unrelated users or failing with a bare
+`ModuleNotFoundError`.
+
 ## Usage
 
 ```python
@@ -41,7 +59,7 @@ pixel_shift.print_report()
 ```
 
 Registered under `aintropy/pixel-shift` for both the batch transform (`kur-describe
-transform aintropy/pixel-shift`) and the compositional operator (`kur-describe operator
+transforms aintropy/pixel-shift`) and the compositional operator (`kur-describe operators
 aintropy/pixel-shift`) -- the Python module itself stays `pixel_shift` (import-identifier
 convention), only the registration string is hyphenated.
 
