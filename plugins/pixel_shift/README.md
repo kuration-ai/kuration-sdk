@@ -45,6 +45,69 @@ transform aintropy/pixel-shift`) and the compositional operator (`kur-describe o
 aintropy/pixel-shift`) -- the Python module itself stays `pixel_shift` (import-identifier
 convention), only the registration string is hyphenated.
 
+## Method — the specifics results depend on
+
+The measurement is deliberately narrow: one Farneback optical-flow computation between
+exactly two frames per isolated-press instance, projected onto one axis. Every parameter
+below was inherited unchanged from the internal batch script this measurement methodology
+was originally validated against (`batch_job_sensitivity_w.py`, not part of this SDK), so
+none of these are arbitrary — but they are also not universal constants, and results
+depend on all five.
+
+**1. Frame crop (`BOTTOM_CROP_FRAC = 0.18`)** — the bottom 18% of every frame is dropped
+before computing optical flow (`_prep_gray`): `gray[: int(h * 0.82), :]`. This removes the
+weapon viewmodel / ammo HUD band, which sits in the bottom portion of the frame in CS2/
+CS:GO and does not move with camera rotation the way the world does — including it would
+inject a constant near-zero-motion region into every flow computation regardless of the
+actual camera/player motion. This value is empirical, marked "provisional" in its source,
+and assumes a HUD layout similar to CS2's; a dataset with a different HUD position (or no
+HUD baked into frame) would need a different crop fraction, not necessarily 0.18.
+
+**2. Farneback parameters** (`FARNEBACK_KWARGS = dict(pyr_scale=0.5, levels=3, winsize=15,
+iterations=3, poly_n=5, poly_sigma=1.2, flags=0)`, passed straight to
+`cv2.calcOpticalFlowFarneback`) — `winsize=15` in particular is a pixel count, not a
+fraction of the frame, so it is implicitly tuned to the resolution these values were
+validated at (DIAMOND's 150×280 low/full-res frame size). At a much higher resolution
+(e.g. raw 1920×1080 capture), a 15-pixel window covers a proportionally tiny fraction of
+the frame and would likely need re-tuning; the code itself is resolution-agnostic (no
+hardcoded frame size), the calibration behind the numbers is not.
+
+**3. Frame resolution** — only validated end-to-end at DIAMOND's 150×280 frame size (real
+ASG capture, see the PR's test plan). The functions place no hardcoded assumption on `(H,
+W)` — `_radial_unit_vectors` and the crop both derive from the actual array shape — but
+"runs without erroring at another resolution" and "produces calibration-comparable
+numbers at another resolution" are different claims; only the former is currently true by
+construction, the latter is untested.
+
+**4. Coordinate / sign convention**:
+- Frames must be **BGR** (`cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)` assumes BGR channel
+  order, matching how ASG/DIAMOND HDF5 frames are stored). Feeding RGB frames would not
+  error, but `cv2`'s BGR-weighted luminance conversion would silently swap the red/blue
+  channel weighting, systematically biasing the resulting grayscale image and therefore
+  the flow.
+- Axis projection and sign, matching DIAMOND's own convention
+  (`asg2diamond/action_map.py`, cross-validated by that project's `asg2d-verify-alignment`
+  tool): W/S project onto **radial** flow (outward from frame-center = positive = W;
+  inward = negative = S) since forward/backward motion produces expansion/contraction
+  around the center, uncontaminated by lateral motion or camera rotation under this
+  projection. A/D and the mouse-yaw controls project onto **horizontal** flow directly (no
+  center-relative projection — strafing/turning has no in-frame focus of expansion);
+  mouse-pitch controls project onto **vertical** flow directly. Positive horizontal flow
+  = world sliding right = consistent with `A` (moving left) or a positive `mouse_x` (per
+  DIAMOND's convention, positive mouse_x = looking right, so content sweeps left against a
+  rightward turn — i.e. `mouse_x_pos`'s expected sign is negative on this axis, confirmed
+  empirically, not assumed).
+
+**5. Only the release-transition frame pair is measured, not the whole press+aftermath
+sequence** — for a `press_len=N` isolated press, the ONE frame pair measured is index
+`N-1` to `N` (the last held frame to the first aftermath frame), not every frame within
+the sequence `find_isolated_press_sequences` returns. This is deliberate, not an
+oversight: the reference calibration data this operator's sibling consistency-checking
+layer is built against was itself measured at exactly this transition (see
+`batch_job_sensitivity_w.py`'s "position 0 = release transition" convention) — pixel
+shift measurably decays over the frames following a key release, so measuring any other
+point in the sequence would not be comparable to that calibration at all.
+
 ## Why this lives in `plugins/`, not `src/kuration/` or `examples/`
 
 This is intentionally domain-specific — it only works on datasets using the DIAMOND
