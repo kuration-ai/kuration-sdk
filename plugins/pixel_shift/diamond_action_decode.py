@@ -34,6 +34,18 @@ MOUSE_Y_POSSIBLES = np.array(
 MX_OFF = N_KEYS + 2
 MY_OFF = MX_OFF + N_MOUSE_X
 
+# solo_labels()'s `active` array is [keys(11), l_click, r_click, mx_active, my_active] --
+# a 15-wide one-hot whose argmax is a label in [0, 14], NOT a byte-offset into the raw
+# 51-dim action vector. MOUSE_X_LABEL/MOUSE_Y_LABEL are that label space; MX_OFF/MY_OFF
+# (13 and 36) are a completely different numbering (offsets into Y's columns) that must
+# never be compared against a solo_labels() output. MX_OFF happens to equal 13, the
+# correct mouse_x label, purely by coincidence of N_KEYS+2 == N_KEYS+1+1 -- MY_OFF (36) has
+# no such coincidence and comparing solo == MY_OFF is always False, since solo_labels()
+# can only ever return -1..14. That silently disabled all isolated mouse_y-press detection
+# (caught in review -- solo_idx must use MOUSE_Y_LABEL, not MY_OFF).
+MOUSE_X_LABEL = N_KEYS + 2   # = 13: mx_active's column in solo_labels()'s `active`
+MOUSE_Y_LABEL = N_KEYS + 3   # = 14: my_active's column in solo_labels()'s `active`
+
 CONTROL_AXES = {
     "W": {"opposing": "S", "axis": "longitudinal"},
     "S": {"opposing": "W", "axis": "longitudinal"},
@@ -120,10 +132,13 @@ def find_isolated_press_sequences(Y: np.ndarray, control: str, press_len: int):
     `control` followed by at least one real aftermath frame. Action-vector-only -- no pixel
     data touched here. Mirrors batch_job_sensitivity_w.py's find_press_sequences, with
     `control`/`press_len` as arguments instead of module globals."""
+    if len(Y) == 0:
+        return []
+
     if control in MOUSE_CONTROLS:
-        solo_idx = MX_OFF if MOUSE_AXIS_OF[control] == "x" else MY_OFF
+        solo_label = MOUSE_X_LABEL if MOUSE_AXIS_OF[control] == "x" else MOUSE_Y_LABEL
         solo = solo_labels(Y)
-        is_solo = (solo == solo_idx) & (mouse_delta_sign(Y, MOUSE_AXIS_OF[control]) == MOUSE_SIGN[control])
+        is_solo = (solo == solo_label) & (mouse_delta_sign(Y, MOUSE_AXIS_OF[control]) == MOUSE_SIGN[control])
     else:
         solo = solo_labels(Y)
         is_solo = solo == KEY_NAMES.index(control)

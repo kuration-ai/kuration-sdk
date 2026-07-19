@@ -75,6 +75,29 @@ def test_aftermath_allows_orthogonal_keys_to_vary_freely():
     assert dad.find_isolated_press_sequences(Y, "W", press_len=1) == [(0, 2)]
 
 
+def test_isolated_mouse_y_press_is_actually_detected():
+    """Regression test for a review-caught bug: find_isolated_press_sequences compared
+    solo_labels() output (a label in [0, 14]) against MY_OFF (=36, a completely different
+    numbering -- an offset into the raw action vector's columns), which can never match,
+    silently disabling ALL isolated mouse_y-press detection. MOUSE_X_POS/NEG worked only by
+    coincidence (MX_OFF happens to equal the correct label, 13); MOUSE_Y_POS/NEG did not
+    (MY_OFF=36 vs the correct label, 14). Fixed by introducing MOUSE_X_LABEL/MOUSE_Y_LABEL
+    as their own, correct numbering, separate from MX_OFF/MY_OFF."""
+    Y = np.stack([_action(), _action(mouse_y=20.0), _action()])
+    assert dad.find_isolated_press_sequences(Y, "MOUSE_Y_POS", press_len=1) == [(1, 2)]
+
+    Y_neg = np.stack([_action(), _action(mouse_y=-20.0), _action()])
+    assert dad.find_isolated_press_sequences(Y_neg, "MOUSE_Y_NEG", press_len=1) == [(1, 2)]
+
+
+def test_empty_input_does_not_raise():
+    """Regression test for a review-caught bug: `is_start[0] = True` on a 0-length array
+    raised IndexError for an empty window instead of returning no instances found."""
+    empty = np.zeros((0, ACTION_DIM), dtype=np.float64)
+    assert dad.find_isolated_press_sequences(empty, "W", press_len=1) == []
+    assert dad.find_isolated_press_sequences(empty, "MOUSE_Y_POS", press_len=1) == []
+
+
 class TestDisplacementSignConvention:
     """Validates README §Method point 4 (coordinate/sign convention) directly against
     hand-built flow fields -- no real optical flow needed to check the projection math."""
