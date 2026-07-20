@@ -75,8 +75,12 @@ import plugins.pixel_shift.pixel_shift_operator as pixel_shift
 
 report = pixel_shift.PixelShiftReport()
 for frames, actions, segment_id in your_own_segments:
-    report.add_segment(frames, actions, pixel_shift.clip_label(segment_id),
-                        controls=["W", "S", "A", "D"])
+    # segment_id is (source_id, start_idx, end_idx) -- add_segment uses start_idx to give
+    # each instance it finds its own precise (source, frame) location, not one label
+    # shared by every instance found in this segment (see "Why the report is a separate
+    # object" -- this is also why print_report()'s clip listing shows real, distinct
+    # per-instance locations instead of collapsing them).
+    report.add_segment(frames, actions, segment_id, controls=["W", "S", "A", "D"])
 report.print_report()
 ```
 

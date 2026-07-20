@@ -208,10 +208,36 @@ def test_pixel_shift_report_records_clip_provenance():
     frames = rng.integers(0, 255, size=(actions.shape[0], h, w, 3), dtype=np.uint8)
 
     report = pso.PixelShiftReport()
-    report.add_segment(frames, actions, "clip 'demo', frames 100-103", controls=["A"])
+    report.add_segment(frames, actions, ("demo", 100, 103), controls=["A"])
     assert "A" in report._ledger
     assert "1" in report._ledger["A"]  # press_len=1
-    assert report._ledger["A"]["1"][0]["clip"] == "clip 'demo', frames 100-103"
+    record = report._ledger["A"]["1"][0]
+    assert record["source_id"] == "demo"
+    assert record["frame"] == 101  # start_idx (100) + local instance start (1, where A is held)
+
+
+def test_pixel_shift_report_preserves_distinct_instances_within_one_segment():
+    """Regression test for a review-caught bug: every instance found in one add_segment()
+    call used to share the SAME segment-level clip label, discarding each instance's own
+    local start frame. print_report() then deduped labels through a set, silently
+    collapsing multiple real, distinct instances from the same segment into a single
+    printed entry. Two isolated A-taps in one segment must now show up as two distinct
+    (source_id, frame) locations, not one."""
+    rng = np.random.default_rng(4)
+    h, w = 40, 60
+    # Two isolated A taps (press_len=1) in one segment, at different local frames.
+    actions = np.stack([
+        _action(), _action(a=True), _action(),  # tap 1: local frames 0,1,2
+        _action(), _action(a=True), _action(),  # tap 2: local frames 3,4,5
+    ])
+    frames = rng.integers(0, 255, size=(actions.shape[0], h, w, 3), dtype=np.uint8)
+
+    report = pso.PixelShiftReport()
+    report.add_segment(frames, actions, ("demo", 100, 106), controls=["A"])
+    entries = report._ledger["A"]["1"]
+    assert len(entries) == 2
+    frames_seen = sorted(e["frame"] for e in entries)
+    assert frames_seen == [101, 104]  # start_idx(100) + local starts (1, 4) -- distinct
 
 
 def test_pixel_shift_report_instances_are_independent_per_object():
@@ -223,7 +249,7 @@ def test_pixel_shift_report_instances_are_independent_per_object():
     frames = rng.integers(0, 255, size=(actions.shape[0], h, w, 3), dtype=np.uint8)
 
     report_1 = pso.PixelShiftReport()
-    report_1.add_segment(frames, actions, "clip 'one'", controls=["A"])
+    report_1.add_segment(frames, actions, ("one", 0, 3), controls=["A"])
     report_2 = pso.PixelShiftReport()
     assert report_2._ledger == {}
     assert "A" in report_1._ledger

@@ -65,20 +65,16 @@ CONTROL_DESCRIPTIONS = {
 }
 
 
-def clip_label(segment_id) -> str:
-    """A clip ID readable on its own: which source clip, and which frame range within it --
-    not a bracket/slice-looking notation that reads like code."""
-    source_id, start_idx, end_idx = segment_id
-    return f"clip '{source_id}', frames {start_idx}-{end_idx}"
-
-
 def _iter_instances(frames: np.ndarray, actions: np.ndarray, control: str,
                      color_space: str = "BGR"):
-    """Pure generator: yields (cell_key, signed_shift) for every isolated-press instance of
-    `control` found in this one segment -- no side effects, no shared state, safe to call
-    from anywhere (a worker process, a plain loop, whatever). cell_key is press_len as a
-    string ("1"/"2"/"3") for W/S/A/D, the observed delta value as a string (e.g. "2",
-    "-1000") for mouse controls. `color_space` (see diamond_action_decode._prep_gray)
+    """Pure generator: yields (cell_key, local_start, signed_shift) for every isolated-press
+    instance of `control` found in this one segment -- no side effects, no shared state,
+    safe to call from anywhere (a worker process, a plain loop, whatever). cell_key is
+    press_len as a string ("1"/"2"/"3") for W/S/A/D, the observed delta value as a string
+    (e.g. "2", "-1000") for mouse controls. local_start is the instance's press-sequence
+    start frame, indexed within this segment (0-based) -- callers that know this segment's
+    window offset can add it to get a globally meaningful frame number; see
+    PixelShiftReport.add_segment. `color_space` (see diamond_action_decode._prep_gray)
     defaults to BGR, matching raw ASG/DIAMOND HDF5 arrays; pass the real declared
     color_space when `frames` came through a kuration-sdk media column instead."""
     from .diamond_action_decode import MOUSE_CONTROLS, MOUSE_AXIS_OF, mouse_delta_value
@@ -88,12 +84,12 @@ def _iter_instances(frames: np.ndarray, actions: np.ndarray, control: str,
         for start, px in release_transition_displacement(frames, actions, control, press_len=1,
                                                            color_space=color_space):
             delta_value = int(mouse_delta_value(actions[start:start + 1], axis)[0])
-            yield str(delta_value), px
+            yield str(delta_value), start, px
     else:
         for press_len in PRESS_LENS:
             for start, px in release_transition_displacement(frames, actions, control, press_len,
                                                                color_space=color_space):
-                yield str(press_len), px
+                yield str(press_len), start, px
 
 
 def segment_scalars(frames: np.ndarray, actions: np.ndarray,
@@ -115,7 +111,7 @@ def segment_scalars(frames: np.ndarray, actions: np.ndarray,
             out[f"{prefix}_shift_mean"] = 0.0
             out[f"{prefix}_n_instances"] = 0.0
             continue
-        shifts = [shift for _, shift in _iter_instances(frames, actions, control, color_space)]
+        shifts = [shift for _, _, shift in _iter_instances(frames, actions, control, color_space)]
         if shifts:
             out[f"{prefix}_shift_min"] = float(min(shifts))
             out[f"{prefix}_shift_max"] = float(max(shifts))
@@ -171,13 +167,20 @@ class PixelShiftReport:
     def __init__(self):
         self._ledger: dict = {}
 
-    def add_segment(self, frames: np.ndarray, actions: np.ndarray, clip_label: str,
+    def add_segment(self, frames: np.ndarray, actions: np.ndarray, segment_id,
                      controls: list = None, color_space: str = "BGR") -> None:
-        """Record every instance found in this one segment under its exact cell_key."""
+        """Record every instance found in this one segment under its exact cell_key.
+        `segment_id` is (source_id, start_idx, end_idx) -- the same shape the SDK's
+        segment_ids batch entry provides. Each instance keeps its OWN precise
+        (source_id, frame) location, computed from start_idx + the instance's actual
+        local start frame within this window -- not one label shared by every instance
+        found in this call, which would make every instance from the same window
+        indistinguishable in the printed report (see this class's docstring)."""
+        source_id, start_idx, _ = segment_id
         for control in (controls or ALL_CONTROLS):
-            for cell_key, shift in _iter_instances(frames, actions, control, color_space):
-                self._ledger.setdefault(control, {}).setdefault(cell_key, []).append(
-                    {"clip": clip_label, "shift": shift})
+            for cell_key, local_start, shift in _iter_instances(frames, actions, control, color_space):
+                record = {"source_id": source_id, "frame": start_idx + local_start, "shift": shift}
+                self._ledger.setdefault(control, {}).setdefault(cell_key, []).append(record)
 
     def print_report(self, controls: list = None) -> None:
         """Print the full pixel-shift report accumulated so far -- instance counts,
@@ -197,15 +200,20 @@ class PixelShiftReport:
             for cell_key in sorted(cells, key=lambda k: (len(k), k)):
                 entries = cells[cell_key]
                 shifts = [e["shift"] for e in entries]
-                clip_ids = sorted({e["clip"] for e in entries})
+                # Each instance's own (source, frame) -- distinct real instances at
+                # different frames never collapse into one entry, unlike a shared
+                # per-segment label would; a genuine duplicate (same source+frame) still
+                # legitimately dedupes.
+                locations = sorted({(e["source_id"], e["frame"]) for e in entries})
                 label = "held for" if control in KEY_CONTROLS else "mouse delta"
                 unit = " frame(s)" if control in KEY_CONTROLS else ""
                 print(f"  {label} {cell_key}{unit}  --  n_instances={len(entries)}  "
                       f"mean={sum(shifts) / len(shifts):.4f}  min={min(shifts):.4f}  max={max(shifts):.4f}")
                 for edge_label, count, bar in _ascii_histogram(shifts):
                     print(f"    {edge_label:>24}  {count:>5}  {bar}")
-                clip_preview = "; ".join(clip_ids[:8]) + (
-                    f"; ... (+{len(clip_ids) - 8} more)" if len(clip_ids) > 8 else "")
+                previews = [f"clip '{source_id}' @ frame {frame}" for source_id, frame in locations[:8]]
+                clip_preview = "; ".join(previews) + (
+                    f"; ... (+{len(locations) - 8} more)" if len(locations) > 8 else "")
                 print(f"    Clip ID(s): {clip_preview}")
         print()
 
