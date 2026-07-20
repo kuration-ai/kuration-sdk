@@ -17,7 +17,7 @@ def _public_markdown_files() -> list[Path]:
     """Return version-controlled documentation surfaces, excluding the private agent guide."""
 
     files = [path for path in REPOSITORY_ROOT.glob("*.md") if path.name != "CLAUDE.md"]
-    for directory in ("docs", "examples"):
+    for directory in ("docs", "examples", "plugins"):
         files.extend((REPOSITORY_ROOT / directory).rglob("*.md"))
     return sorted(set(files))
 

@@ -57,15 +57,21 @@ __all__ = ["Pipeline", "input"]
 # ======================================================================================
 def input(src=None, *, schema=None, adapter=None, sources=None, fields=None,
           time=None, entity=None, hz=None, kinds=None, sample=200, globals=None,
-          **adapter_kw) -> "Pipeline":
+          registry=None, **adapter_kw) -> "Pipeline":
     """Open a source as a `Pipeline`. Sniffs the source kind, infers the schema (unless
     `schema=` is given) from a sample, and builds the adapter — eagerly and loudly.
 
     Accepted `src`: file path / glob / list of paths / parquet-parts directory; a pandas
     DataFrame (duck-typed via .to_dict); list[dict] rows; list[Tick]; dict of columns
     (columnar in-memory); {source_id: rows|ticks} (multi-source in-memory). Escape hatch:
-    `input(adapter=<InputAdapter or registry name>, sources=[...], schema=...)`.
+    `input(adapter=<InputAdapter or registry name>, sources=[...], schema=...)`. Pass
+    ``registry=`` to resolve a named adapter and all later extensions through an isolated
+    registry snapshot.
     """
+    if registry is not None:
+        from .registry import Registry
+        if not isinstance(registry, Registry):
+            raise ValueError("input(registry=...) needs a Registry")
     op = {"op": "input",
           "args": [] if src is None else [_describe_src(src)],
           "kwargs": {k: _jsonable(v) for k, v in dict(
@@ -86,14 +92,15 @@ def input(src=None, *, schema=None, adapter=None, sources=None, fields=None,
                 kw["fields"] = fields
             if globals is not None:
                 kw["globals"] = globals
-            adapter = get_adapter(adapter, schema=schema, **kw)
+            adapter = get_adapter(adapter, registry=registry, schema=schema, **kw)
         srcs = list(sources) if sources is not None else (
             list(adapter.sources()) if hasattr(adapter, "sources") else [])
         if not srcs:
             raise ValueError("input(adapter=...) requires sources=[...] "
                              "(or an adapter exposing .sources())")
         return Pipeline(schema=schema, adapter=adapter, sources=srcs,
-                        in_memory=bool(getattr(adapter, "in_memory", False)), ops=[op])
+                        in_memory=bool(getattr(adapter, "in_memory", False)), ops=[op],
+                        registry=registry)
 
     if src is None:
         raise ValueError("input() needs a source (path/glob/list/DataFrame/rows/ticks/dict) "
@@ -107,7 +114,8 @@ def input(src=None, *, schema=None, adapter=None, sources=None, fields=None,
     if isinstance(src, str) or (isinstance(src, (list, tuple)) and src
                                 and all(isinstance(x, str) for x in src)):
         return _input_files(src, op, schema=schema, fields=fields, time=time, entity=entity,
-                            hz=hz, kinds=kinds, sample=sample, globals=globals, **adapter_kw)
+                            hz=hz, kinds=kinds, sample=sample, globals=globals,
+                            registry=registry, **adapter_kw)
 
     if adapter_kw:
         raise ValueError(f"unknown input() argument(s) {sorted(adapter_kw)} — adapter "
@@ -119,11 +127,12 @@ def input(src=None, *, schema=None, adapter=None, sources=None, fields=None,
             raise ValueError("input(): empty list — nothing to curate")
         if all(isinstance(x, Tick) for x in src):
             return _input_ticks({"mem": list(src)}, op, schema=schema, time=time,
-                                entity=entity, hz=hz, kinds=kinds, sample=sample)
+                                entity=entity, hz=hz, kinds=kinds, sample=sample,
+                                registry=registry)
         if all(isinstance(x, dict) for x in src):
             return _input_rows({"mem": list(src)}, op, schema=schema, fields=fields,
                                time=time, entity=entity, hz=hz, kinds=kinds, sample=sample,
-                               globals=globals)
+                               globals=globals, registry=registry)
         raise ValueError("input(): a list must be all paths (str), all row dicts, or all "
                          f"Ticks; got element types {sorted({type(x).__name__ for x in src})}")
 
@@ -149,11 +158,12 @@ def input(src=None, *, schema=None, adapter=None, sources=None, fields=None,
         vals = list(src.values())
         if all(_is_ticks(v) for v in vals):
             return _input_ticks({str(k): list(v) for k, v in src.items()}, op, schema=schema,
-                                time=time, entity=entity, hz=hz, kinds=kinds, sample=sample)
+                                time=time, entity=entity, hz=hz, kinds=kinds, sample=sample,
+                                registry=registry)
         if all(_is_rows(v) for v in vals):
             return _input_rows({str(k): list(v) for k, v in src.items()}, op, schema=schema,
                                fields=fields, time=time, entity=entity, hz=hz, kinds=kinds,
-                               sample=sample, globals=globals)
+                               sample=sample, globals=globals, registry=registry)
         if all(_is_column(v) for v in vals):
             lens = {len(v) for v in vals}
             if len(lens) != 1:
@@ -170,7 +180,7 @@ def input(src=None, *, schema=None, adapter=None, sources=None, fields=None,
             rows = [{k: _cell(v[i]) for k, v in src.items()} for i in range(n)]
             return _input_rows({"mem": rows}, op, schema=schema, fields=fields, time=time,
                                entity=entity, hz=hz, kinds=kinds, sample=sample,
-                               globals=globals)
+                               globals=globals, registry=registry)
         raise ValueError(
             "input(): ambiguous dict — values must be ALL row-lists / Tick-lists "
             "({source_id: rows|ticks} multi-source) or ALL scalar columns (columnar); "
@@ -218,7 +228,7 @@ def _expand_paths(src) -> tuple[list[str], str]:
 
 
 def _input_files(src, op, *, schema, fields, time, entity, hz, kinds, sample, globals,
-                 **adapter_kw) -> "Pipeline":
+                 registry=None, **adapter_kw) -> "Pipeline":
     paths, kind = _expand_paths(src)
     if kind == "video":
         if schema is not None or fields is not None or time is not None or entity is not None:
@@ -227,7 +237,7 @@ def _input_files(src, op, *, schema, fields, time, entity, hz, kinds, sample, gl
         from .media import VideoAdapter
         video_ad = VideoAdapter(paths, **adapter_kw)
         return Pipeline(schema=video_ad.schema, adapter=video_ad, sources=paths,
-                        in_memory=False, ops=[op])
+                        in_memory=False, ops=[op], registry=registry)
     sample_data = None
     if schema is None:
         from .infer import sample_source
@@ -255,28 +265,32 @@ def _input_files(src, op, *, schema, fields, time, entity, hz, kinds, sample, gl
         paths = ad.sources()
     else:
         raise ValueError(f"input(): unsupported sniffed source kind {kind!r}")
-    return Pipeline(schema=schema, adapter=ad, sources=paths, in_memory=False, ops=[op])
+    return Pipeline(schema=schema, adapter=ad, sources=paths, in_memory=False, ops=[op],
+                    registry=registry)
 
 
 def _input_rows(data: dict, op, *, schema, fields, time, entity, hz, kinds, sample,
-                globals) -> "Pipeline":
+                globals, registry=None) -> "Pipeline":
     first = next(iter(data.values()))
     schema, fmap, tc, ec = _infer_or_explicit(
         first[:sample], schema=schema, fields=fields, time=time, entity=entity, hz=hz,
         kinds=kinds, tabular=True)
     ad = _RowsAdapter(schema, data=data, fields=fmap, time_column=tc, entity_column=ec,
                       globals=globals)
-    return Pipeline(schema=schema, adapter=ad, sources=list(data), in_memory=True, ops=[op])
+    return Pipeline(schema=schema, adapter=ad, sources=list(data), in_memory=True, ops=[op],
+                    registry=registry)
 
 
-def _input_ticks(data: dict, op, *, schema, time, entity, hz, kinds, sample) -> "Pipeline":
+def _input_ticks(data: dict, op, *, schema, time, entity, hz, kinds, sample,
+                 registry=None) -> "Pipeline":
     if schema is None:
         from .infer import infer_schema
         first = next(iter(data.values()))
         schema, _hints = infer_schema(first[:sample], name="inferred", time=time,
                                       entity=entity, hz=hz, kinds=kinds)
     ad = _TickAdapter(schema, data)
-    return Pipeline(schema=schema, adapter=ad, sources=list(data), in_memory=True, ops=[op])
+    return Pipeline(schema=schema, adapter=ad, sources=list(data), in_memory=True, ops=[op],
+                    registry=registry)
 
 
 # ======================================================================================
@@ -287,7 +301,7 @@ class Pipeline:
     every operator returns a new Pipeline."""
 
     def __init__(self, *, schema: SchemaSpec, adapter, sources: list, in_memory: bool,
-                 ops: list):
+                 ops: list, registry=None):
         self.schema = schema
         self.adapter = adapter
         self.sources = list(sources)
@@ -327,7 +341,7 @@ class Pipeline:
         self._explicit_options: set[str] = set()
         self._expectations: dict = {}
         from .registry import default_registry
-        self._registry = default_registry
+        self._registry = default_registry if registry is None else registry.snapshot()
 
     # ---- immutability plumbing -------------------------------------------------------
     def _clone(self) -> "Pipeline":
@@ -372,8 +386,6 @@ class Pipeline:
         from .registry import Registry
         if not isinstance(registry, Registry):
             raise ValueError("using() needs a Registry")
-        from .plugins import load_plugins
-        load_plugins()
         p = self._next("using", "<registry>")
         p._registry = registry.snapshot()
         return p
@@ -389,7 +401,8 @@ class Pipeline:
         from .registry import validate_parameters
         if not isinstance(name, str) or not name:
             raise ValueError("apply() needs a non-empty registered operator name")
-        if name not in self._registry.names("operator"):
+        from .registry import default_registry
+        if name not in self._registry.names("operator") and self._registry is default_registry:
             load_plugins()
         descriptor = self._registry.descriptor("operator", name)
         validate_parameters(descriptor, params)
@@ -667,7 +680,8 @@ class Pipeline:
     def score(self, name: str, out: Optional[str] = None, **params) -> "Pipeline":
         """Add a whole-pool SegmentScorer; its output feature is `out` (default: name)."""
         from .plugins import load_plugins
-        if name not in self._registry.names("scorer"):
+        from .registry import default_registry
+        if name not in self._registry.names("scorer") and self._registry is default_registry:
             load_plugins()
         if name not in self._registry.names("scorer"):
             raise ValueError(f"unknown scorer {name!r}; registered: "
@@ -1565,20 +1579,26 @@ class Pipeline:
         logical = {"schema": self.schema.to_dict(), "strategy": strategy.resolved,
                    "window": dict(self._window_desc), "sources": [str(s) for s in self.sources],
                    "transforms": list(self._transforms)}
+        transform_outputs = {output for call in self._transforms for output in call["outputs"]}
+        registered = sorted(name for name in strategy.referenced_metrics()
+                            if name not in strategy.define and name not in transform_outputs)
         identity = CheckpointIdentity.from_plans(
             logical, physical,
             input_fingerprints=tuple(source_descriptor(source, self.adapter)
                                      for source in self.sources),
-            schema=self.schema.to_dict(), components=tuple(plugin_provenance()),
+            schema=self.schema.to_dict(), components=tuple([
+                *plugin_provenance(registry=self._registry),
+                *(self._registry.descriptor("metric", name).to_dict()
+                  for name in registered if name in self._registry.names("metric")),
+                *(self._registry.descriptor("transform", call["implementation"]).to_dict()
+                  for call in self._transforms),
+            ]),
             parameters={"seed": self._options["seed"],
                         "adapter": component_identity(self.adapter)})
         checkpoint = StageCheckpoint(checkpoint_dir, physical.stages[0].id, identity)
         if self._n is None:  # guarded by output(); keeps this private method type-safe
             raise ValueError("bounded count output requires a target size")
         target_size = self._n
-        transform_outputs = {output for call in self._transforms for output in call["outputs"]}
-        registered = [name for name in strategy.referenced_metrics()
-                      if name not in strategy.define and name not in transform_outputs]
         stage = checkpoint_feature_stage(
             schema=self.schema, adapter=self.adapter, sources=self.sources,
             define=strategy.define, registered=registered,

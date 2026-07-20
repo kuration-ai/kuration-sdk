@@ -48,7 +48,7 @@ def _run(args) -> None:
                         checkpoint_dir=job.get("checkpoint_dir"),
                         spill_dir=job.get("spill_dir"),
                         approximation=job.get("approximation", "exact"),
-                        max_in_flight=job.get("max_in_flight", 2))
+                        max_in_flight=job.get("max_in_flight", 2), registry=resolved.registry)
     r = res["results"]
     b = r["budget"]
     emitted = b["emitted_seconds"]

@@ -43,7 +43,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 
 | name | signature | does |
 |---|---|---|
-| `input` | `(src=None, *, schema=None, adapter=None, sources=None, fields=None, time=None, entity=None, hz=None, kinds=None, sample=200, globals=None, **adapter_kw) -> Pipeline` | sniff `src`, infer a schema (unless `schema=`), build the adapter — eagerly, loudly |
+| `input` | `(src=None, *, schema=None, adapter=None, sources=None, fields=None, time=None, entity=None, hz=None, kinds=None, sample=200, globals=None, registry=None, **adapter_kw) -> Pipeline` | sniff `src`, infer a schema (unless `schema=`), build the adapter — eagerly, loudly; an explicit registry also resolves named adapters in isolation |
 | `infer_schema` | `(sample, *, name="inferred", time=None, entity=None, hz=None, kinds=None) -> (SchemaSpec, hints)` | classify a sample (rows/dict-of-arrays/ticks) into a schema + adapter `fields=` hints |
 | `Pipeline.window` | `(window, stride=None, unit="steps") -> Pipeline` | set the `Segmenter` |
 | `Pipeline.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None) -> Pipeline` | attach a strictly aligned lazy video media column |
@@ -188,7 +188,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 |---|---|---|
 | `load_plugins` | `(modules=(), *, include_entry_points=True) -> list[dict]` | load registration modules and installed `kuration.plugins` entry points |
 | `loaded_plugin_modules` | `() -> tuple[str, ...]` | modules propagated to spawned scoring workers |
-| `plugin_provenance` | `() -> list[dict]` | loaded plugin code fingerprints used by resume provenance |
+| `plugin_provenance` | `(*, registry=None) -> list[dict]` | loaded plugin implementation fingerprints used by resume provenance; an explicit registry scopes the result |
 | `ProgressCallback` | `Callable[[dict], None]` | receives structured `{phase, event, ...}` execution events |
 
 ## Component registries and discovery

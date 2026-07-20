@@ -153,7 +153,8 @@ def _resolve(spec: dict, registry=None) -> Strategy:
     from .plugins import load_plugins
     from .registry import default_registry
     registry = registry or default_registry
-    load_plugins()
+    if registry is default_registry:
+        load_plugins()
     if method not in _METHODS and method not in registry.names("method"):
         raise ValueError(f"unknown selection method {method!r}; registered: "
                          f"{sorted(set(_METHODS) | set(registry.names('method')))}")
@@ -292,7 +293,9 @@ def load_strategy(name_or_spec, schema: SchemaSpec, *, registry=None, available_
     Validates `define` (compiles each DSL metric against `schema`) and that every referenced
     metric is either defined or registered — all loudly, before any data is read."""
     from .plugins import load_plugins
-    load_plugins()
+    from .registry import default_registry
+    if registry is None or registry is default_registry:
+        load_plugins()
     if isinstance(name_or_spec, dict):
         spec = name_or_spec
     else:
@@ -309,7 +312,6 @@ def load_strategy(name_or_spec, schema: SchemaSpec, *, registry=None, available_
     if strat.tags:
         from .tags import compile_tagger
         compile_tagger(strat.tags, schema)  # validate tag sources at load
-    from .registry import default_registry
     active_registry = strat.registry or default_registry
     if strat.scorers:
         for name, _out, _p in strat.scorers:

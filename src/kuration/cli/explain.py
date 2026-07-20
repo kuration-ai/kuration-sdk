@@ -4,30 +4,31 @@ import argparse
 import json
 import sys
 
-from ._common import (build_adapter, build_schema, build_segmenter, format_error,
-                      load_job_plugins, read_job)
+from ._common import format_error, read_job
 
 
 def explain_job(job: dict) -> dict:
     """Return an actionable, JSON-safe preflight summary without reading source rows."""
-    from .validate import job_kind, validate_job
-    summary = validate_job(job)
-    load_job_plugins(job)
-    schema = build_schema(job)
-    adapter = build_adapter(job, schema)
-    schema = schema or adapter.schema
-    segmenter = build_segmenter(job, schema)
-    from ..strategy import load_strategy
-    kind = job_kind(job)
+    from .job import resolve_job
+    resolved = resolve_job(job, enumerate_sources=False)
+    schema, adapter, segmenter, kind = (
+        resolved.schema, resolved.adapter, resolved.segmenter, resolved.kind)
+    summary = {"kind": kind, "schema": schema.name}
+    if resolved.sources is None:
+        summary["sources"] = "implicit (adapter-resolved; --check-sources enumerates)"
+    else:
+        summary["n_sources"] = len(resolved.sources)
     if kind == "experiment":
-        strategies = [load_strategy(arm["strategy"], schema) for arm in job["arms"]]
+        strategies = [strategy for _name, strategy in resolved.arms]
         method = ", ".join(f"{arm['name']}={strategy.method}"
                            for arm, strategy in zip(job["arms"], strategies))
         has_method_extras = any(strategy.filters or strategy.method in {
             "cluster-balanced", "k-center", "facility", "dsir", "rare", "typical"}
                                 for strategy in strategies)
     else:
-        strategy = load_strategy(job["strategy"], schema)
+        strategy = resolved.strategy
+        if strategy is None:
+            raise RuntimeError("resolved job is missing its strategy")
         method = strategy.method
         has_method_extras = bool(strategy.filters or strategy.method in {
             "cluster-balanced", "k-center", "facility", "dsir", "rare", "typical"})

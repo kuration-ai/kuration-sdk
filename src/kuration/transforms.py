@@ -1,7 +1,9 @@
 """Device-neutral bounded batch transforms over segment windows and lazy media."""
 from __future__ import annotations
 
+from collections import deque
 import inspect
+from itertools import islice
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
 import numpy as np
@@ -52,7 +54,7 @@ def get_transform(name: str, *, registry=None):
     from .plugins import load_plugins
     from .registry import default_registry
     registry = registry or default_registry
-    if name not in registry.names("transform"):
+    if name not in registry.names("transform") and registry is default_registry:
         load_plugins()
     return registry.get("transform", name)
 
@@ -71,7 +73,8 @@ def resolve_transform(name, *, using, inputs, batch_size, device, params, schema
                       available_features=()):
     from .plugins import load_plugins
     implementation = using if isinstance(using, str) and using in registry.names("transform") else name
-    if implementation not in registry.names("transform"):
+    from .registry import default_registry
+    if implementation not in registry.names("transform") and registry is default_registry:
         load_plugins()
     if implementation not in registry.names("transform"):
         hint = f"; install the plugin that provides {implementation!r}"
@@ -176,17 +179,78 @@ def _field_window(ticks, field):
 
 
 def apply_transforms(calls, segments, *, adapter, registry, progress=None):
-    """Populate transform outputs in place, preserving canonical segment ordering."""
+    """Populate transform outputs while bounding raw-window memory.
+
+    Segment metadata still represents the logical pool, but ticks and decoded media can be much
+    larger. Re-read sources as streams and retain only the overlap needed for one transform batch
+    instead of caching every source and every segment window.
+    """
     if not calls:
         return segments
     by_source: dict[Any, list] = {}
     for seg in segments:
         by_source.setdefault(seg.source_id, []).append(seg)
-    tick_cache = {src: list(adapter.ticks(src)) for src in by_source}
     ordered = [s for src in sorted(by_source, key=str) for s in by_source[src]]
-    windows = [tick_cache[s.source_id][s.start_idx:s.end_idx] for s in ordered]
-    return apply_transforms_to_windows(calls, ordered, windows, adapter=adapter,
-                                       registry=registry, progress=progress)
+    runner = _TransformRunner(calls, adapter=adapter, registry=registry)
+    batch_size = max(call["batch_size"] for call in calls)
+    from .progress import emit
+    emit(progress, "transforms", "start", total=len(calls))
+
+    for source in sorted(by_source, key=str):
+        pending_segments, pending_windows = [], []
+        source_segments = sorted(by_source[source], key=lambda item: item.start_idx)
+        for segment, window in _iter_segment_windows(adapter, source, source_segments):
+            pending_segments.append(segment)
+            pending_windows.append(window)
+            if len(pending_segments) == batch_size:
+                runner.apply(pending_segments, pending_windows, progress=None)
+                pending_segments, pending_windows = [], []
+        if pending_segments:
+            runner.apply(pending_segments, pending_windows, progress=None)
+
+    for call_i, call in enumerate(calls, 1):
+        emit(progress, "transforms", "advance", current=call_i, total=len(calls),
+             source=call["name"], status="ok")
+    emit(progress, "transforms", "complete", current=len(calls), total=len(calls))
+    return ordered
+
+
+def _iter_segment_windows(adapter, source, segments):
+    """Yield indexed segment windows while retaining at most their active overlap."""
+    supports_streaming = getattr(adapter, "supports_streaming", True)
+    if callable(supports_streaming):
+        supports_streaming = supports_streaming()
+    iterator = getattr(adapter, "iter_ticks", None)
+    use_iterator = (callable(iterator) and supports_streaming is not False
+                    and not getattr(adapter, "in_memory", False))
+    if use_iterator:
+        assert callable(iterator)
+        ticks = iterator(source)
+    else:
+        ticks = iter(adapter.ticks(source))
+    buffered: deque[Any] = deque()
+    buffer_start = 0
+    position = 0
+    for segment in segments:
+        if segment.start_idx < buffer_start:
+            raise ValueError(f"segments for source {source!r} are not in start-index order")
+        try:
+            while buffer_start < segment.start_idx and buffered:
+                buffered.popleft()
+                buffer_start += 1
+            while position < segment.start_idx:
+                next(ticks)  # discard gaps between selected windows without caching them
+                position += 1
+                buffer_start = position
+            while position < segment.end_idx:
+                buffered.append(next(ticks))
+                position += 1
+        except StopIteration as error:
+            raise ValueError(
+                f"source {source!r} changed before transforms: segment ends at "
+                f"{segment.end_idx}, but only {position} ticks are available") from error
+        width = segment.end_idx - segment.start_idx
+        yield segment, list(islice(buffered, 0, width))
 
 
 def apply_transforms_to_windows(calls, segments, windows, *, adapter, registry, progress=None):

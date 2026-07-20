@@ -31,10 +31,13 @@ def read_job(path: str) -> dict:
         raise ValueError(f"job spec {path} is not valid JSON: {e}") from e
 
 
-def load_job_plugins(job: dict) -> list[dict]:
-    """Load explicit registration modules before constructing any registry-backed objects."""
-    from ..plugins import load_plugins
-    return load_plugins(job.get("plugins") or [])
+def load_job_plugins(job: dict):
+    """Load job plugins and return an isolated registry snapshot for all later resolution."""
+    from ..plugins import load_plugins, plugin_registry_snapshot
+    modules = job.get("plugins") or []
+    include_entry_points = job.get("include_plugin_entry_points", True)
+    load_plugins(modules, include_entry_points=include_entry_points)
+    return plugin_registry_snapshot(modules, include_entry_points=include_entry_points)
 
 
 def cli_progress_for(*, quiet: bool = False):
@@ -104,10 +107,11 @@ def build_schema(job: dict) -> Optional[SchemaSpec]:
     return SchemaSpec.from_dict(_maybe_path(job["schema"]))
 
 
-def build_adapter(job: dict, schema: Optional[SchemaSpec]):
+def build_adapter(job: dict, schema: Optional[SchemaSpec], *, registry=None):
     a = dict(job["adapter"])
     kind = a.pop("type")
-    return get_adapter(kind, schema=schema, **a) if schema is not None else get_adapter(kind, **a)
+    return (get_adapter(kind, registry=registry, schema=schema, **a) if schema is not None
+            else get_adapter(kind, registry=registry, **a))
 
 
 def build_segmenter(job: dict, schema: Optional[SchemaSpec]) -> Segmenter:

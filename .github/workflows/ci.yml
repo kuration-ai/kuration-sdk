@@ -181,9 +181,34 @@ jobs:
       - run: python -m pip install -e '.[docs]'
       - run: python -m mkdocs build --strict
 
+  plugins:
+    name: Repository plugins
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install SDK and plugin test tools
+        run: python -m pip install -e '.[dev]'
+      - name: Validate every plugin distribution
+        shell: bash
+        run: |
+          for plugin in plugins/*; do
+            test -f "$plugin/pyproject.toml" || continue
+            python -m pip install -e "$plugin[test]"
+            python -m pytest "$plugin/tests" -q
+            python -m ruff check "$plugin/src" "$plugin/tests"
+            python -m build "$plugin"
+            check-wheel-contents "$plugin"/dist/*.whl
+          done
+
   build:
     name: Build and wheel smoke test
-    needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs]
+    needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs,
+            plugins]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -241,7 +266,8 @@ jobs:
   required-ci:
     name: Required CI
     if: ${{ always() }}
-    needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs, build]
+    needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs,
+            plugins, build]
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs
@@ -252,9 +278,10 @@ jobs:
           PLATFORM_RESULT: ${{ needs.platform-smoke.result }}
           OPTIONAL_RESULT: ${{ needs.optional-integrations.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
+          PLUGINS_RESULT: ${{ needs.plugins.result }}
           BUILD_RESULT: ${{ needs.build.result }}
         run: |
           for result in "$TEST_RESULT" "$MINIMUM_RESULT" "$CORE_RESULT" "$PLATFORM_RESULT" \
-                        "$OPTIONAL_RESULT" "$DOCS_RESULT" "$BUILD_RESULT"; do
+                        "$OPTIONAL_RESULT" "$DOCS_RESULT" "$PLUGINS_RESULT" "$BUILD_RESULT"; do
             test "$result" = success || exit 1
           done

@@ -140,7 +140,10 @@ code fingerprint.
 
 ## 5. Package as a plugin
 
-Keep reusable third-party or company-domain operators outside the SDK core. A typical package is:
+For a plugin maintained in this repository, copy
+[`plugins/_template`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins/_template)
+to `plugins/<plugin-name>`. Each child remains a separate distribution, so its dependencies and
+release lifecycle do not enlarge the SDK wheel. An external package uses the same layout:
 
 ```text
 acme-kuration/

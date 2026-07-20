@@ -332,8 +332,11 @@ validation. Include a closed parameter schema and test strict categorical behavi
 
 ### Packaging extension plugins
 
-Registration code may be loaded explicitly through a job's `plugins` list or automatically by
-the `kuration.plugins` entry-point group:
+Maintained plugins live under [`plugins/`](plugins/README.md). Copy `plugins/_template` and keep
+each child as an independent distribution rather than adding it to the `kuration-sdk` wheel.
+That keeps optional dependencies isolated and lets contributors test or release one plugin at a
+time. Registration code may be loaded explicitly through a job's `plugins` list or automatically
+by the `kuration.plugins` entry-point group:
 
 ```toml
 [project.entry-points."kuration.plugins"]
@@ -351,7 +354,9 @@ kur-describe operator acme/balance-signal --json
 ```
 
 Plugin tests should start in a clean process so registration/import behavior matches spawned
-workers and installed entry points.
+workers and installed entry points. They must also cover an isolated `Registry`; use
+`"include_plugin_entry_points": false` in declarative-job tests that must not depend on whatever
+other plugins happen to be installed.
 
 ## Checks
 

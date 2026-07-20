@@ -14,7 +14,8 @@ from ._common import (build_adapter, build_schema, build_segmenter, load_job_plu
 
 _COMMON = {
     "job_schema_version", "schema", "adapter", "sources", "segmenter", "strategy",
-    "plugins", "seed", "workers", "on_error", "streaming", "executor", "mode",
+    "plugins", "include_plugin_entry_points", "seed", "workers", "on_error", "streaming",
+    "executor", "mode",
 }
 _CURATE = {
     "output", "output_preset", "encoder", "train_hours", "test_hours", "out", "resume",
@@ -32,6 +33,7 @@ class ResolvedJob:
     adapter: Any
     segmenter: Any
     sources: tuple | None
+    registry: Any = None
     strategy: Strategy | None = None
     arms: tuple = ()
     output: Any = None
@@ -80,6 +82,9 @@ def _common_values(job: dict) -> str:
     if (not isinstance(plugins, list)
             or any(not isinstance(module, str) or not module for module in plugins)):
         raise ValueError("plugins must be a list of non-empty module names")
+    if ("include_plugin_entry_points" in job
+            and not isinstance(job["include_plugin_entry_points"], bool)):
+        raise ValueError("include_plugin_entry_points must be true or false")
     mode = job.get("mode")
     return job.get("on_error", "raise" if mode == "strict" else "skip")
 
@@ -94,7 +99,7 @@ def _source_list(job: dict, adapter, *, enumerate_sources: bool) -> tuple | None
     return tuple(resolve_sources(job, adapter)) if enumerate_sources else None
 
 
-def _output(job: dict, schema):
+def _output(job: dict, schema, registry):
     supplied = [name for name in ("output", "output_preset") if name in job]
     if len(supplied) != 1:
         raise ValueError("curate job needs exactly one of 'output' or 'output_preset'")
@@ -106,11 +111,11 @@ def _output(job: dict, schema):
         if not isinstance(raw, dict) or not isinstance(raw.get("name"), str):
             raise ValueError("output_preset must be a name or an object containing 'name'")
         raw = dict(raw)
-        return output_preset(raw.pop("name"), schema=schema, **raw)
-    return OutputSpec.from_dict(job["output"])
+        return output_preset(raw.pop("name"), schema=schema, registry=registry, **raw)
+    return OutputSpec.from_dict(job["output"], registry=registry)
 
 
-def _encoder(job: dict):
+def _encoder(job: dict, registry):
     raw = job.get("encoder")
     if raw is None:
         return None
@@ -119,7 +124,7 @@ def _encoder(job: dict):
     if not isinstance(raw["name"], str) or not isinstance(raw.get("params", {}), dict):
         raise ValueError("encoder name must be a string and params must be an object")
     from ..output import get_encoder
-    return get_encoder(raw["name"], **dict(raw.get("params") or {}))
+    return get_encoder(raw["name"], registry=registry, **dict(raw.get("params") or {}))
 
 
 def resolve_job(job: dict, *, enumerate_sources: bool = True) -> ResolvedJob:
@@ -134,9 +139,9 @@ def resolve_job(job: dict, *, enumerate_sources: bool = True) -> ResolvedJob:
     for required in ("adapter", "segmenter"):
         if required not in job:
             raise ValueError(f"job needs {required!r}")
-    load_job_plugins(job)
+    registry = load_job_plugins(job)
     schema = build_schema(job)
-    adapter = build_adapter(job, schema)
+    adapter = build_adapter(job, schema, registry=registry)
     schema = schema or getattr(adapter, "schema", None)
     if schema is None:
         raise ValueError("no 'schema' in job and the adapter exposes none")
@@ -155,7 +160,7 @@ def resolve_job(job: dict, *, enumerate_sources: bool = True) -> ResolvedJob:
                 raise ValueError(f"arm {index} needs exactly 'name' and 'strategy'")
             if not isinstance(raw["name"], str) or not raw["name"]:
                 raise ValueError(f"arm {index} name must be a non-empty string")
-            strategy = load_strategy(raw["strategy"], schema)
+            strategy = load_strategy(raw["strategy"], schema, registry=registry)
             validate_adapter_availability(adapter, schema, define=strategy.define,
                                           tags_spec=strategy.tags)
             arms.append((raw["name"], strategy))
@@ -168,16 +173,16 @@ def resolve_job(job: dict, *, enumerate_sources: bool = True) -> ResolvedJob:
         baseline = job.get("baseline")
         if baseline is not None and baseline not in names:
             raise ValueError(f"baseline {baseline!r} is not an arm name")
-        return ResolvedJob(job, kind, schema, adapter, segmenter, sources,
+        return ResolvedJob(job, kind, schema, adapter, segmenter, sources, registry=registry,
                            arms=tuple(arms), on_error=on_error)
 
     if "strategy" not in job:
         raise ValueError("job needs a 'strategy'")
-    strategy = load_strategy(job["strategy"], schema)
+    strategy = load_strategy(job["strategy"], schema, registry=registry)
     if kind == "report":
         validate_adapter_availability(adapter, schema, define=strategy.define,
                                       tags_spec=strategy.tags)
-        return ResolvedJob(job, kind, schema, adapter, segmenter, sources,
+        return ResolvedJob(job, kind, schema, adapter, segmenter, sources, registry=registry,
                            strategy=strategy, on_error=on_error)
 
     for name in ("train_hours", "test_hours"):
@@ -202,9 +207,10 @@ def resolve_job(job: dict, *, enumerate_sources: bool = True) -> ResolvedJob:
     for name in ("checkpoint_dir", "spill_dir"):
         if name in job and (not isinstance(job[name], str) or not job[name]):
             raise ValueError(f"{name} must be a non-empty path string")
-    output = _output(job, schema)
+    output = _output(job, schema, registry)
     output.validate_schema(schema)
     validate_adapter_availability(adapter, schema, define=strategy.define,
                                   tags_spec=strategy.tags, output_spec=output)
-    return ResolvedJob(job, kind, schema, adapter, segmenter, sources, strategy=strategy,
-                       output=output, encoder=_encoder(job), on_error=on_error)
+    return ResolvedJob(job, kind, schema, adapter, segmenter, sources, registry=registry,
+                       strategy=strategy, output=output, encoder=_encoder(job, registry),
+                       on_error=on_error)

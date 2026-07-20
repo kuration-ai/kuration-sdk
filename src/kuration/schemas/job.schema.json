@@ -143,6 +143,10 @@
     "out": {"type": "string", "description": "Curate: output directory (local path or cloud URL)."},
     "seed": {"type": "integer"},
     "plugins": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "include_plugin_entry_points": {
+      "type": "boolean",
+      "description": "Discover installed kuration.plugins entry points (default true). Set false to use only explicit plugin modules."
+    },
     "workers": {"type": "integer", "minimum": 1},
     "on_error": {"enum": ["skip", "raise"]},
     "resume": {"type": "boolean"},

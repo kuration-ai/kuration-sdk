@@ -168,6 +168,11 @@ def build_run_signature(*, schema, strategy, spec, segmenter, sources, adapter, 
     refs += [("filter", f["type"]) for f in (strategy.filters or [])]
     refs += [("scorer", name) for name, _out, _params in (strategy.scorers or [])]
     refs += [("transform", call["implementation"]) for call in transforms]
+    # Registered metrics are executable plugin components too.  Their descriptor fingerprint
+    # must participate in resume identity even when an entry-point initializer lives in a
+    # different module from the metric implementation.
+    refs += [("metric", name) for name in sorted(strategy.referenced_metrics())
+             if name not in strategy.define and name in registry.names("metric")]
     extensions = []
     for kind, name in refs:
         try:
@@ -191,7 +196,7 @@ def build_run_signature(*, schema, strategy, spec, segmenter, sources, adapter, 
         "group_of": component_identity(group_of),
         "tags_of": component_identity(tags_of),
         "transforms": list(transforms),
-        "plugins": plugin_provenance(),
+        "plugins": plugin_provenance(registry=registry),
         "extensions": extensions,
         "sources": source_descriptors(sources, adapter),
     }

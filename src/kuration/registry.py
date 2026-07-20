@@ -301,7 +301,8 @@ default_registry = Registry()
 def list_components(kind: Optional[str] = None, *, registry: Registry = default_registry) -> list[dict]:
     """Return JSON-safe descriptors for installed components without reading datasets."""
     from .plugins import load_plugins
-    load_plugins()
+    if registry is default_registry:
+        load_plugins()
     return [d.to_dict() for d in registry.descriptors(kind)]
 
 
@@ -312,24 +313,20 @@ def describe_component(kind: str, name: str, *,
     Plugins are loaded before lookup; an unknown kind or name raises ``ValueError``.
     """
     from .plugins import load_plugins
-    load_plugins()
+    if registry is default_registry:
+        load_plugins()
     return registry.descriptor(kind, name).to_dict()
 
 
 def validate_parameters(descriptor: ComponentDescriptor, params: dict) -> None:
-    """Validate the small JSON-Schema subset used by component descriptors."""
-    schema = descriptor.parameters or {}
-    props = schema.get("properties", {})
-    required = set(schema.get("required", ()))
-    missing = required - set(params)
-    if missing:
-        raise ValueError(f"{descriptor.kind} {descriptor.name!r} missing parameter(s) "
-                         f"{sorted(missing)}")
-    if schema.get("additionalProperties") is False:
-        unknown = set(params) - set(props)
-        if unknown:
-            raise ValueError(f"{descriptor.kind} {descriptor.name!r}: unknown parameter(s) "
-                             f"{sorted(unknown)}; expected {sorted(props)}")
+    """Recursively validate the JSON-Schema subset supported by component descriptors.
+
+    The core intentionally avoids a mandatory ``jsonschema`` dependency, but plugin contracts
+    still need nested objects and arrays to fail during preflight rather than inside execution.
+    Supported keywords are documented in ``docs/customization.md``.
+    """
+    if not isinstance(params, dict):
+        raise ValueError(f"{descriptor.kind} {descriptor.name!r}: parameters must be an object")
     json_types = {
         "string": lambda value: isinstance(value, str),
         "integer": lambda value: isinstance(value, int) and not isinstance(value, bool),
@@ -341,26 +338,87 @@ def validate_parameters(descriptor: ComponentDescriptor, params: dict) -> None:
         "array": lambda value: isinstance(value, (list, tuple)),
         "null": lambda value: value is None,
     }
-    for name in set(params) & set(props):
-        value, rule = params[name], props[name]
+
+    def fail(path: str, detail: str) -> None:
+        raise ValueError(f"{descriptor.kind} {descriptor.name!r}: {path} {detail}")
+
+    def matches(value, rule) -> bool:
+        try:
+            check(value, rule, "value")
+            return True
+        except ValueError:
+            return False
+
+    def check(value, rule, path: str) -> None:
+        if isinstance(rule, bool):
+            if not rule:
+                fail(path, "is forbidden by its schema")
+            return
+        if not isinstance(rule, dict):
+            fail(path, "has an invalid schema rule")
+        if "allOf" in rule:
+            for branch in rule["allOf"]:
+                check(value, branch, path)
+        if "anyOf" in rule and not any(matches(value, branch) for branch in rule["anyOf"]):
+            fail(path, "does not match any allowed schema")
+        if "oneOf" in rule and sum(matches(value, branch) for branch in rule["oneOf"]) != 1:
+            fail(path, "must match exactly one allowed schema")
         expected = rule.get("type")
         allowed = [expected] if isinstance(expected, str) else list(expected or [])
         if allowed and not any(kind in json_types and json_types[kind](value) for kind in allowed):
-            raise ValueError(
-                f"{descriptor.kind} {descriptor.name!r}: parameter {name!r} must have "
-                f"JSON type {' or '.join(allowed)}, got {type(value).__name__}")
+            fail(path, f"must have JSON type {' or '.join(allowed)}, got {type(value).__name__}")
         if "enum" in rule and value not in rule["enum"]:
-            raise ValueError(
-                f"{descriptor.kind} {descriptor.name!r}: parameter {name!r} must be one of "
-                f"{rule['enum']}, got {value!r}")
-        if "minimum" in rule and value < rule["minimum"]:
-            raise ValueError(
-                f"{descriptor.kind} {descriptor.name!r}: parameter {name!r} must be >= "
-                f"{rule['minimum']}, got {value!r}")
-        if "maximum" in rule and value > rule["maximum"]:
-            raise ValueError(
-                f"{descriptor.kind} {descriptor.name!r}: parameter {name!r} must be <= "
-                f"{rule['maximum']}, got {value!r}")
+            fail(path, f"must be one of {rule['enum']}, got {value!r}")
+        if "const" in rule and value != rule["const"]:
+            fail(path, f"must equal {rule['const']!r}, got {value!r}")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if "minimum" in rule and value < rule["minimum"]:
+                fail(path, f"must be >= {rule['minimum']}, got {value!r}")
+            if "maximum" in rule and value > rule["maximum"]:
+                fail(path, f"must be <= {rule['maximum']}, got {value!r}")
+            if "exclusiveMinimum" in rule and value <= rule["exclusiveMinimum"]:
+                fail(path, f"must be > {rule['exclusiveMinimum']}, got {value!r}")
+            if "exclusiveMaximum" in rule and value >= rule["exclusiveMaximum"]:
+                fail(path, f"must be < {rule['exclusiveMaximum']}, got {value!r}")
+        if isinstance(value, str):
+            if "minLength" in rule and len(value) < rule["minLength"]:
+                fail(path, f"must have at least {rule['minLength']} characters")
+            if "maxLength" in rule and len(value) > rule["maxLength"]:
+                fail(path, f"must have at most {rule['maxLength']} characters")
+            if "pattern" in rule and re.search(rule["pattern"], value) is None:
+                fail(path, f"must match pattern {rule['pattern']!r}")
+        if isinstance(value, (list, tuple)):
+            if "minItems" in rule and len(value) < rule["minItems"]:
+                fail(path, f"must contain at least {rule['minItems']} items")
+            if "maxItems" in rule and len(value) > rule["maxItems"]:
+                fail(path, f"must contain at most {rule['maxItems']} items")
+            if rule.get("uniqueItems") and any(
+                    value[left] == value[right] for left in range(len(value))
+                    for right in range(left + 1, len(value))):
+                fail(path, "must contain unique items")
+            items = rule.get("items")
+            if items is not None:
+                for index, item in enumerate(value):
+                    check(item, items, f"{path}[{index}]")
+        if isinstance(value, dict):
+            properties = rule.get("properties", {})
+            required = set(rule.get("required", ()))
+            missing = required - set(value)
+            if missing:
+                fail(path, f"missing parameter(s) {sorted(missing)}")
+            additional = rule.get("additionalProperties", True)
+            unknown = set(value) - set(properties)
+            if additional is False and unknown:
+                fail(path, f"has unknown parameter(s) {sorted(unknown)}; expected "
+                     f"{sorted(properties)}")
+            for name in set(value) & set(properties):
+                check(value[name], properties[name], f"parameter {name!r}" if path == "parameters"
+                      else f"{path}.{name}")
+            if isinstance(additional, dict):
+                for name in unknown:
+                    check(value[name], additional, f"{path}.{name}")
+
+    check(params, descriptor.parameters or {}, "parameters")
 
 
 def register_method(name: str, fn: Callable, **metadata) -> None:
