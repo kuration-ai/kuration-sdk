@@ -98,11 +98,23 @@ numbers at another resolution" are different claims; only the former is currentl
 construction, the latter is untested.
 
 **4. Coordinate / sign convention**:
-- Frames must be **BGR** (`cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)` assumes BGR channel
-  order, matching how ASG/DIAMOND HDF5 frames are stored). Feeding RGB frames would not
-  error, but `cv2`'s BGR-weighted luminance conversion would silently swap the red/blue
-  channel weighting, systematically biasing the resulting grayscale image and therefore
-  the flow.
+- `_prep_gray(img, color_space="BGR")` defaults to **BGR**, matching how ASG/DIAMOND HDF5
+  frames are stored, and picks the matching `cv2` conversion flag (`COLOR_BGR2GRAY` vs
+  `COLOR_RGB2GRAY`) rather than reordering the frame array -- getting this flag wrong
+  silently swaps the red/blue channel weighting in the grayscale conversion, systematically
+  biasing the resulting flow, without erroring. This matters concretely, not just
+  hypothetically: kuration-sdk's `.join_video()` always tags its media column
+  `color_space: "RGB"` (`src/kuration/media.py` — its first-party PyAV provider decodes
+  `rgb24`), the *opposite* of this function's default. The registered `aintropy/pixel-shift`
+  transform handles this for you -- `PixelShift.transform_batch` reads the real declared
+  `color_space` off `ctx["schema"].media["frame"]` (populated by the SDK runtime itself)
+  and threads it down through `segment_scalars` / `instances_for_segment` /
+  `release_transition_displacement` to `_prep_gray`, so calling this operator through a
+  normal kuration `Pipeline` is correct regardless of source, with no extra array copy.
+  This threading only happens at that SDK-integration boundary; if you call
+  `diamond_action_decode`'s functions directly on raw arrays (bypassing the SDK transform),
+  the default stays BGR and you're responsible for passing `color_space="RGB"` yourself if
+  that's what you actually have.
 - Axis projection and sign, matching DIAMOND's own convention
   (`asg2diamond/action_map.py`, cross-validated by that project's `asg2d-verify-alignment`
   tool): W/S project onto **radial** flow (outward from frame-center = positive = W;

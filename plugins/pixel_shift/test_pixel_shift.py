@@ -203,6 +203,50 @@ def test_ledger_records_clip_provenance_for_print_report():
 
 
 # ---------------------------------------------------------------------------------------
+# Color-space handling -- _prep_gray assumes BGR by default (matching ASG/DIAMOND HDF5
+# storage), but kuration-sdk's MediaSpec defaults color_space to RGB and its own
+# first-party PyAV video provider actually decodes rgb24. `color_space` picks the matching
+# cv2 conversion flag (COLOR_BGR2GRAY / COLOR_RGB2GRAY) -- it must never reorder or copy
+# the frame array itself; PixelShift.transform_batch reads ctx["schema"] to get the real
+# declared color_space and passes it straight through (see its comment for the mechanism).
+# ---------------------------------------------------------------------------------------
+
+def _asymmetric_channel_image(h=8, w=6):
+    """A synthetic frame where each channel has a distinct, non-symmetric value pattern --
+    reordering channels (or picking the wrong cv2 conversion flag) changes the grayscale
+    result, unlike e.g. a grayscale-already image where channel order wouldn't matter."""
+    rng = np.random.default_rng(7)
+    return rng.integers(0, 255, size=(h, w, 3), dtype=np.uint8)
+
+
+def test_prep_gray_defaults_to_bgr():
+    img = _asymmetric_channel_image()
+    cv2 = dad._require_cv2()
+    expected = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    expected = expected[: int(expected.shape[0] * (1 - dad.BOTTOM_CROP_FRAC)), :]
+    assert np.array_equal(dad._prep_gray(img), expected)
+
+
+def test_prep_gray_rgb_flag_equals_bgr_flag_on_reversed_channels():
+    """Picking COLOR_RGB2GRAY directly must give the identical result to reversing the
+    channel axis first and picking COLOR_BGR2GRAY -- confirms the flag-selection approach
+    (which never touches/copies the input array) is mathematically equivalent to the
+    reorder-then-convert approach, without paying for the reorder."""
+    img = _asymmetric_channel_image()
+    rgb_result = dad._prep_gray(img, color_space="RGB")
+    bgr_of_reversed = dad._prep_gray(img[..., ::-1], color_space="BGR")
+    assert np.array_equal(rgb_result, bgr_of_reversed)
+    # sanity: channel order actually matters for this image (not a no-op comparison)
+    assert not np.array_equal(rgb_result, dad._prep_gray(img, color_space="BGR"))
+
+
+def test_prep_gray_rejects_unknown_color_space():
+    img = _asymmetric_channel_image()
+    with pytest.raises(ValueError, match="unsupported color_space"):
+        dad._prep_gray(img, color_space="YUV")
+
+
+# ---------------------------------------------------------------------------------------
 # Full pipeline integration -- FakeVideoProvider, same pattern as
 # tests/test_media_transforms_execution.py, so no real video file is needed
 # ---------------------------------------------------------------------------------------

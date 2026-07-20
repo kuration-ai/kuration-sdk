@@ -84,34 +84,41 @@ def _clip_label(segment_id) -> str:
     return f"clip '{source_id}', frames {start_idx}-{end_idx}"
 
 
-def instances_for_segment(frames: np.ndarray, actions: np.ndarray, control: str, clip_label: str) -> list:
+def instances_for_segment(frames: np.ndarray, actions: np.ndarray, control: str, clip_label: str,
+                           color_space: str = "BGR") -> list:
     """Every instance of `control` found in this one segment -- records each into LEDGER
     under its exact cell_key (press_len or delta), and returns the flat list of signed
     shifts (collapsed across cell_keys) this control's 4 per-segment scalars are computed
-    from."""
+    from. `color_space` (see diamond_action_decode._prep_gray) defaults to BGR, matching
+    raw ASG/DIAMOND HDF5 arrays; pass the real declared color_space when `frames` came
+    through a kuration-sdk media column instead."""
     from .diamond_action_decode import MOUSE_CONTROLS, MOUSE_AXIS_OF, mouse_delta_value
 
     shifts = []
     if control in MOUSE_CONTROLS:
         axis = MOUSE_AXIS_OF[control]
-        for start, px in release_transition_displacement(frames, actions, control, press_len=1):
+        for start, px in release_transition_displacement(frames, actions, control, press_len=1,
+                                                           color_space=color_space):
             delta_value = int(mouse_delta_value(actions[start:start + 1], axis)[0])
             _record(control, str(delta_value), clip_label, px)
             shifts.append(px)
     else:
         for press_len in PRESS_LENS:
-            for start, px in release_transition_displacement(frames, actions, control, press_len):
+            for start, px in release_transition_displacement(frames, actions, control, press_len,
+                                                               color_space=color_space):
                 _record(control, str(press_len), clip_label, px)
                 shifts.append(px)
     return shifts
 
 
 def segment_scalars(frames: np.ndarray, actions: np.ndarray, clip_label: str,
-                     controls: list = None) -> dict:
+                     controls: list = None, color_space: str = "BGR") -> dict:
     """The 4-number-per-control summary for ONE segment -- true to the data (no reference,
     no consistency judgment): the actual worst/best/mean signed shift and how many
     instances were found, collapsed across whatever press-lengths/deltas occurred for each
-    control in this segment."""
+    control in this segment. `color_space` defaults to BGR (raw ASG/DIAMOND HDF5 arrays);
+    PixelShift.transform_batch passes the real declared color_space of the SDK media
+    column instead (see diamond_action_decode._prep_gray)."""
     controls = controls or ALL_CONTROLS
     out = {}
     for control in ALL_CONTROLS:
@@ -122,7 +129,7 @@ def segment_scalars(frames: np.ndarray, actions: np.ndarray, clip_label: str,
             out[f"{prefix}_shift_mean"] = 0.0
             out[f"{prefix}_n_instances"] = 0.0
             continue
-        shifts = instances_for_segment(frames, actions, control, clip_label)
+        shifts = instances_for_segment(frames, actions, control, clip_label, color_space)
         if shifts:
             out[f"{prefix}_shift_min"] = float(min(shifts))
             out[f"{prefix}_shift_max"] = float(max(shifts))
@@ -222,11 +229,17 @@ if register_batch_transform is not None:
             self.controls = controls  # None = all 8
 
         def transform_batch(self, batch, ctx):
-            frames_batch = batch["media:frame"]      # (N, T, H, W, 3)
+            frames_batch = batch["media:frame"]       # (N, T, H, W, 3)
             actions_batch = batch["field:action"]     # (N, T, action_dim)
             segment_ids = batch["segment_ids"]        # (N,) of (source_id, start_idx, end_idx)
+            # The real declared color_space of the "frame" media column -- populated by the
+            # SDK runtime (transforms.py's ctx["schema"]), not assumed. kuration-sdk's
+            # .join_video() always tags this "RGB" (its PyAV provider decodes rgb24); a raw
+            # BGR-sourced media column (e.g. hand-built HDF5 adapter) would say "BGR"
+            # instead. Passed straight through to _prep_gray, never used to reorder frames.
+            color_space = ctx["schema"].media["frame"].color_space
             rows = [
-                segment_scalars(frames, actions, _clip_label(seg_id), self.controls)
+                segment_scalars(frames, actions, _clip_label(seg_id), self.controls, color_space)
                 for frames, actions, seg_id in zip(frames_batch, actions_batch, segment_ids)
             ]
             return {key: np.array([row[key] for row in rows], dtype=np.float64) for key in OUTPUT_KEYS}

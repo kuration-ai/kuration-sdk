@@ -183,9 +183,21 @@ def find_isolated_press_sequences(Y: np.ndarray, control: str, press_len: int):
     return sequences
 
 
-def _prep_gray(img: np.ndarray) -> np.ndarray:
+def _prep_gray(img: np.ndarray, color_space: str = "BGR") -> np.ndarray:
+    """`color_space` picks the matching cv2 conversion flag -- it never reorders/copies
+    `img` itself. Defaults to BGR, matching how ASG/DIAMOND HDF5 frames are stored, so
+    every existing direct caller (raw HDF5 arrays, no SDK involved) is unaffected. Callers
+    fed frames through a kuration-sdk media column (which may be RGB, e.g. `.join_video()`'s
+    PyAV provider) should pass that column's real declared color_space instead."""
     cv2 = _require_cv2()
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if color_space == "BGR":
+        flag = cv2.COLOR_BGR2GRAY
+    elif color_space == "RGB":
+        flag = cv2.COLOR_RGB2GRAY
+    else:
+        raise ValueError(f"_prep_gray: unsupported color_space {color_space!r} -- "
+                          f"expected 'RGB' or 'BGR'")
+    gray = cv2.cvtColor(img, flag)
     h = gray.shape[0]
     return gray[: int(h * (1 - BOTTOM_CROP_FRAC)), :]
 
@@ -218,13 +230,16 @@ def displacement_median(flow: np.ndarray, control: str) -> float:
     return float(np.median(flow[..., 0]))  # lateral or yaw
 
 
-def release_transition_displacement(frames: np.ndarray, actions: np.ndarray, control: str, press_len: int) -> list:
+def release_transition_displacement(frames: np.ndarray, actions: np.ndarray, control: str,
+                                     press_len: int, color_space: str = "BGR") -> list:
     """List of (start_frame_idx, SIGNED px shift) -- one per isolated press instance found
     for `control` at `press_len` in this clip, using the release-transition frame pair
     (index `press_len - 1` within each sequence). Sign is kept (not abs'd) -- direction is
     meaningful data, not something this layer decides is good or bad.
     `start` is returned alongside the shift so callers can look up per-instance context
-    (e.g. a mouse control's actual delta value at that frame) without re-deriving it."""
+    (e.g. a mouse control's actual delta value at that frame) without re-deriving it.
+    `color_space` (see _prep_gray) defaults to BGR; pass the true declared color_space when
+    `frames` came from a kuration-sdk media column instead of a raw BGR array."""
     sequences = find_isolated_press_sequences(actions, control, press_len)
     out = []
     if not sequences:
@@ -234,8 +249,8 @@ def release_transition_displacement(frames: np.ndarray, actions: np.ndarray, con
         release_idx = start + press_len - 1
         if release_idx + 1 > end:
             continue
-        gray0 = _prep_gray(frames[release_idx])
-        gray1 = _prep_gray(frames[release_idx + 1])
+        gray0 = _prep_gray(frames[release_idx], color_space)
+        gray1 = _prep_gray(frames[release_idx + 1], color_space)
         flow = cv2.calcOpticalFlowFarneback(gray0, gray1, None, **FARNEBACK_KWARGS)
         out.append((start, displacement_median(flow, control)))
     return out
