@@ -160,7 +160,6 @@ def test_release_transition_measures_exactly_one_frame_pair_per_instance():
 # ---------------------------------------------------------------------------------------
 
 def test_segment_scalars_reports_true_min_max_mean_not_an_average_that_hides_outliers():
-    pso.reset_ledger()
     rng = np.random.default_rng(1)
     h, w = 40, 60
     # Two isolated D taps (press_len=1) in one segment: one near-zero, one large --
@@ -171,35 +170,63 @@ def test_segment_scalars_reports_true_min_max_mean_not_an_average_that_hides_out
     ])
     frames = rng.integers(0, 255, size=(actions.shape[0], h, w, 3), dtype=np.uint8)
 
-    scalars = pso.segment_scalars(frames, actions, "clip 'test', frames 0-6", controls=["D"])
+    scalars = pso.segment_scalars(frames, actions, controls=["D"])
     assert scalars["d_n_instances"] == 2.0
     assert scalars["d_shift_min"] <= scalars["d_shift_mean"] <= scalars["d_shift_max"]
 
 
 def test_segment_scalars_sentinel_when_no_instances_found():
-    pso.reset_ledger()
     h, w = 40, 60
     actions = np.stack([_action(), _action(), _action()])
     frames = np.zeros((actions.shape[0], h, w, 3), dtype=np.uint8)
 
-    scalars = pso.segment_scalars(frames, actions, "clip 'test', frames 0-3", controls=["W"])
+    scalars = pso.segment_scalars(frames, actions, controls=["W"])
     assert scalars["w_n_instances"] == 0.0
     assert scalars["w_shift_min"] == 0.0
     assert scalars["w_shift_max"] == 0.0
     assert scalars["w_shift_mean"] == 0.0
 
 
-def test_ledger_records_clip_provenance_for_print_report():
-    pso.reset_ledger()
+def test_segment_scalars_has_no_side_effects():
+    """segment_scalars must be a pure function -- no shared/global state to leak between
+    calls or across worker processes. Calling it twice with identical inputs must give
+    identical outputs, and must not depend on (or mutate) anything besides its arguments."""
+    rng = np.random.default_rng(1)
+    h, w = 40, 60
+    actions = np.stack([_action(), _action(d=True), _action()])
+    frames = rng.integers(0, 255, size=(actions.shape[0], h, w, 3), dtype=np.uint8)
+
+    first = pso.segment_scalars(frames, actions, controls=["D"])
+    second = pso.segment_scalars(frames, actions, controls=["D"])
+    assert first == second
+
+
+def test_pixel_shift_report_records_clip_provenance():
     rng = np.random.default_rng(2)
     h, w = 40, 60
     actions = np.stack([_action(), _action(a=True), _action()])
     frames = rng.integers(0, 255, size=(actions.shape[0], h, w, 3), dtype=np.uint8)
 
-    pso.segment_scalars(frames, actions, "clip 'demo', frames 100-103", controls=["A"])
-    assert "A" in pso.LEDGER
-    assert "1" in pso.LEDGER["A"]  # press_len=1
-    assert pso.LEDGER["A"]["1"][0]["clip"] == "clip 'demo', frames 100-103"
+    report = pso.PixelShiftReport()
+    report.add_segment(frames, actions, "clip 'demo', frames 100-103", controls=["A"])
+    assert "A" in report._ledger
+    assert "1" in report._ledger["A"]  # press_len=1
+    assert report._ledger["A"]["1"][0]["clip"] == "clip 'demo', frames 100-103"
+
+
+def test_pixel_shift_report_instances_are_independent_per_object():
+    """Two separate PixelShiftReport instances must never share state -- this is the
+    entire point of making it an explicit object instead of a module-level singleton."""
+    rng = np.random.default_rng(2)
+    h, w = 40, 60
+    actions = np.stack([_action(), _action(a=True), _action()])
+    frames = rng.integers(0, 255, size=(actions.shape[0], h, w, 3), dtype=np.uint8)
+
+    report_1 = pso.PixelShiftReport()
+    report_1.add_segment(frames, actions, "clip 'one'", controls=["A"])
+    report_2 = pso.PixelShiftReport()
+    assert report_2._ledger == {}
+    assert "A" in report_1._ledger
 
 
 # ---------------------------------------------------------------------------------------
@@ -282,7 +309,6 @@ def test_full_pipeline_with_fake_video_provider():
     """Real cv2 Farneback + real crop + real release-only-pair logic, run through the
     actual registered aintropy/pixel-shift transform via a real (fake-video-backed)
     kuration Pipeline -- not a unit test of an isolated function."""
-    pso.reset_ledger()
     n_frames = 6
     frames = _shifting_noise_frames(n_frames)
     provider = FakeVideoProvider(frames)

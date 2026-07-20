@@ -20,10 +20,12 @@ hardcoded), kept out of this contribution.
    best-case signed shift among however many instances were found in that segment, not an
    average that could hide one outlier instance among several typical ones.
 
-2. **A console report** (`print_report()`, prints to stdout, writes nothing to disk) — for
-   every (control, press_len/delta) combination found across the whole dataset: instance
-   count, an ASCII histogram of the shift values, and which clips (by source + frame
-   range) each instance came from.
+2. **A console report** (`PixelShiftReport`, prints to stdout via `.print_report()`, writes
+   nothing to disk) — for every (control, press_len/delta) combination found across the
+   whole dataset: instance count, an ASCII histogram of the shift values, and which clips
+   (by source + frame range) each instance came from. `PixelShiftReport` is a plain object
+   you construct and feed yourself, deliberately independent of `PixelShift.transform_batch`
+   -- see "Why the report is a separate object" below.
 
 ## Install
 
@@ -45,9 +47,10 @@ than either crashing plugin discovery for unrelated users or failing with a bare
 
 ## Usage
 
-```python
-import plugins.pixel_shift.pixel_shift_operator as pixel_shift
+**As a pipeline transform** — gets you the 4 aggregated scalars per control, per segment,
+composable with `.bin()`/`.filter()`/`.sample()` like any other kuration feature:
 
+```python
 pipeline = (
     input(telemetry, fields={"action": action_columns}, time="t")
     .join_video({"my_source": "clip.mp4"}, on="frame_index")
@@ -55,13 +58,48 @@ pipeline = (
     .apply("aintropy/pixel-shift", controls=["W", "S", "A", "D"])
 )
 result = pipeline.collect(n=1000)
-pixel_shift.print_report()
 ```
 
 Registered under `aintropy/pixel-shift` for both the batch transform (`kur-describe
 transforms aintropy/pixel-shift`) and the compositional operator (`kur-describe operators
 aintropy/pixel-shift`) -- the Python module itself stays `pixel_shift` (import-identifier
 convention), only the registration string is hyphenated.
+
+**For the fuller per-instance report** — `PixelShiftReport` is a plain object you build
+yourself, by calling `add_segment()` directly over your own frames/actions, outside pipeline
+execution (see "Why the report is a separate object" below for why it isn't just wired into
+the transform above):
+
+```python
+import plugins.pixel_shift.pixel_shift_operator as pixel_shift
+
+report = pixel_shift.PixelShiftReport()
+for frames, actions, segment_id in your_own_segments:
+    report.add_segment(frames, actions, pixel_shift.clip_label(segment_id),
+                        controls=["W", "S", "A", "D"])
+report.print_report()
+```
+
+### Why the report is a separate object
+
+An earlier version of this operator accumulated per-instance detail into a module-level
+dict as a side effect of `transform_batch`, so calling the transform through a pipeline
+also silently built the report. That only worked for a single-process run
+(`.options(workers=1)`, the default) -- an SDK executor with `workers>1` runs
+`transform_batch` in separate worker processes, each with its own separate memory, and
+kuration-sdk's transform contract has no supported channel for a transform to return
+arbitrary per-instance side-channel data back to one shared accumulator across those
+workers. Constraining execution to `workers=1` to make the report work would have defeated
+the purpose of the SDK's own concurrent executors, not merely been a minor inconvenience.
+
+So `transform_batch` now does exactly one thing: compute the 4 aggregated scalars per
+control, through the one channel the SDK actually supports for returning data (declared
+per-segment outputs) -- correct regardless of worker count. `PixelShiftReport` gets the
+fuller per-instance detail by being called directly, in your own code, outside pipeline
+execution entirely -- there's no ambiguity about worker aggregation to get wrong, because
+pipeline execution never touches it. It's also a plain object rather than a module-level
+singleton, so there's no `reset_ledger()`-style footgun between separate reports in the
+same process -- just construct a new one.
 
 ## Method — the specifics results depend on
 
