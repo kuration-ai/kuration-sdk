@@ -224,10 +224,7 @@ jobs:
       - name: Validate distribution metadata and contents
         run: |
           python -m twine check dist/*
-          # This distribution intentionally includes the separately discovered
-          # plugins package alongside kuration so entry-point plugins remain
-          # isolated from the core package.
-          check-wheel-contents --ignore W009 dist/*.whl
+          check-wheel-contents dist/*.whl
       - name: Smoke-test installed wheel
         shell: bash
         run: |

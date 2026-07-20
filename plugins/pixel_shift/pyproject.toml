@@ -1,0 +1,39 @@
+[project]
+name = "kuration-plugin-pixel-shift"
+version = "0.1.0"
+description = "Kuration operator for DIAMOND action-aligned pixel-shift measurements."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "kuration-sdk>=0.1.0rc2",
+    "numpy>=1.24",
+    "opencv-python-headless>=4.9",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8",
+    "ruff>=0.5",
+    "build>=1.5,<2",
+    "check-wheel-contents>=0.6.3,<1",
+]
+
+[project.entry-points."kuration.plugins"]
+pixel_shift = "kuration_pixel_shift:register"
+
+[build-system]
+requires = ["setuptools>=80,<84"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E401", "E402", "E731", "F401"]

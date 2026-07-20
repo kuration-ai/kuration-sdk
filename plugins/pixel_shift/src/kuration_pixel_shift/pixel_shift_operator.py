@@ -1,5 +1,6 @@
-"""pixel_shift_operator -- Operator 1 of 2: measures pixel shift for every isolated key
-press (once/twice/thrice) and every isolated mouse tap found in a dataset. Reports what
+"""Measure pixel shift for every isolated key or mouse press in a segment.
+
+The implementation handles one-, two-, and three-frame key presses and isolated mouse taps. It reports what
 happened -- makes NO judgment about whether it's "consistent." That's Operator 2's job
 (a separate, genuinely data-agnostic outlier-finding operator built on top of this one's
 output), kept deliberately out of this file.
@@ -47,6 +48,33 @@ PRESS_LENS = [1, 2, 3]
 
 STATS_PER_CONTROL = ("shift_min", "shift_max", "shift_mean", "n_instances")
 OUTPUT_KEYS = tuple(f"{control.lower()}_{stat}" for control in ALL_CONTROLS for stat in STATS_PER_CONTROL)
+CONTROL_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "controls": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": True,
+            "items": {"type": "string", "enum": list(ALL_CONTROLS)},
+            "description": "Subset of W/S/A/D/MOUSE_X_POS/.../MOUSE_Y_NEG to measure; "
+                           "the default is all eight controls.",
+        },
+    },
+    "additionalProperties": False,
+}
+
+
+def _validated_controls(controls):
+    if controls is None:
+        return None
+    if not isinstance(controls, list) or not controls:
+        raise ValueError("controls must be a non-empty list")
+    unknown = sorted(set(controls) - set(ALL_CONTROLS))
+    if unknown:
+        raise ValueError(f"unknown pixel-shift control(s) {unknown}; expected {ALL_CONTROLS}")
+    if len(controls) != len(set(controls)):
+        raise ValueError("controls must not contain duplicates")
+    return list(controls)
 
 # Human-readable names for the report -- the DIAMOND action-vector codes (W/S/A/D/
 # MOUSE_X_POS/...) are what the code and reference data key on, but not what a reader wants
@@ -218,67 +246,27 @@ class PixelShiftReport:
         print()
 
 
-# ---------------------------------------------------------------------------------------
-# kuration-sdk registration -- validated against the real installed package the same way
-# action_state_consistency.py's operator was (pip install + list_components/
-# describe_component + a real end-to-end run against a real MP4 + real ASG telemetry).
-# ---------------------------------------------------------------------------------------
+class PixelShift:
+    """Kuration batch transform implementing the per-segment measurements."""
 
-try:
-    from kuration import register_batch_transform, register_operator
-except ImportError:
-    register_batch_transform = register_operator = None  # SDK not installed in this checkout
+    def __init__(self, controls: list | None = None):
+        self.controls = _validated_controls(controls)  # None = all eight
+
+    def transform_batch(self, batch, ctx):
+        frames_batch = batch["media:frame"]       # (N, T, H, W, 3)
+        actions_batch = batch["field:action"]     # (N, T, action_dim)
+        # Read the declared media color space rather than assuming the BGR direct-call default.
+        color_space = ctx["schema"].media["frame"].color_space
+        rows = [
+            segment_scalars(frames, actions, self.controls, color_space)
+            for frames, actions in zip(frames_batch, actions_batch, strict=True)
+        ]
+        return {
+            key: np.array([row[key] for row in rows], dtype=np.float64)
+            for key in OUTPUT_KEYS
+        }
 
 
-if register_batch_transform is not None:
-
-    @register_batch_transform(
-        "aintropy/pixel-shift",
-        description="Per-segment pixel-shift statistics (min/max/mean/n_instances per "
-                     "control) for every isolated key/mouse press found in the window -- "
-                     "no consistency judgment, just what pixel motion happened",
-        outputs=OUTPUT_KEYS,
-        inputs=("media:frame", "field:action"),
-        media_requirements={"kind": "video-frame", "layout": "HWC"},
-        resources={"num_gpus": 0},
-        version="1",
-    )
-    class PixelShift:
-        def __init__(self, controls: list = None):
-            self.controls = controls  # None = all 8
-
-        def transform_batch(self, batch, ctx):
-            frames_batch = batch["media:frame"]       # (N, T, H, W, 3)
-            actions_batch = batch["field:action"]     # (N, T, action_dim)
-            # The real declared color_space of the "frame" media column -- populated by the
-            # SDK runtime (transforms.py's ctx["schema"]), not assumed. kuration-sdk's
-            # .join_video() always tags this "RGB" (its PyAV provider decodes rgb24); a raw
-            # BGR-sourced media column (e.g. hand-built HDF5 adapter) would say "BGR"
-            # instead. Passed straight through to _prep_gray, never used to reorder frames.
-            color_space = ctx["schema"].media["frame"].color_space
-            # Pure computation only -- no ledger, no side effects, correct under any worker
-            # count. Use PixelShiftReport directly (outside pipeline execution) for the
-            # fuller per-instance report; see this module's docstring for why.
-            rows = [
-                segment_scalars(frames, actions, self.controls, color_space)
-                for frames, actions in zip(frames_batch, actions_batch)
-            ]
-            return {key: np.array([row[key] for row in rows], dtype=np.float64) for key in OUTPUT_KEYS}
-
-    @register_operator(
-        "aintropy/pixel-shift",
-        description="Measure pixel shift for every isolated key/mouse press -- no "
-                     "consistency judgment, just what happened",
-        parameters={
-            "type": "object",
-            "properties": {
-                "controls": {"type": "array", "items": {"type": "string"},
-                             "description": "subset of W/S/A/D/MOUSE_X_POS/.../MOUSE_Y_NEG "
-                             "to check; default is all 8"},
-            },
-            "additionalProperties": False,
-        },
-        version="1",
-    )
-    def pixel_shift(pipeline, *, controls=None):
-        return pipeline.transform("aintropy/pixel-shift", controls=controls)
+def pixel_shift(pipeline, *, controls=None):
+    """Compose the registered transform into a fluent pipeline."""
+    return pipeline.transform("aintropy/pixel-shift", controls=controls)

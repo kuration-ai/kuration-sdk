@@ -1,5 +1,6 @@
-"""diamond_action_decode -- low-level decoding of the DIAMOND/TeaPearce 51-dim action
-vector (11 keys + 2 clicks + 23-bin mouse_x one-hot + 15-bin mouse_y one-hot -- see
+"""Low-level decoding of the DIAMOND/TeaPearce 51-dimensional action vector.
+
+The layout is 11 keys + 2 clicks + 23-bin mouse_x one-hot + 15-bin mouse_y one-hot; see
 asg2diamond/action_map.py for the exact layout this mirrors) and isolated-press detection
 + pixel-displacement measurement against real video frames.
 
@@ -24,8 +25,7 @@ import numpy as np
 # every registered plugin module to read its descriptors), so an eager top-level `import
 # cv2` would break plugin discovery for EVERY kuration-sdk user the moment opencv isn't
 # installed, not just users of this plugin. Matches this repo's own stated convention
-# (pyproject.toml: "heavy capabilities are opt-in extras, lazily imported and
-# loud-on-missing -- the asg2diamond convention").
+# (the plugin distribution owns this optional framework dependency).
 def _require_cv2():
     try:
         import cv2
@@ -33,7 +33,7 @@ def _require_cv2():
     except ImportError as e:
         raise ImportError(
             "pixel_shift requires opencv (cv2) for optical-flow measurement. "
-            "Install it with `pip install opencv-python-headless` (or `opencv-python`)."
+            "Install or repair it with `pip install kuration-plugin-pixel-shift`."
         ) from e
 
 KEY_NAMES = ["W", "A", "S", "D", "SPACE", "CTRL", "SHIFT", "1", "2", "3", "R"]

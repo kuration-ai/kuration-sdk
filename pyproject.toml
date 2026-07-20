@@ -47,7 +47,6 @@ video = ["av>=12"]                # optional CPU MP4 provider
 ray = ["ray>=2.20"]               # optional distributed execution backend
 p2p = ["protobuf>=4.25"]          # Open P2P worked example (annotation.proto parsing)
 cli = ["jsonschema>=4.21"]        # kur-validate --json-schema (JSON Schema cross-check)
-pixel_shift = ["opencv-python-headless>=4.9"]  # plugins/pixel_shift optical-flow measurement
 all = [
     "scikit-learn>=1.4",
     "pyarrow>=15",
@@ -63,7 +62,6 @@ all = [
     "jsonschema>=4.21",
     "av>=12",
     "ray>=2.20",
-    "opencv-python-headless>=4.9",
 ]                                   # every runtime capability and cloud backend in one install
 dev = [
     "pytest>=8",
@@ -77,9 +75,6 @@ dev = [
     "check-wheel-contents>=0.6.3,<1",
 ]
 docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5"]
-
-[project.entry-points."kuration.plugins"]
-pixel_shift = "plugins.pixel_shift.pixel_shift_operator"
 
 [project.scripts]
 kur-curate = "kuration.cli.curate:main"
@@ -99,9 +94,8 @@ requires = ["setuptools>=80,<84"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src", "."]
-include = ["kuration*", "plugins*"]
-exclude = ["tests*", "examples*", "contrib*"]
+where = ["src"]
+include = ["kuration*"]
 
 [tool.setuptools.package-data]
 kuration = ["schemas/*.json", "py.typed"]   # shipped JSON Schema (kur-validate) + PEP 561 marker

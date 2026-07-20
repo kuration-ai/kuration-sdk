@@ -9,14 +9,19 @@ from __future__ import annotations
 
 import json
 import sys
+from importlib.metadata import entry_points
 
 import numpy as np
 import pytest
 
-from kuration import FrameRef, VideoMetadata, describe_component, input, list_components
+from kuration import (FrameRef, VideoMetadata, default_registry, describe_component, input,
+                      list_components)
 
-from plugins.pixel_shift import diamond_action_decode as dad
-from plugins.pixel_shift import pixel_shift_operator as pso
+from kuration_pixel_shift import diamond_action_decode as dad
+from kuration_pixel_shift import pixel_shift_operator as pso
+from kuration_pixel_shift import register
+
+register()
 
 ACTION_DIM = dad.N_KEYS + 2 + dad.N_MOUSE_X + dad.N_MOUSE_Y  # 51, matches asg2diamond's layout
 
@@ -187,6 +192,13 @@ def test_segment_scalars_sentinel_when_no_instances_found():
     assert scalars["w_shift_mean"] == 0.0
 
 
+def test_transform_rejects_unknown_or_duplicate_controls():
+    with pytest.raises(ValueError, match="unknown pixel-shift control"):
+        pso.PixelShift(["JUMP"])
+    with pytest.raises(ValueError, match="duplicates"):
+        pso.PixelShift(["W", "W"])
+
+
 def test_segment_scalars_has_no_side_effects():
     """segment_scalars must be a pure function -- no shared/global state to leak between
     calls or across worker processes. Calling it twice with identical inputs must give
@@ -341,7 +353,7 @@ def test_full_pipeline_with_fake_video_provider():
 
     action_cols = [f"a{i}" for i in range(ACTION_DIM)]
     actions = [_action(), _action(w=True), _action(), _action(), _action(), _action()]
-    rows = [{"t": i, **{col: float(v) for col, v in zip(action_cols, actions[i])}}
+    rows = [{"t": i, **{col: float(v) for col, v in zip(action_cols, actions[i], strict=True)}}
             for i in range(n_frames)]
 
     from kuration import SchemaSpec
@@ -380,6 +392,19 @@ def test_pixel_shift_registered_as_both_operator_and_transform():
     transform = describe_component("transform", "aintropy/pixel-shift")
     assert transform["version"] == "1"
     assert transform["description"]  # non-empty; was missing before this PR's fix
+
+
+def test_plugin_entry_point_and_isolated_snapshot_contract():
+    installed = entry_points()
+    candidates = (installed.select(group="kuration.plugins", name="pixel_shift")
+                  if hasattr(installed, "select") else [
+                      point for point in installed.get("kuration.plugins", ())
+                      if point.name == "pixel_shift"])
+    assert [point.value for point in candidates] == ["kuration_pixel_shift:register"]
+
+    isolated = default_registry.snapshot()
+    assert isolated.get("operator", "aintropy/pixel-shift") is pso.pixel_shift
+    assert isolated.get("transform", "aintropy/pixel-shift") is pso.PixelShift
 
 
 def test_pixel_shift_discoverable_through_the_kur_list_cli(monkeypatch, capsys):

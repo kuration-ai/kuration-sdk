@@ -1,4 +1,4 @@
-# pixel_shift
+# Kuration Pixel Shift
 
 A kuration-sdk operator + batch transform that measures pixel shift for every isolated
 key/mouse press found in a dataset recorded in the DIAMOND/TeaPearce 51-dim action-vector
@@ -29,21 +29,23 @@ hardcoded), kept out of this contribution.
 
 ## Install
 
-This operator measures optical flow with `cv2`, which is *not* part of kuration-sdk's core
-dependencies (the core stays free of heavy, domain-specific libraries -- see "Why this lives
-in `plugins/`" below). Install it with:
+This operator measures optical flow with `cv2`, which is not part of Kuration's core
+dependencies. The independently released plugin owns that dependency. Install it with:
 
 ```bash
-pip install "kuration-sdk[pixel_shift]"
+pip install kuration-plugin-pixel-shift
 ```
 
-`cv2` is imported lazily, only inside the functions that actually touch a frame -- so
-installing kuration-sdk *without* this extra still works fine for everything else,
-including `kur-list`/`kur-describe` (which import every registered plugin module to read
-its descriptors, this one included). Calling into this operator's flow-measuring code
-without the extra installed raises a clear `ImportError` telling you to install it, rather
-than either crashing plugin discovery for unrelated users or failing with a bare
-`ModuleNotFoundError`.
+`cv2` is imported lazily, only inside functions that touch a frame, so plugin discovery
+remains lightweight. The core SDK can be installed without this distribution or OpenCV.
+
+For repository development, install the SDK and plugin together, then run only this
+distribution's tests:
+
+```bash
+python -m pip install -e . -e 'plugins/pixel_shift[test]'
+python -m pytest plugins/pixel_shift/tests -q
+```
 
 ## Usage
 
@@ -61,7 +63,7 @@ result = pipeline.collect(n=1000)
 ```
 
 Registered under `aintropy/pixel-shift` for both the batch transform (`kur-describe
-transforms aintropy/pixel-shift`) and the compositional operator (`kur-describe operators
+transform aintropy/pixel-shift`) and the compositional operator (`kur-describe operator
 aintropy/pixel-shift`) -- the Python module itself stays `pixel_shift` (import-identifier
 convention), only the registration string is hyphenated.
 
@@ -71,7 +73,7 @@ execution (see "Why the report is a separate object" below for why it isn't just
 the transform above):
 
 ```python
-import plugins.pixel_shift.pixel_shift_operator as pixel_shift
+import kuration_pixel_shift as pixel_shift
 
 report = pixel_shift.PixelShiftReport()
 for frames, actions, segment_id in your_own_segments:
@@ -187,8 +189,7 @@ action-vector layout, and (unlike `examples/02_robotics_action_aware.py`) it has
 synthetic self-contained demo mode; it's meant to run against real recorded gameplay.
 `CONTRIBUTING.md`'s own design rule keeps domain knowledge out of the shared core, and the
 existing `examples/` are all self-generated-data demonstrations, not real-dataset tooling.
-`plugins/` is registered through the `kuration.plugins` entry-point mechanism described in
-`CONTRIBUTING.md` (see `pyproject.toml`'s `[project.entry-points."kuration.plugins"]`), so
-`kur-list`/`kur-describe` discover it automatically on install, the same as any other
-installed plugin -- confirmed against a real, clean, non-editable install (see the test
-plan in the PR description).
+`plugins/pixel_shift` is an independent distribution with its own dependencies, tests,
+documentation, and `kuration.plugins` entry point. Installing its wheel makes
+`kur-list`/`kur-describe` discover it automatically without adding plugin code or OpenCV to
+the `kuration-sdk` wheel.
