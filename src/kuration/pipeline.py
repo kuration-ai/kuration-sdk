@@ -841,7 +841,7 @@ class Pipeline:
         elif weights:
             canon = "top-k"
         else:
-            raise ValueError("curate(): no selection method resolvable — add .organize(...) "
+            raise ValueError("curate(): no selection method resolvable — add .bin(...) "
                              "axes, pass weights=, or name a method")
         p = self._next("curate", method, n=n, hours=hours, test_hours=test_hours,
                        weights=weights, target=target, normalize=normalize,
@@ -891,8 +891,8 @@ class Pipeline:
             elif self._weights:
                 method = "top-k"
             elif require_method:
-                raise ValueError("no selection method resolvable — add .organize(...) axes, "
-                                 "pass weights= to .curate(), or name a method")
+                raise ValueError("no selection method resolvable — add .bin(...) axes, "
+                                 "pass weights= to .sample(), or name a method")
         d: dict = {"name": "pipeline", "define": dict(self._define)}
         if self._feature_space:
             d["feature_space"] = list(self._feature_space)
@@ -1121,9 +1121,9 @@ class Pipeline:
         if n is None:
             n = self._n
         if n is None:
-            hint = (" (.curate(hours=...) routes to .output())"
+            hint = (" (.sample(hours=...) routes to .output())"
                     if self._hours is not None else "")
-            raise ValueError(f"collect() needs a count: pass n= or call .curate(n=...) "
+            raise ValueError(f"collect() needs a count: pass n= or call .sample(n=...) "
                              f"first{hint}")
         from .strategy import validate_target_size
         n = validate_target_size(n)
@@ -1228,8 +1228,8 @@ class Pipeline:
                span_seconds: Optional[float] = None, categorical: Optional[str] = None,
                preset_params: Optional[dict] = None, dry_run: bool = False,
                inspect_sources: bool = False):
-        """Write shards + manifests + config.json. `.curate(hours=...)` routes through the
-        hours-budget `write_dataset`; `.curate(n=...)` selects then writes each chosen
+        """Write shards + manifests + config.json. `.sample(hours=...)` routes through the
+        hours-budget `write_dataset`; `.sample(n=...)` selects then writes each chosen
         segment as a sub-track. config.json gains a 'pipeline' key: the operator chain."""
         self._check_exec()
         if not isinstance(dry_run, bool) or not isinstance(inspect_sources, bool):
@@ -1482,10 +1482,10 @@ class Pipeline:
         # ---- count path -------------------------------------------------------------
         if opt["resume"]:
             raise ValueError("resume is supported on the hours path only "
-                             "(.curate(hours=...)); the count path rewrites its "
+                             "(.sample(hours=...)); the count path rewrites its "
                              "selection deterministically per run")
         if self._n is None:
-            raise ValueError("output() needs .curate(n=...) or .curate(hours=...) first")
+            raise ValueError("output() needs .sample(n=...) or .sample(hours=...) first")
         if opt["memory_budget"] is not None and (
                 getattr(self.adapter, "in_memory", False)
                 or getattr(self.adapter, "supports_streaming", True) is False

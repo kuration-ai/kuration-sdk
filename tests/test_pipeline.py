@@ -287,7 +287,7 @@ def test_curate_no_method_resolvable_loud():
     with pytest.raises(ValueError) as e:
         _pipe().measure("hp").curate(n=5)
     msg = str(e.value)
-    assert "organize" in msg and "weights" in msg and "method" in msg
+    assert "bin" in msg and "weights" in msg and "method" in msg
 
 
 @pytest.mark.parametrize("alias,canon", [
