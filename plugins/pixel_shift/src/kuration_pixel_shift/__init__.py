@@ -1,6 +1,15 @@
 """Separately packaged pixel-shift extension for Kuration."""
+
 from __future__ import annotations
 
+from .diamond_action_decode import (
+    ALL_CONTROLS,
+    BOUNDARY_POLICIES,
+    find_isolated_press_sequences,
+    release_transition_displacement,
+    validate_actions,
+    validate_frames,
+)
 from .pixel_shift_operator import (
     CONTROL_PARAMETERS,
     OUTPUT_KEYS,
@@ -46,10 +55,16 @@ def register() -> None:
 
 
 __all__ = [
+    "ALL_CONTROLS",
+    "BOUNDARY_POLICIES",
     "COMPONENT_NAME",
     "PixelShift",
     "PixelShiftReport",
+    "find_isolated_press_sequences",
     "pixel_shift",
     "register",
+    "release_transition_displacement",
     "segment_scalars",
+    "validate_actions",
+    "validate_frames",
 ]

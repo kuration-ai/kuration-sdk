@@ -8,13 +8,14 @@ output), kept deliberately out of this file.
 Two things this operator produces:
 
 1. Per-segment scalar features (so it composes inside a real kuration pipeline --
-   .bin()/.filter()/.sample() on the results): for each of the 8 controls, 4 numbers --
+   .bin()/.filter()/.sample() on the results): for each of the 8 controls, 5 numbers --
    `{control}_shift_min`, `{control}_shift_max`, `{control}_shift_mean`,
-   `{control}_n_instances` -- collapsing across whatever press-lengths (W/S/A/D) or delta
+   `{control}_n_instances`, and `{control}_requested` -- collapsing across whatever
+   press-lengths (W/S/A/D) or delta
    magnitudes (mouse controls) were found for that control in that segment. min/max are
    the true worst-case/best-case signed shift among however many instances were found (NOT
    an average that could hide one bad instance among several good ones) -- see the second
-   deliverable below for the full per-instance detail these 4 numbers are compressed from.
+   deliverable below for the full per-instance detail these numbers are compressed from.
 
 2. A console report (`PixelShiftReport.print_report()`, NOT a written file) -- for every
    (control, press_len or delta) combination, the exact instance count found across the
@@ -31,23 +32,39 @@ transform contract has no supported channel for returning arbitrary per-instance
 side-channel data back to one accumulator across those workers. Constraining execution to
 `workers=1` to make that work would have defeated the purpose of the SDK's own concurrent
 executors, not merely been an inconvenience. So `transform_batch` now does exactly one
-thing -- compute the 4 aggregated scalars per control -- through the one channel the SDK
+thing -- compute the 5 aggregated scalars per control -- through the one channel the SDK
 actually supports (declared per-segment outputs), regardless of worker count. Build a
 `PixelShiftReport` yourself, by calling `add_segment()` directly over your own segments,
 entirely outside pipeline execution, if you want the fuller per-instance report.
 """
+
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 import numpy as np
 
-from .diamond_action_decode import ALL_CONTROLS, release_transition_displacement
+from .diamond_action_decode import (
+    ALL_CONTROLS,
+    BOUNDARY_POLICIES,
+    MOUSE_AXIS_OF,
+    MOUSE_CONTROLS,
+    _mouse_delta_value,
+    _release_transition_displacement_validated,
+    validate_actions,
+    validate_boundary,
+    validate_color_space,
+    validate_frames,
+)
 
 KEY_CONTROLS = ["W", "S", "A", "D"]
 MOUSE_CONTROLS_LIST = ["MOUSE_X_POS", "MOUSE_X_NEG", "MOUSE_Y_POS", "MOUSE_Y_NEG"]
 PRESS_LENS = [1, 2, 3]
 
-STATS_PER_CONTROL = ("shift_min", "shift_max", "shift_mean", "n_instances")
-OUTPUT_KEYS = tuple(f"{control.lower()}_{stat}" for control in ALL_CONTROLS for stat in STATS_PER_CONTROL)
+STATS_PER_CONTROL = ("shift_min", "shift_max", "shift_mean", "n_instances", "requested")
+OUTPUT_KEYS = tuple(
+    f"{control.lower()}_{stat}" for control in ALL_CONTROLS for stat in STATS_PER_CONTROL
+)
 CONTROL_PARAMETERS = {
     "type": "object",
     "properties": {
@@ -57,24 +74,35 @@ CONTROL_PARAMETERS = {
             "uniqueItems": True,
             "items": {"type": "string", "enum": list(ALL_CONTROLS)},
             "description": "Subset of W/S/A/D/MOUSE_X_POS/.../MOUSE_Y_NEG to measure; "
-                           "the default is all eight controls.",
+            "the default is all eight controls.",
+        },
+        "boundary": {
+            "type": "string",
+            "enum": list(BOUNDARY_POLICIES),
+            "default": "exclude",
+            "description": "How to handle a targeted press clipped by a segment edge. "
+            "'exclude' is conservative; 'error' requires context; "
+            "'assume-inactive' treats outside frames as inactive.",
         },
     },
     "additionalProperties": False,
 }
 
 
-def _validated_controls(controls):
+def _validated_controls(controls) -> tuple[str, ...]:
     if controls is None:
-        return None
-    if not isinstance(controls, list) or not controls:
-        raise ValueError("controls must be a non-empty list")
+        return tuple(ALL_CONTROLS)
+    if isinstance(controls, (str, bytes)) or not isinstance(controls, Sequence) or not controls:
+        raise ValueError("controls must be a non-empty sequence of control names")
+    if not all(isinstance(control, str) for control in controls):
+        raise ValueError("controls must contain only strings")
     unknown = sorted(set(controls) - set(ALL_CONTROLS))
     if unknown:
         raise ValueError(f"unknown pixel-shift control(s) {unknown}; expected {ALL_CONTROLS}")
     if len(controls) != len(set(controls)):
         raise ValueError("controls must not contain duplicates")
-    return list(controls)
+    return tuple(controls)
+
 
 # Human-readable names for the report -- the DIAMOND action-vector codes (W/S/A/D/
 # MOUSE_X_POS/...) are what the code and reference data key on, but not what a reader wants
@@ -93,8 +121,17 @@ CONTROL_DESCRIPTIONS = {
 }
 
 
-def _iter_instances(frames: np.ndarray, actions: np.ndarray, control: str,
-                     color_space: str = "BGR"):
+def _iter_instances(
+    frames: np.ndarray,
+    actions: np.ndarray,
+    control: str,
+    color_space: str = "BGR",
+    *,
+    lookbehind_actions: np.ndarray | None = None,
+    lookahead_actions: np.ndarray | None = None,
+    lookahead_frames: np.ndarray | None = None,
+    boundary: str = "exclude",
+):
     """Pure generator: yields (cell_key, local_start, signed_shift) for every isolated-press
     instance of `control` found in this one segment -- no side effects, no shared state,
     safe to call from anywhere (a worker process, a plain loop, whatever). cell_key is
@@ -105,31 +142,96 @@ def _iter_instances(frames: np.ndarray, actions: np.ndarray, control: str,
     PixelShiftReport.add_segment. `color_space` (see diamond_action_decode._prep_gray)
     defaults to BGR, matching raw ASG/DIAMOND HDF5 arrays; pass the real declared
     color_space when `frames` came through a kuration-sdk media column instead."""
-    from .diamond_action_decode import MOUSE_CONTROLS, MOUSE_AXIS_OF, mouse_delta_value
-
     if control in MOUSE_CONTROLS:
         axis = MOUSE_AXIS_OF[control]
-        for start, px in release_transition_displacement(frames, actions, control, press_len=1,
-                                                           color_space=color_space):
-            delta_value = int(mouse_delta_value(actions[start:start + 1], axis)[0])
+        for start, px in _release_transition_displacement_validated(
+            frames,
+            actions,
+            control,
+            press_len=1,
+            color_space=color_space,
+            lookbehind_actions=lookbehind_actions,
+            lookahead_actions=lookahead_actions,
+            lookahead_frames=lookahead_frames,
+            boundary=boundary,
+        ):
+            delta_value = int(_mouse_delta_value(actions[start : start + 1], axis)[0])
             yield str(delta_value), start, px
     else:
         for press_len in PRESS_LENS:
-            for start, px in release_transition_displacement(frames, actions, control, press_len,
-                                                               color_space=color_space):
+            for start, px in _release_transition_displacement_validated(
+                frames,
+                actions,
+                control,
+                press_len,
+                color_space,
+                lookbehind_actions=lookbehind_actions,
+                lookahead_actions=lookahead_actions,
+                lookahead_frames=lookahead_frames,
+                boundary=boundary,
+            ):
                 yield str(press_len), start, px
 
 
-def segment_scalars(frames: np.ndarray, actions: np.ndarray,
-                     controls: list = None, color_space: str = "BGR") -> dict:
-    """The 4-number-per-control summary for ONE segment -- true to the data (no reference,
+def _validated_segment_inputs(
+    frames,
+    actions,
+    *,
+    lookbehind_actions=None,
+    lookahead_actions=None,
+    lookahead_frames=None,
+):
+    actions = validate_actions(actions)
+    frames = validate_frames(frames, steps=len(actions))
+    before = (
+        None
+        if lookbehind_actions is None
+        else validate_actions(lookbehind_actions, name="lookbehind_actions")
+    )
+    if (lookahead_actions is None) != (lookahead_frames is None):
+        raise ValueError("lookahead_actions and lookahead_frames must be provided together")
+    after_actions = None
+    after_frames = None
+    if lookahead_actions is not None:
+        after_actions = validate_actions(lookahead_actions, name="lookahead_actions")
+        after_frames = validate_frames(
+            lookahead_frames, steps=len(after_actions), name="lookahead_frames"
+        )
+        if after_frames.shape[1:] != frames.shape[1:]:
+            raise ValueError("lookahead_frames must have the same spatial shape as frames")
+        if after_frames.dtype != frames.dtype:
+            raise ValueError("lookahead_frames must have the same dtype as frames")
+    return frames, actions, before, after_actions, after_frames
+
+
+def segment_scalars(
+    frames: np.ndarray,
+    actions: np.ndarray,
+    controls: Sequence[str] | None = None,
+    color_space: str = "BGR",
+    *,
+    lookbehind_actions=None,
+    lookahead_actions=None,
+    lookahead_frames=None,
+    boundary: str = "exclude",
+) -> dict:
+    """The 5-number-per-control summary for ONE segment -- true to the data (no reference,
     no consistency judgment): the actual worst/best/mean signed shift and how many
     instances were found, collapsed across whatever press-lengths/deltas occurred for each
     control in this segment. Pure function, no side effects -- safe under any execution
     model. `color_space` defaults to BGR (raw ASG/DIAMOND HDF5 arrays);
     PixelShift.transform_batch passes the real declared color_space of the SDK media
     column instead (see diamond_action_decode._prep_gray)."""
-    controls = controls or ALL_CONTROLS
+    controls = _validated_controls(controls)
+    boundary = validate_boundary(boundary)
+    color_space = validate_color_space(color_space)
+    frames, actions, before, after_actions, after_frames = _validated_segment_inputs(
+        frames,
+        actions,
+        lookbehind_actions=lookbehind_actions,
+        lookahead_actions=lookahead_actions,
+        lookahead_frames=lookahead_frames,
+    )
     out = {}
     for control in ALL_CONTROLS:
         prefix = control.lower()
@@ -138,8 +240,21 @@ def segment_scalars(frames: np.ndarray, actions: np.ndarray,
             out[f"{prefix}_shift_max"] = 0.0
             out[f"{prefix}_shift_mean"] = 0.0
             out[f"{prefix}_n_instances"] = 0.0
+            out[f"{prefix}_requested"] = 0.0
             continue
-        shifts = [shift for _, _, shift in _iter_instances(frames, actions, control, color_space)]
+        shifts = [
+            shift
+            for _, _, shift in _iter_instances(
+                frames,
+                actions,
+                control,
+                color_space,
+                lookbehind_actions=before,
+                lookahead_actions=after_actions,
+                lookahead_frames=after_frames,
+                boundary=boundary,
+            )
+        ]
         if shifts:
             out[f"{prefix}_shift_min"] = float(min(shifts))
             out[f"{prefix}_shift_max"] = float(max(shifts))
@@ -154,6 +269,7 @@ def segment_scalars(frames: np.ndarray, actions: np.ndarray,
             out[f"{prefix}_shift_max"] = 0.0
             out[f"{prefix}_shift_mean"] = 0.0
             out[f"{prefix}_n_instances"] = 0.0
+        out[f"{prefix}_requested"] = 1.0
     return out
 
 
@@ -167,6 +283,7 @@ def segment_scalars(frames: np.ndarray, actions: np.ndarray,
 # use: loop over your own segments (however you obtained them -- outside pipeline.collect()
 # execution) calling add_segment() once per segment, then print_report() at the end.
 # ---------------------------------------------------------------------------------------
+
 
 def _ascii_histogram(values: list, bins: int = 10, width: int = 40) -> list:
     if not values:
@@ -195,8 +312,19 @@ class PixelShiftReport:
     def __init__(self):
         self._ledger: dict = {}
 
-    def add_segment(self, frames: np.ndarray, actions: np.ndarray, segment_id,
-                     controls: list = None, color_space: str = "BGR") -> None:
+    def add_segment(
+        self,
+        frames: np.ndarray,
+        actions: np.ndarray,
+        segment_id,
+        controls: Sequence[str] | None = None,
+        color_space: str = "BGR",
+        *,
+        lookbehind_actions=None,
+        lookahead_actions=None,
+        lookahead_frames=None,
+        boundary: str = "exclude",
+    ) -> None:
         """Record every instance found in this one segment under its exact cell_key.
         `segment_id` is (source_id, start_idx, end_idx) -- the same shape the SDK's
         segment_ids batch entry provides. Each instance keeps its OWN precise
@@ -204,17 +332,51 @@ class PixelShiftReport:
         local start frame within this window -- not one label shared by every instance
         found in this call, which would make every instance from the same window
         indistinguishable in the printed report (see this class's docstring)."""
-        source_id, start_idx, _ = segment_id
-        for control in (controls or ALL_CONTROLS):
-            for cell_key, local_start, shift in _iter_instances(frames, actions, control, color_space):
+        controls = _validated_controls(controls)
+        boundary = validate_boundary(boundary)
+        color_space = validate_color_space(color_space)
+        frames, actions, before, after_actions, after_frames = _validated_segment_inputs(
+            frames,
+            actions,
+            lookbehind_actions=lookbehind_actions,
+            lookahead_actions=lookahead_actions,
+            lookahead_frames=lookahead_frames,
+        )
+        if (
+            isinstance(segment_id, (str, bytes))
+            or not isinstance(segment_id, Sequence)
+            or len(segment_id) != 3
+        ):
+            raise ValueError("segment_id must be (source_id, start_idx, end_idx)")
+        source_id, start_idx, end_idx = segment_id
+        if (
+            isinstance(start_idx, bool)
+            or isinstance(end_idx, bool)
+            or not isinstance(start_idx, (int, np.integer))
+            or not isinstance(end_idx, (int, np.integer))
+        ):
+            raise ValueError("segment_id start_idx and end_idx must be integers")
+        if int(end_idx) - int(start_idx) != len(actions):
+            raise ValueError("segment_id range length must match the number of action frames")
+        for control in controls:
+            for cell_key, local_start, shift in _iter_instances(
+                frames,
+                actions,
+                control,
+                color_space,
+                lookbehind_actions=before,
+                lookahead_actions=after_actions,
+                lookahead_frames=after_frames,
+                boundary=boundary,
+            ):
                 record = {"source_id": source_id, "frame": start_idx + local_start, "shift": shift}
                 self._ledger.setdefault(control, {}).setdefault(cell_key, []).append(record)
 
-    def print_report(self, controls: list = None) -> None:
+    def print_report(self, controls: Sequence[str] | None = None) -> None:
         """Print the full pixel-shift report accumulated so far -- instance counts,
         histograms, and clip provenance, per (control, press_len/delta). Distribution-only
         style: printed to the screen, nothing written to disk."""
-        controls = controls or ALL_CONTROLS
+        controls = _validated_controls(controls)
         print("=" * 78)
         print("PIXEL SHIFT REPORT -- isolated key/mouse presses found across the dataset")
         print("=" * 78)
@@ -235,13 +397,18 @@ class PixelShiftReport:
                 locations = sorted({(e["source_id"], e["frame"]) for e in entries})
                 label = "held for" if control in KEY_CONTROLS else "mouse delta"
                 unit = " frame(s)" if control in KEY_CONTROLS else ""
-                print(f"  {label} {cell_key}{unit}  --  n_instances={len(entries)}  "
-                      f"mean={sum(shifts) / len(shifts):.4f}  min={min(shifts):.4f}  max={max(shifts):.4f}")
+                print(
+                    f"  {label} {cell_key}{unit}  --  n_instances={len(entries)}  "
+                    f"mean={sum(shifts) / len(shifts):.4f}  min={min(shifts):.4f}  max={max(shifts):.4f}"
+                )
                 for edge_label, count, bar in _ascii_histogram(shifts):
                     print(f"    {edge_label:>24}  {count:>5}  {bar}")
-                previews = [f"clip '{source_id}' @ frame {frame}" for source_id, frame in locations[:8]]
+                previews = [
+                    f"clip '{source_id}' @ frame {frame}" for source_id, frame in locations[:8]
+                ]
                 clip_preview = "; ".join(previews) + (
-                    f"; ... (+{len(locations) - 8} more)" if len(locations) > 8 else "")
+                    f"; ... (+{len(locations) - 8} more)" if len(locations) > 8 else ""
+                )
                 print(f"    Clip ID(s): {clip_preview}")
         print()
 
@@ -249,24 +416,35 @@ class PixelShiftReport:
 class PixelShift:
     """Kuration batch transform implementing the per-segment measurements."""
 
-    def __init__(self, controls: list | None = None):
-        self.controls = _validated_controls(controls)  # None = all eight
+    def __init__(
+        self,
+        controls: Sequence[str] | None = None,
+        boundary: str = "exclude",
+    ):
+        self.controls = _validated_controls(controls)
+        self.boundary = validate_boundary(boundary)
 
     def transform_batch(self, batch, ctx):
-        frames_batch = batch["media:frame"]       # (N, T, H, W, 3)
-        actions_batch = batch["field:action"]     # (N, T, action_dim)
+        frames_batch = batch["media:frame"]  # (N, T, H, W, 3)
+        actions_batch = batch["field:action"]  # (N, T, action_dim)
         # Read the declared media color space rather than assuming the BGR direct-call default.
         color_space = ctx["schema"].media["frame"].color_space
         rows = [
-            segment_scalars(frames, actions, self.controls, color_space)
+            segment_scalars(
+                frames,
+                actions,
+                self.controls,
+                color_space,
+                boundary=self.boundary,
+            )
             for frames, actions in zip(frames_batch, actions_batch, strict=True)
         ]
-        return {
-            key: np.array([row[key] for row in rows], dtype=np.float64)
-            for key in OUTPUT_KEYS
-        }
+        return {key: np.array([row[key] for row in rows], dtype=np.float64) for key in OUTPUT_KEYS}
 
 
-def pixel_shift(pipeline, *, controls=None):
+def pixel_shift(pipeline, *, controls=None, boundary: str = "exclude"):
     """Compose the registered transform into a fluent pipeline."""
-    return pipeline.transform("aintropy/pixel-shift", controls=controls)
+    params = {"boundary": boundary}
+    if controls is not None:
+        params["controls"] = controls
+    return pipeline.transform("aintropy/pixel-shift", **params)

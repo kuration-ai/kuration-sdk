@@ -5,6 +5,7 @@ tests/test_media_transforms_execution.py's FakeVideoProvider pattern, and
 tests/test_operator_registry.py's discovery-CLI test) rather than needing real video
 files or real gameplay capture -- every test here is deterministic and self-contained.
 """
+
 from __future__ import annotations
 
 import json
@@ -14,8 +15,15 @@ from importlib.metadata import entry_points
 import numpy as np
 import pytest
 
-from kuration import (FrameRef, VideoMetadata, default_registry, describe_component, input,
-                      list_components)
+import kuration_pixel_shift as pixel_shift
+from kuration import (
+    FrameRef,
+    VideoMetadata,
+    default_registry,
+    describe_component,
+    input,
+    list_components,
+)
 
 from kuration_pixel_shift import diamond_action_decode as dad
 from kuration_pixel_shift import pixel_shift_operator as pso
@@ -43,6 +51,7 @@ def _action(w=False, s=False, a=False, d=False, mouse_x=0.0, mouse_y=0.0):
 # diamond_action_decode.py -- pure action-vector logic, no image data needed
 # ---------------------------------------------------------------------------------------
 
+
 def test_mouse_delta_value_decodes_to_nearest_possible_bin():
     Y = np.stack([_action(mouse_x=19.0)])  # nearest of MOUSE_X_POSSIBLES to 19 is 20
     assert dad.mouse_delta_value(Y, "x")[0] == 20.0
@@ -52,8 +61,8 @@ def test_isolated_press_requires_the_exact_press_len():
     """W held for exactly 2 consecutive frames, one real aftermath frame -- an isolated
     press_len=2 instance, but NOT found when asking for press_len=1 or 3 (must match the
     real hold length exactly, per the README's isolated-press definition)."""
-    Y = np.stack([_action(w=True), _action(w=True), _action()])
-    assert dad.find_isolated_press_sequences(Y, "W", press_len=2) == [(0, 2)]
+    Y = np.stack([_action(), _action(w=True), _action(w=True), _action()])
+    assert dad.find_isolated_press_sequences(Y, "W", press_len=2) == [(1, 3)]
     assert dad.find_isolated_press_sequences(Y, "W", press_len=1) == []
     assert dad.find_isolated_press_sequences(Y, "W", press_len=3) == []
 
@@ -76,8 +85,8 @@ def test_aftermath_breaks_on_the_opposing_control():
 def test_aftermath_allows_orthogonal_keys_to_vary_freely():
     """W tap, then A (orthogonal axis) becomes active in the aftermath -- still a valid W
     instance, per the aftermath rule documented in diamond_action_decode.py."""
-    Y = np.stack([_action(w=True), _action(a=True), _action(a=True)])
-    assert dad.find_isolated_press_sequences(Y, "W", press_len=1) == [(0, 2)]
+    Y = np.stack([_action(), _action(w=True), _action(a=True), _action(a=True)])
+    assert dad.find_isolated_press_sequences(Y, "W", press_len=1) == [(1, 3)]
 
 
 def test_isolated_mouse_y_press_is_actually_detected():
@@ -103,6 +112,82 @@ def test_empty_input_does_not_raise():
     assert dad.find_isolated_press_sequences(empty, "MOUSE_Y_POS", press_len=1) == []
 
 
+def test_boundary_policy_is_conservative_but_explicitly_flexible():
+    core = np.stack([_action(w=True), _action()])
+    assert dad.find_isolated_press_sequences(core, "W", press_len=1) == []
+    assert dad.find_isolated_press_sequences(
+        core, "W", press_len=1, boundary="assume-inactive"
+    ) == [(0, 1)]
+    assert dad.find_isolated_press_sequences(
+        core, "W", press_len=1, lookbehind_actions=np.stack([_action()])
+    ) == [(0, 1)]
+
+    # A real active lookbehind proves this press began outside the owned window.
+    assert (
+        dad.find_isolated_press_sequences(
+            core, "W", press_len=1, lookbehind_actions=np.stack([_action(w=True)])
+        )
+        == []
+    )
+
+
+def test_lookahead_recovers_a_press_clipped_by_the_right_boundary():
+    core = np.stack([_action(), _action(w=True), _action(w=True)])
+    after = np.stack([_action()])
+    assert dad.find_isolated_press_sequences(core, "W", press_len=2) == []
+    assert dad.find_isolated_press_sequences(core, "W", press_len=2, lookahead_actions=after) == [
+        (1, 3)
+    ]
+
+
+def test_error_boundary_requires_context_for_targeted_active_edges():
+    left = np.stack([_action(w=True), _action()])
+    with pytest.raises(ValueError, match="first frame"):
+        dad.find_isolated_press_sequences(left, "W", 1, boundary="error")
+
+    right = np.stack([_action(), _action(w=True)])
+    with pytest.raises(ValueError, match="last frame"):
+        dad.find_isolated_press_sequences(right, "W", 1, boundary="error")
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda value: value[:, :-1], "shape"),
+        (lambda value: value.astype(object), "numeric dtype"),
+        (lambda value: np.where(np.eye(1, value.shape[1], 0), np.nan, value), "finite"),
+    ],
+)
+def test_action_validation_rejects_malformed_arrays(mutate, message):
+    actions = np.stack([_action()])
+    with pytest.raises(ValueError, match=message):
+        dad.validate_actions(mutate(actions))
+
+
+def test_action_validation_rejects_non_binary_and_non_one_hot_fields():
+    non_binary = np.stack([_action()])
+    non_binary[0, 0] = 0.25
+    with pytest.raises(ValueError, match="key/click"):
+        dad.validate_actions(non_binary)
+
+    non_one_hot = np.stack([_action()])
+    non_one_hot[0, dad.MX_OFF : dad.MX_OFF + dad.N_MOUSE_X] = 0
+    with pytest.raises(ValueError, match="mouse_x"):
+        dad.validate_actions(non_one_hot)
+
+
+def test_decode_api_rejects_unknown_semantics_and_invalid_lengths():
+    actions = np.stack([_action()])
+    with pytest.raises(ValueError, match="unknown control"):
+        dad.find_isolated_press_sequences(actions, "JUMP", 1)
+    with pytest.raises(ValueError, match="positive integer"):
+        dad.find_isolated_press_sequences(actions, "W", 0)
+    with pytest.raises(ValueError, match="mouse axis"):
+        dad.mouse_delta_value(actions, "z")
+    with pytest.raises(ValueError, match="boundary"):
+        dad.find_isolated_press_sequences(actions, "W", 1, boundary="guess")
+
+
 class TestDisplacementSignConvention:
     """Validates README §Method point 4 (coordinate/sign convention) directly against
     hand-built flow fields -- no real optical flow needed to check the projection math."""
@@ -121,8 +206,12 @@ class TestDisplacementSignConvention:
         # A and D share the same raw horizontal projection (this function doesn't decide
         # which sign is "correct" per control -- that's the reference/expected_sign layer,
         # not this one); both read the same measurement off the same flow field.
-        assert dad.displacement_median(rightward_flow, "A") == dad.displacement_median(rightward_flow, "D")
-        assert dad.displacement_median(rightward_flow, "MOUSE_X_POS") == dad.displacement_median(rightward_flow, "A")
+        assert dad.displacement_median(rightward_flow, "A") == dad.displacement_median(
+            rightward_flow, "D"
+        )
+        assert dad.displacement_median(rightward_flow, "MOUSE_X_POS") == dad.displacement_median(
+            rightward_flow, "A"
+        )
 
     def test_vertical_projection_for_pitch_controls(self):
         h, w = 20, 30
@@ -151,28 +240,35 @@ def test_release_transition_measures_exactly_one_frame_pair_per_instance():
     h, w = 40, 60
     # W held for press_len=2 (frames 0,1), then 5 aftermath frames (2..6) -- 6 possible
     # frame-pairs exist in this sequence, but exactly one should be measured.
-    actions = np.stack([_action(w=True)] * 2 + [_action()] * 5)
+    actions = np.stack([_action()] + [_action(w=True)] * 2 + [_action()] * 5)
     frames = rng.integers(0, 255, size=(actions.shape[0], h, w, 3), dtype=np.uint8)
 
     results = dad.release_transition_displacement(frames, actions, "W", press_len=2)
     assert len(results) == 1
     start, _shift = results[0]
-    assert start == 0  # sequence start; release transition is start + press_len - 1 = 1 -> 2
+    assert start == 1  # sequence start; release transition is start + press_len - 1 = 2 -> 3
 
 
 # ---------------------------------------------------------------------------------------
 # pixel_shift_operator.py -- per-segment aggregation (min/max/mean/n_instances)
 # ---------------------------------------------------------------------------------------
 
+
 def test_segment_scalars_reports_true_min_max_mean_not_an_average_that_hides_outliers():
     rng = np.random.default_rng(1)
     h, w = 40, 60
     # Two isolated D taps (press_len=1) in one segment: one near-zero, one large --
     # min/max must capture both, not just their average.
-    actions = np.stack([
-        _action(), _action(d=True), _action(),  # tap 1: frames 0,1,2
-        _action(), _action(d=True), _action(),  # tap 2: frames 3,4,5
-    ])
+    actions = np.stack(
+        [
+            _action(),
+            _action(d=True),
+            _action(),  # tap 1: frames 0,1,2
+            _action(),
+            _action(d=True),
+            _action(),  # tap 2: frames 3,4,5
+        ]
+    )
     frames = rng.integers(0, 255, size=(actions.shape[0], h, w, 3), dtype=np.uint8)
 
     scalars = pso.segment_scalars(frames, actions, controls=["D"])
@@ -190,6 +286,78 @@ def test_segment_scalars_sentinel_when_no_instances_found():
     assert scalars["w_shift_min"] == 0.0
     assert scalars["w_shift_max"] == 0.0
     assert scalars["w_shift_mean"] == 0.0
+    assert scalars["w_requested"] == 1.0
+
+
+def test_segment_scalars_distinguishes_unrequested_from_requested_without_events():
+    actions = np.stack([_action(), _action(), _action()])
+    frames = np.zeros((len(actions), 40, 60, 3), dtype=np.uint8)
+
+    scalars = pso.segment_scalars(frames, actions, controls=("W",))
+    assert scalars["w_requested"] == 1.0
+    assert scalars["w_n_instances"] == 0.0
+    assert scalars["s_requested"] == 0.0
+    assert scalars["s_n_instances"] == 0.0
+
+
+def test_segment_scalars_validates_controls_for_direct_callers():
+    actions = np.stack([_action()])
+    frames = np.zeros((1, 40, 60, 3), dtype=np.uint8)
+    with pytest.raises(ValueError, match="non-empty"):
+        pso.segment_scalars(frames, actions, controls=[])
+    with pytest.raises(ValueError, match="unknown pixel-shift control"):
+        pso.segment_scalars(frames, actions, controls=["JUMP"])
+
+
+def test_segment_scalars_validates_frame_contract_before_processing():
+    actions = np.stack([_action(), _action()])
+    with pytest.raises(ValueError, match="steps"):
+        pso.segment_scalars(np.zeros((1, 40, 60, 3), dtype=np.uint8), actions, controls=["W"])
+    with pytest.raises(ValueError, match="dtype"):
+        pso.segment_scalars(np.zeros((2, 40, 60, 3), dtype=np.float64), actions, controls=["W"])
+    with pytest.raises(ValueError, match="shape"):
+        pso.segment_scalars(np.zeros((2, 40, 60), dtype=np.uint8), actions, controls=["W"])
+
+
+def test_release_lookahead_requires_matching_actions_and_frames():
+    actions = np.stack([_action(), _action(w=True)])
+    frames = np.zeros((2, 40, 60, 3), dtype=np.uint8)
+    with pytest.raises(ValueError, match="provided together"):
+        dad.release_transition_displacement(
+            frames,
+            actions,
+            "W",
+            1,
+            lookahead_actions=np.stack([_action()]),
+        )
+
+
+def test_release_lookahead_measures_a_right_boundary_release():
+    rng = np.random.default_rng(12)
+    actions = np.stack([_action(), _action(w=True), _action(w=True)])
+    frames = rng.integers(0, 255, size=(3, 40, 60, 3), dtype=np.uint8)
+    after_actions = np.stack([_action()])
+    after_frames = rng.integers(0, 255, size=(1, 40, 60, 3), dtype=np.uint8)
+
+    result = dad.release_transition_displacement(
+        frames,
+        actions,
+        "W",
+        2,
+        lookahead_actions=after_actions,
+        lookahead_frames=after_frames,
+    )
+    assert len(result) == 1
+    assert result[0][0] == 1
+
+
+def test_assumed_right_boundary_never_invents_a_missing_frame():
+    actions = np.stack([_action(), _action(w=True)])
+    frames = np.zeros((2, 40, 60, 3), dtype=np.uint8)
+    assert (
+        dad.release_transition_displacement(frames, actions, "W", 1, boundary="assume-inactive")
+        == []
+    )
 
 
 def test_transform_rejects_unknown_or_duplicate_controls():
@@ -197,6 +365,8 @@ def test_transform_rejects_unknown_or_duplicate_controls():
         pso.PixelShift(["JUMP"])
     with pytest.raises(ValueError, match="duplicates"):
         pso.PixelShift(["W", "W"])
+    with pytest.raises(ValueError, match="boundary"):
+        pso.PixelShift(["W"], boundary="guess")
 
 
 def test_segment_scalars_has_no_side_effects():
@@ -238,10 +408,16 @@ def test_pixel_shift_report_preserves_distinct_instances_within_one_segment():
     rng = np.random.default_rng(4)
     h, w = 40, 60
     # Two isolated A taps (press_len=1) in one segment, at different local frames.
-    actions = np.stack([
-        _action(), _action(a=True), _action(),  # tap 1: local frames 0,1,2
-        _action(), _action(a=True), _action(),  # tap 2: local frames 3,4,5
-    ])
+    actions = np.stack(
+        [
+            _action(),
+            _action(a=True),
+            _action(),  # tap 1: local frames 0,1,2
+            _action(),
+            _action(a=True),
+            _action(),  # tap 2: local frames 3,4,5
+        ]
+    )
     frames = rng.integers(0, 255, size=(actions.shape[0], h, w, 3), dtype=np.uint8)
 
     report = pso.PixelShiftReport()
@@ -275,6 +451,7 @@ def test_pixel_shift_report_instances_are_independent_per_object():
 # the frame array itself; PixelShift.transform_batch reads ctx["schema"] to get the real
 # declared color_space and passes it straight through (see its comment for the mechanism).
 # ---------------------------------------------------------------------------------------
+
 
 def _asymmetric_channel_image(h=8, w=6):
     """A synthetic frame where each channel has a distinct, non-symmetric value pattern --
@@ -316,6 +493,7 @@ def test_prep_gray_rejects_unknown_color_space():
 # tests/test_media_transforms_execution.py, so no real video file is needed
 # ---------------------------------------------------------------------------------------
 
+
 class FakeVideoProvider:
     capabilities = {"streaming": True, "variable_frame_rate": True}
 
@@ -323,8 +501,14 @@ class FakeVideoProvider:
         self.frames = frames  # list of (H, W, 3) uint8 arrays
 
     def probe(self, uri):
-        return VideoMetadata(uri, self.frames[0].shape[1], self.frames[0].shape[0],
-                              len(self.frames), float(len(self.frames) - 1), 1.0)
+        return VideoMetadata(
+            uri,
+            self.frames[0].shape[1],
+            self.frames[0].shape[0],
+            len(self.frames),
+            float(len(self.frames) - 1),
+            1.0,
+        )
 
     def iter_refs(self, uri, *, source_id=None):
         for i in range(len(self.frames)):
@@ -340,7 +524,7 @@ def _shifting_noise_frames(n, h=40, w=60, seed=3):
     color image, which has no gradient to track at all."""
     rng = np.random.default_rng(seed)
     base = rng.integers(0, 255, size=(h, w + n, 3), dtype=np.uint8)
-    return [base[:, i:i + w] for i in range(n)]  # each frame is the base shifted by 1px
+    return [base[:, i : i + w] for i in range(n)]  # each frame is the base shifted by 1px
 
 
 def test_full_pipeline_with_fake_video_provider():
@@ -353,24 +537,33 @@ def test_full_pipeline_with_fake_video_provider():
 
     action_cols = [f"a{i}" for i in range(ACTION_DIM)]
     actions = [_action(), _action(w=True), _action(), _action(), _action(), _action()]
-    rows = [{"t": i, **{col: float(v) for col, v in zip(action_cols, actions[i], strict=True)}}
-            for i in range(n_frames)]
+    rows = [
+        {"t": i, **{col: float(v) for col, v in zip(action_cols, actions[i], strict=True)}}
+        for i in range(n_frames)
+    ]
 
     from kuration import SchemaSpec
-    schema = SchemaSpec.from_dict({
-        "name": "pixel_shift_fake_video_test",
-        "fields": {"action": {"kind": "vector", "dims": action_cols}},
-    })
-    pipeline = (input(rows, schema=schema, fields={"action": action_cols}, time="t")
-                .join_video({"mem": "fake.mp4"}, provider=provider, on="frame_index")
-                .window(n_frames, stride=n_frames)
-                .transform("aintropy/pixel-shift", controls=["W"])
-                .organize("w_n_instances", bins=1))
+
+    schema = SchemaSpec.from_dict(
+        {
+            "name": "pixel_shift_fake_video_test",
+            "fields": {"action": {"kind": "vector", "dims": action_cols}},
+        }
+    )
+    pipeline = (
+        input(rows, schema=schema, fields={"action": action_cols}, time="t")
+        .join_video({"mem": "fake.mp4"}, provider=provider, on="frame_index")
+        .window(n_frames, stride=n_frames)
+        .apply("aintropy/pixel-shift", controls=["W"])
+        .organize("w_n_instances", bins=1)
+    )
     result = pipeline.collect(n=10)
     assert not result.errors
     assert len(result.all_segments) == 1
     features = result.all_segments[0].features
     assert features["w_n_instances"] == 1.0
+    assert features["w_requested"] == 1.0
+    assert features["s_requested"] == 0.0
     assert features["w_shift_min"] == features["w_shift_max"] == features["w_shift_mean"]
 
 
@@ -379,15 +572,18 @@ def test_full_pipeline_with_fake_video_provider():
 # components resolve through the ordinary Python API and the kur-list/kur-describe CLI
 # ---------------------------------------------------------------------------------------
 
+
 def test_pixel_shift_registered_as_both_operator_and_transform():
-    names_by_kind = {kind: {row["name"] for row in list_components(kind)}
-                      for kind in ("operator", "transform")}
+    names_by_kind = {
+        kind: {row["name"] for row in list_components(kind)} for kind in ("operator", "transform")
+    }
     assert "aintropy/pixel-shift" in names_by_kind["operator"]
     assert "aintropy/pixel-shift" in names_by_kind["transform"]
 
     op = describe_component("operator", "aintropy/pixel-shift")
     assert op["version"] == "1"
     assert "controls" in op["parameters"]["properties"]
+    assert op["parameters"]["properties"]["boundary"]["default"] == "exclude"
 
     transform = describe_component("transform", "aintropy/pixel-shift")
     assert transform["version"] == "1"
@@ -396,15 +592,26 @@ def test_pixel_shift_registered_as_both_operator_and_transform():
 
 def test_plugin_entry_point_and_isolated_snapshot_contract():
     installed = entry_points()
-    candidates = (installed.select(group="kuration.plugins", name="pixel_shift")
-                  if hasattr(installed, "select") else [
-                      point for point in installed.get("kuration.plugins", ())
-                      if point.name == "pixel_shift"])
+    candidates = (
+        installed.select(group="kuration.plugins", name="pixel_shift")
+        if hasattr(installed, "select")
+        else [
+            point for point in installed.get("kuration.plugins", ()) if point.name == "pixel_shift"
+        ]
+    )
     assert [point.value for point in candidates] == ["kuration_pixel_shift:register"]
 
     isolated = default_registry.snapshot()
     assert isolated.get("operator", "aintropy/pixel-shift") is pso.pixel_shift
     assert isolated.get("transform", "aintropy/pixel-shift") is pso.PixelShift
+
+
+def test_supported_direct_api_is_exported_from_the_package_root():
+    assert pixel_shift.ALL_CONTROLS == dad.ALL_CONTROLS
+    assert pixel_shift.find_isolated_press_sequences is dad.find_isolated_press_sequences
+    assert pixel_shift.release_transition_displacement is dad.release_transition_displacement
+    assert pixel_shift.validate_actions is dad.validate_actions
+    assert pixel_shift.validate_frames is dad.validate_frames
 
 
 def test_pixel_shift_discoverable_through_the_kur_list_cli(monkeypatch, capsys):

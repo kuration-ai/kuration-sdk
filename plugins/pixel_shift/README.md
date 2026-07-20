@@ -13,17 +13,22 @@ hardcoded), kept out of this contribution.
 
 1. **Per-segment scalar features**, so it composes inside an ordinary pipeline
    (`.bin()`/`.filter()`/`.sample()`): for each of 8 controls (W/S/A/D and the four signed
-   mouse-axis controls), 4 numbers — `{control}_shift_min`, `{control}_shift_max`,
-   `{control}_shift_mean`, `{control}_n_instances` — collapsing across whatever
-   press-lengths (1/2/3 frames, for W/S/A/D) or delta magnitudes (for the mouse controls)
-   were found for that control in that segment. `min`/`max` are the true worst-case/
-   best-case signed shift among however many instances were found in that segment, not an
+   mouse-axis controls), 5 numbers — `{control}_shift_min`, `{control}_shift_max`,
+   `{control}_shift_mean`, `{control}_n_instances`, and `{control}_requested` — collapsing
+   across whatever press-lengths (1/2/3 frames, for W/S/A/D) or delta magnitudes (for the
+   mouse controls) were found for that control in that segment. `min`/`max` are the true
+   worst-case/best-case signed shift among however many instances were found in that
+   segment, not an
    average that could hide one outlier instance among several typical ones.
+   `{control}_requested` is `1` for controls the call measured and `0` for controls omitted
+   from `controls`; together with `n_instances`, it distinguishes “not requested” from
+   “requested, but no qualifying event was found.” Shift statistics are placeholders when
+   `n_instances == 0` and must not be interpreted as measured zero motion.
 
 2. **A console report** (`PixelShiftReport`, prints to stdout via `.print_report()`, writes
    nothing to disk) — for every (control, press_len/delta) combination found across the
    whole dataset: instance count, an ASCII histogram of the shift values, and which clips
-   (by source + frame range) each instance came from. `PixelShiftReport` is a plain object
+   (by source + exact frame) each instance came from. `PixelShiftReport` is a plain object
    you construct and feed yourself, deliberately independent of `PixelShift.transform_batch`
    -- see "Why the report is a separate object" below.
 
@@ -49,7 +54,7 @@ python -m pytest plugins/pixel_shift/tests -q
 
 ## Usage
 
-**As a pipeline transform** — gets you the 4 aggregated scalars per control, per segment,
+**As a pipeline transform** — gets you the 5 aggregated scalars per control, per segment,
 composable with `.bin()`/`.filter()`/`.sample()` like any other kuration feature:
 
 ```python
@@ -57,7 +62,11 @@ pipeline = (
     input(telemetry, fields={"action": action_columns}, time="t")
     .join_video({"my_source": "clip.mp4"}, on="frame_index")
     .window(32, stride=32)
-    .apply("aintropy/pixel-shift", controls=["W", "S", "A", "D"])
+    .apply(
+        "aintropy/pixel-shift",
+        controls=["W", "S", "A", "D"],
+        boundary="exclude",
+    )
 )
 result = pipeline.collect(n=1000)
 ```
@@ -98,7 +107,7 @@ arbitrary per-instance side-channel data back to one shared accumulator across t
 workers. Constraining execution to `workers=1` to make the report work would have defeated
 the purpose of the SDK's own concurrent executors, not merely been a minor inconvenience.
 
-So `transform_batch` now does exactly one thing: compute the 4 aggregated scalars per
+So `transform_batch` now does exactly one thing: compute the 5 aggregated scalars per
 control, through the one channel the SDK actually supports for returning data (declared
 per-segment outputs) -- correct regardless of worker count. `PixelShiftReport` gets the
 fuller per-instance detail by being called directly, in your own code, outside pipeline
@@ -106,6 +115,35 @@ execution entirely -- there's no ambiguity about worker aggregation to get wrong
 pipeline execution never touches it. It's also a plain object rather than a module-level
 singleton, so there's no `reset_ledger()`-style footgun between separate reports in the
 same process -- just construct a new one.
+
+## Input and segment-boundary contract
+
+The plugin fails early on malformed data instead of allowing `argmax`, OpenCV, or an
+all-zero result to hide the cause. Actions must be a finite numeric `(T, 51)` array: the
+11 key and 2 click fields are binary, and both mouse ranges are strict one-hot rows.
+Frames must be `(T, H, W, 3)`, have the same `T`, use `uint8` or `float32`, contain only
+finite values, and be at least 4×4 pixels. Control names, duplicates, empty control lists,
+press lengths, axes, color spaces, segment IDs, and lookaround shapes are validated too.
+Python callers may use any non-empty sequence such as a list or tuple for `controls`.
+
+An arbitrary window boundary can cut through a press. The default `boundary="exclude"`
+is conservative: it does not claim a press that is already active on the first frame, and
+it cannot count a press whose release lies beyond the last frame. `boundary="error"`
+turns a targeted active edge with missing context into an error. The explicit compatibility
+mode `boundary="assume-inactive"` treats missing outside action state as inactive. It can
+classify a left-edge press without lookbehind, but a right-edge pixel measurement still
+requires a real lookahead frame; the plugin never invents image data.
+
+Direct callers of `find_isolated_press_sequences`, `release_transition_displacement`,
+`segment_scalars`, and `PixelShiftReport.add_segment` can instead provide bounded context:
+`lookbehind_actions` disambiguates the left edge, while matching `lookahead_actions` and
+`lookahead_frames` make a right-edge release measurable. Only the final lookbehind row and
+at most `press_len` lookahead rows are consumed. A detected event belongs to the segment
+where its press starts, preventing duplicate ownership in overlapping windows. The SDK
+pipeline transform does not receive neighboring segments as part of its transform input,
+so use overlapping windows that preserve one preceding row and up to three following rows
+when boundary-complete event coverage matters, or call the direct API with explicit
+lookaround arrays.
 
 ## Method — the specifics results depend on
 
@@ -152,8 +190,8 @@ construction, the latter is untested.
   `rgb24`), the *opposite* of this function's default. The registered `aintropy/pixel-shift`
   transform handles this for you -- `PixelShift.transform_batch` reads the real declared
   `color_space` off `ctx["schema"].media["frame"]` (populated by the SDK runtime itself)
-  and threads it down through `segment_scalars` / `instances_for_segment` /
-  `release_transition_displacement` to `_prep_gray`, so calling this operator through a
+  and threads it down through `segment_scalars` and the measurement helpers to
+  `_prep_gray`, so calling this operator through a
   normal kuration `Pipeline` is correct regardless of source, with no extra array copy.
   This threading only happens at that SDK-integration boundary; if you call
   `diamond_action_decode`'s functions directly on raw arrays (bypassing the SDK transform),
