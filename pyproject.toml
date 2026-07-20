@@ -113,6 +113,7 @@ ignore = ["E731", "E741", "B007", "B008", "B023", "B904", "B905"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+testpaths = ["tests"]
 
 [tool.mypy]
 python_version = "3.11"

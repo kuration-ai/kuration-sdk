@@ -134,7 +134,9 @@ def _score_one(args):
      plugin_modules, registry) = args
     try:
         from .plugins import load_plugins
-        load_plugins(list(plugin_modules))
+        # The parent already resolved the execution registry. Workers reconstruct only those
+        # modules; rescanning ambient entry points here would break explicit job isolation.
+        load_plugins(list(plugin_modules), include_entry_points=False)
         engine = FeatureEngine(schema, define=define, registered=registered, tags_spec=tags_spec,
                                registry=registry)
         if streaming:
@@ -212,7 +214,11 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
         getattr(registry.get("metric", name), "__module__", "")
         for name in registered if name in registry.names("metric")}
     metric_modules.discard("")
-    plugin_modules = tuple(sorted(set(loaded_plugin_modules()) | metric_modules))
+    # An isolated registry must not reconstruct unrelated ambient entry-point plugins in
+    # workers.  Import only the modules that provide metrics used by this scoring stage;
+    # preserve the historical full-plugin propagation for the process-global registry.
+    ambient_modules = set(loaded_plugin_modules()) if registry is default_registry else set()
+    plugin_modules = tuple(sorted(ambient_modules | metric_modules))
     worker_modules = plugin_modules if executor == "ray" or workers > 1 else ()
     worker_registry = registry
     if executor == "ray" or workers > 1:

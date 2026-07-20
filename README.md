@@ -192,6 +192,10 @@ remaining public-release gates.
 
 ## Contributing
 
+Core changes follow [CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md).
+New maintained extensions start from the independent-distribution template in
+[`plugins/`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins).
+
 ```bash
 python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p]'
 python -m pytest tests/ -q

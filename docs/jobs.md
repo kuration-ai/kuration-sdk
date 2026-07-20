@@ -52,6 +52,7 @@ partial source failure is an intentional operational policy.
 | `adapter` | yes | `{"type": <registered name>, ...kwargs}` — type is `timeseries`, `jsonl`, `hdf5`, `npz`, `parquet-dataset`, `huggingface`, `zarr`, `curated`, or your own `register_adapter` name; the remaining keys are that adapter's constructor kwargs ([adapters.md](adapters.md)) |
 | `sources` | no | explicit list of source URIs (local paths or `gs://`/`s3://`/`az://`). Omit to use the adapter's own `sources()` (curated / parquet-dataset / huggingface enumerate) |
 | `plugins` | no | importable registration modules loaded before adapter/strategy construction |
+| `include_plugin_entry_points` | no (true) | discover installed `kuration.plugins` entry points; set false for a job isolated to built-ins plus its explicit `plugins` list |
 | `segmenter` | yes | `{"window": W, "stride": S, "unit": "steps"\|"seconds", "sample_hz"?: hz}` — `sample_hz` defaults to the schema's |
 | `strategy` | yes (per-arm for experiments) | inline strategy dict or a path to one ([strategies.md](strategies.md)) |
 | `seed` | no (0) | RNG seed — same seed + sources → same result, regardless of `workers` |

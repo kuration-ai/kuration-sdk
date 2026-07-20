@@ -173,8 +173,12 @@ my_plugin = "my_package.kuration_plugin:register"
 ```
 
 Discovery is lazy and idempotent. Explicit modules and entry-point modules are propagated into
-spawned feature workers before `FeatureEngine` construction, and their code hashes are included
-in run provenance. Plugin registration errors remain loud.
+spawned feature workers only when required by that execution registry. Registered implementation
+modules—not just entry-point initializer modules—are fingerprinted in run provenance, alongside
+the descriptors for registered metrics and transforms. Jobs may set
+`include_plugin_entry_points: false` to obtain a built-ins-plus-explicit-modules snapshot even if
+ambient entry points were discovered earlier in the process. Plugin registration errors remain
+loud.
 
 ### Progress events
 

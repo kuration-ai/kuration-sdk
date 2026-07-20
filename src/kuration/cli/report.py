@@ -48,12 +48,12 @@ def _run(args) -> None:
         registered=registered, segmenter=resolved.segmenter, tags_spec=strategy.tags,
         workers=job.get("workers", 1), on_error=resolved.on_error,
         streaming=job.get("streaming", False), progress=progress,
-        executor=job.get("executor", "local"))
+        executor=job.get("executor", "local"), registry=resolved.registry)
 
     if strategy.scorers:
         from ..scorers import apply_scorers
         apply_scorers(strategy.scorers, segs, schema=schema, adapter=adapter,
-                      seed=job.get("seed", 0), progress=progress)
+                      seed=job.get("seed", 0), progress=progress, registry=resolved.registry)
 
     rep = dataset_report(segs)
     print(f"{rep['n_segments']} segments from {rep['n_sources']} sources "

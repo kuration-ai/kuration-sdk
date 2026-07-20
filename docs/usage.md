@@ -215,7 +215,9 @@ change a run, use a fresh `out_dir`.
 
 Custom registry extensions can be loaded from a job with `"plugins": ["my_package.plugin"]`,
 or from Python with `load_plugins(...)`. Installed packages may expose a `kuration.plugins`
-entry point. For programmatic progress, pass `progress=events.append` (or any callback) to
+entry point. Set `"include_plugin_entry_points": false` when a reproducible job should resolve
+only built-ins and its explicit plugin modules—even if ambient plugins were discovered earlier
+in the process. For programmatic progress, pass `progress=events.append` (or any callback) to
 `curate`, `run_experiment`, or `write_dataset`; fluent pipelines use
 `.options(progress=callback)`. Run CLIs render the same events on interactive stderr and accept
 `--quiet`.

@@ -45,6 +45,20 @@ parameter JSON Schema, capability flags, dependency/install hints, package/versi
 documentation/stability fields, module identity, and a code fingerprint. Resolved extension
 descriptors and parameters are included in run provenance.
 
+The dependency-light validator supports the descriptor subset used by SDK contracts:
+`type`, `enum`, `const`, `allOf`, `anyOf`, `oneOf`, numeric bounds, string length and `pattern`,
+array length/uniqueness/`items`, and nested object `properties`, `required`, and
+`additionalProperties`. Validation is recursive and reports the failing parameter path.
+
+## Repository plugins
+
+New maintained extensions belong under the repository's
+[`plugins/` workspace](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins). Each child is an
+independent Python distribution with its own dependencies, tests, documentation, and
+`kuration.plugins` entry point; plugin code is intentionally excluded from the core SDK wheel.
+Copy `plugins/_template`, use a namespaced component name, and let the plugin CI job exercise the
+same installation and wheel checks used for every sibling.
+
 ## Compositional operators
 
 Use an operator when you want to name and reuse a sequence of ordinary fluent operations. The

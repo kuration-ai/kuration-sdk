@@ -26,7 +26,7 @@ result = (
 ## `input(...)` — the source factory
 
 `input(src, *, schema=None, adapter=None, sources=None, fields=None, time=None, entity=None,
-hz=None, kinds=None, sample=200, globals=None, **adapter_kw)` sniffs `src`'s shape and builds
+hz=None, kinds=None, sample=200, globals=None, registry=None, **adapter_kw)` sniffs `src`'s shape and builds
 the right adapter, eagerly — a bad source fails at `input()` time, not mid-pipeline.
 
 | `src` form | resolves to |
@@ -41,7 +41,7 @@ the right adapter, eagerly — a bad source fails at `input()` time, not mid-pip
 | `dict` of columns (all-scalar/array values, equal length) | in-memory rows, one source `"mem"` |
 | `{source_id: list[dict]}` | in-memory rows, **multi-source** |
 | `{source_id: list[Tick]}` | in-memory ticks, **multi-source** |
-| `input(adapter=<InputAdapter or registered name>, sources=[...], schema=...)` | escape hatch — no inference, `schema=` is required |
+| `input(adapter=<InputAdapter or registered name>, sources=[...], schema=..., registry=...)` | escape hatch — no inference, `schema=` is required; a named adapter resolves only through the supplied registry snapshot |
 
 File-kind sniffing (`kuration.infer.sniff`): `.csv`/`.parquet` → timeseries, `.jsonl` → JSONL
 (one row-object per line), `.json` → a JSON array of row objects *or* a columnar dict of
@@ -50,6 +50,8 @@ equal-length lists, `.npz` → NpzAdapter, `.h5`/`.hdf5` → HDF5Adapter, a dire
 `adapter=`.
 
 Notes:
+- `registry=` creates an isolated snapshot for adapter lookup and every later extension lookup;
+  ambient entry-point discovery does not mutate that pipeline.
 - `schema=` (a `SchemaSpec` or an equivalent dict) skips inference entirely; `fields=` then
   overrides the column mapping instead of the identity default.
 - In-memory sources set `Pipeline._in_memory = True`; workers can't rebuild them per-process,

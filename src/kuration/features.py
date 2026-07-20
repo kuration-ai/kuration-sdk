@@ -39,7 +39,7 @@ class FeatureEngine:
         registry = registry or default_registry
         missing = [name for name in (registered or [])
                    if name not in registry.names("metric")]
-        if missing:
+        if missing and registry is default_registry:
             load_plugins()
         for name in (registered or []):
             if name in self.fns:
