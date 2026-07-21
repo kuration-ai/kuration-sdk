@@ -34,10 +34,29 @@ class HuggingFaceAdapter(TimeseriesAdapter):
         self._dataset: Any = None
         self._source_indices: Optional[dict[str, list[int]]] = None
         self._source_rows: Optional[dict[str, list[dict]]] = None
+        self._source_origins: dict[str, tuple[str, str]] = {}
 
     # HF sources are dataset/split names (or source_column values), not filesystem paths —
     # tells `kur-validate --check-sources` to skip the existence stat and rely on check_source.
     sources_are_paths = False
+
+    @property
+    def supports_streaming(self) -> bool:
+        """Partitioned splits need a whole-dataset index and are therefore not bounded."""
+        return self.source_column is None
+
+    def _source_key(self, value) -> str:
+        key = str(value)
+        if not key:
+            raise ValueError(f"source column {self.source_column!r} contains an empty source ID")
+        origin = (f"{type(value).__module__}.{type(value).__qualname__}", repr(value))
+        previous = self._source_origins.setdefault(key, origin)
+        if previous != origin:
+            raise ValueError(
+                f"source column {self.source_column!r} contains distinct values that collide "
+                f"after string normalization as {key!r}: {previous[1]} ({previous[0]}) and "
+                f"{value!r} ({origin[0]})")
+        return key
 
     def sources(self) -> list[str]:
         if self.source_column is None:
@@ -67,7 +86,7 @@ class HuggingFaceAdapter(TimeseriesAdapter):
         if self._rows is not None:
             index: dict[str, list[int]] = {}
             for position, row in enumerate(self._rows):
-                index.setdefault(str(row[self.source_column]), []).append(position)
+                index.setdefault(self._source_key(row[self.source_column]), []).append(position)
             self._source_indices = index
             return
         dataset = self._load_dataset()
@@ -76,12 +95,12 @@ class HuggingFaceAdapter(TimeseriesAdapter):
             # Read only the source column once. This is O(rows), after which each source is an
             # Arrow index selection instead of a fresh full-split scan.
             for position, value in enumerate(dataset[self.source_column]):
-                index.setdefault(str(value), []).append(position)
+                index.setdefault(self._source_key(value), []).append(position)
             self._source_indices = index
             return
         rows: dict[str, list[dict]] = {}
         for row in dataset:  # streaming datasets cannot random-select; partition in one pass
-            rows.setdefault(str(row[self.source_column]), []).append(row)
+            rows.setdefault(self._source_key(row[self.source_column]), []).append(row)
         self._source_rows = rows
 
     def _iter_rows(self):

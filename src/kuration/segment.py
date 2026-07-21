@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from itertools import islice
 import math
 from typing import Any, Iterable, Iterator, Optional
 
@@ -84,3 +85,56 @@ class Segmenter:
                 win = list(buf)
                 yield (Segment(source_id=source_id, start_idx=start, end_idx=idx,
                                time_range=(win[0].time, win[-1].time)), win)
+
+    def stream_with_context(self, source_id: str, ticks: Iterable[Tick], *, lookbehind: int = 0,
+                            lookahead: int = 0):
+        """Yield windows plus bounded neighboring context.
+
+        Each result is ``(segment, window, before, after)``. At source edges the context lists
+        are shorter than requested; at most ``window + lookbehind + lookahead`` ticks are retained.
+        """
+        for name, value in (("lookbehind", lookbehind), ("lookahead", lookahead)):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        iterator = iter(ticks)
+        buffered: deque[Tick] = deque()
+        buffer_start = 0
+        position = 0
+        start = 0
+        exhausted = False
+        while True:
+            needed = start + self.window + lookahead
+            while position < needed and not exhausted:
+                try:
+                    buffered.append(next(iterator))
+                    position += 1
+                except StopIteration:
+                    exhausted = True
+            end = start + self.window
+            if position < end:
+                break
+            offset = start - buffer_start
+            window = list(islice(buffered, offset, offset + self.window))
+            before = list(islice(buffered, max(0, offset - lookbehind), offset))
+            after = list(islice(buffered, offset + self.window,
+                                 offset + self.window + lookahead))
+            yield (Segment(source_id=source_id, start_idx=start, end_idx=end,
+                           time_range=(window[0].time, window[-1].time)),
+                   window, before, after)
+            start += self.stride
+            retain_from = max(0, start - lookbehind)
+            while buffer_start < retain_from and buffered:
+                buffered.popleft()
+                buffer_start += 1
+            # A sparse stride can leave a gap after the retained halo has been drained. Consume
+            # that gap directly from the iterator: buffering it would make residency O(stride)
+            # and would violate the bounded-stage memory accounting.
+            while position < retain_from and not exhausted:
+                try:
+                    next(iterator)
+                    position += 1
+                    buffer_start = position
+                except StopIteration:
+                    exhausted = True
+            if exhausted and position < start + self.window:
+                break

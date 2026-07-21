@@ -100,9 +100,10 @@ are grouped below by user task.
   `ParquetDatasetAdapter`, `HuggingFaceAdapter`, `ZarrAdapter`, `CuratedDatasetAdapter`,
   `VideoAdapter`, `JoinedMediaAdapter`, `MediaProvider`, `PyAVMediaProvider`,
   `schema_from_output`, `register_adapter`, `get_adapter`.
-- Batch transforms and execution: `BatchTransform`, `register_batch_transform`,
-  `register_transform`, `get_transform`, `apply_transforms`, `ExecutionBackend`, `ResourceSpec`,
-  `LocalExecutionBackend`, `RayExecutionBackend`, `get_execution_backend`.
+- Batch transforms and execution: `BatchTransform`, `TransformContext`,
+  `register_batch_transform`, `register_transform`, `get_transform`, `apply_transforms`,
+  `apply_transforms_to_windows`, `ExecutionBackend`, `ResourceSpec`, `LocalExecutionBackend`,
+  `RayExecutionBackend`, `get_execution_backend`.
 - Strategies and selection: `Strategy`, `load_strategy`, `bin_segments`, `quantile_bins`,
   `select`, `segment_priorities`, `assign_splits`, `apply_filters`, `method_priorities`,
   `register_method`, `register_filter`.
@@ -112,7 +113,8 @@ are grouped below by user task.
   `iter_shards`, `read_shard_arrays`, `shard_entries`.
 - Registries, plugins, and progress: `Registry`, `default_registry`, `ComponentDescriptor`,
   `list_components`, `describe_component`, `load_plugins`, `loaded_plugin_modules`,
-  `plugin_provenance`, `ProgressCallback`, `register_operator`.
+  `plugin_failures`, `plugin_provenance`, `check_plugins`, `PluginCheckResult`, `ProgressCallback`,
+  `register_operator`.
 - Manifests and I/O: `build_config`, `dump_segment_manifest`, `write_config`, `read_text`,
   `write_text`, `write_bytes`, `exists`, `local_copy`.
 - Versioning and migration: `__version__`, `ARTIFACT_FORMAT_VERSION`, `JOB_SCHEMA_VERSION`, `migrate`,
@@ -151,7 +153,7 @@ The installed commands are public end-user interfaces:
 
 - Run and analyze: `kur-curate`, `kur-experiment`, `kur-report`.
 - Validate and inspect: `kur-validate`, `kur-explain`, `kur-inspect`, `kur-diff`, `kur-check`.
-- Discover extensions: `kur-list`, `kur-describe`.
+- Discover extensions: `kur-list`, `kur-describe`, `kur-plugin-check`.
 - Upgrade documents: `kur-migrate`.
 
 Their command options and exit behavior belong in `docs/jobs.md` or a linked CLI reference. The

@@ -290,7 +290,10 @@ def logical_operators(pipeline) -> list[PhysicalOperator]:
             pipeline._registry, "transform", call["implementation"], fallback)
         specs.append((f"transform:{call['name']}", traits,
                       {"implementation": call["implementation"],
-                       "batch_size": call["batch_size"], "device": call["device"]}, component))
+                       "batch_size": call["batch_size"], "device": call["device"],
+                       "lookbehind": call.get("lookbehind", 0),
+                       "lookahead": call.get("lookahead", 0),
+                       "ownership": call.get("ownership")}, component))
     for scorer in pipeline._scorers:
         traits, component = _descriptor_traits(
             pipeline._registry, "scorer", scorer["name"], _BASE_TRAITS["scorer"])

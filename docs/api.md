@@ -26,8 +26,9 @@ objects as noted below.
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
 cap and stratified splits); `tags_of(segment) -> iterable` overrides declarative tags;
-`executor` selects ordered local or optional Ray source work; `workers` parallelizes the local
-feature pass (deterministic); `on_error` is `"skip"` (log + collect)
+`sources` contains non-empty string identifiers/URIs (use `str(path)` for `pathlib.Path` values);
+`executor` selects ordered local or optional Ray source work; `workers` caps concurrent local
+workers or submitted Ray tasks (deterministic); `on_error` is `"skip"` (log + collect)
 or `"raise"`; `streaming=True` is the out-of-core path; `progress(event_dict)` receives phase
 events without coupling execution to a particular UI.
 
@@ -186,9 +187,12 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 
 | name | signature | does |
 |---|---|---|
-| `load_plugins` | `(modules=(), *, include_entry_points=True) -> list[dict]` | load registration modules and installed `kuration.plugins` entry points |
+| `load_plugins` | `(modules=(), *, include_entry_points=True) -> list[dict]` | load registration modules and installed entry points; ambient failures are rolled back and returned as `kind="error"` records with a warning |
 | `loaded_plugin_modules` | `() -> tuple[str, ...]` | modules propagated to spawned scoring workers |
-| `plugin_provenance` | `(*, registry=None) -> list[dict]` | loaded plugin implementation fingerprints used by resume provenance; an explicit registry scopes the result |
+| `plugin_failures` | `() -> tuple[dict, ...]` | persistent diagnostics for ambient entry points that failed discovery; also reported by discovery CLIs |
+| `plugin_provenance` | `(*, registry=None) -> list[dict]` | loaded implementation fingerprints and stable ambient-failure markers used by resume provenance; an explicit registry scopes successful components |
+| `check_plugins` | `(target=None) -> list[PluginCheckResult]` | transactionally validate all installed plugin entry points, one entry-point name, or an explicit registration module |
+| `PluginCheckResult` | immutable result with `.passed`, `.to_dict()`, and `.render()` | plugin load, descriptor, package, namespace, parameter-schema, and transform-contract diagnostics |
 | `ProgressCallback` | `Callable[[dict], None]` | receives structured `{phase, event, ...}` execution events |
 
 ## Component registries and discovery
@@ -241,14 +245,15 @@ remain the Python convenience boundary.
 | `iter_external_weighted_priorities` | `(partitions, *, weights, normalize="quantile", seed=0, spill_dir=None)` | stream exact canonical Gumbel priorities from one disk-backed score index and one partition-at-a-time materialization pass |
 | `external_weighted` | `(partitions, *, weights, target_size, normalize="quantile", seed=0, spill_dir=None) -> list[Segment]` | select exact hours-path Gumbel priorities while retaining only the selected heap; count-weighted sampling has a distinct NumPy contract |
 | `iter_external_hash_dedup` | `(partitions, *, feature_names=None, per_group=False, spill_dir=None)` | exact disk-backed feature-vector dedup with full-payload collision resolution and canonical retention |
-| `apply_transforms_to_windows` | `(calls, segments, windows, *, adapter, registry, progress=None)` | bounded transform execution over already-extracted windows without source rereads |
+| `TransformContext` | mapping-compatible typed context; `.before(token)`, `.after(token)`, `.owned_lengths` | typed per-batch execution metadata and boundary access; ordinary `ctx["schema"]` access remains compatible and owned lengths are read-only |
+| `apply_transforms_to_windows` | `(calls, segments, windows, *, adapter, registry, contexts=None, progress=None)` | bounded transform execution over extracted windows; optional contexts carry lookbehind/lookahead ticks and owned lengths |
 
 ## Output
 
 Media contracts include `MediaSpec`, `FrameRef`, `VideoMetadata`, `MediaProvider`,
 `PyAVMediaProvider`, `VideoAdapter`, and `JoinedMediaAdapter`. Transform and execution contracts
-include `BatchTransform`, `register_batch_transform` (`register_transform` alias), `get_transform`,
-`ExecutionBackend`, `ResourceSpec`, and the
+include `BatchTransform`, `TransformContext`, `register_batch_transform` (`register_transform`
+alias), `get_transform`, `ExecutionBackend`, `ResourceSpec`, and the
 ordered `LocalExecutionBackend` / `RayExecutionBackend` implementations. `apply_transforms`
 executes resolved calls over canonical segments; `get_execution_backend` resolves a backend.
 

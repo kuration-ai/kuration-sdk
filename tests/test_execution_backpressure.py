@@ -52,7 +52,7 @@ def test_local_iter_batches_validates_bounds(name, value):
         list(LocalExecutionBackend().iter_batches([], lambda item: item, **kwargs))
 
 
-def test_ray_iter_batches_bounds_submissions_and_preserves_input_order():
+def test_ray_iter_batches_bounds_submissions_by_workers_and_preserves_input_order():
     produced = 0
 
     class Remote:
@@ -80,10 +80,47 @@ def test_ray_iter_batches_bounds_submissions_and_preserves_input_order():
 
     backend = object.__new__(RayExecutionBackend)
     backend.ray = FakeRay()
-    iterator = backend.iter_batches(items(), lambda value: value * 3, max_in_flight=2)
+    iterator = backend.iter_batches(
+        items(), lambda value: value * 3, max_in_flight=5, workers=2)
     assert next(iterator) == 0
     assert produced == 2
     assert list(iterator) == [3, 6, 9, 12, 15]
+
+
+@pytest.mark.parametrize("method", ["map_sources", "map_batches"])
+@pytest.mark.parametrize("kwargs,expected_in_flight", [({}, 2),
+                                                       ({"workers": 3,
+                                                         "max_in_flight": 5}, 3)])
+def test_ray_convenience_maps_forward_parallelism(method, kwargs, expected_in_flight):
+    submitted = 0
+    submitted_at_get = []
+
+    class Remote:
+        def __init__(self, fn):
+            self.fn = fn
+
+        def options(self, **_options):
+            return self
+
+        def remote(self, item):
+            nonlocal submitted
+            submitted += 1
+            return self.fn(item)
+
+    class FakeRay:
+        def remote(self, fn):
+            return Remote(fn)
+
+        def get(self, ref):
+            submitted_at_get.append(submitted)
+            return ref
+
+    backend = object.__new__(RayExecutionBackend)
+    backend.ray = FakeRay()
+
+    assert getattr(backend, method)(range(5), lambda value: value * 2, **kwargs) == [
+        0, 2, 4, 6, 8]
+    assert submitted_at_get[0] == expected_in_flight
 
 
 def test_real_ray_backend_roundtrip():

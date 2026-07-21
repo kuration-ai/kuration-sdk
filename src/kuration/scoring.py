@@ -17,12 +17,13 @@ loudly.
 from __future__ import annotations
 
 import multiprocessing as mp
+from collections import deque
 from pathlib import Path
 import re
 import sys
 import traceback
 from urllib.parse import urlsplit, urlunsplit
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from typing import Any
 
 from .features import FeatureEngine
@@ -175,6 +176,12 @@ def _score_one(args):
         return ("err", source, _error_payload(error), None)
 
 
+def _score_prepared(item):
+    """Execute a prepared source item or forward a parent-side preflight result."""
+    ready, payload = item
+    return payload if ready else _score_one(payload)
+
+
 def score_sources(*, schema, adapter, sources, define, registered, segmenter,
                   tags_spec=None, group_of=None, tags_of=None, workers: int = 1,
                   on_error: str = "skip", streaming: bool = False, progress=None,
@@ -230,66 +237,66 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
         worker_registry = Registry()
         for name in registered:
             worker_registry.register_metric(name, registry.get("metric", name))
-    sources = list(sources)
-    items: list[Any] = []
-    item_indices: list[int] = []
-    results_by_index: dict[int, Any] = {}
-    for source_index, src in enumerate(sources):
-        try:
-            group = group_of(src) if group_of else None
-        except Exception as error:
-            if on_error == "raise":
-                raise RuntimeError(f"group_of failed for source {src!r}: {error!r}") from error
-            results_by_index[source_index] = (
-                "err", src, _error_payload(error, phase="group_of"), None)
-            continue
-        item_indices.append(source_index)
-        items.append((schema, define, registered, tags_spec, adapter, segmenter, src,
-                      group, streaming, worker_modules, worker_registry))
     from .progress import emit
-    emit(progress, "scoring", "start", total=len(sources))
-    done = 0
-    for source_index in sorted(results_by_index):
-        result = results_by_index[source_index]
-        done += 1
-        emit(progress, "scoring", "advance", current=done, total=len(sources),
-             source=result[1], status=result[0])
-    work_results: list[Any]
+    try:
+        total = len(sources)
+    except TypeError:
+        total = None
+    emit(progress, "scoring", "start", total=total)
+    source_count = 0
+
+    def prepared_items():
+        nonlocal source_count
+        for src in sources:
+            source_count += 1
+            if not isinstance(src, str) or not src:
+                raise ValueError("sources must contain only non-empty strings")
+            try:
+                group = group_of(src) if group_of else None
+            except Exception as error:
+                if on_error == "raise":
+                    raise RuntimeError(
+                        f"group_of failed for source {src!r}: {error!r}") from error
+                yield True, ("err", src, _error_payload(error, phase="group_of"), None)
+                continue
+            yield False, (schema, define, registered, tags_spec, adapter, segmenter, src,
+                          group, streaming, worker_modules, worker_registry)
+
     if executor == "ray":
         from .execution import RayExecutionBackend, ResourceSpec
         backend = RayExecutionBackend()
-        work_results = backend.map_sources(items, _score_one, ResourceSpec(num_cpus=1))
-        for result in work_results:
-            done += 1
-            emit(progress, "scoring", "advance", current=done, total=len(sources),
-                 source=result[1], status=result[0])
+        results = backend.iter_batches(
+            prepared_items(), _score_prepared, max_in_flight=max(1, workers * 2),
+            workers=workers, resources=ResourceSpec(num_cpus=1))
     elif workers and workers > 1:
         context = mp.get_context("spawn")
-        with ProcessPoolExecutor(max_workers=workers, mp_context=context) as ex:
-            work_results = [None] * len(items)
-            futures = {ex.submit(_score_one, item): i for i, item in enumerate(items)}
-            for future in as_completed(futures):
-                i = futures[future]
-                work_results[i] = future.result()
-                done += 1
-                emit(progress, "scoring", "advance", current=done, total=len(sources),
-                     source=work_results[i][1], status=work_results[i][0])
+
+        def process_results():
+            with ProcessPoolExecutor(max_workers=workers, mp_context=context) as executor_pool:
+                pending: deque[Any] = deque()
+                max_in_flight = workers * 2
+                for ready, payload in prepared_items():
+                    pending.append((ready, payload if ready else executor_pool.submit(
+                        _score_one, payload)))
+                    if len(pending) >= max_in_flight:
+                        is_ready, item = pending.popleft()
+                        yield item if is_ready else item.result()
+                while pending:
+                    is_ready, item = pending.popleft()
+                    yield item if is_ready else item.result()
+
+        results = process_results()
     else:
-        work_results = []
-        for item in items:
-            result = _score_one(item)
-            work_results.append(result)
-            done += 1
-            emit(progress, "scoring", "advance", current=done, total=len(sources),
-                 source=result[1], status=result[0])
-    for source_index, result in zip(item_indices, work_results):
-        results_by_index[source_index] = result
-    results = [results_by_index[index] for index in range(len(sources))]
+        results = (_score_prepared(item) for item in prepared_items())
 
     all_segments: list[Any] = []
     errors: list[dict] = []
     source_tracks: dict[Any, Any] = {}
+    done = 0
     for status, src, payload, track_lens in results:
+        done += 1
+        emit(progress, "scoring", "advance", current=done, total=total,
+             source=src, status=status)
         if status == "ok":
             if tags_of:
                 try:
@@ -323,15 +330,15 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
             })
     if errors:
         print(f"  [skip] {len(errors)} source(s) skipped due to errors", file=sys.stderr)
-    if sources and not all_segments:
+    if source_count and not all_segments:
         # An empty pool silently propagates into an empty-but-valid-looking dataset (the
         # vacuous-success failure mode) — total failure must raise even under on_error='skip'.
         raise RuntimeError(
-            f"segment pool is EMPTY: {len(sources)} source(s) yielded no segments"
+            f"segment pool is EMPTY: {source_count} source(s) yielded no segments"
             + (f" ({len(errors)} skipped; first error: {errors[0]['error']})" if errors
                else " (no errors — is every source shorter than the segment window?)"))
 
     all_segments.sort(key=lambda s: (s.source_id, s.start_idx))   # determinism
-    emit(progress, "scoring", "complete", current=len(sources), total=len(sources),
+    emit(progress, "scoring", "complete", current=source_count, total=source_count,
          detail=f"{len(all_segments)} segments, {len(errors)} skipped")
     return all_segments, errors, source_tracks

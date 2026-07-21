@@ -34,6 +34,14 @@ register()
 ACTION_DIM = dad.N_KEYS + 2 + dad.N_MOUSE_X + dad.N_MOUSE_Y  # 51, matches asg2diamond's layout
 
 
+def test_radial_geometry_cache_is_bounded():
+    dad._radial_unit_vectors.cache_clear()
+    for size in ((8, 8), (9, 8), (10, 8)):
+        vectors = dad._radial_unit_vectors(*size)
+        assert all(array.dtype == np.float32 for array in vectors)
+    assert dad._radial_unit_vectors.cache_info().currsize == 2
+
+
 def _action(w=False, s=False, a=False, d=False, mouse_x=0.0, mouse_y=0.0):
     """One 51-dim DIAMOND action vector with the given keys/mouse bins active."""
     vec = np.zeros(ACTION_DIM, dtype=np.float64)
@@ -694,6 +702,44 @@ def test_full_pipeline_with_fake_video_provider():
     assert features["w_requested"] == 1.0
     assert features["s_requested"] == 0.0
     assert features["w_shift_min"] == features["w_shift_max"] == features["w_shift_mean"]
+
+
+@pytest.mark.parametrize(
+    "window,stride,press_start,expected_by_start",
+    [
+        (4, 4, 3, {0: 1.0, 4: 0.0}),
+        (4, 2, 2, {0: 0.0, 2: 1.0, 4: 0.0}),
+    ],
+)
+def test_pipeline_halo_counts_boundary_press_once(
+        window, stride, press_start, expected_by_start):
+    n_frames = 8
+    frames = _shifting_noise_frames(n_frames)
+    provider = FakeVideoProvider(frames)
+    actions = [_action() for _ in range(n_frames)]
+    actions[press_start] = _action(w=True)
+    action_cols = [f"a{i}" for i in range(ACTION_DIM)]
+    rows = [
+        {"t": index, **{column: float(value) for column, value in zip(
+            action_cols, actions[index], strict=True)}}
+        for index in range(n_frames)
+    ]
+    from kuration import SchemaSpec
+
+    schema = SchemaSpec.from_dict({
+        "name": "pixel_shift_boundary_test",
+        "fields": {"action": {"kind": "vector", "dims": action_cols}},
+    })
+    result = (input(rows, schema=schema, fields={"action": action_cols}, time="t")
+              .join_video({"mem": "fake.mp4"}, provider=provider, on="frame_index")
+              .window(window, stride=stride)
+              .apply("aintropy/pixel-shift", controls=["W"])
+              .organize("w_n_instances", bins=1)
+              .collect(n=10))
+
+    assert {segment.start_idx: segment.features["w_n_instances"]
+            for segment in result.all_segments} == expected_by_start
+    assert sum(segment.features["w_n_instances"] for segment in result.all_segments) == 1.0
 
 
 # ---------------------------------------------------------------------------------------

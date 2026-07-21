@@ -19,6 +19,8 @@ every control, not just whichever one a process was launched with.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import numpy as np
 
 
@@ -485,18 +487,17 @@ def _prep_gray(img: np.ndarray, color_space: str = "BGR") -> np.ndarray:
     return gray[: int(h * (1 - BOTTOM_CROP_FRAC)), :]
 
 
-_RADIAL_CACHE: dict = {}
-
-
+# Each entry owns three float32 image-sized grids (about 12 * H * W bytes). Two entries cover
+# the common full/cropped-resolution pair without an unbounded process-global cache; workloads
+# cycling through more resolutions intentionally recompute rather than retain arbitrary RAM.
+@lru_cache(maxsize=2)
 def _radial_unit_vectors(h: int, w: int):
-    key = (h, w)
-    if key not in _RADIAL_CACHE:
-        ys, xs = np.mgrid[0:h, 0:w]
-        dx, dy = xs - w / 2.0, ys - h / 2.0
-        r = np.sqrt(dx * dx + dy * dy)
-        r_safe = np.where(r < 1e-6, 1e-6, r)
-        _RADIAL_CACHE[key] = (dx / r_safe, dy / r_safe, r)
-    return _RADIAL_CACHE[key]
+    ys, xs = np.mgrid[0:h, 0:w]
+    dx = (xs - w / 2.0).astype(np.float32)
+    dy = (ys - h / 2.0).astype(np.float32)
+    r = np.sqrt(dx * dx + dy * dy, dtype=np.float32)
+    r_safe = np.where(r < 1e-6, np.float32(1e-6), r)
+    return dx / r_safe, dy / r_safe, r
 
 
 def displacement_median(flow: np.ndarray, control: str) -> float:

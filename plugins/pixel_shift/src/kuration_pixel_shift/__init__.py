@@ -41,6 +41,9 @@ def register() -> None:
             inputs=("media:frame", "field:action"),
             media_requirements={"kind": "video-frame", "layout": "HWC"},
             resources={"num_gpus": 0},
+            lookbehind=1,
+            lookahead=3,
+            ownership="rightmost-start",
             parameters=CONTROL_PARAMETERS,
             **common,
         )

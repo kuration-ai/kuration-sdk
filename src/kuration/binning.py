@@ -50,7 +50,13 @@ def bin_segments(segments: list[Segment], axes: Sequence[tuple[str, int]]) -> No
         return
     cols: list[np.ndarray] = []
     for name, nbins in axes:
-        vals = np.fromiter((s.features.get(name, 0.0) for s in segments),
+        missing = next((segment for segment in segments if name not in segment.features), None)
+        if missing is not None:
+            raise ValueError(
+                f"binning axis {name!r}: segment {missing.source_id!r} "
+                f"[{missing.start_idx}, {missing.end_idx}) has no such feature; "
+                "ensure every metric/transform populates every candidate segment")
+        vals = np.fromiter((s.features[name] for s in segments),
                            dtype=np.float64, count=n)
         cols.append(bin_codes(vals, nbins, axis_name=name))
     for i, s in enumerate(segments):
