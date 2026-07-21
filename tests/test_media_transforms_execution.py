@@ -63,6 +63,32 @@ class ConstructorTypeError:
         raise TypeError("constructor implementation failed")
 
 
+@register_batch_transform(
+    "tests/context",
+    outputs=("context_code",),
+    inputs=("field:value",),
+    lookbehind=1,
+    lookahead=1,
+    ownership="rightmost-start",
+)
+class ContextTransform:
+    def transform_batch(self, batch, ctx):
+        assert ctx["schema"] is ctx.schema
+        assert ctx.ownership == "rightmost-start"
+        assert not ctx.owned_lengths.flags.writeable
+        values = []
+        for before, after, owned in zip(
+                ctx.before("field:value"), ctx.after("field:value"),
+                ctx.owned_lengths, strict=True):
+            # Legacy batch keys remain available throughout the rc3 compatibility window.
+            assert "lookbehind:field:value" in batch
+            assert "lookahead:field:value" in batch
+            assert "owned_lengths" in batch
+            values.append((0 if before is None else len(before))
+                          + 10 * (0 if after is None else len(after)) + 100 * int(owned))
+        return {"context_code": np.asarray(values, dtype=np.float64)}
+
+
 def test_media_only_schema_round_trip():
     schema = SchemaSpec.from_dict({
         "name": "video", "fields": {},
@@ -89,6 +115,19 @@ def test_video_transform_and_batched_media_output(tmp_path):
         "frame": {"dtype": "uint8", "shape": [2, 2, 3], "source": "media:frame"}})
     assert next(iter_shards(tmp_path))["frame"][:, 0, 0, 0].tolist() == [2, 3]
     assert provider.decode_calls[-1] == [2, 3]
+
+
+def test_transform_receives_bounded_halo_and_rightmost_start_ownership():
+    rows = [{"value": float(index)} for index in range(6)]
+    result = (input(rows)
+              .window(4, stride=2)
+              .transform("tests/context", batch_size=2)
+              .curate("top-k", n=2, weights={"context_code": 1})
+              .collect())
+
+    by_start = {segment.start_idx: segment.features["context_code"]
+                for segment in result.all_segments}
+    assert by_start == {0: 210.0, 2: 401.0}
 
 
 def test_timestamp_join_uses_nearest_variable_rate_frame():

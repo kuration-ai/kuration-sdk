@@ -107,6 +107,7 @@ def test_tag_coverage_adds_rare_tag():
     out = enforce_tag_coverage(selected, pool, tag_vocab=["common", "rare"],
                                target_size=10, min_tag_frac=0.05)
     assert any("rare" in s.tags for s in out)   # the rare-tag segment got pulled in
+    assert len(out) == 10                       # coverage swaps; it never expands the budget
 
 
 # ---- splits -----------------------------------------------------------------

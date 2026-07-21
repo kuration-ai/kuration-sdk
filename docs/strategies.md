@@ -175,8 +175,9 @@ escape hatch (and overrides the declarative tags).
 
 ## Post-passes
 
-- **tag coverage** — after the base pick, add segments until every categorical `tag` reaches a
-  floor count (preferring underrepresented bins), so a rare label isn't dropped. In
+- **tag coverage** — after the base pick, add or swap segments within `target_size` until every
+  feasible categorical `tag` reaches a floor count (preferring underrepresented bins), so a rare
+  label isn't dropped without expanding the count budget. In
   `write_dataset` this is a budget **reserve**: each tag's highest-priority track is admitted
   first, bounded by `min_tag_frac` of the hour budget.
 - **group cap** — drop excess from any `group` exceeding its fair share × `max_group_overshoot`,

@@ -3,11 +3,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 
 _PLURAL = {"adapters": "adapter", "metrics": "metric", "scorers": "scorer",
            "methods": "method", "filters": "filter", "encoders": "encoder",
            "containers": "container", "presets": "preset", "operators": "operator",
            "transforms": "transform"}
+
+
+def _report_plugin_failures() -> None:
+    from ..plugins import plugin_failures
+
+    for failure in plugin_failures():
+        print(f"ERROR plugin {failure['name']} ({failure['value']}): {failure['error']}",
+              file=sys.stderr)
 
 
 def list_main() -> None:
@@ -23,6 +32,7 @@ def list_main() -> None:
 def _list(args) -> None:
     from ..registry import list_components
     rows = list_components(_PLURAL[args.kind])
+    _report_plugin_failures()
     if args.json:
         print(json.dumps(rows, indent=2))
     else:
@@ -42,7 +52,10 @@ def describe_main() -> None:
 
 
 def _describe(args) -> None:
+    from ..plugins import load_plugins
     from ..registry import describe_component
+    load_plugins()
+    _report_plugin_failures()
     row = describe_component(_PLURAL.get(args.kind, args.kind), args.name)
     if args.json:
         print(json.dumps(row, indent=2))

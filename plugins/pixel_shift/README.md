@@ -97,15 +97,11 @@ report.print_report()
 
 ### Why the report is a separate object
 
-An earlier version of this operator accumulated per-instance detail into a module-level
-dict as a side effect of `transform_batch`, so calling the transform through a pipeline
-also silently built the report. That only worked for a single-process run
-(`.options(workers=1)`, the default) -- an SDK executor with `workers>1` runs
-`transform_batch` in separate worker processes, each with its own separate memory, and
-kuration-sdk's transform contract has no supported channel for a transform to return
-arbitrary per-instance side-channel data back to one shared accumulator across those
-workers. Constraining execution to `workers=1` to make the report work would have defeated
-the purpose of the SDK's own concurrent executors, not merely been a minor inconvenience.
+An earlier version accumulated per-instance detail into a module-level dict as a side effect
+of `transform_batch`. That state was invisible to the SDK contract and made results depend on
+where a physical plan happened to run transforms. Today the ordinary count path runs transforms
+after the parallel feature pass, while bounded plans fuse transforms into their local feature
+stage; neither placement promises a process-global result channel.
 
 So `transform_batch` now does exactly one thing: compute the 5 aggregated scalars per
 control, through the one channel the SDK actually supports for returning data (declared
@@ -126,35 +122,24 @@ finite values, and be at least 4×4 pixels. Control names, duplicates, empty con
 press lengths, axes, color spaces, segment IDs, and lookaround shapes are validated too.
 Python callers may use any non-empty sequence such as a list or tuple for `controls`.
 
-An arbitrary window boundary can cut through a press. The default `boundary="exclude"`
-is conservative: it does not claim a press that is already active on the first frame, and
-it cannot count a press whose release lies beyond the last frame. `boundary="error"`
-turns a targeted active edge with missing context into an error. The explicit compatibility
-mode `boundary="assume-inactive"` treats missing outside action state as inactive. It can
-classify a left-edge press without lookbehind, but a right-edge pixel measurement still
-requires a real lookahead frame; the plugin never invents image data.
+An arbitrary window boundary can cut through a press. The registered pipeline transform declares
+one lookbehind action and three lookahead action/frame rows, so the SDK supplies enough bounded
+context to classify every supported one-, two-, or three-frame press. Overlapping windows use the
+SDK's `rightmost-start` ownership rule: an event belongs to the latest window whose start is at or
+before the event, and per-segment counts do not duplicate it. Source edges still have shorter
+context. The default `boundary="exclude"` conservatively rejects a press whose true start or
+release lies outside the source; `boundary="error"` makes missing source-edge context loud, and
+`boundary="assume-inactive"` supplies the explicit compatibility behavior.
 
 Direct callers of `find_isolated_press_sequences`, `release_transition_displacement`,
-`segment_scalars`, and `PixelShiftReport.add_segment` can instead provide bounded context:
+`segment_scalars`, and `PixelShiftReport.add_segment` can also provide bounded context:
 `lookbehind_actions` disambiguates the left edge, while matching `lookahead_actions` and
 `lookahead_frames` make a right-edge release measurable. Only the final lookbehind row and
-at most `press_len` lookahead rows are consumed. A detected event belongs to the window
-where its press starts -- but when windows *overlap*, a press whose start falls in the
-overlap region is inside more than one window's local range, so it is independently
-"owned" (and would be independently reported) by every one of them. **Overlapping windows
-do not, by themselves, prevent duplicate counting** -- use non-overlapping windows with
-explicit `lookbehind_actions`/`lookahead_actions`/`lookahead_frames` to get boundary-complete
-coverage instead. `PixelShiftReport` tracks each recorded instance's global (source_id,
-control, cell_key, frame) across every `add_segment()` call and skips an exact duplicate,
-so accumulating into one `PixelShiftReport` across accidentally-overlapping windows is
-still safe from double-counting -- but the per-segment scalar features returned directly
-by `segment_scalars`/`PixelShift.transform_batch` have no memory across calls and cannot
-deduplicate anything themselves. The SDK pipeline transform does not receive neighboring
-segments as part of its transform input, so it cannot supply lookaround context at all;
-boundary-complete coverage through the pipeline is not currently achievable without risking
-duplicates, so `boundary="exclude"` (accepting that true edge presses are conservatively
-dropped, never double-counted) is the safe default there. Use non-overlapping windows with
-the direct API and explicit lookaround arrays when complete edge-press coverage matters.
+at most `press_len` lookahead rows are consumed. Direct calls over overlapping windows do not
+automatically share the pipeline's ownership metadata, so `PixelShiftReport` tracks each recorded
+instance's global `(source_id, control, cell_key, frame)` and skips exact duplicates. Direct
+per-window `segment_scalars` calls should pass `owned_length` when they need the same
+rightmost-start ownership rule.
 
 ## Method — the specifics results depend on
 
@@ -188,7 +173,9 @@ ASG capture, see the PR's test plan). The functions place no hardcoded assumptio
 W)` — `_radial_unit_vectors` and the crop both derive from the actual array shape — but
 "runs without erroring at another resolution" and "produces calibration-comparable
 numbers at another resolution" are different claims; only the former is currently true by
-construction, the latter is untested.
+construction, the latter is untested. Radial geometry uses float32 and a two-resolution LRU
+cache: that bounds process-global memory to roughly two sets of three image-sized grids, at the
+cost of recomputation if one process repeatedly alternates among more than two resolutions.
 
 **4. Coordinate / sign convention**:
 - `_prep_gray(img, color_space="BGR")` defaults to **BGR**, matching how ASG/DIAMOND HDF5

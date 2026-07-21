@@ -15,6 +15,7 @@ kur-inspect    DATASET [--verify] [--json] [--html PATH] # artifact summary/inte
 kur-diff       LEFT RIGHT [--verify] [--json] [--html PATH] # compare two artifacts
 kur-check      DATASET --policy POLICY [--verify] [--json] [--html PATH] # quality gates
 kur-list       KIND [--json]                  # list adapters, transforms, and other components
+kur-plugin-check [ENTRY-POINT|MODULE] [--json] # validate plugin loading and descriptors
 kur-describe   KIND NAME [--json]             # inspect one component contract
 kur-migrate    JOB_OR_CONFIG [--out PATH]     # migrate a versioned JSON document
 ```
@@ -22,10 +23,11 @@ kur-migrate    JOB_OR_CONFIG [--out PATH]     # migrate a versioned JSON documen
 Every CLI accepts `--debug`: failures normally print a one-line `error: ...` and exit 1;
 `--debug` re-raises for the full traceback.
 
-`kur-inspect`, `kur-diff`, and `kur-check` are exceptions to the job-file model: they take written dataset
-directories or manifests and need neither the original jobs nor input sources. `kur-inspect`
-exits 2 when `--verify` finds a missing or corrupt shard; `kur-check` exits 2 when any policy
-gate fails. A policy is a JSON object using the expectations listed in [usage.md](usage.md).
+`kur-inspect`, `kur-diff`, `kur-check`, and `kur-plugin-check` are exceptions to the job-file
+model: they take artifact paths or plugin names directly. The artifact commands need neither the
+original jobs nor input sources. `kur-inspect` exits 2 when `--verify` finds a missing or corrupt
+shard; `kur-check` and `kur-plugin-check` exit 2 when a policy or plugin contract fails. A quality
+policy is a JSON object using the expectations listed in [usage.md](usage.md).
 
 The job **kind** is inferred: `arms` present → experiment; `output`/`train_hours` present →
 curate; otherwise → report.

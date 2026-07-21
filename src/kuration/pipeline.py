@@ -52,6 +52,25 @@ from ._pipeline_support import (
 
 __all__ = ["Pipeline", "input"]
 
+
+def _normalized_source_mapping(src: dict, *, value_copy: Callable) -> dict[str, Any]:
+    """String-normalize source IDs without silently merging distinct keys."""
+    normalized: dict[str, Any] = {}
+    origins: dict[str, object] = {}
+    for source_id, value in src.items():
+        key = str(source_id)
+        if not key:
+            raise ValueError("input(): source IDs must not normalize to an empty string")
+        if key in normalized:
+            previous = origins[key]
+            raise ValueError(
+                "input(): distinct source IDs collide after string normalization: "
+                f"{previous!r} and {source_id!r} both become {key!r}")
+        origins[key] = source_id
+        normalized[key] = value_copy(value)
+    return normalized
+
+
 # ======================================================================================
 # input() — the factory (intentionally shadows builtins.input in this module)
 # ======================================================================================
@@ -98,6 +117,8 @@ def input(src=None, *, schema=None, adapter=None, sources=None, fields=None,
         if not srcs:
             raise ValueError("input(adapter=...) requires sources=[...] "
                              "(or an adapter exposing .sources())")
+        if any(not isinstance(source, str) or not source for source in srcs):
+            raise ValueError("input(adapter=...) sources must be non-empty strings")
         return Pipeline(schema=schema, adapter=adapter, sources=srcs,
                         in_memory=bool(getattr(adapter, "in_memory", False)), ops=[op],
                         registry=registry)
@@ -157,11 +178,13 @@ def input(src=None, *, schema=None, adapter=None, sources=None, fields=None,
 
         vals = list(src.values())
         if all(_is_ticks(v) for v in vals):
-            return _input_ticks({str(k): list(v) for k, v in src.items()}, op, schema=schema,
+            tick_sources = _normalized_source_mapping(src, value_copy=list)
+            return _input_ticks(tick_sources, op, schema=schema,
                                 time=time, entity=entity, hz=hz, kinds=kinds, sample=sample,
                                 registry=registry)
         if all(_is_rows(v) for v in vals):
-            return _input_rows({str(k): list(v) for k, v in src.items()}, op, schema=schema,
+            row_sources = _normalized_source_mapping(src, value_copy=list)
+            return _input_rows(row_sources, op, schema=schema,
                                fields=fields, time=time, entity=entity, hz=hz, kinds=kinds,
                                sample=sample, globals=globals, registry=registry)
         if all(_is_column(v) for v in vals):

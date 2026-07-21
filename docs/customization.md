@@ -28,8 +28,13 @@ parameters fail before source rows are read.
 
 A transform factory is registered with `register_batch_transform()` (or `register_transform`),
 declaring scalar outputs, `field:`/`feature:`/`media:` inputs, semantic media requirements, and
-resource hints. A pipeline invokes it with `.transform(...)`; its outputs then behave like any
-other scalar selection feature. Use `get_transform()` for direct lookup. Accelerator libraries
+resource hints. Boundary-sensitive transforms may additionally declare integer `lookbehind` and
+`lookahead` tick counts. The typed `TransformContext` exposes per-row arrays through
+`ctx.before("field:signal")` and `ctx.after("field:signal")`;
+`ownership="rightmost-start"` also supplies immutable `ctx.owned_lengths`, preventing overlapping
+windows from claiming the same event start. The rc2 batch keys remain available during the rc3
+compatibility window. A pipeline invokes the transform with `.transform(...)`; outputs behave like
+any other scalar selection feature. Use `get_transform()` for direct lookup. Accelerator libraries
 must be imported inside the factory or execution method so discovery and `import kuration` remain
 dependency-light.
 
@@ -58,6 +63,16 @@ independent Python distribution with its own dependencies, tests, documentation,
 `kuration.plugins` entry point; plugin code is intentionally excluded from the core SDK wheel.
 Copy `plugins/_template`, use a namespaced component name, and let the plugin CI job exercise the
 same installation and wheel checks used for every sibling.
+
+Run the complete isolated contribution contract locally with:
+
+```bash
+python scripts/check_plugin.py plugins/<plugin-name>
+```
+
+For an already installed distribution, `kur-plugin-check <entry-point-name>` validates loading,
+descriptor package/version/install metadata, closed parameter schemas, namespacing, and transform
+declarations without retaining its registry mutations. Python callers use `check_plugins()`.
 
 ## Compositional operators
 

@@ -93,6 +93,12 @@ The transform receives bounded batches. It must return one finite scalar per seg
 declared output. Imports for heavyweight frameworks belong inside the implementation path, so
 component discovery and ordinary core imports remain dependency-light.
 
+For edge-sensitive events, registration accepts `lookbehind=<ticks>`, `lookahead=<ticks>`, and
+`ownership="rightmost-start"`. Read the typed context with `ctx.before("field:signal")` and
+`ctx.after("field:signal")`; source-edge entries are `None`. Immutable `ctx.owned_lengths` gives
+the prefix of each logical window whose event starts belong to that segment. The corresponding
+rc2 batch keys remain available in rc3 for compatibility.
+
 For video, declare `inputs=("media:frame",)` and a semantic requirement such as
 `media_requirements={"kind": "video-frame", "layout": "HWC", "color_space": "RGB"}`.
 Kuration validates the media contract before decoding frames.
@@ -164,6 +170,15 @@ Registration happens when kuration loads installed plugins. Use namespaced names
 avoid collisions. Keep dataset-specific assumptions visible in the descriptor, README, parameter
 schema, and tests. The [customization guide](customization.md) covers registry overlays and the
 other extension types.
+
+Before opening a contribution, reproduce the isolated CI contract from the repository root:
+
+```bash
+python scripts/check_plugin.py plugins/<plugin-name>
+```
+
+For installed packages, `kur-plugin-check acme --json` performs the descriptor and discovery
+portion transactionally.
 
 ## Complete runnable example
 

@@ -78,24 +78,25 @@ class RayExecutionBackend:
         if not ray.is_initialized():
             ray.init(**init_kwargs)
 
-    def _map(self, items, fn, resources):
-        options = {"num_cpus": resources.num_cpus, "num_gpus": resources.num_gpus}
-        if resources.memory is not None:
-            options["memory"] = resources.memory
-        remote = self.ray.remote(fn).options(**options)
-        refs = [remote.remote(item) for item in items]
-        return self.ray.get(refs)
+    def map_sources(self, items, fn, resources=ResourceSpec(), *, workers=2,
+                    max_in_flight=None):
+        """Map sources with bounded Ray parallelism (two concurrent tasks by default)."""
+        max_in_flight = workers if max_in_flight is None else max_in_flight
+        return list(self.iter_batches(
+            items, fn, workers=workers, max_in_flight=max_in_flight, resources=resources))
 
-    def map_sources(self, items, fn, resources=ResourceSpec()):
-        return self._map(items, fn, resources)
-
-    def map_batches(self, items, fn, resources=ResourceSpec()):
-        return list(self.iter_batches(items, fn, resources=resources))
+    def map_batches(self, items, fn, resources=ResourceSpec(), *, workers=2,
+                    max_in_flight=None):
+        """Map batches with bounded Ray parallelism (two concurrent tasks by default)."""
+        max_in_flight = workers if max_in_flight is None else max_in_flight
+        return list(self.iter_batches(
+            items, fn, workers=workers, max_in_flight=max_in_flight, resources=resources))
 
     def iter_batches(self, items, fn, *, max_in_flight=2, workers=1,
                      resources=ResourceSpec()):
-        """Submit at most ``max_in_flight`` Ray objects and assemble in input order."""
+        """Submit at most ``min(workers, max_in_flight)`` Ray tasks in input order."""
         _bounds(max_in_flight, workers)
+        submission_limit = min(max_in_flight, workers)
         options = {"num_cpus": resources.num_cpus, "num_gpus": resources.num_gpus}
         if resources.memory is not None:
             options["memory"] = resources.memory
@@ -103,7 +104,7 @@ class RayExecutionBackend:
         pending: deque[Any] = deque()
         for item in items:
             pending.append(remote.remote(item))
-            if len(pending) >= max_in_flight:
+            if len(pending) >= submission_limit:
                 yield self.ray.get(pending.popleft())
         while pending:
             yield self.ray.get(pending.popleft())

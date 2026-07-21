@@ -281,9 +281,10 @@ def test_ray_worker_receives_metric_plugin_modules_even_with_one_worker(monkeypa
     seen = {}
 
     class FakeRayBackend:
-        def map_sources(self, items, fn, resources):
-            seen["modules"] = items[0][-2]
-            return [fn(item) for item in items]
+        def iter_batches(self, items, fn, **kwargs):
+            items = list(items)
+            seen["modules"] = items[0][1][-2]
+            return iter(fn(item) for item in items)
 
     import kuration.execution as execution
     monkeypatch.setattr(execution, "RayExecutionBackend", FakeRayBackend)

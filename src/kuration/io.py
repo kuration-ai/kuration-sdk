@@ -131,8 +131,8 @@ def local_copy(path):
 @contextmanager
 def staged_write(path):
     """Yield a real local path to write to; on success upload it to the (possibly remote) dest.
-    Local destinations are written all-or-nothing (tempfile + rename), matching the remote
-    branch — an interrupted write never leaves a partial file at the final path."""
+    Local destinations use atomic replace. Remote destinations upload a complete unique attempt
+    before replacement and never pre-delete the prior generation."""
     if is_remote(path):
         fs = _fs(path)
         suffix = os.path.splitext(str(path))[1]
@@ -145,8 +145,8 @@ def staged_write(path):
             # object. Object-store moves may be copy+delete, but consumers can never observe a
             # partially uploaded final payload.
             fs.put_file(tmp.name, remote_attempt)
-            if fs.exists(str(path)):
-                fs.rm(str(path))
+            # Never pre-delete the last good generation. Backends that cannot replace an existing
+            # key must fail while leaving it intact rather than creating a destructive gap.
             fs.mv(remote_attempt, str(path))
         finally:
             if fs.exists(remote_attempt):

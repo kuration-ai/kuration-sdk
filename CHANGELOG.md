@@ -7,6 +7,34 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 No changes yet.
 
+## 0.1.0rc3
+
+- Added transactional plugin loading: failed initializers roll back registry mutations, explicit
+  modules fail fast, and broken ambient entry points no longer hide healthy plugins; ambient
+  failures remain visible through discovery CLIs, `plugin_failures()`, and run provenance.
+- Added `kur-plugin-check`, the public `check_plugins()` API, and a one-command isolated plugin
+  validation workflow covering dependencies, tests, lint, wheels, entry points, and descriptors.
+- Added typed `TransformContext` boundary accessors while retaining the rc2 batch-key
+  compatibility form, plus deterministic lookbehind/lookahead and overlapping-window ownership.
+- Bounded source scheduling, Ray submission, transform context memory, Hugging Face partition
+  behavior, and the pixel-shift radial cache; kept Arrow publication on the caller thread and
+  removed process-global reporting assumptions. Ray's `workers` now caps submitted tasks even
+  when `max_in_flight` is larger.
+- Hardened source-ID normalization, normalized timestamp grouping, count-budget tag coverage,
+  remote replacement failure behavior, and unknown-total progress reporting. Direct low-level
+  curation calls now require non-empty string source IDs; convert `pathlib.Path` values with `str`.
+- Binning now fails explicitly when any candidate lacks a requested axis feature instead of
+  silently treating the missing metric as zero.
+- Added cross-mode determinism conformance tests spanning serial/parallel, streaming/materialized,
+  bounded/reference, and optional Ray execution.
+- Isolated every repository plugin in CI and added exact-CI-artifact plugin publication with
+  metadata, hash, wheel-content, dependency, and installed-discovery checks.
+- Corrected affected documentation claims and added regression coverage for realistic failure,
+  boundary, overlap, retry, packaging, and discovery scenarios.
+- Pixel-shift radial geometry is now computed and cached as float32 (rather than float64), so
+  measurements may differ by normal float32 rounding; the two-entry cache deliberately bounds
+  global memory and may recompute when a process cycles through more than two resolutions.
+
 ## 0.1.0rc2
 
 - Added integrity-aware shard resume, structured execution diagnostics, Python 3.14 and

@@ -33,7 +33,7 @@ jobs:
         run: python -c 'import adlfs, gcsfs, s3fs'
       - name: Test with coverage
         if: matrix.python == '3.11'
-        run: python -m pytest tests/ -q --cov=kuration --cov-report=term --cov-report=xml --cov-fail-under=78
+        run: python -m pytest tests/ -q --cov=kuration --cov-report=term --cov-report=xml --cov-fail-under=80
       - name: Test
         if: matrix.python != '3.11'
         run: python -m pytest tests/ -q
@@ -164,7 +164,8 @@ jobs:
               ;;
             ray)
               python -c 'import ray'
-              python -m pytest tests/test_execution_backpressure.py -k ray -q
+              python -m pytest tests/test_execution_backpressure.py \
+                tests/test_determinism_conformance.py -k ray -q
               ;;
           esac
 
@@ -191,19 +192,23 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install SDK and plugin test tools
-        run: python -m pip install -e '.[dev]'
-      - name: Validate every plugin distribution
+      - name: Validate every plugin distribution in a clean environment
         shell: bash
         run: |
+          mkdir -p plugin-dist
           for plugin in plugins/*; do
             test -f "$plugin/pyproject.toml" || continue
-            python -m pip install -e "$plugin[test]"
-            python -m pytest "$plugin/tests" -q
-            python -m ruff check "$plugin/src" "$plugin/tests"
-            python -m build "$plugin"
-            check-wheel-contents "$plugin"/dist/*.whl
+            python scripts/check_plugin.py "$plugin" --artifacts plugin-dist
           done
+          sha256sum plugin-dist/* > plugin-SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: plugin-package-distributions-${{ github.sha }}
+          path: |
+            plugin-dist/
+            plugin-SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
 
   build:
     name: Build and wheel smoke test
@@ -249,7 +254,8 @@ jobs:
               assert hasattr(kuration, name)
           PY
           for command in kur-curate kur-experiment kur-report kur-validate kur-list \
-                         kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check; do
+                         kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check \
+                         kur-plugin-check; do
             /tmp/kuration-wheel-smoke/bin/"$command" --help
           done
       - name: Record distribution hashes

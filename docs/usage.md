@@ -203,11 +203,13 @@ write_dataset("out/run1", ..., workers=8,        # parallel feature pass (determ
 ```
 `streaming=True` reads each source as a lazy tick stream on both the feature pass and the shard
 write (also available on `curate(...)` / `run_experiment(...)`). CSV/JSONL/single-file Parquet,
-HDF5, Zarr, and HuggingFace inputs support it. NPZ and partitioned-Parquet dataset mode reject
-the option because they cannot guarantee bounded memory.
+HDF5, Zarr, and single-source HuggingFace inputs support it. HuggingFace adapters configured with
+`source_column`, NPZ, and partitioned-Parquet dataset mode reject the option because discovering
+their partitions cannot guarantee bounded memory.
 
-`resume=True` is safe against crashes, corruption, and drift: shards are written atomically (no
-partial file ever sits at the final path), existing shards are reused only when their recorded
+`resume=True` is safe against crashes, corruption, and drift: local shards use atomic replacement;
+remote shards upload a complete attempt before publishing and never pre-delete the prior object.
+Existing shards are reused only when their recorded
 size and SHA-256 match, and a complete run fingerprint is pinned in a sidecar.
 Changes to sources, schema, strategy, segmentation, budgets, adapter/encoder code or state,
 callbacks (including captured closure/default values), seed, or output spec reject resume. To

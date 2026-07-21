@@ -203,5 +203,11 @@ python -m ruff check src tests examples
 python -m mypy
 ```
 
+Validate one repository plugin in the same isolated environment used by CI:
+
+```bash
+python scripts/check_plugin.py plugins/<plugin-name>
+```
+
 Read [CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md)
 before proposing a component or public contract change.

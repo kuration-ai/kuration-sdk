@@ -26,6 +26,10 @@ Status labels:
   coverage artifacts, checksummed resume repair, and structured worker diagnostics.
 - Release notes, a beta compatibility/deprecation policy, and a security reporting policy.
 - Preferred fluent names `.bin()` and `.sample()` with compatibility aliases retained.
+- Transactional plugin discovery, installed-plugin contract checking, isolated repository-plugin
+  validation, and independent exact-CI-artifact plugin releases.
+- Typed transform boundary context, deterministic overlapping-window ownership, and execution
+  conformance coverage across worker, streaming, bounded, and optional Ray modes.
 
 ## Next — public `0.1` release readiness
 

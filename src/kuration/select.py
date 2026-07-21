@@ -55,28 +55,61 @@ def sample_uniform_bins(segments: list[Segment], *, target_size: int,
 def enforce_tag_coverage(selected: list[Segment], all_segments: list[Segment], *,
                          tag_vocab: Iterable, target_size: int,
                          min_tag_frac: float) -> list[Segment]:
-    """Add segments until every tag in the vocab reaches a floor count, preferring
-    underrepresented bins so the patch-up doesn't pile onto already-dense bins."""
+    """Meet tag floors by adding or swapping segments without exceeding the count budget."""
+    tag_order = tuple(tag_vocab)
+    selected = list(selected)
+    limit = max(target_size, len(selected))  # ``filter`` intentionally selects every match.
     selected_ids = set(id(s) for s in selected)
     counts: Counter = Counter()
     for s in selected:
         for t in s.tags:
             counts[t] += 1
     floor = max(1, int(round(target_size * min_tag_frac)))
+    required_tags = set(tag_order)
+    protected = {tag for tag in required_tags if counts[tag] == floor}
     unselected = [s for s in all_segments if id(s) not in selected_ids]
     bin_counts: Counter = Counter(s.bin for s in selected)
-    for tag in tag_vocab:
+    for tag in tag_order:
         deficit = floor - counts[tag]
         if deficit <= 0:
             continue
         cands = [s for s in unselected if tag in s.tags]
         cands.sort(key=lambda s: bin_counts[s.bin])
-        for s in cands[:deficit]:
-            selected.append(s)
+        for s in cands:
+            if counts[tag] >= floor:
+                break
+            if len(selected) < limit:
+                selected.append(s)
+                affected = set(s.tags)
+            else:
+                # Scan once instead of sorting the full selection for every candidate; max()
+                # preserves the densest-bin/reverse-index deterministic preference.
+                eligible = ((index, victim) for index, victim in enumerate(selected)
+                            if tag not in victim.tags
+                            and not (protected & (victim.tags - s.tags)))
+                victim_pair = max(
+                    eligible, key=lambda pair: (bin_counts[pair[1].bin], pair[0]), default=None)
+                if victim_pair is None:
+                    continue
+                victim_index, victim = victim_pair
+                selected_ids.discard(id(victim))
+                bin_counts[victim.bin] -= 1
+                for covered in victim.tags:
+                    counts[covered] -= 1
+                selected[victim_index] = s
+                unselected.append(victim)
+                affected = set(victim.tags) | set(s.tags)
             selected_ids.add(id(s))
             bin_counts[s.bin] += 1
-            for t in s.tags:
-                counts[t] += 1
+            for covered in s.tags:
+                counts[covered] += 1
+            # Only tags exactly at their floor can be harmed by the next swap. Updating the
+            # touched tags keeps victim checks independent of total vocabulary size.
+            for covered in affected & required_tags:
+                if counts[covered] == floor:
+                    protected.add(covered)
+                else:
+                    protected.discard(covered)
         unselected = [s for s in unselected if id(s) not in selected_ids]
     return selected
 

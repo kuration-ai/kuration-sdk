@@ -159,7 +159,7 @@ match the curation question.
 
 | need | use | result |
 |---|---|---|
-| A fixed number of representative windows, evaluation samples, or a small experiment | `.sample(..., n=5000)` | Exactly up to `n` selected segments; each selected entity-window becomes output shards |
+| A fixed number of representative windows, evaluation samples, or a small experiment | `.sample(..., n=5000)` | Up to `n` selected segments for ranking methods; `filter` intentionally returns every match; each selected entity-window becomes output shards |
 | A training dataset with a storage/time budget | `.sample(..., hours=100, test_hours=5)` | Highest-priority output spans fill separate train/test duration budgets; hours output supports safe resume |
 
 Start with count selection while designing metrics because it is quick to inspect. Switch to

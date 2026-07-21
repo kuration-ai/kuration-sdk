@@ -17,6 +17,9 @@ def register() -> None:
             name,
             window_length,
             description="Return the number of ticks in a segment window",
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
+            package="kuration-plugin-template",
+            install_hint="pip install kuration-plugin-template",
             version="1",
             stability="experimental",
         )
