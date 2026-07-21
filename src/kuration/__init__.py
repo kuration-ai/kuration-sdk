@@ -55,6 +55,7 @@ from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities, register_filter
 from .pipeline import Pipeline, input
 from .plugins import load_plugins, loaded_plugin_modules, plugin_provenance
+from .plugin_validation import PluginCheckResult, check_plugins
 from .progress import ProgressCallback
 from .report import dataset_report
 from .review import hours_selection_review, preview_dataset, selection_review
@@ -79,8 +80,9 @@ from .output import (
 )
 from .schema import FieldSpec, MediaSpec, SchemaSpec
 from .media import FrameRef, MediaProvider, PyAVMediaProvider, VideoMetadata
-from .transforms import (BatchTransform, apply_transforms, apply_transforms_to_windows,
-                         get_transform, register_batch_transform, register_transform)
+from .transforms import (BatchTransform, TransformContext, apply_transforms,
+                         apply_transforms_to_windows, get_transform,
+                         register_batch_transform, register_transform)
 from .execution import (ExecutionBackend, LocalExecutionBackend, RayExecutionBackend,
                         ResourceSpec, get_execution_backend)
 from .planning import (OperatorResources, OperatorTraits, PhysicalOperator, PhysicalPlan,
@@ -117,7 +119,8 @@ __all__ = [
     "schema_from_output", "register_adapter", "get_adapter",
     "FrameRef", "VideoMetadata", "MediaProvider", "PyAVMediaProvider",
     "VideoAdapter", "JoinedMediaAdapter",
-    "BatchTransform", "register_batch_transform", "register_transform", "get_transform",
+    "BatchTransform", "TransformContext", "register_batch_transform", "register_transform",
+    "get_transform",
     "apply_transforms", "apply_transforms_to_windows",
     "ExecutionBackend", "LocalExecutionBackend", "RayExecutionBackend", "ResourceSpec",
     "get_execution_backend",
@@ -145,7 +148,8 @@ __all__ = [
     "QualityGateResult", "QualityGateError",
     "render_html_report", "write_html_report",
     "infer_schema", "Pipeline", "input",
-    "load_plugins", "loaded_plugin_modules", "plugin_provenance", "ProgressCallback",
+    "load_plugins", "loaded_plugin_modules", "plugin_provenance", "check_plugins",
+    "PluginCheckResult", "ProgressCallback",
     "Registry", "default_registry", "ComponentDescriptor", "list_components",
     "describe_component", "ExecutionPlan", "ARTIFACT_FORMAT_VERSION",
     "DatasetWriteResult", "ExperimentResult", "DatasetReport", "ValidationResult",

@@ -1,6 +1,6 @@
 [project]
 name = "kuration-sdk"
-version = "0.1.0rc2"
+version = "0.1.0rc3"
 description = "Dataset-agnostic curation SDK: raw source -> curated subset -> training shards."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -88,6 +88,7 @@ kur-explain = "kuration.cli.explain:main"
 kur-inspect = "kuration.cli.inspect:main"
 kur-diff = "kuration.cli.diff:main"
 kur-check = "kuration.cli.check:main"
+kur-plugin-check = "kuration.cli.plugin_check:main"
 
 [build-system]
 requires = ["setuptools>=80,<84"]

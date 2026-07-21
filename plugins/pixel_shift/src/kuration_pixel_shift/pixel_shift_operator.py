@@ -454,10 +454,18 @@ class PixelShift:
         # Read the declared media color space rather than assuming the BGR direct-call default.
         color_space = ctx["schema"].media["frame"].color_space
         count = len(frames_batch)
-        before_batch = batch.get("lookbehind:field:action", [None] * count)
-        after_actions_batch = batch.get("lookahead:field:action", [None] * count)
-        after_frames_batch = batch.get("lookahead:media:frame", [None] * count)
-        owned_lengths = batch.get("owned_lengths", [len(actions) for actions in actions_batch])
+        if hasattr(ctx, "before"):
+            before_batch = ctx.before("field:action")
+            after_actions_batch = ctx.after("field:action")
+            after_frames_batch = ctx.after("media:frame")
+            owned_lengths = ctx.owned_lengths
+        else:  # Compatibility for direct callers still supplying a plain context mapping.
+            before_batch = batch.get("lookbehind:field:action", [None] * count)
+            after_actions_batch = batch.get("lookahead:field:action", [None] * count)
+            after_frames_batch = batch.get("lookahead:media:frame", [None] * count)
+            owned_lengths = batch.get("owned_lengths")
+        if owned_lengths is None:
+            owned_lengths = [len(actions) for actions in actions_batch]
         rows = [
             segment_scalars(
                 frames,

@@ -189,6 +189,8 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `load_plugins` | `(modules=(), *, include_entry_points=True) -> list[dict]` | load registration modules and installed entry points; ambient failures are rolled back and returned as `kind="error"` records with a warning |
 | `loaded_plugin_modules` | `() -> tuple[str, ...]` | modules propagated to spawned scoring workers |
 | `plugin_provenance` | `(*, registry=None) -> list[dict]` | loaded plugin implementation fingerprints used by resume provenance; an explicit registry scopes the result |
+| `check_plugins` | `(target=None) -> list[PluginCheckResult]` | transactionally validate all installed plugin entry points, one entry-point name, or an explicit registration module |
+| `PluginCheckResult` | immutable result with `.passed`, `.to_dict()`, and `.render()` | plugin load, descriptor, package, namespace, parameter-schema, and transform-contract diagnostics |
 | `ProgressCallback` | `Callable[[dict], None]` | receives structured `{phase, event, ...}` execution events |
 
 ## Component registries and discovery
@@ -241,14 +243,15 @@ remain the Python convenience boundary.
 | `iter_external_weighted_priorities` | `(partitions, *, weights, normalize="quantile", seed=0, spill_dir=None)` | stream exact canonical Gumbel priorities from one disk-backed score index and one partition-at-a-time materialization pass |
 | `external_weighted` | `(partitions, *, weights, target_size, normalize="quantile", seed=0, spill_dir=None) -> list[Segment]` | select exact hours-path Gumbel priorities while retaining only the selected heap; count-weighted sampling has a distinct NumPy contract |
 | `iter_external_hash_dedup` | `(partitions, *, feature_names=None, per_group=False, spill_dir=None)` | exact disk-backed feature-vector dedup with full-payload collision resolution and canonical retention |
+| `TransformContext` | mapping-compatible typed context; `.before(token)`, `.after(token)`, `.owned_lengths` | typed per-batch execution metadata and boundary access; ordinary `ctx["schema"]` access remains compatible and owned lengths are read-only |
 | `apply_transforms_to_windows` | `(calls, segments, windows, *, adapter, registry, contexts=None, progress=None)` | bounded transform execution over extracted windows; optional contexts carry lookbehind/lookahead ticks and owned lengths |
 
 ## Output
 
 Media contracts include `MediaSpec`, `FrameRef`, `VideoMetadata`, `MediaProvider`,
 `PyAVMediaProvider`, `VideoAdapter`, and `JoinedMediaAdapter`. Transform and execution contracts
-include `BatchTransform`, `register_batch_transform` (`register_transform` alias), `get_transform`,
-`ExecutionBackend`, `ResourceSpec`, and the
+include `BatchTransform`, `TransformContext`, `register_batch_transform` (`register_transform`
+alias), `get_transform`, `ExecutionBackend`, `ResourceSpec`, and the
 ordered `LocalExecutionBackend` / `RayExecutionBackend` implementations. `apply_transforms`
 executes resolved calls over canonical segments; `get_execution_backend` resolves a backend.
 

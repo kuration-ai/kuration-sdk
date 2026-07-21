@@ -2,17 +2,89 @@
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import dataclass, field
 import inspect
 from itertools import islice
-from typing import Any, Callable, Mapping, Protocol, runtime_checkable
+from types import MappingProxyType
+from typing import Any, Callable, Iterator, Mapping, Protocol, runtime_checkable
 
 import numpy as np
+
+
+@dataclass(frozen=True)
+class TransformContext(Mapping[str, Any]):
+    """Typed metadata and boundary context for one transform batch.
+
+    ``before(token)`` and ``after(token)`` return one optional array per batch row. Source-edge
+    rows are ``None``. The mapping interface preserves existing ``ctx["schema"]`` style access.
+    Legacy boundary values also remain in the batch mapping for the rc3 compatibility window.
+    """
+
+    device: str | None
+    schema: Any
+    transform: str
+    seed: Any = None
+    ownership: str | None = None
+    lookbehind: Mapping[str, tuple[Any | None, ...]] = field(default_factory=dict)
+    lookahead: Mapping[str, tuple[Any | None, ...]] = field(default_factory=dict)
+    owned_lengths: np.ndarray | None = None
+
+    def __post_init__(self) -> None:
+        if self.device is not None and (not isinstance(self.device, str) or not self.device):
+            raise ValueError("transform context device must be a non-empty string or None")
+        if not isinstance(self.transform, str) or not self.transform:
+            raise ValueError("transform context name must be a non-empty string")
+        if self.ownership not in {None, "rightmost-start"}:
+            raise ValueError("transform context ownership must be None or 'rightmost-start'")
+        for name in ("lookbehind", "lookahead"):
+            values = getattr(self, name)
+            if not isinstance(values, Mapping) or any(
+                    not isinstance(token, str) or not token
+                    or not isinstance(rows, (list, tuple))
+                    for token, rows in values.items()):
+                raise ValueError(f"transform context {name} must map input tokens to row sequences")
+            frozen = MappingProxyType({token: tuple(rows) for token, rows in values.items()})
+            object.__setattr__(self, name, frozen)
+        if self.owned_lengths is not None:
+            lengths = np.asarray(self.owned_lengths, dtype=np.int64).copy()
+            if lengths.ndim != 1 or np.any(lengths < 0):
+                raise ValueError("transform context owned_lengths must be non-negative 1-D values")
+            lengths.setflags(write=False)
+            object.__setattr__(self, "owned_lengths", lengths)
+
+    def before(self, token: str) -> tuple[Any | None, ...]:
+        """Return per-row lookbehind arrays for a declared input token."""
+        try:
+            return self.lookbehind[token]
+        except KeyError as error:
+            raise KeyError(f"no lookbehind context was declared for {token!r}") from error
+
+    def after(self, token: str) -> tuple[Any | None, ...]:
+        """Return per-row lookahead arrays for a declared input token."""
+        try:
+            return self.lookahead[token]
+        except KeyError as error:
+            raise KeyError(f"no lookahead context was declared for {token!r}") from error
+
+    def __getitem__(self, key: str) -> Any:
+        if key not in {"device", "schema", "transform", "seed", "ownership",
+                       "lookbehind", "lookahead", "owned_lengths"}:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(("device", "schema", "transform", "seed", "ownership",
+                     "lookbehind", "lookahead", "owned_lengths"))
+
+    def __len__(self) -> int:
+        return 8
 
 
 @runtime_checkable
 class BatchTransform(Protocol):
     output_features: tuple[str, ...]
-    def transform_batch(self, batch: Mapping[str, Any], ctx: dict) -> Mapping[str, Any]: ...
+    def transform_batch(self, batch: Mapping[str, Any],
+                        ctx: TransformContext) -> Mapping[str, Any]: ...
 
 
 _TRANSFORM_META: dict[str, dict] = {}
@@ -335,11 +407,15 @@ class _TransformRunner:
                 chunk = segments[offset:offset + size]
                 chunk_windows = windows[offset:offset + size]
                 chunk_contexts = contexts[offset:offset + size]
+                lookbehind_inputs: dict[str, tuple[Any | None, ...]] = {}
+                lookahead_inputs: dict[str, tuple[Any | None, ...]] = {}
                 batch: dict[str, Any] = {"segment_ids": [
                     (s.source_id, s.start_idx, s.end_idx) for s in chunk]}
+                owned_lengths = None
                 if call.get("ownership") == "rightmost-start":
-                    batch["owned_lengths"] = np.asarray(
+                    owned_lengths = np.asarray(
                         [context["owned_length"] for context in chunk_contexts], dtype=np.int64)
+                    batch["owned_lengths"] = owned_lengths
                 for token in call["inputs"]:
                     kind, arg = token.split(":", 1)
                     if kind == "field":
@@ -381,9 +457,14 @@ class _TransformRunner:
                             values = [provider.decode_batch(group) if group else None
                                       for group in ref_groups]
                         batch[f"{direction}:{token}"] = values
-                ctx = {"device": call["device"], "schema": adapter.schema,
-                       "transform": call["name"], "seed": call["params"].get("seed"),
-                       "ownership": call.get("ownership")}
+                        target = lookbehind_inputs if direction == "lookbehind" \
+                            else lookahead_inputs
+                        target[token] = tuple(values)
+                ctx = TransformContext(
+                    device=call["device"], schema=adapter.schema, transform=call["name"],
+                    seed=call["params"].get("seed"), ownership=call.get("ownership"),
+                    lookbehind=lookbehind_inputs, lookahead=lookahead_inputs,
+                    owned_lengths=owned_lengths)
                 result = _invoke(transform, batch, ctx)
                 if not isinstance(result, Mapping):
                     if len(call["outputs"]) != 1:

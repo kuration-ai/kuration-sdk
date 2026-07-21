@@ -32,14 +32,14 @@ deterministic and free of process-global result state.
 From the repository root, install and test one plugin with:
 
 ```bash
-python -m pip install -e . -e 'plugins/<plugin-name>[test]'
-python -m pytest plugins/<plugin-name>/tests -q
+python scripts/check_plugin.py plugins/<plugin-name>
 ```
 
-CI discovers every child containing `pyproject.toml`, creates a fresh virtual environment for it,
-installs only core plus that plugin, runs `pip check`, tests, Ruff, build, wheel-content checks,
-and installed entry-point discovery. The shared SDK suite separately verifies discovery, worker
-reconstruction, provenance, registry isolation, and bounded transform execution.
+The script and CI discover every child containing `pyproject.toml`, create a fresh virtual
+environment, install only core plus that plugin, run `pip check`, tests, Ruff, build,
+wheel-content checks, reinstall the wheel, and run `kur-plugin-check` against every declared entry
+point. The shared SDK suite separately verifies discovery, worker reconstruction, provenance,
+registry isolation, bounded transform execution, and cross-mode determinism.
 
 Repository-maintained plugins release independently from core. Use a tag of the form
 `plugin-<directory>-v<project.version>` (for example `plugin-pixel_shift-v0.1.0`) and publish a

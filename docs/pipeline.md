@@ -145,9 +145,11 @@ Transforms are registered with `register_batch_transform()`/`register_transform(
 `field:`, `feature:`, or `media:` prefixes; declared media semantics are checked before decode.
 Each output must be one finite scalar per stable segment ID, after which it is accepted anywhere
 a measure/scorer feature is accepted: predicates, bins, weights, and feature-space methods.
-Transforms that declare bounded lookbehind/lookahead receive neighboring field/media inputs under
-`lookbehind:<token>` and `lookahead:<token>`. The `rightmost-start` ownership policy supplies one
-owned prefix length per window so overlapping windows produce deterministic event ownership.
+Transforms that declare bounded lookbehind/lookahead read neighboring field/media inputs through
+the typed `TransformContext`: `ctx.before(token)` and `ctx.after(token)`. The `rightmost-start`
+ownership policy supplies immutable `ctx.owned_lengths`, one prefix length per window, so
+overlapping windows produce deterministic event ownership. The rc2 batch keys remain available in
+rc3 as a compatibility path.
 Framework imports and model loading remain inside the optional transform implementation; core
 import and ordinary pipelines stay NumPy-only.
 

@@ -283,7 +283,7 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
                 reusable = checkpoint.reusable(partition_id)
                 if reusable is not None:
                     checkpoint_hits += 1
-                    return reusable
+                    return ("commit", reusable)
                 checkpoint_misses += 1
                 for segment, window in zip(pending_segments, pending_windows):
                     engine.score_window(segment, window)
@@ -300,20 +300,29 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
                 if tags_of:
                     for segment in written:
                         segment.tags = frozenset(tags_of(segment))
-                batch = SegmentBatch.from_segments(written, feature_names=feature_names)
                 key_range = None
                 if written:
                     keys = [(str(segment.source_id), segment.start_idx, segment.end_idx)
                             for segment in written]
                     key_range = (keys[0], keys[-1])
-                return checkpoint.write_partition(
-                    partition_id, batch, key_range=key_range,
-                    reducer_state={"candidate_rows": len(pending_segments),
-                                   "admitted_rows": len(selected)})
+                return ("write", partition_id, written, key_range,
+                        {"candidate_rows": len(pending_segments),
+                         "admitted_rows": len(selected)})
 
             from .execution import LocalExecutionBackend
-            source_commits.extend(LocalExecutionBackend().iter_batches(
-                batches(), process, max_in_flight=effective_max_in_flight, workers=1))
+            for result in LocalExecutionBackend().iter_batches(
+                    batches(), process, max_in_flight=effective_max_in_flight, workers=1):
+                if result[0] == "commit":
+                    source_commits.append(result[1])
+                    continue
+                _, partition_id, written, key_range, reducer_state = result
+                # Keep Arrow construction and checkpoint publication on the caller thread.
+                # Some supported Arrow/Python combinations initialize native allocators lazily
+                # and are not safe when their first conversion occurs on a background worker.
+                batch = SegmentBatch.from_segments(written, feature_names=feature_names)
+                source_commits.append(checkpoint.write_partition(
+                    partition_id, batch, key_range=key_range,
+                    reducer_state=reducer_state))
             # A source is the error-isolation unit.  Do not expose partitions from a source
             # that failed after one or more batches had already committed; those files may
             # remain reusable on restart, but they are not candidates in this run.

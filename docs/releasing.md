@@ -26,7 +26,7 @@ Connect. It never rebuilds a release artifact. No long-lived PyPI API token is s
 
 ## Release
 
-1. Set `project.version` to a release candidate such as `0.1.0rc2` and run the complete test and
+1. Set `project.version` to a release candidate such as `0.1.0rc3` and run the complete test and
    static-check suite.
 2. Open the release pull request and wait for the `Required CI` check. Do not publish a release
    from a commit whose CI run is pending, failed, or expired.

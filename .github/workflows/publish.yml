@@ -129,7 +129,8 @@ jobs:
           assert kuration.__version__ == version("kuration-sdk")
           PY
           for command in kur-curate kur-experiment kur-report kur-validate kur-list \
-                         kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check; do
+                         kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check \
+                         kur-plugin-check; do
             /tmp/kuration-release-smoke/bin/"$command" --help
           done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

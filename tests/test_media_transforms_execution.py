@@ -73,10 +73,17 @@ class ConstructorTypeError:
 )
 class ContextTransform:
     def transform_batch(self, batch, ctx):
+        assert ctx["schema"] is ctx.schema
+        assert ctx.ownership == "rightmost-start"
+        assert not ctx.owned_lengths.flags.writeable
         values = []
         for before, after, owned in zip(
-                batch["lookbehind:field:value"], batch["lookahead:field:value"],
-                batch["owned_lengths"], strict=True):
+                ctx.before("field:value"), ctx.after("field:value"),
+                ctx.owned_lengths, strict=True):
+            # Legacy batch keys remain available throughout the rc3 compatibility window.
+            assert "lookbehind:field:value" in batch
+            assert "lookahead:field:value" in batch
+            assert "owned_lengths" in batch
             values.append((0 if before is None else len(before))
                           + 10 * (0 if after is None else len(after)) + 100 * int(owned))
         return {"context_code": np.asarray(values, dtype=np.float64)}

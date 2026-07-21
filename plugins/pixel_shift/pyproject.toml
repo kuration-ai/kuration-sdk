@@ -5,7 +5,7 @@ description = "Kuration operator for DIAMOND action-aligned pixel-shift measurem
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "kuration-sdk>=0.1.0rc2",
+    "kuration-sdk>=0.1.0rc3",
     "numpy>=1.24",
     "opencv-python-headless>=4.9",
 ]
