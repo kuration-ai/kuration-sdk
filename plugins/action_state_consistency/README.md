@@ -66,7 +66,7 @@ kuration_action_state_consistency/
 │                        # pixel_shift import anywhere in this file, ever.
 └── action_state.py      # the "action_state" anomaly type: validates baselines against
                           # kuration_pixel_shift.ALL_CONTROLS, discovers instances via
-                          # pixel_shift's own _iter_instances, and builds an
+                          # pixel_shift's public iter_instances API, and builds an
                           # AnomalyChecker on top. The ONLY file that references
                           # kuration_pixel_shift, and only inside function bodies.
 ```

@@ -18,6 +18,16 @@ from collections.abc import Sequence
 import numpy as np
 
 
+def _finite_number(value, *, name: str) -> float:
+    numeric = (int, float, np.integer, np.floating)
+    if isinstance(value, bool) or not isinstance(value, numeric):
+        raise ValueError(f"{name} must be a number")
+    normalized = float(value)
+    if not np.isfinite(normalized):
+        raise ValueError(f"{name} must be finite")
+    return normalized
+
+
 def _validate_baseline_cell(control: str, cell_key: str, cell) -> dict:
     if not isinstance(cell, dict):
         raise ValueError(f"baseline for {control!r}/{cell_key!r} must be a dict")
@@ -27,22 +37,16 @@ def _validate_baseline_cell(control: str, cell_key: str, cell) -> dict:
     sign = cell["expected_sign"]
     if sign not in (1, -1, 1.0, -1.0) or isinstance(sign, bool):
         raise ValueError(f"baseline for {control!r}/{cell_key!r}: expected_sign must be 1 or -1")
-    lo, hi = cell["min"], cell["max"]
-    numeric = (int, float)
-    if (
-        not isinstance(lo, numeric)
-        or not isinstance(hi, numeric)
-        or isinstance(lo, bool)
-        or isinstance(hi, bool)
-    ):
-        raise ValueError(f"baseline for {control!r}/{cell_key!r}: min/max must be numbers")
+    prefix = f"baseline for {control!r}/{cell_key!r}"
+    lo = _finite_number(cell["min"], name=f"{prefix}: min")
+    hi = _finite_number(cell["max"], name=f"{prefix}: max")
     if lo < 0 or hi < 0:
         raise ValueError(
             f"baseline for {control!r}/{cell_key!r}: min/max are magnitudes, must be non-negative"
         )
     if lo > hi:
         raise ValueError(f"baseline for {control!r}/{cell_key!r}: min must not exceed max")
-    return {"expected_sign": int(sign), "min": float(lo), "max": float(hi)}
+    return {"expected_sign": int(sign), "min": lo, "max": hi}
 
 
 def validate_baselines(baselines) -> dict:
@@ -96,6 +100,7 @@ def _is_consistent(shift: float, baseline: dict) -> bool:
     for any nonzero shift, its sign matches expected_sign. A shift of exactly 0 has no
     sign to violate -- only the magnitude bound applies (which a min > 0 would already
     fail on its own, so this doesn't let a genuinely-missing press through)."""
+    shift = _finite_number(shift, name="shift")
     magnitude = abs(shift)
     if not (baseline["min"] <= magnitude <= baseline["max"]):
         return False
@@ -186,6 +191,7 @@ class AnomalyChecker:
         baseline = cells.get(cell_key)
         if baseline is None:
             return  # no baseline for this exact cell -- not checked
+        shift = _finite_number(shift, name="shift")
         instance_key = (source_id, control, cell_key, frame)
         if instance_key in self._seen_instances:
             return

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 
+import numpy as np
 import pytest
 
 from kuration_action_state_consistency import (
@@ -53,6 +54,22 @@ def test_generic_validate_baselines_rejects_negative_min_or_max():
 def test_generic_validate_baselines_rejects_min_greater_than_max():
     with pytest.raises(ValueError, match="min must not exceed max"):
         validate_baselines({"X": {"1": {"expected_sign": 1, "min": 2.0, "max": 1.0}}})
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("bound", ["min", "max"])
+def test_generic_validate_baselines_rejects_nonfinite_bounds(bound, bad):
+    cell = {"expected_sign": 1, "min": 0.0, "max": 1.0}
+    cell[bound] = bad
+    with pytest.raises(ValueError, match="finite"):
+        validate_baselines({"X": {"1": cell}})
+
+
+def test_generic_validate_baselines_accepts_numpy_real_scalars():
+    validated = validate_baselines({
+        "X": {"1": {"expected_sign": 1, "min": np.float32(0.25), "max": np.int64(2)}}
+    })
+    assert validated["X"]["1"] == {"expected_sign": 1, "min": 0.25, "max": 2.0}
 
 
 def test_generic_validate_baselines_rejects_non_string_cell_key():
@@ -103,6 +120,12 @@ def test_generic_is_consistent_exact_zero_shift_has_no_sign_to_violate():
     assert _is_consistent(0.0, positive_floor) is False  # fails on magnitude, not sign
 
 
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_generic_is_consistent_rejects_nonfinite_measurements(bad):
+    with pytest.raises(ValueError, match="shift must be finite"):
+        _is_consistent(bad, {"expected_sign": 1, "min": 0.0, "max": 1.0})
+
+
 def test_generic_anomaly_checker_end_to_end_with_synthetic_instances():
     """The generic AnomalyChecker never touches frames/actions/pixel_shift at all --
     exercised here with hand-fed (source_id, control, cell_key, frame, shift) tuples,
@@ -124,6 +147,22 @@ def test_generic_anomaly_checker_record_instance_rejects_unconfigured_control():
     checker.resolve_segment(("clip1", 0, 5), expected_length=5)
     with pytest.raises(KeyError):
         checker.record_instance("clip1", "Y", "1", 2, 3.0)  # "Y" was never configured
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_generic_anomaly_checker_record_instance_rejects_nonfinite_shift(bad):
+    config = validate_config(
+        {
+            "anomaly_type": "synthetic_demo",
+            "baselines": {"X": {"1": {"expected_sign": 1, "min": 0.0, "max": 10.0}}},
+        }
+    )
+    checker = AnomalyChecker(config)
+    checker.resolve_segment(("clip1", 0, 5), expected_length=5)
+    with pytest.raises(ValueError, match="shift must be finite"):
+        checker.record_instance("clip1", "X", "1", 2, bad)
+    checker.record_instance("clip1", "X", "1", 2, 3.0)
+    assert checker.clip_verdict("clip1") == "consistent"
 
 
 def test_consistency_check_transform_counts_consistent_and_inconsistent_values():

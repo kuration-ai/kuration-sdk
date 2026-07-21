@@ -9,7 +9,7 @@ Builds on anomaly_checker.AnomalyChecker for everything generic (baseline valida
 consistency check, clip aggregation, reporting) -- this module adds only what's specific
 to checking pixel_shift's own measurements: validating baseline control names against
 kuration_pixel_shift.ALL_CONTROLS, and discovering instances via kuration_pixel_shift's
-own _iter_instances/_validated_segment_inputs rather than re-deriving any isolated-press
+own public iter_instances/validate_segment_inputs APIs rather than re-deriving isolated-press
 detection, boundary handling, or optical-flow logic.
 """
 from __future__ import annotations
@@ -117,8 +117,12 @@ class ActionStateConsistencyChecker(AnomalyChecker):
         ``controls`` defaults to every control with a configured baseline; passing an
         explicit subset must still be a subset of the configured baselines -- there is
         nothing to check a control against without one."""
-        from kuration_pixel_shift.diamond_action_decode import validate_boundary, validate_color_space
-        from kuration_pixel_shift.pixel_shift_operator import _iter_instances, _validated_segment_inputs
+        from kuration_pixel_shift import (
+            iter_instances,
+            validate_boundary,
+            validate_color_space,
+            validate_segment_inputs,
+        )
 
         controls = tuple(self.baselines) if controls is None else tuple(controls)
         unknown = sorted(set(controls) - set(self.baselines))
@@ -129,7 +133,7 @@ class ActionStateConsistencyChecker(AnomalyChecker):
             )
         boundary = validate_boundary(boundary)
         color_space = validate_color_space(color_space)
-        frames, actions, before, after_actions, after_frames = _validated_segment_inputs(
+        frames, actions, before, after_actions, after_frames = validate_segment_inputs(
             frames,
             actions,
             lookbehind_actions=lookbehind_actions,
@@ -139,7 +143,7 @@ class ActionStateConsistencyChecker(AnomalyChecker):
         source_id, start_idx, _end_idx = self.resolve_segment(segment_id, expected_length=len(actions))
 
         for control in controls:
-            for cell_key, local_start, shift in _iter_instances(
+            for cell_key, local_start, shift in iter_instances(
                 frames,
                 actions,
                 control,
