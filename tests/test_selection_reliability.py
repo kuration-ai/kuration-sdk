@@ -23,6 +23,16 @@ from kuration.strategy import _normalize
 HAS_PYARROW = importlib.util.find_spec("pyarrow") is not None
 
 
+def test_binning_rejects_a_segment_missing_the_axis_feature():
+    segments = [
+        Segment("complete", 0, 1, (0, 0), {"score": 1.0}),
+        Segment("missing", 1, 2, (1, 1), {}),
+    ]
+
+    with pytest.raises(ValueError, match=r"binning axis 'score'.*'missing'.*has no such feature"):
+        bin_segments(segments, [("score", 3)])
+
+
 def test_quantile_normalization_is_tie_aware_and_constant_neutral():
     values = np.asarray([1.0, 1.0, 3.0, 3.0, 5.0])
     assert _normalize(values, "quantile") == pytest.approx([0.125, 0.125, 0.625, 0.625, 1.0])

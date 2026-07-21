@@ -173,7 +173,9 @@ ASG capture, see the PR's test plan). The functions place no hardcoded assumptio
 W)` — `_radial_unit_vectors` and the crop both derive from the actual array shape — but
 "runs without erroring at another resolution" and "produces calibration-comparable
 numbers at another resolution" are different claims; only the former is currently true by
-construction, the latter is untested.
+construction, the latter is untested. Radial geometry uses float32 and a two-resolution LRU
+cache: that bounds process-global memory to roughly two sets of three image-sized grids, at the
+cost of recomputation if one process repeatedly alternates among more than two resolutions.
 
 **4. Coordinate / sign convention**:
 - `_prep_gray(img, color_space="BGR")` defaults to **BGR**, matching how ASG/DIAMOND HDF5

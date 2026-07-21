@@ -180,7 +180,9 @@ the descriptors for registered metrics and transforms. Jobs may set
 ambient entry points were discovered earlier in the process. Explicit plugin modules fail fast.
 An installed entry point that fails is rolled back transactionally, reported as a runtime warning
 and an error record from `load_plugins()`, and does not prevent later healthy entry points from
-loading.
+loading. The diagnostic remains available from `plugin_failures()` after Python's one-shot warning
+has been consumed; discovery CLIs print it to stderr, and run provenance contains a stable failure
+marker directing operators to `kur-plugin-check` for the full error.
 
 ### Progress events
 

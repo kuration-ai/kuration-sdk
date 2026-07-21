@@ -23,6 +23,7 @@ _ENTRY_POINTS_SCANNED = False
 # in this Python process.
 _ENTRY_POINT_BASELINES: dict[tuple[str, str], Any | None] = {}
 _MODULE_COMPONENTS: dict[str, dict[tuple[str, str], Any]] = {}
+_PLUGIN_FAILURES: dict[str, dict[str, str]] = {}
 _LOCK = RLock()
 
 
@@ -49,6 +50,7 @@ def _plugin_state_snapshot() -> dict[str, Any]:
         "entry_point_baselines": dict(_ENTRY_POINT_BASELINES),
         "module_components": {name: dict(entries)
                               for name, entries in _MODULE_COMPONENTS.items()},
+        "plugin_failures": {key: dict(entry) for key, entry in _PLUGIN_FAILURES.items()},
         "sys_modules": set(sys.modules),
     }
 
@@ -71,6 +73,8 @@ def _restore_plugin_state(snapshot: dict[str, Any], module_name: str | None) -> 
     _ENTRY_POINT_BASELINES.update(snapshot["entry_point_baselines"])
     _MODULE_COMPONENTS.clear()
     _MODULE_COMPONENTS.update(snapshot["module_components"])
+    _PLUGIN_FAILURES.clear()
+    _PLUGIN_FAILURES.update(snapshot["plugin_failures"])
 
     if module_name:
         root = module_name.split(".", 1)[0]
@@ -179,10 +183,14 @@ def load_plugins(modules=(), *, include_entry_points: bool = True) -> list[dict]
                     module_name = ep.value.split(":", 1)[0] if isinstance(ep.value, str) else None
                     _restore_plugin_state(state, module_name)
                     message = f"failed to load kuration plugin entry point {key!r}: {e}"
+                    failure = {"kind": "error", "name": ep.name, "value": ep.value,
+                               "error_type": f"{type(e).__module__}.{type(e).__qualname__}",
+                               "error": message}
+                    _PLUGIN_FAILURES[key] = failure
                     warnings.warn(message, RuntimeWarning, stacklevel=2)
-                    loaded.append({"kind": "error", "name": ep.name, "value": ep.value,
-                                   "error": message})
+                    loaded.append(dict(failure))
                     continue
+                _PLUGIN_FAILURES.pop(key, None)
                 module = target.__name__ if inspect.ismodule(target) \
                     else getattr(target, "__module__", None)
                 if module:
@@ -228,8 +236,14 @@ def loaded_plugin_modules() -> tuple[str, ...]:
     return tuple(sorted(_LOADED_MODULES))
 
 
+def plugin_failures() -> tuple[dict[str, str], ...]:
+    """Return persistent diagnostics for ambient entry points that failed discovery."""
+    with _LOCK:
+        return tuple(dict(_PLUGIN_FAILURES[key]) for key in sorted(_PLUGIN_FAILURES))
+
+
 def plugin_provenance(*, registry=None) -> list[dict]:
-    """Host-independent code fingerprints for loaded plugin implementation modules."""
+    """Host-independent plugin fingerprints plus ambient discovery failure records."""
     out = []
     distributions = packages_distributions()
     names = set(loaded_plugin_modules())
@@ -260,4 +274,14 @@ def plugin_provenance(*, registry=None) -> list[dict]:
             except PackageNotFoundError:
                 pass
         out.append(entry)
+    for failure in plugin_failures():
+        # Exception text may contain credentials or host paths. Provenance records a stable,
+        # actionable failure marker; plugin_failures() and kur-plugin-check retain full detail.
+        out.append({
+            "kind": "error",
+            "name": failure["name"],
+            "value": failure["value"],
+            "error_type": failure["error_type"],
+            "error": f"plugin entry point failed; run kur-plugin-check {failure['name']}",
+        })
     return out

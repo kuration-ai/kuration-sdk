@@ -54,7 +54,7 @@ from .html_report import render_html_report, write_html_report
 from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities, register_filter
 from .pipeline import Pipeline, input
-from .plugins import load_plugins, loaded_plugin_modules, plugin_provenance
+from .plugins import load_plugins, loaded_plugin_modules, plugin_failures, plugin_provenance
 from .plugin_validation import PluginCheckResult, check_plugins
 from .progress import ProgressCallback
 from .report import dataset_report
@@ -148,7 +148,8 @@ __all__ = [
     "QualityGateResult", "QualityGateError",
     "render_html_report", "write_html_report",
     "infer_schema", "Pipeline", "input",
-    "load_plugins", "loaded_plugin_modules", "plugin_provenance", "check_plugins",
+    "load_plugins", "loaded_plugin_modules", "plugin_failures", "plugin_provenance",
+    "check_plugins",
     "PluginCheckResult", "ProgressCallback",
     "Registry", "default_registry", "ComponentDescriptor", "list_components",
     "describe_component", "ExecutionPlan", "ARTIFACT_FORMAT_VERSION",

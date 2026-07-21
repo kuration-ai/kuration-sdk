@@ -26,8 +26,9 @@ objects as noted below.
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
 cap and stratified splits); `tags_of(segment) -> iterable` overrides declarative tags;
-`executor` selects ordered local or optional Ray source work; `workers` parallelizes the local
-feature pass (deterministic); `on_error` is `"skip"` (log + collect)
+`sources` contains non-empty string identifiers/URIs (use `str(path)` for `pathlib.Path` values);
+`executor` selects ordered local or optional Ray source work; `workers` caps concurrent local
+workers or submitted Ray tasks (deterministic); `on_error` is `"skip"` (log + collect)
 or `"raise"`; `streaming=True` is the out-of-core path; `progress(event_dict)` receives phase
 events without coupling execution to a particular UI.
 
@@ -188,7 +189,8 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 |---|---|---|
 | `load_plugins` | `(modules=(), *, include_entry_points=True) -> list[dict]` | load registration modules and installed entry points; ambient failures are rolled back and returned as `kind="error"` records with a warning |
 | `loaded_plugin_modules` | `() -> tuple[str, ...]` | modules propagated to spawned scoring workers |
-| `plugin_provenance` | `(*, registry=None) -> list[dict]` | loaded plugin implementation fingerprints used by resume provenance; an explicit registry scopes the result |
+| `plugin_failures` | `() -> tuple[dict, ...]` | persistent diagnostics for ambient entry points that failed discovery; also reported by discovery CLIs |
+| `plugin_provenance` | `(*, registry=None) -> list[dict]` | loaded implementation fingerprints and stable ambient-failure markers used by resume provenance; an explicit registry scopes successful components |
 | `check_plugins` | `(target=None) -> list[PluginCheckResult]` | transactionally validate all installed plugin entry points, one entry-point name, or an explicit registration module |
 | `PluginCheckResult` | immutable result with `.passed`, `.to_dict()`, and `.render()` | plugin load, descriptor, package, namespace, parameter-schema, and transform-contract diagnostics |
 | `ProgressCallback` | `Callable[[dict], None]` | receives structured `{phase, event, ...}` execution events |

@@ -113,7 +113,7 @@ are grouped below by user task.
   `iter_shards`, `read_shard_arrays`, `shard_entries`.
 - Registries, plugins, and progress: `Registry`, `default_registry`, `ComponentDescriptor`,
   `list_components`, `describe_component`, `load_plugins`, `loaded_plugin_modules`,
-  `plugin_provenance`, `check_plugins`, `PluginCheckResult`, `ProgressCallback`,
+  `plugin_failures`, `plugin_provenance`, `check_plugins`, `PluginCheckResult`, `ProgressCallback`,
   `register_operator`.
 - Manifests and I/O: `build_config`, `dump_segment_manifest`, `write_config`, `read_text`,
   `write_text`, `write_bytes`, `exists`, `local_copy`.

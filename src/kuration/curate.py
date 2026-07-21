@@ -41,6 +41,8 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
            executor: str = "local") -> CurateResult:
     """Curate a target-count segment set from `sources`.
 
+    Sources are non-empty string identifiers/URIs. Convert ``pathlib.Path`` values with ``str``;
+    this keeps segment IDs, worker transport, sorting, manifests, and resume identity canonical.
     group_of(source_id) -> group key (sets Segment.group for the group cap + split strata);
     tags_of(segment) -> tags (sets Segment.tags for tag coverage). Both optional.
     `workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips a bad source;

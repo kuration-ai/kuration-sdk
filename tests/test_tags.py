@@ -14,6 +14,7 @@ from kuration import (
     write_dataset,
 )
 from kuration.tags import compile_tagger
+from kuration.select import enforce_tag_coverage
 
 SCHEMA = SchemaSpec.from_dict({
     "name": "t", "entity_axis": "e", "sample_hz": 1.0,
@@ -67,6 +68,19 @@ def test_tag_coverage_pulls_rare_tag_in_curate():
     # top-k alone would take the 3 highest-act ("common") windows; coverage swaps in a "rare"
     assert any("kind:rare" in s.tags for s in res.selected)
     assert len(res.selected) == 3
+
+
+def test_tag_coverage_accepts_a_single_pass_tag_vocabulary():
+    from kuration import Segment
+
+    common = Segment("common", 0, 1, (0, 0), bin=(0,), tags=frozenset({"common"}))
+    rare = Segment("rare", 0, 1, (0, 0), bin=(1,), tags=frozenset({"rare"}))
+
+    selected = enforce_tag_coverage(
+        [common], [common, rare], tag_vocab=(tag for tag in ("common", "rare")),
+        target_size=2, min_tag_frac=0.5)
+
+    assert selected == [common, rare]
 
 
 # ---- hours path (write_dataset / fill_to_hours reserve) ---------------------

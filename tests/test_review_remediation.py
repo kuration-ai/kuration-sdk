@@ -122,7 +122,7 @@ def test_score_sources_consumes_an_unsized_catalog_incrementally():
     assert progress[-1]["total"] == 5
 
 
-class _FailingMoveFilesystem:
+class _NonOverwritingMoveFilesystem:
     def __init__(self):
         self.objects = {"memory://bucket/final.bin": b"previous"}
 
@@ -136,7 +136,9 @@ class _FailingMoveFilesystem:
         self.objects.pop(path, None)
 
     def mv(self, source, destination):
-        raise OSError("publish failed")
+        if destination in self.objects:
+            raise FileExistsError(f"destination exists: {destination}")
+        self.objects[destination] = self.objects.pop(source)
 
     def makedirs(self, path, exist_ok=False):
         pass
@@ -145,10 +147,10 @@ class _FailingMoveFilesystem:
 def test_remote_staged_write_keeps_previous_generation_when_publish_fails(monkeypatch):
     import kuration.io as io_module
 
-    filesystem = _FailingMoveFilesystem()
+    filesystem = _NonOverwritingMoveFilesystem()
     monkeypatch.setattr(io_module, "_fs", lambda path: filesystem)
 
-    with pytest.raises(OSError, match="publish failed"):
+    with pytest.raises(FileExistsError, match="destination exists"):
         with staged_write("memory://bucket/final.bin") as local:
             __import__("pathlib").Path(local).write_bytes(b"replacement")
 
@@ -158,11 +160,11 @@ def test_remote_staged_write_keeps_previous_generation_when_publish_fails(monkey
 def test_remote_checkpoint_publish_keeps_previous_generation_on_failure(monkeypatch):
     import kuration.io as io_module
 
-    filesystem = _FailingMoveFilesystem()
+    filesystem = _NonOverwritingMoveFilesystem()
     filesystem.objects["memory://bucket/attempt.bin"] = b"replacement"
     monkeypatch.setattr(io_module, "_fs", lambda path: filesystem)
 
-    with pytest.raises(OSError, match="publish failed"):
+    with pytest.raises(FileExistsError, match="destination exists"):
         _publish_attempt("memory://bucket/attempt.bin", "memory://bucket/final.bin")
 
     assert filesystem.objects["memory://bucket/final.bin"] == b"previous"
@@ -190,7 +192,7 @@ def test_explicit_plugin_failure_rolls_back_registry_and_can_retry(tmp_path, mon
         assert "review_broken_plugin" not in plugin_state.loaded_plugin_modules()
 
 
-def test_broken_ambient_entry_point_does_not_hide_healthy_plugins(monkeypatch):
+def test_broken_ambient_entry_point_does_not_hide_healthy_plugins(monkeypatch, capsys):
     import kuration.plugins as plugin_state
     from kuration.dsl.registry import METRICS
 
@@ -218,7 +220,9 @@ def test_broken_ambient_entry_point_does_not_hide_healthy_plugins(monkeypatch):
 
     keys = {"broken=review_broken:register", "healthy=review_healthy:register"}
     old_scanned = plugin_state._ENTRY_POINTS_SCANNED
+    old_failures = dict(plugin_state._PLUGIN_FAILURES)
     plugin_state._ENTRY_POINTS_SCANNED = False
+    plugin_state._PLUGIN_FAILURES.clear()
     for key in keys:
         plugin_state._LOADED_ENTRY_POINTS.discard(key)
     monkeypatch.setattr(plugin_state, "entry_points", lambda: EntryPoints([
@@ -233,6 +237,16 @@ def test_broken_ambient_entry_point_does_not_hide_healthy_plugins(monkeypatch):
         assert "review/ambient-partial" not in METRICS
         assert "review/ambient-healthy" in default_registry.names("metric")
         assert "review/ambient-healthy" in METRICS
+        [failure] = plugin_state.plugin_failures()
+        assert failure["name"] == "broken"
+        assert failure["error_type"] == "builtins.RuntimeError"
+        marker = next(entry for entry in plugin_state.plugin_provenance()
+                      if entry.get("kind") == "error")
+        assert marker["error"] == "plugin entry point failed; run kur-plugin-check broken"
+
+        from kuration.cli.discovery import _report_plugin_failures
+        _report_plugin_failures()
+        assert "ERROR plugin broken" in capsys.readouterr().err
     finally:
         for name in ("review/ambient-partial", "review/ambient-healthy"):
             default_registry._entries["metric"].pop(name, None)
@@ -240,4 +254,6 @@ def test_broken_ambient_entry_point_does_not_hide_healthy_plugins(monkeypatch):
         for key in keys:
             plugin_state._LOADED_ENTRY_POINTS.discard(key)
         plugin_state._LOADED_MODULES.discard(healthy.__module__)
+        plugin_state._PLUGIN_FAILURES.clear()
+        plugin_state._PLUGIN_FAILURES.update(old_failures)
         plugin_state._ENTRY_POINTS_SCANNED = old_scanned

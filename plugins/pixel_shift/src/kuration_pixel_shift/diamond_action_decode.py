@@ -487,6 +487,9 @@ def _prep_gray(img: np.ndarray, color_space: str = "BGR") -> np.ndarray:
     return gray[: int(h * (1 - BOTTOM_CROP_FRAC)), :]
 
 
+# Each entry owns three float32 image-sized grids (about 12 * H * W bytes). Two entries cover
+# the common full/cropped-resolution pair without an unbounded process-global cache; workloads
+# cycling through more resolutions intentionally recompute rather than retain arbitrary RAM.
 @lru_cache(maxsize=2)
 def _radial_unit_vectors(h: int, w: int):
     ys, xs = np.mgrid[0:h, 0:w]
