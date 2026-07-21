@@ -89,6 +89,21 @@ def test_aftermath_allows_orthogonal_keys_to_vary_freely():
     assert dad.find_isolated_press_sequences(Y, "W", press_len=1) == [(1, 3)]
 
 
+def test_held_control_briefly_sharing_a_frame_is_not_a_false_new_press():
+    """Regression test for a review-caught bug: none -> w+a -> w -> none reported a fresh
+    press_len=1 "W" press starting at the w-only frame, even though W was already held
+    (continuously, just not alone) on the frame before. A solo run that begins mid-hold is
+    the tail of an already-active press, not a genuine new press-len-N start, and must not
+    be reported as one."""
+    Y = np.stack([_action(), _action(w=True, a=True), _action(w=True), _action()])
+    assert dad.find_isolated_press_sequences(Y, "W", press_len=1) == []
+
+    # Sanity: a genuinely fresh, isolated W press (not preceded by an already-held W) is
+    # still detected correctly.
+    fresh = np.stack([_action(), _action(w=True), _action()])
+    assert dad.find_isolated_press_sequences(fresh, "W", press_len=1) == [(1, 2)]
+
+
 def test_isolated_mouse_y_press_is_actually_detected():
     """Regression test for a review-caught bug: find_isolated_press_sequences compared
     solo_labels() output (a label in [0, 14]) against MY_OFF (=36, a completely different
@@ -150,6 +165,25 @@ def test_error_boundary_requires_context_for_targeted_active_edges():
         dad.find_isolated_press_sequences(right, "W", 1, boundary="error")
 
 
+def test_error_boundary_is_not_suppressed_by_lookahead_that_does_not_resolve():
+    """Regression test for a review-caught bug: any non-empty lookahead_actions suppressed
+    the right-edge "error" check, regardless of whether it actually showed the press
+    ending. Lookahead where W is STILL active throughout tells us nothing new -- the
+    ambiguity remains, so "error" must still raise. Lookahead that genuinely shows W
+    becoming inactive, by contrast, resolves it and must not raise."""
+    right = np.stack([_action(), _action(w=True)])
+    unresolving_lookahead = np.stack([_action(w=True), _action(w=True)])
+    with pytest.raises(ValueError, match="last frame"):
+        dad.find_isolated_press_sequences(
+            right, "W", 1, lookahead_actions=unresolving_lookahead, boundary="error"
+        )
+
+    resolving_lookahead = np.stack([_action()])
+    dad.find_isolated_press_sequences(
+        right, "W", 1, lookahead_actions=resolving_lookahead, boundary="error"
+    )  # must not raise
+
+
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
@@ -186,6 +220,20 @@ def test_decode_api_rejects_unknown_semantics_and_invalid_lengths():
         dad.mouse_delta_value(actions, "z")
     with pytest.raises(ValueError, match="boundary"):
         dad.find_isolated_press_sequences(actions, "W", 1, boundary="guess")
+
+
+def test_displacement_median_rejects_degenerate_empty_flow():
+    """Regression test for a review-caught bug: an empty spatial dimension passed the
+    shape check (ndim==3, last axis==2) and reached np.median, which silently returns nan
+    for an empty array instead of erroring -- a degenerate flow must be rejected explicitly,
+    not allowed to produce a NaN "measurement" downstream."""
+    empty_h = np.zeros((0, 10, 2), dtype=np.float32)
+    with pytest.raises(ValueError, match="nonzero spatial dimensions"):
+        dad.displacement_median(empty_h, "W")
+
+    empty_w = np.zeros((10, 0, 2), dtype=np.float32)
+    with pytest.raises(ValueError, match="nonzero spatial dimensions"):
+        dad.displacement_median(empty_w, "W")
 
 
 class TestDisplacementSignConvention:
@@ -398,6 +446,26 @@ def test_pixel_shift_report_records_clip_provenance():
     assert record["frame"] == 101  # start_idx (100) + local instance start (1, where A is held)
 
 
+def test_add_segment_rejects_malformed_source_id_and_negative_indexes():
+    """Regression test for a review-caught bug: source_id was never validated (None, "",
+    or any object would satisfy every existing check), and start_idx/end_idx were only
+    checked to be integers, not non-negative -- a malformed segment_id could silently
+    poison print_report()'s clip/frame provenance with a plausible-looking but meaningless
+    location instead of erroring."""
+    rng = np.random.default_rng(2)
+    h, w = 40, 60
+    actions = np.stack([_action(), _action(a=True), _action()])
+    frames = rng.integers(0, 255, size=(actions.shape[0], h, w, 3), dtype=np.uint8)
+    report = pso.PixelShiftReport()
+
+    with pytest.raises(ValueError, match="source_id"):
+        report.add_segment(frames, actions, (None, 100, 103), controls=["A"])
+    with pytest.raises(ValueError, match="source_id"):
+        report.add_segment(frames, actions, ("", 100, 103), controls=["A"])
+    with pytest.raises(ValueError, match="non-negative"):
+        report.add_segment(frames, actions, ("demo", -5, -2), controls=["A"])
+
+
 def test_pixel_shift_report_preserves_distinct_instances_within_one_segment():
     """Regression test for a review-caught bug: every instance found in one add_segment()
     call used to share the SAME segment-level clip label, discarding each instance's own
@@ -441,6 +509,35 @@ def test_pixel_shift_report_instances_are_independent_per_object():
     report_2 = pso.PixelShiftReport()
     assert report_2._ledger == {}
     assert "A" in report_1._ledger
+
+
+def test_pixel_shift_report_deduplicates_the_same_press_across_overlapping_windows():
+    """Regression test for a review-caught bug: a press's global start can fall within
+    more than one overlapping window's local range, so each window's add_segment() call
+    independently "owns" and records it -- overlapping windows do not, by themselves,
+    prevent duplicate counting (see the README's "Input and segment-boundary contract").
+    Two overlapping windows here both genuinely see the SAME global W press (global frame
+    5); PixelShiftReport must record it once, not twice, because both calls resolve to the
+    same (source_id, control, cell_key, frame) instance key."""
+    rng = np.random.default_rng(9)
+    h, w = 40, 60
+    # Global timeline, frames 0..9: an isolated W press at global frame 5.
+    global_actions = np.stack([_action()] * 5 + [_action(w=True)] + [_action()] * 4)
+    global_frames = rng.integers(0, 255, size=(10, h, w, 3), dtype=np.uint8)
+
+    # Window A: global [3:8) -- local start of the press = 5 - 3 = 2.
+    # Window B: global [4:9) -- local start of the press = 5 - 4 = 1.
+    # Both windows own the press (boundary="exclude" only rejects local_start == 0).
+    window_a = (global_actions[3:8], global_frames[3:8], ("clip", 3, 8))
+    window_b = (global_actions[4:9], global_frames[4:9], ("clip", 4, 9))
+
+    report = pso.PixelShiftReport()
+    for actions, frames, segment_id in (window_a, window_b):
+        report.add_segment(frames, actions, segment_id, controls=["W"])
+
+    entries = report._ledger["W"]["1"]
+    assert len(entries) == 1  # not 2 -- deduplicated across the two overlapping windows
+    assert entries[0]["frame"] == 5  # the true global frame, matching both windows' math
 
 
 # ---------------------------------------------------------------------------------------

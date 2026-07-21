@@ -138,12 +138,23 @@ Direct callers of `find_isolated_press_sequences`, `release_transition_displacem
 `segment_scalars`, and `PixelShiftReport.add_segment` can instead provide bounded context:
 `lookbehind_actions` disambiguates the left edge, while matching `lookahead_actions` and
 `lookahead_frames` make a right-edge release measurable. Only the final lookbehind row and
-at most `press_len` lookahead rows are consumed. A detected event belongs to the segment
-where its press starts, preventing duplicate ownership in overlapping windows. The SDK
-pipeline transform does not receive neighboring segments as part of its transform input,
-so use overlapping windows that preserve one preceding row and up to three following rows
-when boundary-complete event coverage matters, or call the direct API with explicit
-lookaround arrays.
+at most `press_len` lookahead rows are consumed. A detected event belongs to the window
+where its press starts -- but when windows *overlap*, a press whose start falls in the
+overlap region is inside more than one window's local range, so it is independently
+"owned" (and would be independently reported) by every one of them. **Overlapping windows
+do not, by themselves, prevent duplicate counting** -- use non-overlapping windows with
+explicit `lookbehind_actions`/`lookahead_actions`/`lookahead_frames` to get boundary-complete
+coverage instead. `PixelShiftReport` tracks each recorded instance's global (source_id,
+control, cell_key, frame) across every `add_segment()` call and skips an exact duplicate,
+so accumulating into one `PixelShiftReport` across accidentally-overlapping windows is
+still safe from double-counting -- but the per-segment scalar features returned directly
+by `segment_scalars`/`PixelShift.transform_batch` have no memory across calls and cannot
+deduplicate anything themselves. The SDK pipeline transform does not receive neighboring
+segments as part of its transform input, so it cannot supply lookaround context at all;
+boundary-complete coverage through the pipeline is not currently achievable without risking
+duplicates, so `boundary="exclude"` (accepting that true edge presses are conservatively
+dropped, never double-counted) is the safe default there. Use non-overlapping windows with
+the direct API and explicit lookaround arrays when complete edge-press coverage matters.
 
 ## Method — the specifics results depend on
 

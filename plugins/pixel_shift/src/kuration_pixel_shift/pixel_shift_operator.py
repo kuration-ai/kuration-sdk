@@ -311,6 +311,15 @@ class PixelShiftReport:
 
     def __init__(self):
         self._ledger: dict = {}
+        # A press's global frame position (start_idx + local_start) is the same
+        # regardless of which window observed it -- so it doubles as the tie-breaker key
+        # for presses "owned" by more than one overlapping window (a press's start can
+        # fall within more than one window's local range when windows overlap; each
+        # add_segment() call only sees its own window, with no visibility into what a
+        # previous call already recorded, so this cross-call de-dup lives here instead).
+        # The first add_segment() call to observe a given (source, control, cell_key,
+        # frame) wins; later observations of the exact same global instance are skipped.
+        self._seen_instances: set = set()
 
     def add_segment(
         self,
@@ -349,13 +358,20 @@ class PixelShiftReport:
         ):
             raise ValueError("segment_id must be (source_id, start_idx, end_idx)")
         source_id, start_idx, end_idx = segment_id
+        # An unvalidated source_id (None, "", a stray object) or a negative index would
+        # still satisfy every check below, poisoning print_report()'s clip/frame
+        # provenance with a plausible-looking but meaningless location.
+        if not isinstance(source_id, str) or not source_id:
+            raise ValueError("segment_id source_id must be a non-empty string")
         if (
             isinstance(start_idx, bool)
             or isinstance(end_idx, bool)
             or not isinstance(start_idx, (int, np.integer))
             or not isinstance(end_idx, (int, np.integer))
+            or start_idx < 0
+            or end_idx < 0
         ):
-            raise ValueError("segment_id start_idx and end_idx must be integers")
+            raise ValueError("segment_id start_idx and end_idx must be non-negative integers")
         if int(end_idx) - int(start_idx) != len(actions):
             raise ValueError("segment_id range length must match the number of action frames")
         for control in controls:
@@ -369,7 +385,12 @@ class PixelShiftReport:
                 lookahead_frames=after_frames,
                 boundary=boundary,
             ):
-                record = {"source_id": source_id, "frame": start_idx + local_start, "shift": shift}
+                frame = start_idx + local_start
+                instance_key = (source_id, control, cell_key, frame)
+                if instance_key in self._seen_instances:
+                    continue
+                self._seen_instances.add(instance_key)
+                record = {"source_id": source_id, "frame": frame, "shift": shift}
                 self._ledger.setdefault(control, {}).setdefault(cell_key, []).append(record)
 
     def print_report(self, controls: Sequence[str] | None = None) -> None:

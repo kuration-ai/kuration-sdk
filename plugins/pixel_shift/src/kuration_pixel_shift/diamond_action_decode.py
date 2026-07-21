@@ -308,6 +308,14 @@ def _find_isolated_press_sequences(
 
     sequences = []
     for t in press_starts:
+        # A solo run can start mid-hold: e.g. none -> w+a -> w -> none reports a fresh
+        # "solo W" run beginning at the w-only frame, even though W was already held
+        # (just not alone) on the frame before -- that run is the tail of an
+        # already-active press, not a genuine fresh press-len-N start. Require control
+        # to have been inactive immediately before the run (or the run to start at t=0,
+        # where boundary policy/lookbehind context governs instead).
+        if t > 0 and active[t - 1]:
+            continue
         press_end = t + press_len - 1
         end = press_end
         for j in range(press_end + 1, n):
@@ -352,11 +360,19 @@ def _actions_with_context(
                 f"{control} is active at the first frame; provide lookbehind_actions "
                 "or choose another boundary policy"
             )
-        if after is None and active[-1]:
-            raise ValueError(
-                f"{control} is active at the last frame; provide lookahead_actions "
-                "or choose another boundary policy"
-            )
+        if active[-1]:
+            # Merely being non-None isn't "resolved" -- if control is still active in
+            # every row of the provided lookahead too, we still don't know whether (or
+            # where) the press ends; only a lookahead that shows an actual release
+            # counts as sufficient context. Without this, any non-empty lookahead
+            # silently suppressed the error regardless of whether it told us anything.
+            resolved = after is not None and not _control_active_mask(after, control).all()
+            if not resolved:
+                raise ValueError(
+                    f"{control} is active at the last frame and the provided "
+                    "lookahead_actions never shows it becoming inactive; provide "
+                    "lookahead that resolves the release or choose another boundary policy"
+                )
 
     if boundary == "assume-inactive":
         if before is None and active[0]:
@@ -487,6 +503,11 @@ def displacement_median(flow: np.ndarray, control: str) -> float:
     flow = np.asarray(flow)
     if flow.ndim != 3 or flow.shape[-1:] != (2,):
         raise ValueError(f"flow must have shape (H, W, 2), got {flow.shape}")
+    if flow.shape[0] == 0 or flow.shape[1] == 0:
+        # np.median on an empty spatial slice returns nan silently (with a runtime
+        # warning) instead of erroring -- a degenerate flow must be rejected here, not
+        # allowed to produce a NaN "measurement" downstream.
+        raise ValueError(f"flow must have nonzero spatial dimensions, got {flow.shape}")
     if flow.dtype.kind not in "biuf" or not np.all(np.isfinite(flow)):
         raise ValueError("flow must contain finite numeric values")
     axis = CONTROL_AXES[control]["axis"]
