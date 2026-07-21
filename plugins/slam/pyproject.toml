@@ -9,8 +9,12 @@ dependencies = [
     "numpy>=1.24",
 ]
 
+[project.scripts]
+kur-slam = "kuration_slam.cli:main"
+
 [project.optional-dependencies]
 video = ["kuration-sdk[video]>=0.1.0rc3"]
+methods = ["kuration-sdk[methods]>=0.1.0rc3"]
 test = [
     "pytest>=8",
     "ruff>=0.5",

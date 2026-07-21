@@ -11,7 +11,7 @@ from kuration import Tick, input
 from kuration.adapters.base import iter_arrays_to_ticks
 
 from .export import EXPORT_FORMAT, EXPORT_VERSION
-from .schema import FIELD_TO_ARRAY, slam_schema
+from .schema import FIELD_TO_ARRAY, TRACKING_CONFIDENCE, slam_schema
 
 
 def _resolve_reference(root: Path, value: str) -> str:
@@ -81,10 +81,13 @@ class SLAMTrajectoryAdapter:
         path = self._path(source)
         try:
             with np.load(path, allow_pickle=False) as archive:
-                arrays = {
-                    field: np.asarray(archive[key]) for field, key in FIELD_TO_ARRAY.items()
-                }
                 times = np.asarray(archive["time"], dtype=np.float64)
+                arrays = {}
+                for field, key in FIELD_TO_ARRAY.items():
+                    if field == TRACKING_CONFIDENCE and key not in archive.files:
+                        arrays[field] = np.ones(len(times), dtype=np.float64)
+                    else:
+                        arrays[field] = np.asarray(archive[key])
         except (OSError, KeyError, ValueError) as error:
             raise ValueError(f"cannot read SLAM trajectory for clip {source!r}: {path}") from error
         lengths = {field: len(value) for field, value in arrays.items()}

@@ -12,20 +12,27 @@ from kuration_slam import (
     ADAPTER_NAME,
     OPERATOR_NAME,
     OUTPUT_FEATURES,
+    QUALITY_FEATURES,
+    QUALITY_TRANSFORM_NAME,
     PointCloudArtifact,
+    SLAMQuality,
     TRANSFORM_NAME,
     SLAMMotion,
     SLAMTrajectoryAdapter,
     curate_point_cloud,
+    curate_slam_gameplay,
     decode_video_clips,
     export_slam_output,
     input_slam,
     load_point_cloud,
     prepare_slam_input,
+    preflight_slam,
     register,
     run_slam_pipeline,
     slam_schema,
 )
+from kuration_slam.cli import main as cli_main
+from kuration_slam.demo import write_demo_reconstruction
 
 
 def _pose(position, forward=(0.0, 0.0, 1.0)):
@@ -70,6 +77,7 @@ def test_export_and_adapter_round_trip(tmp_path):
         sample_hz=2.0,
         videos={"clip one": video},
         point_attributes={"confidence": np.array([0.25, 0.9])},
+        tracking_confidence={"clip one": np.array([1.0, 0.4, 0.9])},
     )
     document = json.loads(manifest_path.read_text())
     assert document["format"] == "kuration-slam-export"
@@ -87,6 +95,7 @@ def test_export_and_adapter_round_trip(tmp_path):
     ticks = adapter.ticks("clip one")
     assert [tick.time for tick in ticks] == [0.0, 0.5, 1.0]
     assert ticks[2].entities[0]["camera_position"] == (1.0, 1.0, 0.0)
+    assert ticks[1].entities[0]["tracking_confidence"] == pytest.approx(0.4)
     assert len(ticks[0].entities[0]["camera_frustum"]) == 15
     adapter.check_source("clip one")
 
@@ -108,6 +117,15 @@ def test_export_rejects_nonfinite_trajectory(tmp_path):
     output.trajectories["clip one"][1, 0] = np.nan
     with pytest.raises(ValueError, match="finite"):
         export_slam_output(output, tmp_path)
+
+
+def test_export_rejects_invalid_tracking_confidence(tmp_path):
+    with pytest.raises(ValueError, match=r"in \[0, 1\]"):
+        export_slam_output(
+            _output(),
+            tmp_path,
+            tracking_confidence={"clip one": np.array([1.0, -0.1, 0.9])},
+        )
 
 
 def test_motion_transform_computes_translation_and_turn_features():
@@ -138,6 +156,33 @@ def test_motion_transform_rejects_zero_forward_axis():
         )
 
 
+def test_quality_transform_flags_confidence_gaps_pose_jumps_and_scale_drift():
+    positions = np.array([[
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [2.0, 0.0, 0.0],
+        [22.0, 0.0, 0.0],
+    ]])
+    forwards = np.array([[
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0],
+    ]])
+    confidence = np.array([[1.0, 0.2, 1.0, 1.0]])
+    result = SLAMQuality().transform_batch({
+        "field:camera_position": positions,
+        "field:camera_z_axis": forwards,
+        "field:tracking_confidence": confidence,
+    })
+    assert set(result) == set(QUALITY_FEATURES)
+    assert result["slam_tracking_gap_fraction"] == pytest.approx([0.25])
+    assert result["slam_translation_jump_fraction"] == pytest.approx([1 / 3])
+    assert result["slam_rotation_jump_fraction"] == pytest.approx([1 / 3])
+    assert result["slam_step_scale_drift"][0] > 1
+    assert 0 < result["slam_quality_score"][0] < 1
+
+
 def test_registered_operator_runs_end_to_end(tmp_path):
     manifest = export_slam_output(_output(), tmp_path / "export", sample_hz=2.0)
     register()
@@ -158,10 +203,13 @@ def test_registration_exposes_complete_descriptors():
     adapter = describe_component("adapter", ADAPTER_NAME, registry=snapshot)
     transform = describe_component("transform", TRANSFORM_NAME, registry=snapshot)
     operator = describe_component("operator", OPERATOR_NAME, registry=snapshot)
+    quality = describe_component("transform", QUALITY_TRANSFORM_NAME, registry=snapshot)
     assert adapter["parameters"]["required"] == ["manifest"]
     assert transform["package"] == "kuration-plugin-slam"
     assert transform["description"]
     assert operator["parameters"]["properties"]["bins"]["minimum"] == 2
+    assert "slam_quality_score" in QUALITY_FEATURES
+    assert quality["parameters"]["properties"]["max_turn_degrees"]["maximum"] == 180
 
 
 def test_schema_has_fixed_pose_field_widths():
@@ -169,6 +217,7 @@ def test_schema_has_fixed_pose_field_widths():
     assert schema.fields["camera_position"].width == 3
     assert schema.fields["camera_intrinsics"].width == 3
     assert schema.fields["camera_frustum"].width == 15
+    assert schema.fields["tracking_confidence"].kind == "scalar"
     assert schema.sample_hz == 7.5
 
 
@@ -223,6 +272,66 @@ def test_prepare_raw_frames_runs_injected_pipeline_once(tmp_path):
     )
     assert prepared.is_file()
     assert calls == {"constructed": 1, "run": 1}
+
+
+def test_prepare_resume_reuses_matching_cache_and_reports_progress(tmp_path):
+    calls = {"run": 0}
+
+    class FakePipeline:
+        def __init__(self, *, depth_model):
+            assert depth_model == "depth"
+
+        def __call__(self, frames):
+            calls["run"] += 1
+            return _output()
+
+    frames = {"clip one": np.zeros((3, 2, 2, 3), dtype=np.uint8)}
+    events = []
+    options = {"depth_model": "depth", "pipeline_factory": FakePipeline}
+    first = prepare_slam_input(
+        frames,
+        tmp_path / "cached",
+        runner_options=options,
+        resume=True,
+        cache_key="fixture-v1",
+        progress=events.append,
+    )
+    second = prepare_slam_input(
+        frames,
+        tmp_path / "cached",
+        runner_options=options,
+        resume=True,
+        cache_key="fixture-v1",
+        progress=events.append,
+    )
+    assert first == second
+    assert calls["run"] == 1
+    assert any(event["phase"] == "slam-cache" and "reused" in event["detail"]
+               for event in events)
+
+
+def test_preflight_is_actionable_for_manifest_and_missing_raw_runtime(tmp_path):
+    manifest = export_slam_output(_output(), tmp_path / "existing")
+    ready = preflight_slam(manifest)
+    assert ready.ready
+    assert ready.will_run_slam is False
+    assert "reconstruction: skipped" in ready.render()
+
+    frames = {"clip": np.zeros((1, 2, 2, 3), dtype=np.uint8)}
+    missing = preflight_slam(frames, tmp_path / "raw")
+    assert not missing.ready
+    assert {check["name"] for check in missing.checks if check["status"] == "fail"} \
+        >= {"depth-model", "slam-runtime"}
+
+
+def test_preflight_rejects_manifest_with_missing_trajectory_archive(tmp_path):
+    manifest = export_slam_output(_output(), tmp_path / "broken")
+    document = json.loads(manifest.read_text())
+    (manifest.parent / document["clips"]["clip one"]["trajectory"]).unlink()
+    report = preflight_slam(manifest)
+    assert not report.ready
+    assert any(check["name"] == "manifest" and check["status"] == "fail"
+               for check in report.checks)
 
 
 def test_prepare_can_forbid_slam_execution(tmp_path):
@@ -341,3 +450,23 @@ def test_prepare_video_mapping_decodes_runs_and_exports_alignment(tmp_path):
     assert document["clips"]["clip one"]["video"] == "gameplay.mp4"
     adapter = SLAMTrajectoryAdapter(manifest=manifest)
     assert [tick.time for tick in adapter.ticks("clip one")] == [0.0, 0.25, 0.5]
+
+
+def test_offline_golden_path_writes_quality_selection_and_curated_cloud(tmp_path):
+    manifest = write_demo_reconstruction(tmp_path / "demo", frames_per_clip=48)
+    result = curate_slam_gameplay(
+        manifest,
+        tmp_path / "selection.json",
+        window=12,
+        stride=6,
+        n=6,
+    )
+    document = json.loads(result.selection.read_text())
+    assert document["format"] == "kuration-slam-selection"
+    assert len(document["segments"]) == result.selected_count == 6
+    assert document["selection"]["candidates"] == result.candidate_count
+    assert all("slam_quality_score" in row["features"] for row in document["segments"])
+
+    assert cli_main(["demo", "--out", str(tmp_path / "cli-demo"), "--quiet"]) == 0
+    assert (tmp_path / "cli-demo" / "selection.json").is_file()
+    assert (tmp_path / "cli-demo" / "scene_pointcloud.npz").is_file()

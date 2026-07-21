@@ -58,6 +58,23 @@ def _times_for_clip(
     return values
 
 
+def _confidence_for_clip(
+    name: str,
+    length: int,
+    tracking_confidence: Mapping[str, object] | None,
+) -> np.ndarray:
+    if tracking_confidence is None or name not in tracking_confidence:
+        return np.ones(length, dtype=np.float64)
+    values = np.asarray(tracking_confidence[name], dtype=np.float64)
+    if values.shape != (length,):
+        raise ValueError(f"tracking_confidence[{name!r}] must have shape ({length},)")
+    if not np.isfinite(values).all() or np.any((values < 0) | (values > 1)):
+        raise ValueError(
+            f"tracking_confidence[{name!r}] must contain finite values in [0, 1]"
+        )
+    return values
+
+
 def _pose_arrays(name: str, poses, length: int) -> dict[str, np.ndarray]:
     rows = list(poses)
     if len(rows) != length:
@@ -120,6 +137,7 @@ def export_slam_output(
     sample_hz: float | None = None,
     videos: Mapping[str, str | Path] | None = None,
     point_attributes: Mapping[str, object] | None = None,
+    tracking_confidence: Mapping[str, object] | None = None,
 ) -> Path:
     """Export one completed ``SLAMPipeline`` output into a Kuration-readable manifest.
 
@@ -158,6 +176,9 @@ def export_slam_output(
         arrays = {
             "time": times,
             "camera_position": trajectory,
+            "tracking_confidence": _confidence_for_clip(
+                name, len(trajectory), tracking_confidence
+            ),
             **_pose_arrays(name, poses[name], len(trajectory)),
         }
         filename = _clip_filename(name)

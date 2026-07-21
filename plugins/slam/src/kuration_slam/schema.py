@@ -10,6 +10,7 @@ CAMERA_Y_AXIS = "camera_y_axis"
 CAMERA_Z_AXIS = "camera_z_axis"
 CAMERA_INTRINSICS = "camera_intrinsics"
 CAMERA_FRUSTUM = "camera_frustum"
+TRACKING_CONFIDENCE = "tracking_confidence"
 
 FIELD_TO_ARRAY = {
     CAMERA_POSITION: "camera_position",
@@ -18,6 +19,7 @@ FIELD_TO_ARRAY = {
     CAMERA_Z_AXIS: "camera_z_axis",
     CAMERA_INTRINSICS: "camera_intrinsics",
     CAMERA_FRUSTUM: "camera_frustum",
+    TRACKING_CONFIDENCE: "tracking_confidence",
 }
 
 
@@ -40,6 +42,7 @@ def slam_schema(*, sample_hz: float | None = None) -> SchemaSpec:
                 "kind": "vector",
                 "dims": [f"p{point}_{axis}" for point in range(5) for axis in ("x", "y", "z")],
             },
+            TRACKING_CONFIDENCE: {"kind": "scalar"},
         },
     }
     if sample_hz is not None:

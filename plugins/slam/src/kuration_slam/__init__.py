@@ -11,6 +11,8 @@ from .pointcloud import (
     curate_point_cloud,
     load_point_cloud,
 )
+from .preflight import SLAMPreflightResult, preflight_slam
+from .quality import QUALITY_FEATURES, SLAMQuality, slam_quality
 from .runner import decode_video_clips, prepare_slam_input, run_slam_pipeline
 from .schema import (
     CAMERA_FRUSTUM,
@@ -19,7 +21,14 @@ from .schema import (
     CAMERA_X_AXIS,
     CAMERA_Y_AXIS,
     CAMERA_Z_AXIS,
+    TRACKING_CONFIDENCE,
     slam_schema,
+)
+from .workflow import (
+    SELECTION_FORMAT,
+    SELECTION_VERSION,
+    SLAMCurationResult,
+    curate_slam_gameplay,
 )
 
 
@@ -28,6 +37,8 @@ INSTALL_HINT = "pip install kuration-plugin-slam"
 ADAPTER_NAME = "aintropy/slam-trajectory"
 TRANSFORM_NAME = "aintropy/slam-motion"
 OPERATOR_NAME = "aintropy/slam-motion-diversity"
+QUALITY_TRANSFORM_NAME = "aintropy/slam-quality"
+QUALITY_OPERATOR_NAME = "aintropy/slam-quality"
 
 EMPTY_PARAMETERS = {"type": "object", "properties": {}, "additionalProperties": False}
 OPERATOR_PARAMETERS = {
@@ -42,6 +53,25 @@ ADAPTER_PARAMETERS = {
     "type": "object",
     "properties": {"manifest": {"type": "string", "minLength": 1}},
     "required": ["manifest"],
+    "additionalProperties": False,
+}
+QUALITY_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "min_tracking_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "translation_ratio": {"type": "number", "exclusiveMinimum": 0},
+        "translation_mad_multiplier": {"type": "number", "exclusiveMinimum": 0},
+        "max_translation_step": {"type": "number", "exclusiveMinimum": 0},
+        "max_turn_degrees": {"type": "number", "exclusiveMinimum": 0, "maximum": 180},
+    },
+    "additionalProperties": False,
+}
+QUALITY_OPERATOR_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        **QUALITY_PARAMETERS["properties"],
+        "min_score": {"type": "number", "minimum": 0, "maximum": 1},
+    },
     "additionalProperties": False,
 }
 
@@ -80,12 +110,35 @@ def register() -> None:
             parameters=EMPTY_PARAMETERS,
             **common,
         )
+    if QUALITY_TRANSFORM_NAME not in default_registry.names("transform"):
+        register_batch_transform(
+            QUALITY_TRANSFORM_NAME,
+            SLAMQuality,
+            outputs=QUALITY_FEATURES,
+            inputs=(
+                f"field:{CAMERA_POSITION}",
+                f"field:{CAMERA_Z_AXIS}",
+                f"field:{TRACKING_CONFIDENCE}",
+            ),
+            resources={"num_gpus": 0, "preferred_batch_size": 128},
+            description="Flag tracking gaps, pose jumps, and unstable trajectory scale",
+            parameters=QUALITY_PARAMETERS,
+            **common,
+        )
     if OPERATOR_NAME not in default_registry.names("operator"):
         register_operator(
             OPERATOR_NAME,
             slam_motion_diversity,
             description="Add SLAM motion features and quantile-bin a selected diversity axis",
             parameters=OPERATOR_PARAMETERS,
+            **common,
+        )
+    if QUALITY_OPERATOR_NAME not in default_registry.names("operator"):
+        register_operator(
+            QUALITY_OPERATOR_NAME,
+            slam_quality,
+            description="Add SLAM reconstruction-quality signals and optionally filter windows",
+            parameters=QUALITY_OPERATOR_PARAMETERS,
             **common,
         )
 
@@ -104,18 +157,30 @@ __all__ = [
     "OUTPUT_FEATURES",
     "POINTCLOUD_FORMAT",
     "POINTCLOUD_VERSION",
+    "QUALITY_FEATURES",
+    "QUALITY_OPERATOR_NAME",
+    "QUALITY_TRANSFORM_NAME",
+    "SELECTION_FORMAT",
+    "SELECTION_VERSION",
+    "SLAMCurationResult",
     "PointCloudArtifact",
+    "SLAMPreflightResult",
+    "SLAMQuality",
     "SLAMMotion",
     "SLAMTrajectoryAdapter",
     "TRANSFORM_NAME",
+    "TRACKING_CONFIDENCE",
+    "curate_slam_gameplay",
     "curate_point_cloud",
     "decode_video_clips",
     "export_slam_output",
     "input_slam",
     "load_point_cloud",
     "prepare_slam_input",
+    "preflight_slam",
     "register",
     "run_slam_pipeline",
     "slam_motion_diversity",
+    "slam_quality",
     "slam_schema",
 ]

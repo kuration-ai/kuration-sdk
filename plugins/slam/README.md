@@ -24,6 +24,9 @@ pip install kuration-plugin-slam
 
 # Also decode MP4/MOV inputs through Kuration's PyAV provider
 pip install "kuration-plugin-slam[video]"
+
+# Also use k-center selection (the default uniform-bin method is NumPy-only)
+pip install "kuration-plugin-slam[methods]"
 ```
 
 For repository development:
@@ -31,6 +34,54 @@ For repository development:
 ```bash
 python scripts/check_plugin.py plugins/slam
 ```
+
+## Fastest smoke test
+
+The installed plugin includes a deterministic, model-free golden path. It exercises export,
+quality scoring, diverse window selection, and point-cloud reduction without a GPU, network
+download, or gameplay file:
+
+```bash
+kur-slam demo --out slam-demo
+```
+
+It writes `slam-demo/selection.json`, a portable SLAM export, and a curated point cloud. The same
+flow is available as Python in `examples/golden_path.py`.
+
+For real videos, expose model construction in a small application-owned module. Keeping this
+factory outside the plugin prevents model downloads or GPU initialization during import:
+
+```python
+# my_game/runtime.py
+def build_slam_runtime(*, preflight=False):
+    return {
+        # Preflight uses non-null sentinels and therefore does not allocate GPU models.
+        "depth_model": object() if preflight else load_depth_model(),
+        "embedding_model": object() if preflight else load_place_model(),
+        "pipeline_factory": "my_game.slam:SLAMPipeline",
+        "output_pointcloud": True,
+    }
+```
+
+Then preflight and run the complete preparation-plus-selection path:
+
+```bash
+kur-slam preflight \
+  --video match-001=/data/match-001.mp4 \
+  --out curated-match \
+  --runtime-factory my_game.runtime:build_slam_runtime \
+  --require-gpu
+
+kur-slam run \
+  --video match-001=/data/match-001.mp4 \
+  --out curated-match \
+  --runtime-factory my_game.runtime:build_slam_runtime \
+  --window 32 --stride 16 --count 2000 --min-quality 0.6
+```
+
+`selection.json` records exact source, frame-index, timestamp, feature, quality, and seed values
+for every selected window. It is intentionally separate from encoded video output so callers can
+choose their existing Kuration output preset and target resolution.
 
 ## 1. Normalize any supported input
 
@@ -95,6 +146,47 @@ manifest = prepare_slam_input(
 Set `run_if_needed=False` when a workflow must reject raw input rather than unexpectedly running
 an expensive reconstruction.
 
+### Preflight, progress, and safe reuse
+
+`preflight_slam()` checks input type, output permissions, video decoding, model injection, pipeline
+factory loading, conflicting embedding inputs, and optional CUDA availability without decoding
+frames or running reconstruction:
+
+```python
+from kuration_slam import preflight_slam
+
+report = preflight_slam(
+    videos,
+    "slam-export",
+    runner_options=runner_options,
+    require_gpu=True,
+)
+print(report.render())
+report.raise_for_errors()
+```
+
+Preparation accepts the SDK's structured progress callback contract. It emits `slam-preflight`,
+`slam-decode`, `slam-reconstruction`, `slam-export`, `slam-cache`, and `slam-prepare` phases.
+
+Completed reconstructions can be reused only with an application-owned cache identity, preventing
+silent reuse after a model or configuration change:
+
+```python
+manifest = prepare_slam_input(
+    videos,
+    "slam-export",
+    runner_options=runner_options,
+    resume=True,
+    cache_key="depth-v3-salad-v2-window32",
+    progress=events.append,
+)
+```
+
+The plugin commits its cache marker only after a valid manifest is written. Mid-reconstruction
+checkpointing remains runtime-specific; pass that runtime's `checkpoint_dir` or resume option in
+`runner_options`. The plugin cannot safely serialize opaque GPU models or internal cross-clip SLAM
+state on their behalf.
+
 ## 2. Export a completed reconstruction directly
 
 After the notebook produces `output`, export it without converting any `CameraPose` objects by
@@ -138,6 +230,7 @@ Each clip archive has aligned arrays for:
 - `camera_x_axis`, `camera_y_axis`, `camera_z_axis`: orientation basis `(T, 3)`
 - `camera_intrinsics`: `(cx, cy, f)` `(T, 3)`
 - `camera_frustum`: five flattened 3D frustum points `(T, 15)`
+- `tracking_confidence`: optional upstream confidence `(T,)`, defaulting to `1.0`
 - `time`: frame timestamps or processed-frame indices `(T,)`
 
 The scene point cloud is a first-class plugin artifact referenced by the manifest. It remains
@@ -183,7 +276,47 @@ pipeline = (
 )
 ```
 
-## 4. Join the original video
+## 4. Reject unreliable reconstruction windows
+
+Pass upstream per-frame confidence during export when it is available:
+
+```python
+manifest = export_slam_output(
+    output,
+    "slam-export",
+    tracking_confidence={"clip_001": clip_001_confidence},
+)
+```
+
+The quality operator combines that signal with scale-aware translation jumps, abrupt camera
+rotation, and a step-scale drift proxy:
+
+```python
+pipeline = (
+    input_slam(manifest)
+    .window(32, stride=16)
+    .apply(
+        "aintropy/slam-quality",
+        min_score=0.6,
+        min_tracking_confidence=0.5,
+        max_turn_degrees=90,
+    )
+)
+```
+
+It adds:
+
+- `slam_tracking_confidence_mean` and `slam_tracking_gap_fraction`
+- `slam_translation_jump_fraction` and `slam_rotation_jump_fraction`
+- `slam_step_scale_drift`, a heuristic rather than an absolute scale guarantee
+- `slam_quality_score` in `[0, 1]`
+
+`curate_slam_gameplay()` is the high-level reference workflow. It applies motion and quality
+transforms, filters low-quality windows, runs deterministic uniform-bin coverage selection, and
+writes the selection manifest in one call. Pass `selection_method="k-center"` after installing
+the `[methods]` extra when metric-space coverage is preferred.
+
+## 5. Join the original video
 
 When every manifest clip has a `video` entry, the helper can attach lazy video frames:
 
@@ -215,7 +348,7 @@ pipeline.output(
 )
 ```
 
-## 5. Curate and write the scene point cloud
+## 6. Curate and write the scene point cloud
 
 Load a point cloud from either `manifest.json`, the NPZ path, or an existing
 `PointCloudArtifact`. Colors and any row-aligned numeric attributes remain attached through every
@@ -281,6 +414,7 @@ than an individual clip.
 
 - adapter: `aintropy/slam-trajectory`
 - transform: `aintropy/slam-motion`
+- transform/operator: `aintropy/slam-quality`
 - operator: `aintropy/slam-motion-diversity`
 
 All registrations are dependency-light and discoverable through `kur-list` / `kur-describe`.
