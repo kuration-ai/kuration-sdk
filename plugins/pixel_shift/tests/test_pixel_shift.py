@@ -376,6 +376,29 @@ def test_segment_scalars_validates_controls_for_direct_callers():
         pso.segment_scalars(frames, actions, controls=["JUMP"])
 
 
+def test_public_instance_measurement_contract_is_exported_and_validated():
+    frames = np.stack(_shifting_noise_frames(3))
+    actions = np.stack([_action(), _action(w=True), _action()])
+    validated = pixel_shift.validate_segment_inputs(frames, actions)
+
+    rows = list(
+        pixel_shift.iter_instances(
+            validated[0],
+            validated[1],
+            "W",
+            lookbehind_actions=validated[2],
+            lookahead_actions=validated[3],
+            lookahead_frames=validated[4],
+        )
+    )
+
+    assert len(rows) == 1
+    assert rows[0][0:2] == ("1", 1)
+    assert np.isfinite(rows[0][2])
+    with pytest.raises(ValueError, match="unknown pixel-shift control"):
+        list(pixel_shift.iter_instances(validated[0], validated[1], "JUMP"))
+
+
 def test_segment_scalars_validates_frame_contract_before_processing():
     actions = np.stack([_action(), _action()])
     with pytest.raises(ValueError, match="steps"):

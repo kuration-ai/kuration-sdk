@@ -116,7 +116,7 @@ CONTROL_DESCRIPTIONS = {
 }
 
 
-def _iter_instances(
+def iter_instances(
     frames: np.ndarray,
     actions: np.ndarray,
     control: str,
@@ -127,7 +127,14 @@ def _iter_instances(
     lookahead_frames: np.ndarray | None = None,
     boundary: str = "exclude",
 ):
-    """Pure generator: yields (cell_key, local_start, signed_shift) for every isolated-press
+    """Yield ``(cell_key, local_start, signed_shift)`` for one validated control.
+
+    This is the public per-instance measurement contract for integrations that need more
+    detail than :func:`segment_scalars`. Call :func:`validate_segment_inputs` once before
+    iterating one or more controls so frames, actions, and optional boundary context share
+    the same validated representation.
+
+    Pure generator: yields (cell_key, local_start, signed_shift) for every isolated-press
     instance of `control` found in this one segment -- no side effects, no shared state,
     safe to call from anywhere (a worker process, a plain loop, whatever). cell_key is
     press_len as a string ("1"/"2"/"3") for W/S/A/D, the observed delta value as a string
@@ -137,6 +144,9 @@ def _iter_instances(
     PixelShiftReport.add_segment. `color_space` (see diamond_action_decode._prep_gray)
     defaults to BGR, matching raw ASG/DIAMOND HDF5 arrays; pass the real declared
     color_space when `frames` came through a kuration-sdk media column instead."""
+    control = _validated_controls((control,))[0]
+    color_space = validate_color_space(color_space)
+    boundary = validate_boundary(boundary)
     if control in MOUSE_CONTROLS:
         axis = MOUSE_AXIS_OF[control]
         for start, px in _release_transition_displacement_validated(
@@ -168,7 +178,7 @@ def _iter_instances(
                 yield str(press_len), start, px
 
 
-def _validated_segment_inputs(
+def validate_segment_inputs(
     frames,
     actions,
     *,
@@ -176,6 +186,7 @@ def _validated_segment_inputs(
     lookahead_actions=None,
     lookahead_frames=None,
 ):
+    """Validate one segment and its optional boundary context for instance measurement."""
     actions = validate_actions(actions)
     frames = validate_frames(frames, steps=len(actions))
     before = (
@@ -197,6 +208,12 @@ def _validated_segment_inputs(
         if after_frames.dtype != frames.dtype:
             raise ValueError("lookahead_frames must have the same dtype as frames")
     return frames, actions, before, after_actions, after_frames
+
+
+# Compatibility aliases for the 0.1 development series. New integrations must use the public
+# names above; keeping these aliases avoids breaking notebooks written before the API promotion.
+_iter_instances = iter_instances
+_validated_segment_inputs = validate_segment_inputs
 
 
 def segment_scalars(
@@ -221,7 +238,7 @@ def segment_scalars(
     controls = _validated_controls(controls)
     boundary = validate_boundary(boundary)
     color_space = validate_color_space(color_space)
-    frames, actions, before, after_actions, after_frames = _validated_segment_inputs(
+    frames, actions, before, after_actions, after_frames = validate_segment_inputs(
         frames,
         actions,
         lookbehind_actions=lookbehind_actions,
@@ -246,7 +263,7 @@ def segment_scalars(
             continue
         shifts = [
             shift
-            for _, local_start, shift in _iter_instances(
+            for _, local_start, shift in iter_instances(
                 frames,
                 actions,
                 control,
@@ -347,7 +364,7 @@ class PixelShiftReport:
         controls = _validated_controls(controls)
         boundary = validate_boundary(boundary)
         color_space = validate_color_space(color_space)
-        frames, actions, before, after_actions, after_frames = _validated_segment_inputs(
+        frames, actions, before, after_actions, after_frames = validate_segment_inputs(
             frames,
             actions,
             lookbehind_actions=lookbehind_actions,
@@ -378,7 +395,7 @@ class PixelShiftReport:
         if int(end_idx) - int(start_idx) != len(actions):
             raise ValueError("segment_id range length must match the number of action frames")
         for control in controls:
-            for cell_key, local_start, shift in _iter_instances(
+            for cell_key, local_start, shift in iter_instances(
                 frames,
                 actions,
                 control,
