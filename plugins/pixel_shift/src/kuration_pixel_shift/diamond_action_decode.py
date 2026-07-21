@@ -346,11 +346,7 @@ def _actions_with_context(
 
     after = lookahead_actions
     if after is not None:
-        if len(after):
-            # At most press_len rows are needed: the rest of a clipped press plus its
-            # first release/aftermath row. Avoid copying an arbitrarily large halo.
-            after = after[:press_len]
-        else:
+        if not len(after):
             after = None
 
     active = _control_active_mask(actions, control)
@@ -373,6 +369,13 @@ def _actions_with_context(
                     "lookahead_actions never shows it becoming inactive; provide "
                     "lookahead that resolves the release or choose another boundary policy"
                 )
+
+    if after is not None:
+        # Boundary validation above must inspect all supplied context: an exact one-frame
+        # candidate may be disproved by the first lookahead row while a later row still
+        # resolves the release for a two- or three-frame candidate. Only after validating
+        # that context do we keep the bounded portion needed by this specific press_len.
+        after = after[:press_len]
 
     if boundary == "assume-inactive":
         if before is None and active[0]:

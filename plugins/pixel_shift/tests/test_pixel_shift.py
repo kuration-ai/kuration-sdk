@@ -183,6 +183,17 @@ def test_error_boundary_is_not_suppressed_by_lookahead_that_does_not_resolve():
         right, "W", 1, lookahead_actions=resolving_lookahead, boundary="error"
     )  # must not raise
 
+    # The release may be later than the bounded context needed to disprove this specific
+    # press length. Boundary validation must inspect the complete supplied lookahead before
+    # sequence detection truncates it to press_len rows.
+    later_release = np.stack([_action(w=True), _action()])
+    assert (
+        dad.find_isolated_press_sequences(
+            right, "W", 1, lookahead_actions=later_release, boundary="error"
+        )
+        == []
+    )
+
 
 @pytest.mark.parametrize(
     ("mutate", "message"),
@@ -397,6 +408,27 @@ def test_release_lookahead_measures_a_right_boundary_release():
     )
     assert len(result) == 1
     assert result[0][0] == 1
+
+
+def test_segment_scalars_error_boundary_accepts_resolved_multiframe_release():
+    """The aggregator checks key press lengths in ascending order. A valid two-frame
+    boundary press must not fail during the preceding one-frame check merely because that
+    check only needs one lookahead row for sequence classification."""
+    rng = np.random.default_rng(13)
+    actions = np.stack([_action(), _action(w=True)])
+    frames = rng.integers(0, 255, size=(2, 40, 60, 3), dtype=np.uint8)
+    after_actions = np.stack([_action(w=True), _action()])
+    after_frames = rng.integers(0, 255, size=(2, 40, 60, 3), dtype=np.uint8)
+
+    scalars = pso.segment_scalars(
+        frames,
+        actions,
+        controls=["W"],
+        lookahead_actions=after_actions,
+        lookahead_frames=after_frames,
+        boundary="error",
+    )
+    assert scalars["w_n_instances"] == 1.0
 
 
 def test_assumed_right_boundary_never_invents_a_missing_frame():
