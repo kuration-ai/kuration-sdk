@@ -40,7 +40,7 @@ and SHA-256 integrity metadata.
 | Avoid train/test leakage | Source- and group-aware deterministic splits |
 | Understand what changed | Input previews, candidate-versus-selected review, artifact comparison, and static HTML reports |
 | Resume long runs safely | Atomic writes, complete run fingerprints, and checksum-verified shard reuse |
-| Add domain intelligence | Discoverable operators, metrics, scorers, adapters, transforms, encoders, and presets |
+| Add domain intelligence | Discoverable operators, analyzers, metrics, scorers, adapters, transforms, encoders, and presets |
 | Move from laptop to scale | Streaming sources, bounded Arrow checkpoints, process workers, cloud paths, and optional Ray execution |
 
 <p align="center">

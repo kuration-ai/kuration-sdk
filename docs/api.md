@@ -207,9 +207,13 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `register_method` | `(name, fn, **metadata) -> None` | register a selection-priority method |
 | `register_filter` | `(name, fn, **metadata) -> None` | register a pre-pass filter |
 | `register_operator` | `(name, fn=None, **metadata)` | register a `(pipeline, **params) -> Pipeline` composition directly or as a decorator |
+| `Analyzer` | protocol requiring `summary()` | user-owned stateful direct-API analysis result |
+| `SplitLeakageAnalyzer` | `(*, check_groups=True)` | built-in source/group split auditor; update with `.add_assignment(...)` or `.add_assignments(...)`, then call `.summary()` |
+| `register_analyzer` | `(name, factory=None, **metadata)` | register a discoverable analyzer factory directly or as a decorator |
+| `get_analyzer` | `(name, *, registry=None, **params) -> Analyzer` | validate parameters and construct a user-owned analyzer instance |
 
 Registry kinds are `adapter`, `metric`, `scorer`, `encoder`, `method`, `filter`, `container`,
-`preset`, `transform`, and compositional `operator`. Names accept `name` or `namespace/name`; duplicate registrations raise unless the
+`preset`, `transform`, compositional `operator`, and stateful direct-API `analyzer`. Names accept `name` or `namespace/name`; duplicate registrations raise unless the
 lower-level `Registry.register(..., replace=True)` API is used. See
 [customization.md](customization.md) for descriptors, parameter schemas, and plugin packaging.
 

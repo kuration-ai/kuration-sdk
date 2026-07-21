@@ -1,8 +1,8 @@
 # Customization and discovery
 
 Kuration resolves adapters, metrics, scorers, batch transforms, encoders, selection methods,
-pre-pass filters, containers, output presets, and compositional operators through the same
-descriptor model.
+pre-pass filters, containers, output presets, compositional operators, and stateful analyzers
+through the same descriptor model.
 Names may be simple built-in names or namespaced plugin names such as `acme/quality-v2`.
 Duplicate registration is loud.
 
@@ -49,6 +49,52 @@ Python equivalents are `list_components()` and `describe_component()`. Descripto
 parameter JSON Schema, capability flags, dependency/install hints, package/version metadata,
 documentation/stability fields, module identity, and a code fingerprint. Resolved extension
 descriptors and parameters are included in run provenance.
+
+### Stateful analyzers
+
+Use `register_analyzer()` when a capability must accumulate evidence across multiple segments
+before it can return a result and therefore cannot honestly run as an independent batch
+transform. The registered callable is a dependency-light factory; `get_analyzer()` validates
+its keyword parameters, constructs a user-owned instance, and requires that instance to expose
+`summary()`. Its other update methods are capability-specific and documented by the plugin.
+
+```python
+from kuration import get_analyzer, register_analyzer
+
+register_analyzer("acme/clip-check", build_clip_checker,
+                  description="Accumulate evidence across every segment in a clip",
+                  parameters=PARAMETERS)
+checker = get_analyzer("acme/clip-check", **config)
+for segment in segments:
+    checker.add_segment(segment)
+result = checker.summary()
+```
+
+Analyzers are discoverable with `kur-list analyzers` and `kur-describe analyzer ...`, but are
+not implicit pipeline stages. Keeping lifecycle ownership explicit prevents worker-local state
+from being mistaken for a dataset-wide result.
+
+The SDK includes `kuration/split-leakage` for auditing existing or imported split assignments.
+It accepts repeated observations (for example, many segments from one clip), detects a source
+assigned to multiple splits, and optionally detects groups spanning split boundaries:
+
+```python
+from kuration import get_analyzer
+
+audit = get_analyzer("kuration/split-leakage")
+audit.add_assignments(
+    {"clip-1": "train", "clip-2": "train", "clip-3": "test"},
+    source_groups={"clip-1": "session-a", "clip-2": "session-a", "clip-3": "session-b"},
+)
+report = audit.summary()
+assert report["passed"]
+```
+
+For row- or segment-oriented inputs, call
+`audit.add_assignment(source_id, split, group=group)` once per observation. Repeating the same
+assignment is not leakage. Set `check_groups=False` only when the dataset has no meaningful
+group boundary; source-level leakage is always checked. The report is deterministic and
+JSON-safe, with `source_leaks`, `group_leaks`, and `source_group_conflicts` details.
 
 The dependency-light validator supports the descriptor subset used by SDK contracts:
 `type`, `enum`, `const`, `allOf`, `anyOf`, `oneOf`, numeric bounds, string length and `pattern`,

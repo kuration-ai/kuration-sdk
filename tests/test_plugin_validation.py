@@ -43,6 +43,30 @@ def test_plugin_checker_validates_and_transactionally_restores_module(tmp_path, 
     assert module not in sys.modules
 
 
+def test_plugin_checker_accepts_a_discoverable_direct_api_analyzer(tmp_path, monkeypatch):
+    module = "valid_analyzer_plugin"
+    (tmp_path / f"{module}.py").write_text(
+        "from kuration import register_analyzer\n"
+        "class Analyzer:\n"
+        "    def summary(self): return {}\n"
+        "def build(): return Analyzer()\n"
+        "register_analyzer('acme/stateful-check', build, "
+        "description='Cross-segment check', "
+        "parameters={'type': 'object', 'properties': {}, 'additionalProperties': False}, "
+        "package='kuration-plugin-check-test', "
+        "install_hint='pip install kuration-plugin-check-test', version='1')\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    [result] = check_plugins(module)
+
+    assert result.passed
+    assert [(item["kind"], item["name"]) for item in result.descriptors] == [
+        ("analyzer", "acme/stateful-check")
+    ]
+    assert "acme/stateful-check" not in default_registry.names("analyzer")
+
+
 def test_plugin_checker_reports_actionable_descriptor_contract_errors(tmp_path, monkeypatch):
     module = _plugin_module(tmp_path, "invalid_check_plugin", complete=False)
     monkeypatch.syspath_prepend(str(tmp_path))

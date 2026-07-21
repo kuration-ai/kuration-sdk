@@ -10,7 +10,7 @@ import re
 from typing import Any, Callable, Optional
 
 _KINDS = {"adapter", "metric", "scorer", "encoder", "method", "filter", "container",
-          "preset", "operator", "transform"}
+          "preset", "operator", "transform", "analyzer"}
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?$")
 
 
@@ -293,6 +293,17 @@ class Registry:
 
     def register_transform(self, name: str, component: Any, **metadata) -> None:
         self.register("transform", name, component, **metadata)
+
+    def register_analyzer(self, name: str, component: Any, **metadata) -> None:
+        """Register a stateful, explicitly driven analyzer factory.
+
+        Analyzers are discoverable direct APIs, not implicit pipeline stages. The factory
+        receives validated keyword parameters and returns a user-owned object whose update
+        lifecycle is capability-specific and whose ``summary()`` returns the final result.
+        """
+        if not callable(component):
+            raise ValueError("analyzer component must be a callable factory")
+        self.register("analyzer", name, component, **metadata)
 
 
 default_registry = Registry()

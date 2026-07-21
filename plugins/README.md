@@ -26,8 +26,9 @@ my_plugin = "my_plugin:register"
 
 Registration imports must stay lightweight. Import optional frameworks inside factories or
 execution methods and include an actionable installation hint in every component descriptor.
-Use namespaced component names, declare a closed parameter schema, and ensure execution is
-deterministic and free of process-global result state.
+Use namespaced component names and declare a closed parameter schema. Pipeline components must
+be deterministic and free of process-global result state; explicitly driven `analyzer`
+components may keep state only inside the user-owned instance returned by their factory.
 
 From the repository root, install and test one plugin with:
 

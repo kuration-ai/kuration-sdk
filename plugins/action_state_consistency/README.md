@@ -41,20 +41,22 @@ tests run instead of skip.
 
 ## What gets registered with kuration-sdk
 
-This package registers exactly one component, `aintropy/consistency-check` (a batch
-transform + a compositional operator), built entirely on the generic core -- it takes a
-per-tick numeric `field:value` and a single `expected_sign`/`min_magnitude`/`max_magnitude`
-baseline, and reports how many values in each segment were consistent vs inconsistent.
+This package registers its real capability as the analyzer
+`aintropy/action-state-consistency`. An analyzer is a discoverable, user-owned stateful
+object: unlike a batch transform, it may accumulate evidence across multiple segments
+before `summary()` can return a result. Kuration validates and constructs it through
+`get_analyzer()` but does not pretend it is an independently schedulable per-segment stage.
 
-**This is not the same thing as a clip verdict**, and it's not wired to
-`ActionStateConsistencyChecker` in any way. It exists specifically so that `register()` has
-something real to offer using only this package's hard dependencies (`kuration-sdk`,
-`numpy`) -- kuration-sdk's plugin-discovery contract calls `register()` unconditionally,
-regardless of which optional extras happen to be installed, so `register()` itself can
-never depend on `kuration-plugin-pixel-shift`. It's a plain, stateless, per-segment count;
-it has no memory of any other segment and cannot tell you whether a whole clip is
-consistent. The clip-level verdict a user actually wants only ever comes from
-`ActionStateConsistencyChecker`, used directly in your own script -- see "Usage" below.
+Discover it without reading a dataset:
+
+```bash
+kur-list analyzers
+kur-describe analyzer aintropy/action-state-consistency --json
+```
+
+Registration only stores a dependency-light factory; it does not construct the checker.
+Plugin discovery therefore still works when the optional pixel-shift dependency is absent,
+while construction produces the same actionable installation error as direct class use.
 
 ## Structure
 
@@ -136,15 +138,15 @@ nothing stops any caller from building a baselines dict by hand instead.
 
 ## Usage
 
-`ActionStateConsistencyChecker` is a plain, explicitly-instantiated object — same pattern
-as `PixelShiftReport`, and for the same reason: classifying a clip means aggregating across
+`ActionStateConsistencyChecker` is a user-owned analyzer — same ownership pattern as
+`PixelShiftReport`, and for the same reason: classifying a clip means aggregating across
 every segment that belongs to it, which a stateless per-segment SDK transform cannot do.
-It is deliberately **not** registered as a kuration-sdk operator/transform.
+Construct it through the SDK registry for discovery and parameter validation:
 
 ```python
-from kuration_action_state_consistency import ActionStateConsistencyChecker
+from kuration import get_analyzer
 
-checker = ActionStateConsistencyChecker(config)  # requires kuration-plugin-pixel-shift installed
+checker = get_analyzer("aintropy/action-state-consistency", **config)
 for frames, actions, segment_id in your_own_segments:
     # segment_id is (source_id, start_idx, end_idx) -- same contract as
     # PixelShiftReport.add_segment. Segments sharing a source_id are one clip.
@@ -154,6 +156,10 @@ checker.print_report()          # counts + exact clip IDs per verdict, printed t
 print(checker.summary())        # {"consistent": [...], "inconsistent": [...], "inconclusive": [...]}
 print(checker.clip_verdict("clip_042"))  # "consistent" | "inconsistent" | "inconclusive"
 ```
+
+Direct construction with
+`kuration_action_state_consistency.ActionStateConsistencyChecker(config)` remains available
+for callers that do not need registry discovery.
 
 `controls` defaults to every control with a configured baseline; passing an explicit
 control not present in `baselines` raises immediately (there's nothing to check it

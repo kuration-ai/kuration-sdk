@@ -5,7 +5,11 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
-No changes yet.
+- Added a discoverable `analyzer` registry kind for user-owned capabilities that aggregate
+  across segments, with `register_analyzer()`, `get_analyzer()`, and CLI discovery. The
+  action-state consistency plugin now registers its real clip-level analyzer instead of an
+  unrelated stateless compliance component. A dependency-free `kuration/split-leakage`
+  analyzer audits existing source and group assignments across dataset splits.
 
 ## 0.1.0rc3
 

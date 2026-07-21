@@ -11,6 +11,8 @@ import pytest
 
 pytest.importorskip("kuration_pixel_shift")
 
+from kuration import get_analyzer
+import kuration_action_state_consistency as asc
 from kuration_action_state_consistency import (
     ActionStateConsistencyChecker,
     load_baselines_from_reference,
@@ -72,6 +74,22 @@ def test_action_state_config_rejects_unknown_anomaly_type():
 def test_action_state_config_rejects_missing_baselines():
     with pytest.raises(ValueError, match="baselines"):
         validate_action_state_config({"anomaly_type": "action_state"})
+
+
+def test_sdk_registry_constructs_the_real_action_state_checker():
+    baselines = {
+        "W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1.0}},
+    }
+    asc.register()
+
+    checker = get_analyzer(
+        asc.ANALYZER_NAME,
+        anomaly_type="action_state",
+        baselines=baselines,
+    )
+
+    assert isinstance(checker, ActionStateConsistencyChecker)
+    assert checker.baselines == baselines
 
 
 def _fake_reference():
