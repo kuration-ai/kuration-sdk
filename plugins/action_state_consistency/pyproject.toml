@@ -1,17 +1,21 @@
 [project]
 name = "kuration-plugin-action-state-consistency"
 version = "0.1.0"
-description = "Kuration operator that checks measured pixel shift against user-supplied consistency baselines."
+description = "Kuration anomaly-detection operator; the action_state type checks measured pixel shift against user-supplied consistency baselines."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "kuration-sdk>=0.1.0rc2",
-    "kuration-plugin-pixel-shift>=0.1.0",
     "numpy>=1.24",
 ]
 
+# The generic anomaly_checker core has no pixel_shift dependency at all -- only the
+# action_state anomaly type does, and only when actually invoked (see action_state.py's
+# module docstring). Installing this package alone never requires pixel_shift.
 [project.optional-dependencies]
+action_state = ["kuration-plugin-pixel-shift>=0.1.0"]
 test = [
+    "kuration-plugin-pixel-shift>=0.1.0",
     "pytest>=8",
     "ruff>=0.5",
     "build>=1.5,<2",
