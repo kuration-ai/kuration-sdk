@@ -34,6 +34,28 @@ python -m pip install -e . -e 'plugins/pixel_shift[test]' -e 'plugins/action_sta
 python -m pytest plugins/action_state_consistency/tests -q
 ```
 
+`kuration-plugin-pixel-shift` is deliberately not part of `[test]` (it isn't published
+anywhere yet, and this repo's own per-plugin CI validation installs each plugin in
+isolation) -- installing it separately, as above, is what makes the action_state-specific
+tests run instead of skip.
+
+## What gets registered with kuration-sdk
+
+This package registers exactly one component, `aintropy/consistency-check` (a batch
+transform + a compositional operator), built entirely on the generic core -- it takes a
+per-tick numeric `field:value` and a single `expected_sign`/`min_magnitude`/`max_magnitude`
+baseline, and reports how many values in each segment were consistent vs inconsistent.
+
+**This is not the same thing as a clip verdict**, and it's not wired to
+`ActionStateConsistencyChecker` in any way. It exists specifically so that `register()` has
+something real to offer using only this package's hard dependencies (`kuration-sdk`,
+`numpy`) -- kuration-sdk's plugin-discovery contract calls `register()` unconditionally,
+regardless of which optional extras happen to be installed, so `register()` itself can
+never depend on `kuration-plugin-pixel-shift`. It's a plain, stateless, per-segment count;
+it has no memory of any other segment and cannot tell you whether a whole clip is
+consistent. The clip-level verdict a user actually wants only ever comes from
+`ActionStateConsistencyChecker`, used directly in your own script -- see "Usage" below.
+
 ## Structure
 
 ```

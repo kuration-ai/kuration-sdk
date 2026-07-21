@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import numpy as np
+
 
 def _validate_baseline_cell(control: str, cell_key: str, cell) -> dict:
     if not isinstance(cell, dict):
@@ -240,3 +242,59 @@ class AnomalyChecker:
                 else:
                     print(f"  - {clip_id}")
         print()
+
+
+# ---------------------------------------------------------------------------------------
+# ConsistencyCheck -- the one component this package registers with kuration-sdk. Built
+# entirely on _is_consistent/_validate_baseline_cell above: it checks a per-tick numeric
+# field against a single expected_sign/min/max baseline, with NO pixel_shift involvement
+# at all. This is deliberately NOT the same thing as ActionStateConsistencyChecker's
+# clip-level verdict -- it's a plain, stateless, per-segment count (how many of this
+# window's values were consistent/inconsistent), registered specifically so that
+# `register()` has something real and honestly-scoped to offer regardless of whether
+# kuration-plugin-pixel-shift (the `[action_state]` extra) is installed. The clip-level
+# verdict a user actually wants still only ever comes from ActionStateConsistencyChecker,
+# used directly -- this component is never wired to it and never printed as part of its
+# report.
+# ---------------------------------------------------------------------------------------
+
+CONSISTENCY_CHECK_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "expected_sign": {"type": "integer", "enum": [1, -1]},
+        "min_magnitude": {"type": "number", "minimum": 0},
+        "max_magnitude": {"type": "number", "minimum": 0},
+    },
+    "required": ["expected_sign", "min_magnitude", "max_magnitude"],
+    "additionalProperties": False,
+}
+
+
+class ConsistencyCheck:
+    """Batch transform: for each segment, counts how many values in its `field:value`
+    window satisfy a single expected_sign/min_magnitude/max_magnitude baseline."""
+
+    def __init__(self, expected_sign: int, min_magnitude: float, max_magnitude: float):
+        self.baseline = _validate_baseline_cell(
+            "value", "0",
+            {"expected_sign": expected_sign, "min": min_magnitude, "max": max_magnitude},
+        )
+
+    def transform_batch(self, batch, ctx):
+        values = batch["field:value"]  # (N, T)
+        n_consistent = np.array(
+            [sum(1 for v in row if _is_consistent(float(v), self.baseline)) for row in values],
+            dtype=np.float64,
+        )
+        n_total = np.array([len(row) for row in values], dtype=np.float64)
+        return {"n_consistent": n_consistent, "n_inconsistent": n_total - n_consistent}
+
+
+def consistency_check(pipeline, *, expected_sign: int, min_magnitude: float, max_magnitude: float):
+    """Compose the registered transform into a fluent pipeline."""
+    return pipeline.transform(
+        "aintropy/consistency-check",
+        expected_sign=expected_sign,
+        min_magnitude=min_magnitude,
+        max_magnitude=max_magnitude,
+    )

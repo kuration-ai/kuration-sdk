@@ -5,22 +5,31 @@ description = "Kuration anomaly-detection operator; the action_state type checks
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "kuration-sdk>=0.1.0rc2",
+    "kuration-sdk>=0.1.0rc3",
     "numpy>=1.24",
 ]
 
 # The generic anomaly_checker core has no pixel_shift dependency at all -- only the
 # action_state anomaly type does, and only when actually invoked (see action_state.py's
 # module docstring). Installing this package alone never requires pixel_shift.
+#
+# kuration-plugin-pixel-shift is deliberately NOT in [test]: it isn't published anywhere
+# yet (publishing only happens on a tagged plugin release), so this repo's own isolated
+# per-plugin CI validation (which installs only this plugin's own [test] extra, no
+# sibling plugin directories) could never resolve it. The action_state-specific tests
+# that need it skip gracefully via pytest.importorskip instead of being a hard
+# dependency of running this plugin's test suite at all.
 [project.optional-dependencies]
 action_state = ["kuration-plugin-pixel-shift>=0.1.0"]
 test = [
-    "kuration-plugin-pixel-shift>=0.1.0",
     "pytest>=8",
     "ruff>=0.5",
     "build>=1.5,<2",
     "check-wheel-contents>=0.6.3,<1",
 ]
+
+[project.entry-points."kuration.plugins"]
+action_state_consistency = "kuration_action_state_consistency:register"
 
 [build-system]
 requires = ["setuptools>=80,<84"]
