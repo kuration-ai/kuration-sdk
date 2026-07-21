@@ -93,6 +93,11 @@ The transform receives bounded batches. It must return one finite scalar per seg
 declared output. Imports for heavyweight frameworks belong inside the implementation path, so
 component discovery and ordinary core imports remain dependency-light.
 
+For edge-sensitive events, registration accepts `lookbehind=<ticks>`, `lookahead=<ticks>`, and
+`ownership="rightmost-start"`. Context arrays are lists under keys such as
+`lookbehind:field:signal`; source-edge entries are `None`. `owned_lengths` gives the prefix of each
+logical window whose event starts belong to that segment.
+
 For video, declare `inputs=("media:frame",)` and a semantic requirement such as
 `media_requirements={"kind": "video-frame", "layout": "HWC", "color_space": "RGB"}`.
 Kuration validates the media contract before decoding frames.

@@ -24,16 +24,11 @@ Two things this operator produces:
    batch_job_sensitivity_w.py's own report(), just clip-traceable.
 
 `PixelShiftReport` is a plain, explicitly-instantiated object -- deliberately NOT wired
-into `PixelShift.transform_batch`. An earlier version of this file accumulated instance
-detail into a module-level dict as a side effect of `transform_batch`, which only worked
-for a single-process run (`.options(workers=1)`) -- an SDK executor with workers>1 runs
-`transform_batch` in separate worker processes with separate memory, and kuration-sdk's
-transform contract has no supported channel for returning arbitrary per-instance
-side-channel data back to one accumulator across those workers. Constraining execution to
-`workers=1` to make that work would have defeated the purpose of the SDK's own concurrent
-executors, not merely been an inconvenience. So `transform_batch` now does exactly one
-thing -- compute the 5 aggregated scalars per control -- through the one channel the SDK
-actually supports (declared per-segment outputs), regardless of worker count. Build a
+into `PixelShift.transform_batch`. An earlier version accumulated instance detail into a
+module-level dict as a transform side effect. Transform execution has no supported channel
+for arbitrary per-instance side data, and execution placement may change across plans, so
+process-global accumulation is not a valid contract. `transform_batch` therefore does exactly
+one thing: compute the 5 declared scalars per control. Build a
 `PixelShiftReport` yourself, by calling `add_segment()` directly over your own segments,
 entirely outside pipeline execution, if you want the fuller per-instance report.
 """
@@ -213,6 +208,7 @@ def segment_scalars(
     lookbehind_actions=None,
     lookahead_actions=None,
     lookahead_frames=None,
+    owned_length: int | None = None,
     boundary: str = "exclude",
 ) -> dict:
     """The 5-number-per-control summary for ONE segment -- true to the data (no reference,
@@ -232,6 +228,12 @@ def segment_scalars(
         lookahead_actions=lookahead_actions,
         lookahead_frames=lookahead_frames,
     )
+    if owned_length is None:
+        owned_length = len(actions)
+    if (not isinstance(owned_length, (int, np.integer)) or isinstance(owned_length, bool)
+            or not 0 <= int(owned_length) <= len(actions)):
+        raise ValueError("owned_length must be an integer within the segment window")
+    owned_length = int(owned_length)
     out = {}
     for control in ALL_CONTROLS:
         prefix = control.lower()
@@ -244,7 +246,7 @@ def segment_scalars(
             continue
         shifts = [
             shift
-            for _, _, shift in _iter_instances(
+            for _, local_start, shift in _iter_instances(
                 frames,
                 actions,
                 control,
@@ -254,6 +256,7 @@ def segment_scalars(
                 lookahead_frames=after_frames,
                 boundary=boundary,
             )
+            if local_start < owned_length
         ]
         if shifts:
             out[f"{prefix}_shift_min"] = float(min(shifts))
@@ -450,15 +453,26 @@ class PixelShift:
         actions_batch = batch["field:action"]  # (N, T, action_dim)
         # Read the declared media color space rather than assuming the BGR direct-call default.
         color_space = ctx["schema"].media["frame"].color_space
+        count = len(frames_batch)
+        before_batch = batch.get("lookbehind:field:action", [None] * count)
+        after_actions_batch = batch.get("lookahead:field:action", [None] * count)
+        after_frames_batch = batch.get("lookahead:media:frame", [None] * count)
+        owned_lengths = batch.get("owned_lengths", [len(actions) for actions in actions_batch])
         rows = [
             segment_scalars(
                 frames,
                 actions,
                 self.controls,
                 color_space,
+                lookbehind_actions=before,
+                lookahead_actions=after_actions,
+                lookahead_frames=after_frames,
+                owned_length=int(owned_length),
                 boundary=self.boundary,
             )
-            for frames, actions in zip(frames_batch, actions_batch, strict=True)
+            for frames, actions, before, after_actions, after_frames, owned_length in zip(
+                frames_batch, actions_batch, before_batch, after_actions_batch,
+                after_frames_batch, owned_lengths, strict=True)
         ]
         return {key: np.array([row[key] for row in rows], dtype=np.float64) for key in OUTPUT_KEYS}
 

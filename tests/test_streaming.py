@@ -58,6 +58,20 @@ def test_segmenter_stream_matches_segments():
     assert all(len(w) == 4 for _, w in streamed)            # each window holds exactly W ticks
 
 
+def test_segmenter_context_is_bounded_and_shortens_only_at_source_edges():
+    ticks = [Tick(time=index, entities={0: {"act": 1.0}}) for index in range(8)]
+    entries = list(Segmenter(4, 2).stream_with_context(
+        "s", iter(ticks), lookbehind=1, lookahead=2))
+
+    assert [(segment.start_idx, [tick.time for tick in before],
+             [tick.time for tick in after])
+            for segment, _window, before, after in entries] == [
+        (0, [], [4, 5]),
+        (2, [1], [6, 7]),
+        (4, [3], []),
+    ]
+
+
 # ---- score parity (+ generator source) --------------------------------------
 def test_curate_streaming_matches_inmemory():
     data = _data(range(1, 6))

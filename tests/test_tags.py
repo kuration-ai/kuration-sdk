@@ -64,8 +64,9 @@ def test_tag_coverage_pulls_rare_tag_in_curate():
                  strategy=strat, segmenter=Segmenter(4, 4), target_size=3, seed=0)
     # tags were derived declaratively (no tags_of callback)
     assert any(s.tags for s in res.all_segments)
-    # top-k alone would take the 3 highest-act ("common") windows; tag coverage adds a "rare"
+    # top-k alone would take the 3 highest-act ("common") windows; coverage swaps in a "rare"
     assert any("kind:rare" in s.tags for s in res.selected)
+    assert len(res.selected) == 3
 
 
 # ---- hours path (write_dataset / fill_to_hours reserve) ---------------------

@@ -78,16 +78,8 @@ class RayExecutionBackend:
         if not ray.is_initialized():
             ray.init(**init_kwargs)
 
-    def _map(self, items, fn, resources):
-        options = {"num_cpus": resources.num_cpus, "num_gpus": resources.num_gpus}
-        if resources.memory is not None:
-            options["memory"] = resources.memory
-        remote = self.ray.remote(fn).options(**options)
-        refs = [remote.remote(item) for item in items]
-        return self.ray.get(refs)
-
     def map_sources(self, items, fn, resources=ResourceSpec()):
-        return self._map(items, fn, resources)
+        return list(self.iter_batches(items, fn, resources=resources))
 
     def map_batches(self, items, fn, resources=ResourceSpec()):
         return list(self.iter_batches(items, fn, resources=resources))

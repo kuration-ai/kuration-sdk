@@ -19,13 +19,20 @@ _TRANSFORM_META: dict[str, dict] = {}
 
 
 def register_batch_transform(name: str, factory: Callable | None = None, *, outputs=(),
-                             inputs=(), media_requirements=None, resources=None, **metadata):
+                             inputs=(), media_requirements=None, resources=None,
+                             lookbehind: int = 0, lookahead: int = 0,
+                             ownership: str | None = None, **metadata):
     """Register a transform factory, directly or as a decorator.
 
     ``outputs`` is mandatory unless the component declares ``output_features``/``outputs``.
     Framework imports belong inside the factory or its execution method.
     """
     def decorate(component):
+        for label, value in (("lookbehind", lookbehind), ("lookahead", lookahead)):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"batch transform {label} must be a non-negative integer")
+        if ownership not in {None, "rightmost-start"}:
+            raise ValueError("batch transform ownership must be None or 'rightmost-start'")
         declared = tuple(outputs or getattr(component, "output_features", ())
                          or getattr(component, "outputs", ()))
         if not declared or any(not isinstance(x, str) or not x for x in declared):
@@ -34,7 +41,8 @@ def register_batch_transform(name: str, factory: Callable | None = None, *, outp
             raise ValueError(f"batch transform registration has duplicate outputs {declared!r}")
         meta = {"outputs": declared, "inputs": tuple(inputs),
                 "media_requirements": dict(media_requirements or {}),
-                "resources": dict(resources or {})}
+                "resources": dict(resources or {}), "lookbehind": lookbehind,
+                "lookahead": lookahead, "ownership": ownership}
         from .registry import default_registry
         # Registry registration can fail (most commonly on a duplicate name).  Publish the
         # companion execution metadata only after that succeeds so discovery and execution
@@ -66,6 +74,9 @@ def _metadata(name, component):
     meta.setdefault("inputs", tuple(getattr(component, "inputs", ())))
     meta.setdefault("media_requirements", dict(getattr(component, "media_requirements", {}) or {}))
     meta.setdefault("resources", dict(getattr(component, "resources", {}) or {}))
+    meta.setdefault("lookbehind", int(getattr(component, "lookbehind", 0)))
+    meta.setdefault("lookahead", int(getattr(component, "lookahead", 0)))
+    meta.setdefault("ownership", getattr(component, "ownership", None))
     return meta
 
 
@@ -82,6 +93,13 @@ def resolve_transform(name, *, using, inputs, batch_size, device, params, schema
                          f"{registry.names('transform')}{hint}")
     component = registry.get("transform", implementation)
     meta = _metadata(implementation, component)
+    for label in ("lookbehind", "lookahead"):
+        value = meta[label]
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"transform {implementation!r} {label} must be a non-negative integer")
+    if meta["ownership"] not in {None, "rightmost-start"}:
+        raise ValueError(
+            f"transform {implementation!r} ownership must be None or 'rightmost-start'")
     outputs = tuple(meta["outputs"])
     if not outputs:
         raise ValueError(f"transform {implementation!r} does not declare output_features")
@@ -124,7 +142,9 @@ def resolve_transform(name, *, using, inputs, batch_size, device, params, schema
         factory_params["using"] = using
     return {"name": name, "implementation": implementation, "outputs": outputs,
             "inputs": resolved_inputs, "batch_size": batch_size, "device": device,
-            "params": factory_params, "resources": meta["resources"]}
+            "params": factory_params, "resources": meta["resources"],
+            "lookbehind": meta["lookbehind"], "lookahead": meta["lookahead"],
+            "ownership": meta["ownership"]}
 
 
 def _binds(callable_, *args, **kwargs) -> bool:
@@ -193,20 +213,31 @@ def apply_transforms(calls, segments, *, adapter, registry, progress=None):
     ordered = [s for src in sorted(by_source, key=str) for s in by_source[src]]
     runner = _TransformRunner(calls, adapter=adapter, registry=registry)
     batch_size = max(call["batch_size"] for call in calls)
+    lookbehind = max((call.get("lookbehind", 0) for call in calls), default=0)
+    lookahead = max((call.get("lookahead", 0) for call in calls), default=0)
     from .progress import emit
     emit(progress, "transforms", "start", total=len(calls))
 
     for source in sorted(by_source, key=str):
-        pending_segments, pending_windows = [], []
+        pending_segments, pending_windows, pending_contexts = [], [], []
         source_segments = sorted(by_source[source], key=lambda item: item.start_idx)
-        for segment, window in _iter_segment_windows(adapter, source, source_segments):
+        for index, (segment, window, before, after) in enumerate(_iter_segment_windows(
+                adapter, source, source_segments, lookbehind=lookbehind,
+                lookahead=lookahead)):
+            next_start = (source_segments[index + 1].start_idx
+                          if index + 1 < len(source_segments) else segment.end_idx)
+            owned_length = min(segment.end_idx, next_start) - segment.start_idx
             pending_segments.append(segment)
             pending_windows.append(window)
+            pending_contexts.append({"lookbehind": before, "lookahead": after,
+                                     "owned_length": owned_length})
             if len(pending_segments) == batch_size:
-                runner.apply(pending_segments, pending_windows, progress=None)
-                pending_segments, pending_windows = [], []
+                runner.apply(pending_segments, pending_windows, contexts=pending_contexts,
+                             progress=None)
+                pending_segments, pending_windows, pending_contexts = [], [], []
         if pending_segments:
-            runner.apply(pending_segments, pending_windows, progress=None)
+            runner.apply(pending_segments, pending_windows, contexts=pending_contexts,
+                         progress=None)
 
     for call_i, call in enumerate(calls, 1):
         emit(progress, "transforms", "advance", current=call_i, total=len(calls),
@@ -215,7 +246,7 @@ def apply_transforms(calls, segments, *, adapter, registry, progress=None):
     return ordered
 
 
-def _iter_segment_windows(adapter, source, segments):
+def _iter_segment_windows(adapter, source, segments, *, lookbehind=0, lookahead=0):
     """Yield indexed segment windows while retaining at most their active overlap."""
     supports_streaming = getattr(adapter, "supports_streaming", True)
     if callable(supports_streaming):
@@ -232,31 +263,38 @@ def _iter_segment_windows(adapter, source, segments):
     buffer_start = 0
     position = 0
     for segment in segments:
-        if segment.start_idx < buffer_start:
+        retain_start = max(0, segment.start_idx - lookbehind)
+        if retain_start < buffer_start:
             raise ValueError(f"segments for source {source!r} are not in start-index order")
         try:
-            while buffer_start < segment.start_idx and buffered:
+            while buffer_start < retain_start and buffered:
                 buffered.popleft()
                 buffer_start += 1
-            while position < segment.start_idx:
+            while position < retain_start:
                 next(ticks)  # discard gaps between selected windows without caching them
                 position += 1
                 buffer_start = position
-            while position < segment.end_idx:
+            while position < segment.end_idx + lookahead:
                 buffered.append(next(ticks))
                 position += 1
         except StopIteration as error:
-            raise ValueError(
-                f"source {source!r} changed before transforms: segment ends at "
-                f"{segment.end_idx}, but only {position} ticks are available") from error
+            if position < segment.end_idx:
+                raise ValueError(
+                    f"source {source!r} changed before transforms: segment ends at "
+                    f"{segment.end_idx}, but only {position} ticks are available") from error
         width = segment.end_idx - segment.start_idx
-        yield segment, list(islice(buffered, 0, width))
+        offset = segment.start_idx - buffer_start
+        window = list(islice(buffered, offset, offset + width))
+        before = list(islice(buffered, max(0, offset - lookbehind), offset))
+        after = list(islice(buffered, offset + width, offset + width + lookahead))
+        yield segment, window, before, after
 
 
-def apply_transforms_to_windows(calls, segments, windows, *, adapter, registry, progress=None):
+def apply_transforms_to_windows(calls, segments, windows, *, adapter, registry, contexts=None,
+                                progress=None):
     """Apply transforms to already-bounded windows without rereading or caching a source."""
     return _TransformRunner(calls, adapter=adapter, registry=registry).apply(
-        segments, windows, progress=progress)
+        segments, windows, contexts=contexts, progress=progress)
 
 
 class _TransformRunner:
@@ -272,11 +310,21 @@ class _TransformRunner:
                               call["params"], call["device"]))
             for call in self.calls)
 
-    def apply(self, segments, windows, *, progress=None):
+    def apply(self, segments, windows, *, contexts=None, progress=None):
         if not self.calls:
             return segments
         if len(segments) != len(windows):
             raise ValueError("segments and windows must have identical lengths")
+        needs_context = any(call.get("lookbehind", 0) or call.get("lookahead", 0)
+                            or call.get("ownership") for call in self.calls)
+        if contexts is None and needs_context:
+            raise ValueError("boundary-aware transforms require extracted window contexts")
+        if contexts is None:
+            contexts = [{"lookbehind": [], "lookahead": [],
+                         "owned_length": segment.end_idx - segment.start_idx}
+                        for segment in segments]
+        if len(contexts) != len(segments):
+            raise ValueError("transform contexts and segments must have identical lengths")
         provider = self.provider
         adapter = self.adapter
         from .progress import emit
@@ -286,8 +334,12 @@ class _TransformRunner:
             for offset in range(0, len(segments), size):
                 chunk = segments[offset:offset + size]
                 chunk_windows = windows[offset:offset + size]
+                chunk_contexts = contexts[offset:offset + size]
                 batch: dict[str, Any] = {"segment_ids": [
                     (s.source_id, s.start_idx, s.end_idx) for s in chunk]}
+                if call.get("ownership") == "rightmost-start":
+                    batch["owned_lengths"] = np.asarray(
+                        [context["owned_length"] for context in chunk_contexts], dtype=np.int64)
                 for token in call["inputs"]:
                     kind, arg = token.split(":", 1)
                     if kind == "field":
@@ -303,8 +355,35 @@ class _TransformRunner:
                                 f"transform {call['name']!r}: missing media:{arg} reference")
                         batch[token] = np.stack(
                             [provider.decode_batch(group) for group in refs])
+                    if kind == "feature":
+                        continue
+                    for direction, amount in (("lookbehind", call.get("lookbehind", 0)),
+                                              ("lookahead", call.get("lookahead", 0))):
+                        if not amount:
+                            continue
+                        tick_groups = []
+                        for context in chunk_contexts:
+                            ticks = context[direction]
+                            ticks = ticks[-amount:] if direction == "lookbehind" else ticks[:amount]
+                            tick_groups.append(ticks)
+                        if kind == "field":
+                            values = [_field_window(group, arg) if group else None
+                                      for group in tick_groups]
+                        else:
+                            if provider is None:
+                                raise ValueError(
+                                    f"transform {call['name']!r} needs a media provider")
+                            ref_groups = [[tick.media.get(arg) for tick in group]
+                                          for group in tick_groups]
+                            if any(ref is None for group in ref_groups for ref in group):
+                                raise ValueError(
+                                    f"transform {call['name']!r}: missing media:{arg} context")
+                            values = [provider.decode_batch(group) if group else None
+                                      for group in ref_groups]
+                        batch[f"{direction}:{token}"] = values
                 ctx = {"device": call["device"], "schema": adapter.schema,
-                       "transform": call["name"], "seed": call["params"].get("seed")}
+                       "transform": call["name"], "seed": call["params"].get("seed"),
+                       "ownership": call.get("ownership")}
                 result = _invoke(transform, batch, ctx)
                 if not isinstance(result, Mapping):
                     if len(call["outputs"]) != 1:

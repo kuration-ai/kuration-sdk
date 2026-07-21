@@ -78,7 +78,9 @@ def resolve_bounded_memory_limits(*, schema, segmenter, memory_budget: int | Non
                 "declared_transform_memory": 0}
     declared = max((int((call.get("resources") or {}).get("memory_bytes") or 0)
                     for call in transforms), default=0)
-    minimum = _minimum_window_bytes(schema, segmenter.window)
+    halo = max((int(call.get("lookbehind", 0)) + int(call.get("lookahead", 0))
+                for call in transforms), default=0)
+    minimum = _minimum_window_bytes(schema, segmenter.window + halo)
     available = memory_budget - declared
     if available < minimum:
         raise ValueError(
@@ -166,6 +168,8 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
     effective_max_in_flight = resolved_max_in_flight
     batch_memory_limit = limits["batch_memory_limit"]
     declared_transform_memory = resolved_transform_memory
+    transform_lookbehind = max((call.get("lookbehind", 0) for call in transforms), default=0)
+    transform_lookahead = max((call.get("lookahead", 0) for call in transforms), default=0)
     if transforms and registry is None:
         from .registry import default_registry
         registry = default_registry
@@ -211,10 +215,32 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
                 nonlocal estimated_peak_live_bytes, largest_window_bytes
                 pending_segments: list[Any] = []
                 pending_windows: list[Any] = []
+                pending_contexts: list[Any] = []
                 pending_bytes = 0
                 partition_index = 0
-                for segment, window in segmenter.stream(source, tracked(ticks)):
-                    window_bytes = (_window_working_bytes(schema, window)
+
+                def owned_windows():
+                    pending = None
+                    for entry in segmenter.stream_with_context(
+                            source, tracked(ticks), lookbehind=transform_lookbehind,
+                            lookahead=transform_lookahead):
+                        if pending is not None:
+                            prior_segment, prior_window, before, after = pending
+                            owned = min(prior_segment.end_idx, entry[0].start_idx) \
+                                - prior_segment.start_idx
+                            yield prior_segment, prior_window, {
+                                "lookbehind": before, "lookahead": after,
+                                "owned_length": owned}
+                        pending = entry
+                    if pending is not None:
+                        segment, window, before, after = pending
+                        yield segment, window, {
+                            "lookbehind": before, "lookahead": after,
+                            "owned_length": segment.end_idx - segment.start_idx}
+
+                for segment, window, context in owned_windows():
+                    live_ticks = [*context["lookbehind"], *window, *context["lookahead"]]
+                    window_bytes = (_window_working_bytes(schema, live_ticks)
                                     if batch_memory_limit is not None else 0)
                     largest_window_bytes = max(largest_window_bytes, window_bytes)
                     if batch_memory_limit is not None and window_bytes > batch_memory_limit:
@@ -228,31 +254,32 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
                         estimated_peak_live_bytes = max(
                             estimated_peak_live_bytes, pending_bytes + declared_transform_memory)
                         yield (f"{source!s}:{partition_index:08d}",
-                               pending_segments, pending_windows)
+                               pending_segments, pending_windows, pending_contexts)
                         partition_index += 1
-                        pending_segments, pending_windows = [], []
+                        pending_segments, pending_windows, pending_contexts = [], [], []
                         pending_bytes = 0
                     segment.group = group
                     pending_segments.append(segment)
                     pending_windows.append(window)
+                    pending_contexts.append(context)
                     pending_bytes += window_bytes
                     if len(pending_segments) == effective_batch_size:
                         estimated_peak_live_bytes = max(
                             estimated_peak_live_bytes, pending_bytes + declared_transform_memory)
                         yield (f"{source!s}:{partition_index:08d}",
-                               pending_segments, pending_windows)
+                               pending_segments, pending_windows, pending_contexts)
                         partition_index += 1
-                        pending_segments, pending_windows = [], []
+                        pending_segments, pending_windows, pending_contexts = [], [], []
                         pending_bytes = 0
                 if pending_segments:
                     estimated_peak_live_bytes = max(
                         estimated_peak_live_bytes, pending_bytes + declared_transform_memory)
                     yield (f"{source!s}:{partition_index:08d}",
-                           pending_segments, pending_windows)
+                           pending_segments, pending_windows, pending_contexts)
 
             def process(item):
                 nonlocal transform_runner, checkpoint_hits, checkpoint_misses
-                partition_id, pending_segments, pending_windows = item
+                partition_id, pending_segments, pending_windows, pending_contexts = item
                 reusable = checkpoint.reusable(partition_id)
                 if reusable is not None:
                     checkpoint_hits += 1
@@ -265,7 +292,8 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
                         from .transforms import _TransformRunner
                         transform_runner = _TransformRunner(
                             transforms, adapter=adapter, registry=registry)
-                    transform_runner.apply(pending_segments, pending_windows, progress=None)
+                    transform_runner.apply(pending_segments, pending_windows,
+                                           contexts=pending_contexts, progress=None)
                 selected = [segment for segment in pending_segments
                             if _passes(segment, predicates)]
                 written = pending_segments if retain_predicate_failures else selected

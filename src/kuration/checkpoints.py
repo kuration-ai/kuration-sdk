@@ -115,8 +115,7 @@ def _publish_attempt(attempt: str, final: str) -> None:
     from .io import _fs
     fs = _fs(final)
     fs.makedirs(final.rsplit("/", 1)[0], exist_ok=True)
-    if fs.exists(final):
-        fs.rm(final)
+    # Do not remove the last complete checkpoint before its replacement is publishable.
     fs.mv(attempt, final)
 
 

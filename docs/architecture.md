@@ -177,8 +177,10 @@ spawned feature workers only when required by that execution registry. Registere
 modules—not just entry-point initializer modules—are fingerprinted in run provenance, alongside
 the descriptors for registered metrics and transforms. Jobs may set
 `include_plugin_entry_points: false` to obtain a built-ins-plus-explicit-modules snapshot even if
-ambient entry points were discovered earlier in the process. Plugin registration errors remain
-loud.
+ambient entry points were discovered earlier in the process. Explicit plugin modules fail fast.
+An installed entry point that fails is rolled back transactionally, reported as a runtime warning
+and an error record from `load_plugins()`, and does not prevent later healthy entry points from
+loading.
 
 ### Progress events
 

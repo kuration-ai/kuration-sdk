@@ -127,6 +127,9 @@ ad.sources()            # -> every part file (or [path] for source_per="dataset"
 `HuggingFaceAdapter` loads a HF dataset/split (hub or local) as ticks, same mapping. One split is
 one source by default; set `source_column` to split it into **one source per distinct value**
 (e.g. per `episode_id`). Needs the `[hf]` extra (`datasets`).
+Single-source mode supports `streaming=True`. Partition discovery through `source_column` requires
+a whole-split index and therefore rejects bounded streaming; use `streaming=False` or expose each
+episode as an independently readable source.
 
 ```python
 from kuration import HuggingFaceAdapter

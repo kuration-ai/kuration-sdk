@@ -28,7 +28,10 @@ parameters fail before source rows are read.
 
 A transform factory is registered with `register_batch_transform()` (or `register_transform`),
 declaring scalar outputs, `field:`/`feature:`/`media:` inputs, semantic media requirements, and
-resource hints. A pipeline invokes it with `.transform(...)`; its outputs then behave like any
+resource hints. Boundary-sensitive transforms may additionally declare integer `lookbehind` and
+`lookahead` tick counts. Their batches receive `lookbehind:<input>`/`lookahead:<input>` lists;
+`ownership="rightmost-start"` also supplies `owned_lengths`, preventing overlapping windows from
+claiming the same event start. A pipeline invokes the transform with `.transform(...)`; outputs behave like any
 other scalar selection feature. Use `get_transform()` for direct lookup. Accelerator libraries
 must be imported inside the factory or execution method so discovery and `import kuration` remain
 dependency-light.

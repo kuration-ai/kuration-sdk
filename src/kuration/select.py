@@ -55,14 +55,16 @@ def sample_uniform_bins(segments: list[Segment], *, target_size: int,
 def enforce_tag_coverage(selected: list[Segment], all_segments: list[Segment], *,
                          tag_vocab: Iterable, target_size: int,
                          min_tag_frac: float) -> list[Segment]:
-    """Add segments until every tag in the vocab reaches a floor count, preferring
-    underrepresented bins so the patch-up doesn't pile onto already-dense bins."""
+    """Meet tag floors by adding or swapping segments without exceeding the count budget."""
+    selected = list(selected)
+    limit = max(target_size, len(selected))  # ``filter`` intentionally selects every match.
     selected_ids = set(id(s) for s in selected)
     counts: Counter = Counter()
     for s in selected:
         for t in s.tags:
             counts[t] += 1
     floor = max(1, int(round(target_size * min_tag_frac)))
+    required_tags = set(tag_vocab)
     unselected = [s for s in all_segments if id(s) not in selected_ids]
     bin_counts: Counter = Counter(s.bin for s in selected)
     for tag in tag_vocab:
@@ -71,12 +73,36 @@ def enforce_tag_coverage(selected: list[Segment], all_segments: list[Segment], *
             continue
         cands = [s for s in unselected if tag in s.tags]
         cands.sort(key=lambda s: bin_counts[s.bin])
-        for s in cands[:deficit]:
-            selected.append(s)
+        for s in cands:
+            if counts[tag] >= floor:
+                break
+            if len(selected) < limit:
+                selected.append(s)
+            else:
+                # Preserve floors already achieved. Prefer removing from the densest bin, with
+                # reverse selection order as a deterministic tie-breaker.
+                victims = sorted(
+                    enumerate(selected), key=lambda pair: (bin_counts[pair[1].bin], pair[0]),
+                    reverse=True)
+                victim_index = next((index for index, victim in victims
+                                     if tag not in victim.tags and all(
+                                         counts[covered] - (covered in victim.tags)
+                                         + (covered in s.tags) >= floor
+                                         for covered in required_tags
+                                         if counts[covered] >= floor)), None)
+                if victim_index is None:
+                    continue
+                victim = selected[victim_index]
+                selected_ids.discard(id(victim))
+                bin_counts[victim.bin] -= 1
+                for covered in victim.tags:
+                    counts[covered] -= 1
+                selected[victim_index] = s
+                unselected.append(victim)
             selected_ids.add(id(s))
             bin_counts[s.bin] += 1
-            for t in s.tags:
-                counts[t] += 1
+            for covered in s.tags:
+                counts[covered] += 1
         unselected = [s for s in unselected if id(s) not in selected_ids]
     return selected
 

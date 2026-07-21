@@ -36,6 +36,13 @@ python -m pip install -e . -e 'plugins/<plugin-name>[test]'
 python -m pytest plugins/<plugin-name>/tests -q
 ```
 
-CI discovers every child containing `pyproject.toml`, installs its `test` extra, and runs its
-tests, Ruff, build, and wheel-content checks. The shared SDK suite separately verifies discovery,
-worker reconstruction, provenance, registry isolation, and bounded transform execution.
+CI discovers every child containing `pyproject.toml`, creates a fresh virtual environment for it,
+installs only core plus that plugin, runs `pip check`, tests, Ruff, build, wheel-content checks,
+and installed entry-point discovery. The shared SDK suite separately verifies discovery, worker
+reconstruction, provenance, registry isolation, and bounded transform execution.
+
+Repository-maintained plugins release independently from core. Use a tag of the form
+`plugin-<directory>-v<project.version>` (for example `plugin-pixel_shift-v0.1.0`) and publish a
+GitHub release. `.github/workflows/publish-plugin.yml` validates, smoke-tests, and publishes that
+plugin's wheel and sdist through the `pypi-plugins` trusted-publisher environment. A manual run is
+a non-publishing dry run. License metadata and the repository `LICENSE` remain release gates.

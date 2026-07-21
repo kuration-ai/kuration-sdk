@@ -29,7 +29,8 @@ def cli_progress(*, file=None):
             stride = max(1, total // 20) if total else 1
             if current == total or current - last.get(phase, 0) >= stride:
                 detail = f" source={e['source']}" if e.get("source") is not None else ""
-                print(f"[{phase}] {current}/{total}{detail}", file=file)
+                count = str(current) if total is None else f"{current}/{total}"
+                print(f"[{phase}] {count}{detail}", file=file)
                 last[phase] = current
         elif event == "complete":
             completion_detail = e.get("detail")

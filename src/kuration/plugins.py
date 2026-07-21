@@ -9,6 +9,7 @@ import importlib
 import hashlib
 import inspect
 import sys
+import warnings
 from importlib.metadata import PackageNotFoundError, entry_points, packages_distributions, version
 from threading import RLock
 from typing import Any
@@ -23,6 +24,59 @@ _ENTRY_POINTS_SCANNED = False
 _ENTRY_POINT_BASELINES: dict[tuple[str, str], Any | None] = {}
 _MODULE_COMPONENTS: dict[str, dict[tuple[str, str], Any]] = {}
 _LOCK = RLock()
+
+
+def _plugin_state_snapshot() -> dict[str, Any]:
+    """Capture registries that public plugin registration helpers can mutate."""
+    from .registry import default_registry
+    from .adapters.base import _ADAPTERS
+    from .dsl.registry import METRICS
+    from .output.base import _ENCODERS
+    from .scorers import _SCORERS
+    from .transforms import _TRANSFORM_META
+
+    return {
+        "registry": {kind: dict(entries) for kind, entries in default_registry._entries.items()},
+        "legacy": [
+            (_ADAPTERS, dict(_ADAPTERS)),
+            (METRICS, dict(METRICS)),
+            (_ENCODERS, dict(_ENCODERS)),
+            (_SCORERS, dict(_SCORERS)),
+            (_TRANSFORM_META, dict(_TRANSFORM_META)),
+        ],
+        "loaded_modules": set(_LOADED_MODULES),
+        "loaded_entry_points": set(_LOADED_ENTRY_POINTS),
+        "entry_point_baselines": dict(_ENTRY_POINT_BASELINES),
+        "module_components": {name: dict(entries)
+                              for name, entries in _MODULE_COMPONENTS.items()},
+        "sys_modules": set(sys.modules),
+    }
+
+
+def _restore_plugin_state(snapshot: dict[str, Any], module_name: str | None) -> None:
+    """Roll back a failed plugin initializer, including legacy compatibility registries."""
+    from .registry import default_registry
+
+    for kind, entries in snapshot["registry"].items():
+        default_registry._entries[kind].clear()
+        default_registry._entries[kind].update(entries)
+    for registry, entries in snapshot["legacy"]:
+        registry.clear()
+        registry.update(entries)
+    _LOADED_MODULES.clear()
+    _LOADED_MODULES.update(snapshot["loaded_modules"])
+    _LOADED_ENTRY_POINTS.clear()
+    _LOADED_ENTRY_POINTS.update(snapshot["loaded_entry_points"])
+    _ENTRY_POINT_BASELINES.clear()
+    _ENTRY_POINT_BASELINES.update(snapshot["entry_point_baselines"])
+    _MODULE_COMPONENTS.clear()
+    _MODULE_COMPONENTS.update(snapshot["module_components"])
+
+    if module_name:
+        root = module_name.split(".", 1)[0]
+        for name in set(sys.modules) - snapshot["sys_modules"]:
+            if name == root or name.startswith(root + "."):
+                sys.modules.pop(name, None)
 
 
 def _component_keys() -> set[tuple[str, str, str | None]]:
@@ -77,9 +131,10 @@ def _available_entry_points():
 def load_plugins(modules=(), *, include_entry_points: bool = True) -> list[dict]:
     """Load explicit registration modules and installed `kuration.plugins` entry points.
 
-    Explicit modules register through import side effects. Entry points must resolve to either
-    a module or a zero-argument function that performs registrations. Repeated calls are safe.
-    Returns descriptors for plugins loaded by this call.
+    Explicit modules register through import side effects and fail fast. Entry points must resolve
+    to either a module or a zero-argument initializer. A failing ambient entry point is rolled back,
+    warned, and returned as a ``kind='error'`` record so later healthy plugins remain discoverable.
+    Repeated calls are safe.
     """
     if isinstance(modules, str):
         modules = [modules]
@@ -92,13 +147,14 @@ def load_plugins(modules=(), *, include_entry_points: bool = True) -> list[dict]
         for name in modules:
             if name in _LOADED_MODULES:
                 continue
+            state = _plugin_state_snapshot()
             previous_components = _component_keys()
             previous_entries = _registry_entries()
             _LOADED_MODULES.add(name)
             try:
                 importlib.import_module(name)
             except Exception as e:
-                _LOADED_MODULES.discard(name)
+                _restore_plugin_state(state, name)
                 raise ImportError(f"failed to load kuration plugin module {name!r}: {e}") from e
             changed = _changed_entries(previous_entries)
             _record_module_components(name, changed)
@@ -111,6 +167,7 @@ def load_plugins(modules=(), *, include_entry_points: bool = True) -> list[dict]
                 key = f"{ep.name}={ep.value}"
                 if key in _LOADED_ENTRY_POINTS:
                     continue
+                state = _plugin_state_snapshot()
                 _LOADED_ENTRY_POINTS.add(key)
                 previous_components = _component_keys()
                 previous_entries = _registry_entries()
@@ -119,9 +176,13 @@ def load_plugins(modules=(), *, include_entry_points: bool = True) -> list[dict]
                     if callable(target) and not inspect.ismodule(target):
                         target()
                 except Exception as e:
-                    _LOADED_ENTRY_POINTS.discard(key)
-                    _ENTRY_POINTS_SCANNED = False
-                    raise ImportError(f"failed to load kuration plugin entry point {key!r}: {e}") from e
+                    module_name = ep.value.split(":", 1)[0] if isinstance(ep.value, str) else None
+                    _restore_plugin_state(state, module_name)
+                    message = f"failed to load kuration plugin entry point {key!r}: {e}"
+                    warnings.warn(message, RuntimeWarning, stacklevel=2)
+                    loaded.append({"kind": "error", "name": ep.name, "value": ep.value,
+                                   "error": message})
+                    continue
                 module = target.__name__ if inspect.ismodule(target) \
                     else getattr(target, "__module__", None)
                 if module:

@@ -106,32 +106,24 @@ class TimeseriesAdapter:
             return
         cur = None
         group: list[dict] = []
-        seen_times: set = set()
-        previous_ordered = None
         for row in rows:
             tv = row[self.time_column]
             ordered = _num_time(tv)
             if isinstance(ordered, float) and not math.isfinite(ordered):
                 raise ValueError(f"time column {self.time_column!r} contains non-finite {tv!r}")
-            if group and tv != cur:
-                yield self._mk_tick(cur, group)
-                seen_times.add(cur)
-                group = []
-                if tv in seen_times:     # e.g. rows sorted entity-major, not by time
-                    raise ValueError(
-                        f"rows are not ordered by {self.time_column!r}: time {tv!r} reappears "
-                        f"after its timestep closed — sort rows by time first")
+            if group and ordered != cur:
                 try:
-                    decreasing = previous_ordered is not None and ordered < previous_ordered
+                    decreasing = ordered < cur
                 except TypeError as error:
                     raise ValueError(f"time column {self.time_column!r} contains values that "
                                      f"cannot be ordered consistently: {tv!r}") from error
                 if decreasing:
                     raise ValueError(f"rows are not ordered by {self.time_column!r}: time "
                                      f"{tv!r} follows {cur!r}")
+                yield self._mk_tick(cur, group)
+                group = []
             group.append(row)
-            cur = tv
-            previous_ordered = ordered
+            cur = ordered
         if group:
             yield self._mk_tick(cur, group)
 

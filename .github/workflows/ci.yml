@@ -191,19 +191,37 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install SDK and plugin test tools
-        run: python -m pip install -e '.[dev]'
-      - name: Validate every plugin distribution
+      - name: Validate every plugin distribution in a clean environment
         shell: bash
         run: |
+          mkdir -p plugin-dist
           for plugin in plugins/*; do
             test -f "$plugin/pyproject.toml" || continue
-            python -m pip install -e "$plugin[test]"
-            python -m pytest "$plugin/tests" -q
-            python -m ruff check "$plugin/src" "$plugin/tests"
-            python -m build "$plugin"
-            check-wheel-contents "$plugin"/dist/*.whl
+            venv="/tmp/kuration-plugin-$(basename "$plugin")"
+            python -m venv "$venv"
+            "$venv/bin/python" -m pip install -e . -e "$plugin[test]"
+            "$venv/bin/python" -m pip check
+            "$venv/bin/python" -m pytest "$plugin/tests" -q
+            "$venv/bin/python" -m ruff check "$plugin/src" "$plugin/tests"
+            "$venv/bin/python" -m build "$plugin"
+            "$venv/bin/check-wheel-contents" "$plugin"/dist/*.whl
+            "$venv/bin/python" -m pip install --force-reinstall --no-deps "$plugin"/dist/*.whl
+            (
+              cd /tmp
+              "$venv/bin/python" -c \
+                'from importlib.metadata import entry_points; assert entry_points().select(group="kuration.plugins")'
+            )
+            cp "$plugin"/dist/* plugin-dist/
           done
+          sha256sum plugin-dist/* > plugin-SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: plugin-package-distributions-${{ github.sha }}
+          path: |
+            plugin-dist/
+            plugin-SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
 
   build:
     name: Build and wheel smoke test

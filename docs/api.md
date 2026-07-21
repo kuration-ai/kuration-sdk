@@ -186,7 +186,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 
 | name | signature | does |
 |---|---|---|
-| `load_plugins` | `(modules=(), *, include_entry_points=True) -> list[dict]` | load registration modules and installed `kuration.plugins` entry points |
+| `load_plugins` | `(modules=(), *, include_entry_points=True) -> list[dict]` | load registration modules and installed entry points; ambient failures are rolled back and returned as `kind="error"` records with a warning |
 | `loaded_plugin_modules` | `() -> tuple[str, ...]` | modules propagated to spawned scoring workers |
 | `plugin_provenance` | `(*, registry=None) -> list[dict]` | loaded plugin implementation fingerprints used by resume provenance; an explicit registry scopes the result |
 | `ProgressCallback` | `Callable[[dict], None]` | receives structured `{phase, event, ...}` execution events |
@@ -241,7 +241,7 @@ remain the Python convenience boundary.
 | `iter_external_weighted_priorities` | `(partitions, *, weights, normalize="quantile", seed=0, spill_dir=None)` | stream exact canonical Gumbel priorities from one disk-backed score index and one partition-at-a-time materialization pass |
 | `external_weighted` | `(partitions, *, weights, target_size, normalize="quantile", seed=0, spill_dir=None) -> list[Segment]` | select exact hours-path Gumbel priorities while retaining only the selected heap; count-weighted sampling has a distinct NumPy contract |
 | `iter_external_hash_dedup` | `(partitions, *, feature_names=None, per_group=False, spill_dir=None)` | exact disk-backed feature-vector dedup with full-payload collision resolution and canonical retention |
-| `apply_transforms_to_windows` | `(calls, segments, windows, *, adapter, registry, progress=None)` | bounded transform execution over already-extracted windows without source rereads |
+| `apply_transforms_to_windows` | `(calls, segments, windows, *, adapter, registry, contexts=None, progress=None)` | bounded transform execution over extracted windows; optional contexts carry lookbehind/lookahead ticks and owned lengths |
 
 ## Output
 
