@@ -9,77 +9,63 @@ that ever references kuration_pixel_shift, lazily, only when actually invoked. I
 this package never requires kuration-plugin-pixel-shift to be installed; only using the
 action_state pieces does. See action_state.py's module docstring for the full mechanism.
 
-register() registers ONLY the generic anomaly_checker.ConsistencyCheck component -- it
-never references kuration_pixel_shift, so it succeeds in any install of this package,
-with or without the `[action_state]` extra. That's deliberate: kuration-sdk's plugin
-discovery contract requires every kuration.plugins entry point to register at least one
-real component, and that check runs (and calls register()) unconditionally, regardless of
-which optional extras happen to be installed -- so register() itself must never depend on
-an optional extra either. ActionStateConsistencyChecker's clip-level verdict remains a
-direct-API-only capability, never registered with kuration-sdk's registry, for the
-cross-segment-state reason documented on the class itself.
+register() exposes the real ActionStateConsistencyChecker through kuration-sdk's analyzer
+registry. Analyzer factories are discoverable direct APIs for user-owned, cross-segment
+state; they are not falsely represented as stateless pipeline transforms. Registration
+does not construct the checker, so discovery remains safe without the optional
+pixel-shift dependency installed.
 """
 from __future__ import annotations
 
 from .action_state import (
+    ACTION_STATE_ANALYZER_PARAMETERS,
     ANOMALY_TYPES,
     ActionStateConsistencyChecker,
+    action_state_consistency,
     load_baselines_from_reference,
     validate_action_state_baselines,
     validate_action_state_config,
 )
 from .anomaly_checker import (
     AnomalyChecker,
-    CONSISTENCY_CHECK_PARAMETERS,
-    ConsistencyCheck,
-    consistency_check,
     validate_baselines,
     validate_config,
 )
 
-COMPONENT_NAME = "aintropy/consistency-check"
+ANALYZER_NAME = "aintropy/action-state-consistency"
 
 
 def register() -> None:
-    """Idempotently register the generic ConsistencyCheck transform and operator."""
-    from kuration import default_registry, register_batch_transform, register_operator
+    """Idempotently register the real stateful action-state analyzer."""
+    from kuration import default_registry, register_analyzer
 
     common = {
         "version": "1",
         "package": "kuration-plugin-action-state-consistency",
         "stability": "experimental",
-        "install_hint": "pip install kuration-plugin-action-state-consistency",
+        "install_hint": 'pip install "kuration-plugin-action-state-consistency[action_state]"',
+        "documentation": "https://github.com/aintropy-ai/kuration-sdk/tree/main/"
+                         "plugins/action_state_consistency#usage",
+        "capabilities": {"stateful": True, "cross_segment": True},
     }
-    if COMPONENT_NAME not in default_registry.names("transform"):
-        register_batch_transform(
-            COMPONENT_NAME,
-            ConsistencyCheck,
-            description="Check a per-tick numeric field against an expected sign and "
-                        "magnitude range",
-            outputs=("n_consistent", "n_inconsistent"),
-            inputs=("field:value",),
-            parameters=CONSISTENCY_CHECK_PARAMETERS,
-            **common,
-        )
-    if COMPONENT_NAME not in default_registry.names("operator"):
-        register_operator(
-            COMPONENT_NAME,
-            consistency_check,
-            description="Check a per-tick numeric field against an expected sign and "
-                        "magnitude range",
-            parameters=CONSISTENCY_CHECK_PARAMETERS,
+    if ANALYZER_NAME not in default_registry.names("analyzer"):
+        register_analyzer(
+            ANALYZER_NAME,
+            action_state_consistency,
+            description="Classify clips from cross-segment pixel-shift evidence against "
+                        "user-supplied action baselines",
+            parameters=ACTION_STATE_ANALYZER_PARAMETERS,
             **common,
         )
 
 
 __all__ = [
+    "ACTION_STATE_ANALYZER_PARAMETERS",
+    "ANALYZER_NAME",
     "ANOMALY_TYPES",
     "ActionStateConsistencyChecker",
     "AnomalyChecker",
-    "COMPONENT_NAME",
-    "CONSISTENCY_CHECK_PARAMETERS",
-    "ConsistencyCheck",
-    "consistency_check",
+    "action_state_consistency",
     "load_baselines_from_reference",
     "register",
     "validate_action_state_baselines",

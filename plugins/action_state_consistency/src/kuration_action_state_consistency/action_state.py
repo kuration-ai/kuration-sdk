@@ -19,6 +19,30 @@ from collections.abc import Sequence
 from .anomaly_checker import AnomalyChecker, validate_baselines, validate_config
 
 ANOMALY_TYPES = ("action_state",)
+ACTION_STATE_ANALYZER_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "anomaly_type": {"type": "string", "const": "action_state"},
+        "baselines": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                        "expected_sign": {"type": "integer", "enum": [1, -1]},
+                        "min": {"type": "number", "minimum": 0},
+                        "max": {"type": "number", "minimum": 0},
+                    },
+                    "required": ["expected_sign", "min", "max"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+    },
+    "required": ["anomaly_type", "baselines"],
+    "additionalProperties": False,
+}
 
 
 def _require_pixel_shift():
@@ -91,10 +115,9 @@ def load_baselines_from_reference(reference: dict, *, controls: Sequence[str] | 
 
 class ActionStateConsistencyChecker(AnomalyChecker):
     """AnomalyChecker specialized for pixel_shift measurements. See this module's
-    docstring for why kuration_pixel_shift is only ever imported lazily, inside
-    add_segment() -- constructing this checker or calling clip_verdict()/summary()/
-    print_report() never touches it; only add_segment() (and load_baselines_from_reference(),
-    a free function) do."""
+    docstring for why kuration_pixel_shift is imported lazily. Registration and package
+    import never require it; construction validates its control vocabulary, and
+    add_segment() uses its measurement APIs. Verdict/report methods need no further access."""
 
     def __init__(self, config):
         super().__init__(validate_action_state_config(config))
@@ -154,3 +177,10 @@ class ActionStateConsistencyChecker(AnomalyChecker):
                 boundary=boundary,
             ):
                 self.record_instance(source_id, control, cell_key, start_idx + local_start, shift)
+
+
+def action_state_consistency(*, anomaly_type: str, baselines: dict):
+    """Construct the discoverable, user-owned action-state analyzer."""
+    return ActionStateConsistencyChecker(
+        {"anomaly_type": anomaly_type, "baselines": baselines}
+    )

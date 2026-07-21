@@ -165,30 +165,17 @@ def test_generic_anomaly_checker_record_instance_rejects_nonfinite_shift(bad):
     assert checker.clip_verdict("clip1") == "consistent"
 
 
-def test_consistency_check_transform_counts_consistent_and_inconsistent_values():
-    """The one component this package registers with kuration-sdk -- built entirely on
-    the generic core, no pixel_shift involved. A plain, direct call (not through a real
-    Pipeline) is enough to exercise its actual counting logic."""
-    from kuration_action_state_consistency import ConsistencyCheck
-
-    transform = ConsistencyCheck(expected_sign=1, min_magnitude=0.5, max_magnitude=2.0)
-    batch = {"field:value": [[1.0, -1.0, 0.1, 5.0]]}  # one segment, 4 ticks
-    result = transform.transform_batch(batch, ctx={})
-    assert result["n_consistent"].tolist() == [1.0]  # only 1.0 satisfies sign+range
-    assert result["n_inconsistent"].tolist() == [3.0]
-
-
-def test_register_adds_the_transform_and_operator_without_pixel_shift():
-    """register() must succeed and register something real using ONLY this package's
-    hard dependencies (kuration-sdk, numpy) -- kuration-sdk's plugin-discovery contract
-    calls register() unconditionally, regardless of which optional extras are installed,
-    so it must never depend on kuration_pixel_shift."""
+def test_register_adds_the_real_analyzer_without_pixel_shift():
+    """Discovery registers the real stateful capability without constructing it."""
     from kuration import default_registry
     import kuration_action_state_consistency as asc
 
     asc.register()  # idempotent -- must not raise even if already registered
-    assert "aintropy/consistency-check" in default_registry.names("transform")
-    assert "aintropy/consistency-check" in default_registry.names("operator")
+    assert asc.ANALYZER_NAME in default_registry.names("analyzer")
+    descriptor = default_registry.descriptor("analyzer", asc.ANALYZER_NAME)
+    assert descriptor.capabilities == {"stateful": True, "cross_segment": True}
+    assert "aintropy/consistency-check" not in default_registry.names("transform")
+    assert "aintropy/consistency-check" not in default_registry.names("operator")
 
 
 def test_generic_anomaly_checker_is_importable_and_usable_without_pixel_shift_installed(monkeypatch):
@@ -214,7 +201,7 @@ def test_generic_anomaly_checker_is_importable_and_usable_without_pixel_shift_in
 def test_register_succeeds_without_pixel_shift_installed(monkeypatch):
     """The exact scenario kuration-sdk's plugin discovery hits in a core-only install:
     kuration_pixel_shift unavailable, register() still called unconditionally. Must
-    succeed and register the generic component -- this is what keeps `kur-list`/
+    succeed and register the analyzer factory -- this is what keeps `kur-list`/
     `kur-describe`/plugin validation from crashing for anyone who installed this package
     without the [action_state] extra."""
     monkeypatch.setitem(sys.modules, "kuration_pixel_shift", None)
@@ -223,10 +210,16 @@ def test_register_succeeds_without_pixel_shift_installed(monkeypatch):
             monkeypatch.delitem(sys.modules, name)
 
     import kuration_action_state_consistency as fresh_asc
-    from kuration import default_registry
+    from kuration import default_registry, get_analyzer
 
     fresh_asc.register()
-    assert "aintropy/consistency-check" in default_registry.names("transform")
+    assert fresh_asc.ANALYZER_NAME in default_registry.names("analyzer")
+    with pytest.raises(ImportError, match="kuration-plugin-pixel-shift"):
+        get_analyzer(
+            fresh_asc.ANALYZER_NAME,
+            anomaly_type="action_state",
+            baselines={"W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1.0}}},
+        )
 
 
 def test_action_state_module_functions_raise_a_clear_error_without_pixel_shift_installed(monkeypatch):

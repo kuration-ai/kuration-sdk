@@ -8,7 +8,7 @@ import sys
 _PLURAL = {"adapters": "adapter", "metrics": "metric", "scorers": "scorer",
            "methods": "method", "filters": "filter", "encoders": "encoder",
            "containers": "container", "presets": "preset", "operators": "operator",
-           "transforms": "transform"}
+           "transforms": "transform", "analyzers": "analyzer"}
 
 
 def _report_plugin_failures() -> None:
