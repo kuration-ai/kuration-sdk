@@ -7,6 +7,7 @@ generator (never materialized / indexed).
 """
 from __future__ import annotations
 
+from collections import deque as stdlib_deque
 import json
 
 import numpy as np
@@ -70,6 +71,32 @@ def test_segmenter_context_is_bounded_and_shortens_only_at_source_edges():
         (2, [1], [6, 7]),
         (4, [3], []),
     ]
+
+
+def test_segmenter_context_discards_sparse_stride_gaps(monkeypatch):
+    import kuration.segment as segment_module
+
+    class TrackingDeque(stdlib_deque):
+        peak = 0
+
+        def append(self, value):
+            super().append(value)
+            type(self).peak = max(type(self).peak, len(self))
+
+    monkeypatch.setattr(segment_module, "deque", TrackingDeque)
+    ticks = [Tick(time=index, entities={0: {"act": 1.0}}) for index in range(205)]
+
+    entries = list(Segmenter(2, 100).stream_with_context(
+        "s", iter(ticks), lookbehind=3, lookahead=4))
+
+    assert [(segment.start_idx, [tick.time for tick in before],
+             [tick.time for tick in after])
+            for segment, _window, before, after in entries] == [
+        (0, [], [2, 3, 4, 5]),
+        (100, [97, 98, 99], [102, 103, 104, 105]),
+        (200, [197, 198, 199], [202, 203, 204]),
+    ]
+    assert TrackingDeque.peak <= 2 + 3 + 4
 
 
 # ---- score parity (+ generator source) --------------------------------------

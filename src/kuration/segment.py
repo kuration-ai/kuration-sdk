@@ -126,5 +126,15 @@ class Segmenter:
             while buffer_start < retain_from and buffered:
                 buffered.popleft()
                 buffer_start += 1
+            # A sparse stride can leave a gap after the retained halo has been drained. Consume
+            # that gap directly from the iterator: buffering it would make residency O(stride)
+            # and would violate the bounded-stage memory accounting.
+            while position < retain_from and not exhausted:
+                try:
+                    next(iterator)
+                    position += 1
+                    buffer_start = position
+                except StopIteration:
+                    exhausted = True
             if exhausted and position < start + self.window:
                 break
