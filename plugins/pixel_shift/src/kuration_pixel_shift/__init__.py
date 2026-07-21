@@ -8,6 +8,8 @@ from .diamond_action_decode import (
     find_isolated_press_sequences,
     release_transition_displacement,
     validate_actions,
+    validate_boundary,
+    validate_color_space,
     validate_frames,
 )
 from .pixel_shift_operator import (
@@ -15,8 +17,10 @@ from .pixel_shift_operator import (
     OUTPUT_KEYS,
     PixelShift,
     PixelShiftReport,
+    iter_instances,
     pixel_shift,
     segment_scalars,
+    validate_segment_inputs,
 )
 
 COMPONENT_NAME = "aintropy/pixel-shift"
@@ -64,10 +68,14 @@ __all__ = [
     "PixelShift",
     "PixelShiftReport",
     "find_isolated_press_sequences",
+    "iter_instances",
     "pixel_shift",
     "register",
     "release_transition_displacement",
     "segment_scalars",
     "validate_actions",
+    "validate_boundary",
+    "validate_color_space",
     "validate_frames",
+    "validate_segment_inputs",
 ]
