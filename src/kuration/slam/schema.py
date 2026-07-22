@@ -1,6 +1,8 @@
 """Canonical schema for time-aligned camera reconstruction data."""
 from __future__ import annotations
 
+from typing import Any
+
 from kuration import SchemaSpec
 
 
@@ -25,7 +27,7 @@ FIELD_TO_ARRAY = {
 
 def slam_schema(*, sample_hz: float | None = None) -> SchemaSpec:
     """Return the stable schema emitted by :class:`SLAMTrajectoryAdapter`."""
-    raw = {
+    raw: dict[str, Any] = {
         "name": "aintropy-slam-trajectory-v1",
         "entity_axis": "camera",
         "fields": {
