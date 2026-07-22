@@ -32,6 +32,6 @@ Removal is called out in the changelog. Compatibility aliases such as `.organize
 
 ## Versioning
 
-Release candidates use PEP 440 versions such as `0.1.0rc3`. Final `0.x` releases use minor
+Release candidates use PEP 440 versions such as `0.1.0rc4`. Final `0.x` releases use minor
 versions for meaningful contract changes. At `1.0`, semantic-versioning guarantees will apply to
 the supported surface, and incompatible changes will require a major version.

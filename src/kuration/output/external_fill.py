@@ -50,12 +50,14 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
     try:
         connection.executescript(
             "PRAGMA journal_mode=OFF;PRAGMA synchronous=OFF;PRAGMA temp_store=FILE;"
-            "CREATE TABLE items (id_blob BLOB PRIMARY KEY,id_sort TEXT NOT NULL,"
+            "CREATE TABLE items (id_blob BLOB PRIMARY KEY,id_hash TEXT NOT NULL,"
+            "id_sort TEXT NOT NULL,"
             "source_id TEXT NOT NULL,priority REAL NOT NULL,seconds REAL NOT NULL,"
             "group_blob BLOB NOT NULL,tags_blob BLOB NOT NULL,start_idx INTEGER,end_idx INTEGER,"
             "meta_blob BLOB NOT NULL,split TEXT);"
             "CREATE TABLE item_tags (id_blob BLOB NOT NULL,tag TEXT NOT NULL,"
-            "PRIMARY KEY(id_blob,tag));")
+            "PRIMARY KEY(id_blob,tag));"
+            "CREATE INDEX item_equality ON items(id_hash);")
         required = {"id", "source_id", "priority", "seconds", "group"}
         count = 0
         for count, item in enumerate(items, 1):
@@ -74,11 +76,19 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
                 raise ValueError(f"item {count - 1} needs a numeric priority and hashable id") \
                     from error
             identity = _dump(item["id"])
+            identity_hash = str(hash(item["id"]))
+            # Pickle bytes are serialization identity, not Python equality: ``1`` and ``True``
+            # have different pickles but are duplicate set/dict keys. Compare only the tiny
+            # same-hash bucket so duplicate detection remains disk-backed.
+            for (existing_blob,) in connection.execute(
+                    "SELECT id_blob FROM items WHERE id_hash=?", (identity_hash,)):
+                if _load(existing_blob) == item["id"]:
+                    raise ValueError(f"duplicate fill item id {item['id']!r}")
             tags = tuple(item.get("tags", ()))
             try:
                 connection.execute(
-                    "INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,NULL)",
-                    (identity, str(item["id"]), str(item["source_id"]), priority,
+                    "INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL)",
+                    (identity, identity_hash, str(item["id"]), str(item["source_id"]), priority,
                      float(seconds), _dump(item["group"]), _dump(tags), item.get("start"),
                      item.get("end"), _dump(dict(item.get("meta") or {}))))
             except sqlite3.IntegrityError as error:

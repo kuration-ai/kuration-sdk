@@ -99,10 +99,60 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
             union_transforms.append(call)
             for output in call["outputs"]:
                 transform_by_output[output] = call
+
+    # Whole-pool scorers are also shared work. Validate their score-once identity before
+    # reading sources, and retain the normalized union for the execution pass below.
+    union_scorers: dict[str, tuple] = {}
+    for arm in arms:
+        for name, out, params in (arm.strategy.scorers or []):
+            scorer = (name, out, params)
+            if out in union_scorers and union_scorers[out] != scorer:
+                raise ValueError(f"arms disagree on scorer output {out!r}: "
+                                 f"{union_scorers[out]!r} vs {scorer!r}")
+            union_scorers[out] = scorer
+
+    # A shared feature column must have exactly one producer kind. Without this check a
+    # transform or scorer overwrites a DSL/registered metric in every arm, invalidating the
+    # score-once comparison while still returning plausible-looking distributions.
+    metric_outputs = set(union)
+    for arm, arm_registry in zip(arms, registries, strict=True):
+        arm_transforms = {output for call in arm.transforms for output in call["outputs"]}
+        arm_scorers = arm.strategy.scorer_outputs()
+        arm_dependencies = arm.strategy.referenced_metrics() | {
+            token.split(":", 1)[1]
+            for call in arm.transforms for token in call["inputs"]
+            if token.startswith("feature:")
+        }
+        metric_outputs.update(
+            name for name in arm_dependencies
+            if name not in arm.strategy.define and name not in arm_transforms
+            and name not in arm_scorers and name in arm_registry.names("metric"))
+    producer_outputs = {
+        "metric": metric_outputs,
+        "transform": set(transform_by_output),
+        "scorer": set(union_scorers),
+    }
+    producer_conflicts = {
+        output: [kind for kind, outputs in producer_outputs.items() if output in outputs]
+        for output in set().union(*producer_outputs.values())
+    }
+    producer_conflicts = {
+        output: kinds for output, kinds in producer_conflicts.items() if len(kinds) > 1}
+    if producer_conflicts:
+        detail = ", ".join(f"{output!r} ({'/'.join(kinds)})"
+                           for output, kinds in sorted(producer_conflicts.items()))
+        raise ValueError(f"experiment feature output name(s) have multiple producer kinds: "
+                         f"{detail}")
+
     referenced: set = set()
     for arm in arms:
         referenced |= arm.strategy.referenced_metrics()
-    scorer_outputs = {out for arm in arms for (_, out, _) in (arm.strategy.scorers or [])}
+    referenced |= {
+        token.split(":", 1)[1]
+        for call in union_transforms for token in call["inputs"]
+        if token.startswith("feature:")
+    }
+    scorer_outputs = set(union_scorers)
     transform_outputs = set(transform_by_output)
     registered = [r for r in referenced
                   if r not in union and r not in scorer_outputs and r not in transform_outputs]
@@ -125,15 +175,6 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
         apply_transforms(union_transforms, all_segments, adapter=adapter,
                          registry=registry, progress=progress)
 
-    # Whole-pool scorers, unioned across arms (a shared output name must mean one scorer,
-    # with one parameterization — otherwise the last arm's params would silently win).
-    union_scorers: dict = {}
-    for arm in arms:
-        for (name, out, params) in (arm.strategy.scorers or []):
-            if out in union_scorers and union_scorers[out] != (name, out, params):
-                raise ValueError(f"arms disagree on scorer output {out!r}: "
-                                 f"{union_scorers[out]!r} vs {(name, out, params)!r}")
-            union_scorers[out] = (name, out, params)
     if union_scorers:
         from .scorers import apply_scorers
         apply_scorers(list(union_scorers.values()), all_segments, schema=schema, adapter=adapter,

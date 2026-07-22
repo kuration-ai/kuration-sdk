@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
+import math
 from typing import Any, Iterable, Iterator, Mapping, Optional, Protocol, runtime_checkable
 
 import numpy as np
@@ -286,6 +287,23 @@ class VideoAdapter:
                                 "shape": [first.height, first.width, 3], "layout": "HWC",
                                 "color_space": "RGB", "timing": "pts",
                                 "capabilities": dict(self.provider.capabilities)}}})
+        for source in self._sources[1:]:
+            self._validate_metadata(self.provider.probe(source))
+
+    def _validate_metadata(self, meta: VideoMetadata) -> None:
+        spec = self.schema.media[self.column]
+        if (meta.height, meta.width, 3) != spec.shape:
+            raise ValueError(f"video {meta.uri!r}: frame shape "
+                             f"{(meta.height, meta.width, 3)} does not match declared "
+                             f"{spec.shape}")
+        expected_rate = self.schema.sample_hz
+        actual_rate = meta.average_rate
+        rates_match = (expected_rate is None and actual_rate is None)
+        if expected_rate is not None and actual_rate is not None:
+            rates_match = math.isclose(expected_rate, actual_rate, rel_tol=1e-9, abs_tol=0.0)
+        if not rates_match:
+            raise ValueError(f"video {meta.uri!r}: average frame rate {actual_rate!r} does not "
+                             f"match the dataset rate {expected_rate!r}")
 
     def sources(self) -> list[str]:
         return list(self._sources)
@@ -298,11 +316,7 @@ class VideoAdapter:
         return self.iter_ticks(source_uri)
 
     def check_source(self, source_uri: str) -> None:
-        meta = self.provider.probe(source_uri)
-        spec = self.schema.media[self.column]
-        if (meta.height, meta.width, 3) != spec.shape:
-            raise ValueError(f"video {source_uri!r}: frame shape {(meta.height, meta.width, 3)} "
-                             f"does not match declared {spec.shape}")
+        self._validate_metadata(self.provider.probe(source_uri))
 
 
 class JoinedMediaAdapter:
@@ -315,8 +329,11 @@ class JoinedMediaAdapter:
             raise ValueError("join_video on= must be 'timestamp' or 'frame_index'")
         if mismatch not in {"error", "drop"}:
             raise ValueError("join_video mismatch= must be 'error' or 'drop'")
-        if on == "timestamp" and (tolerance is None or tolerance < 0):
-            raise ValueError("timestamp video alignment needs a non-negative tolerance")
+        if on == "timestamp" and (
+                not isinstance(tolerance, (int, float, np.integer, np.floating))
+                or isinstance(tolerance, (bool, np.bool_))
+                or not math.isfinite(float(tolerance)) or tolerance < 0):
+            raise ValueError("timestamp video alignment needs a finite non-negative tolerance")
         self.adapter, self.videos = adapter, dict(videos)
         cls = type(adapter)
         overrides_ticks_only = "ticks" in cls.__dict__ and "iter_ticks" not in cls.__dict__
@@ -327,7 +344,8 @@ class JoinedMediaAdapter:
         self.column, self.on, self.tolerance, self.mismatch = column, on, tolerance, mismatch
         if not self.videos:
             raise ValueError("join_video resolved to an empty source mapping")
-        first = self.provider.probe(next(iter(self.videos.values())))
+        first_uri = next(iter(self.videos.values()))
+        first = self.provider.probe(first_uri)
         raw = adapter.schema.to_dict()
         media = raw.setdefault("media", {})
         if column in media:
@@ -337,11 +355,28 @@ class JoinedMediaAdapter:
                          "color_space": "RGB", "timing": "pts",
                          "capabilities": dict(self.provider.capabilities)}
         self.schema = SchemaSpec.from_dict(raw)
+        self._validate_metadata(first)
+        for uri in dict.fromkeys(self.videos.values()):
+            if uri != first_uri:
+                self._validate_metadata(self.provider.probe(uri))
+
+    def _validate_metadata(self, meta: VideoMetadata) -> None:
+        spec = self.schema.media[self.column]
+        if (meta.height, meta.width, 3) != spec.shape:
+            raise ValueError(f"video {meta.uri!r}: frame shape "
+                             f"{(meta.height, meta.width, 3)} does not match declared "
+                             f"{spec.shape}")
 
     def _uri(self, source):
         if source not in self.videos:
             raise ValueError(f"source {source!r} has no resolved video mapping")
         return self.videos[source]
+
+    def source_fingerprint(self, source):
+        """Compose the wrapped data identity with the auxiliary video's content identity."""
+        from .provenance import source_descriptor
+        return {"data": source_descriptor(source, self.adapter),
+                "video": source_descriptor(self._uri(source), None)}
 
     def iter_ticks(self, source):
         ticks = iter(self.adapter.iter_ticks(source) if self.supports_streaming
@@ -372,6 +407,8 @@ class JoinedMediaAdapter:
                 target = float(tick.time)
             except (TypeError, ValueError) as e:
                 raise ValueError(f"source {source!r}: timestamp alignment needs numeric tick times") from e
+            if not math.isfinite(target):
+                raise ValueError(f"source {source!r}: timestamp alignment needs finite tick times")
             if target < last_target:
                 raise ValueError(f"source {source!r}: data timestamps are not ordered")
             last_target = target
@@ -392,7 +429,9 @@ class JoinedMediaAdapter:
         return self.iter_ticks(source)
 
     def check_source(self, source):
-        self.provider.probe(self._uri(source))
+        if hasattr(self.adapter, "check_source"):
+            self.adapter.check_source(source)
+        self._validate_metadata(self.provider.probe(self._uri(source)))
         sample = list(self.iter_ticks(source))
         if not sample:
             raise ValueError(f"source {source!r}: alignment produced no ticks")

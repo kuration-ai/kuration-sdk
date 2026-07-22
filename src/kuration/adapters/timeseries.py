@@ -11,6 +11,8 @@ Bespoke formats (ROS bags, proprietary logs, the CS2 `data.json`) still implemen
 from __future__ import annotations
 
 import math
+import numbers
+import re
 from typing import Iterable, Optional
 
 from ..buffer import Tick
@@ -19,6 +21,16 @@ from .base import register_adapter
 
 
 def _num_time(v):
+    # Preserve integral timestamps exactly. Converting epoch nanoseconds to float collapses
+    # adjacent values above 2**53 and can merge distinct timesteps.
+    if isinstance(v, bool):
+        return float(v)
+    if isinstance(v, numbers.Integral):
+        return int(v)
+    if isinstance(v, str):
+        stripped = v.strip()
+        if re.fullmatch(r"[+-]?\d+", stripped):
+            return int(stripped)
     try:
         return float(v)
     except (TypeError, ValueError):
@@ -76,7 +88,10 @@ class TimeseriesAdapter:
         if fs.kind == "vector":
             return tuple(float(row[c]) for c in col)
         if fs.kind == "categorical":
-            return str(row[col])
+            value = row[col]
+            if value is None:
+                return None
+            return value.decode() if isinstance(value, bytes) else str(value)
         return float(row[col])
 
     def _mk_tick(self, time, rows: list[dict]) -> Tick:

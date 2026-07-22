@@ -80,7 +80,8 @@ class ContextTransform:
         for before, after, owned in zip(
                 ctx.before("field:value"), ctx.after("field:value"),
                 ctx.owned_lengths, strict=True):
-            # Legacy batch keys remain available throughout the rc3 compatibility window.
+            # Legacy batch keys remain available throughout the release-candidate compatibility
+            # window.
             assert "lookbehind:field:value" in batch
             assert "lookahead:field:value" in batch
             assert "owned_lengths" in batch

@@ -99,11 +99,27 @@ def rebase_entries(entries: list[dict], base: Optional[str]) -> list[dict]:
 
     def _rebase(entry: dict) -> dict:
         p = str(entry["path"]).replace("\\", "/")
-        split = str(entry.get("split") or "")
+        split = entry.get("split") or ""
+        if not isinstance(split, str):
+            raise ValueError(f"manifest shard split must be a string, got {split!r}")
+        split = split.replace("\\", "/")
+        if split and ("/" in split or split in {".", ".."} or "\x00" in split):
+            raise ValueError(f"manifest shard split {split!r} is not a safe path component")
         name = p.rsplit("/", 1)[-1]
+        if not name or name in {".", ".."} or "\x00" in name:
+            raise ValueError(f"manifest shard path {entry['path']!r} has no safe filename")
         # The split is part of the manifest contract.  Fall back to the legacy final two path
         # components only for manifests that predate the split field.
-        relative = f"{split}/{name}" if split else "/".join(p.split("/")[-2:])
+        if split:
+            relative = f"{split}/{name}"
+        else:
+            legacy_parts = [part for part in p.split("/") if part]
+            relative_parts = legacy_parts[-2:]
+            if (not relative_parts
+                    or any(part in {".", ".."} or "\x00" in part
+                           for part in relative_parts)):
+                raise ValueError(f"legacy manifest shard path {entry['path']!r} is unsafe")
+            relative = "/".join(relative_parts)
         return {**entry, "path": f"{str(base).rstrip('/')}/{relative}"}
 
     return [_rebase(entry) for entry in entries]
@@ -122,10 +138,25 @@ def shard_entries(dataset, *, split: Optional[str] = None,
 
 def read_shard_arrays(entry: dict, container: str, *,
                       modalities: Optional[Sequence[str]] = None,
-                      trim: bool = True, registry=None) -> dict[str, np.ndarray]:
+                      trim: bool = True, registry=None,
+                      verify: bool = True) -> dict[str, np.ndarray]:
     """Load one manifest entry's shard into `{modality -> (T, *shape)}`. Reshapes tensor
     modalities to their declared rank (restores Parquet-flattened columns) and, when `trim`,
-    drops trailing pad rows so `T == n_steps`."""
+    drops trailing pad rows so `T == n_steps`. By default, manifest checksums and sizes are
+    verified before decoding; pass ``verify=False`` only when that integrity cost is unwanted."""
+    if not isinstance(verify, bool):
+        raise ValueError("verify must be true or false")
+    if verify and (entry.get("sha256") is not None or entry.get("size_bytes") is not None):
+        from .io import file_integrity
+        actual = file_integrity(entry["path"])
+        expected_sha = entry.get("sha256")
+        expected_size = entry.get("size_bytes")
+        if expected_sha is not None and actual["sha256"] != expected_sha:
+            raise ValueError(f"shard {entry['path']!r} checksum mismatch: manifest says "
+                             f"{expected_sha}, payload is {actual['sha256']}")
+        if expected_size is not None and actual["size_bytes"] != expected_size:
+            raise ValueError(f"shard {entry['path']!r} size mismatch: manifest says "
+                             f"{expected_size}, payload is {actual['size_bytes']}")
     from .output.containers import read_shard
     arrays, n = read_shard(entry["path"], container, registry=registry)
     shapes = entry.get("shape", {})
@@ -172,14 +203,16 @@ def read_shard_arrays(entry: dict, container: str, *,
 def iter_shards(dataset, *, split: Optional[str] = None,
                 modalities: Optional[Sequence[str]] = None, trim: bool = True,
                 container: Optional[str] = None,
-                with_meta: bool = False, registry=None) -> Iterator[Any]:
+                with_meta: bool = False, registry=None,
+                verify: bool = True) -> Iterator[Any]:
     """Iterate a written dataset's shards as numpy arrays.
 
     Yields `{modality -> (T, *shape)}` per shard (or `(arrays, entry)` when `with_meta=True`,
     where `entry` is the manifest record: path/source_id/entity_id/split/n_steps/padded/…).
-    `split` filters to "train"/"test"; `modalities` selects a subset; `trim` drops pad rows."""
+    `split` filters to "train"/"test"; `modalities` selects a subset; `trim` drops pad rows.
+    Manifest integrity is checked by default; ``verify=False`` explicitly opts out."""
     entries, cont = shard_entries(dataset, split=split, container=container)
     for e in entries:
         arrays = read_shard_arrays(e, cont, modalities=modalities, trim=trim,
-                                   registry=registry)
+                                   registry=registry, verify=verify)
         yield (arrays, e) if with_meta else arrays

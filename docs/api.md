@@ -208,9 +208,32 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `register_filter` | `(name, fn, **metadata) -> None` | register a pre-pass filter |
 | `register_operator` | `(name, fn=None, **metadata)` | register a `(pipeline, **params) -> Pipeline` composition directly or as a decorator |
 | `Analyzer` | protocol requiring `summary()` | user-owned stateful direct-API analysis result |
-| `SplitLeakageAnalyzer` | `(*, check_groups=True)` | built-in source/group split auditor; update with `.add_assignment(...)` or `.add_assignments(...)`, then call `.summary()` |
+| `SplitLeakageAnalyzer` | `(*, check_groups=True)` | built-in source/group split auditor; `check_groups=False` suppresses group leakage and conflict checks, but never source checks |
+| `SplitLeakageAnalyzer.add_assignment` | `(source_id, split, *, group=None) -> None` | record one observation; repeating the same assignment is allowed |
+| `SplitLeakageAnalyzer.add_assignments` | `(source_splits, *, source_groups=None) -> None` | record a `{source_id: split}` mapping and optional `{source_id: group}` mapping |
+| `SplitLeakageAnalyzer.summary` | `() -> dict` | return the deterministic, JSON-safe leakage report described below |
 | `register_analyzer` | `(name, factory=None, **metadata)` | register a discoverable analyzer factory directly or as a decorator |
 | `get_analyzer` | `(name, *, registry=None, **params) -> Analyzer` | validate parameters and construct a user-owned analyzer instance |
+
+`SplitLeakageAnalyzer` requires `source_id`, `split`, and each supplied `group` to be non-empty
+strings; `group=None` means that no group is known. Split names are not limited to train/test, so
+validation or other named partitions can be audited. `source_groups` may omit sources, but cannot
+contain a source absent from `source_splits`. Invalid constructor values, assignments, or mappings
+raise `ValueError`. An empty analyzer passes because no conflicting evidence has been observed.
+
+Its `summary()` mapping has these stable fields:
+
+| field | value |
+|---|---|
+| `passed` | false when any enabled source leak, group leak, or source/group conflict exists |
+| `check_groups` | the configured group-checking mode |
+| `observations` | number of calls/rows recorded, including exact repetitions |
+| `unique_assignments` | number of distinct `(source_id, split, group)` observations |
+| `sources`, `groups` | counts of distinct observed source and non-null group identifiers |
+| `splits` | sorted distinct split names |
+| `source_leaks` | sorted `{"source_id": str, "splits": [str, ...]}` records |
+| `group_leaks` | sorted `{"group": str, "splits": [str, ...], "sources": [str, ...]}` records; empty when group checks are disabled |
+| `source_group_conflicts` | sorted `{"source_id": str, "groups": [str, ...]}` records; empty when group checks are disabled |
 
 Registry kinds are `adapter`, `metric`, `scorer`, `encoder`, `method`, `filter`, `container`,
 `preset`, `transform`, compositional `operator`, and stateful direct-API `analyzer`. Names accept `name` or `namespace/name`; duplicate registrations raise unless the
@@ -284,10 +307,10 @@ any output is written.
 
 | name | signature | does |
 |---|---|---|
-| `iter_shards` | `(dataset, *, split=None, modalities=None, trim=True, container=None, with_meta=False) -> Iterator[dict]` | shards back as `{modality -> array}` plus `_present` when enabled |
+| `iter_shards` | `(dataset, *, split=None, modalities=None, trim=True, container=None, with_meta=False, registry=None, verify=True) -> Iterator[dict]` | shards back as `{modality -> array}` plus `_present` when enabled; checksum/size verification defaults on |
 | `shard_entries` | `(dataset, *, split=None, container=None) -> (entries, container)` | manifest entries (paths rebased if the dataset moved) |
-| `read_shard_arrays` | `(entry, container, *, modalities=None, trim=True) -> {name: array}` | one shard: trim pad, reshape, restore dtype |
-| `kuration.torch.ShardDataset` | `(dataset, *, split=None, modalities=None, trim=True, container=None, transform=None, include_meta=False)` | map-style PyTorch `Dataset` over the above (`[torch]`) |
+| `read_shard_arrays` | `(entry, container, *, modalities=None, trim=True, registry=None, verify=True) -> {name: array}` | one shard: verify integrity, trim pad, reshape, restore dtype |
+| `kuration.torch.ShardDataset` | `(dataset, *, split=None, modalities=None, trim=True, container=None, transform=None, include_meta=False, verify=True)` | map-style PyTorch `Dataset` over the above (`[torch]`) |
 
 `dataset` is a dataset directory, a `dataset_manifest.json` path, or a loaded manifest dict.
 

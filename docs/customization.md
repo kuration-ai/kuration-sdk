@@ -32,11 +32,11 @@ resource hints. Boundary-sensitive transforms may additionally declare integer `
 `lookahead` tick counts. The typed `TransformContext` exposes per-row arrays through
 `ctx.before("field:signal")` and `ctx.after("field:signal")`;
 `ownership="rightmost-start"` also supplies immutable `ctx.owned_lengths`, preventing overlapping
-windows from claiming the same event start. The rc2 batch keys remain available during the rc3
-compatibility window. A pipeline invokes the transform with `.transform(...)`; outputs behave like
-any other scalar selection feature. Use `get_transform()` for direct lookup. Accelerator libraries
-must be imported inside the factory or execution method so discovery and `import kuration` remain
-dependency-light.
+windows from claiming the same event start. The rc2 batch keys remain available during the
+release-candidate compatibility window. A pipeline invokes the transform with
+`.transform(...)`; outputs behave like any other scalar selection feature. Use `get_transform()`
+for direct lookup. Accelerator libraries must be imported inside the factory or execution method
+so discovery and `import kuration` remain dependency-light.
 
 Discover components without materializing a dataset:
 
@@ -50,7 +50,7 @@ parameter JSON Schema, capability flags, dependency/install hints, package/versi
 documentation/stability fields, module identity, and a code fingerprint. Resolved extension
 descriptors and parameters are included in run provenance.
 
-### Stateful analyzers
+## Stateful analyzers
 
 Use `register_analyzer()` when a capability must accumulate evidence across multiple segments
 before it can return a result and therefore cannot honestly run as an independent batch
@@ -94,7 +94,11 @@ For row- or segment-oriented inputs, call
 `audit.add_assignment(source_id, split, group=group)` once per observation. Repeating the same
 assignment is not leakage. Set `check_groups=False` only when the dataset has no meaningful
 group boundary; source-level leakage is always checked. The report is deterministic and
-JSON-safe, with `source_leaks`, `group_leaks`, and `source_group_conflicts` details.
+JSON-safe, with `source_leaks`, `group_leaks`, and `source_group_conflicts` details. Source,
+split, and supplied group identifiers must be non-empty strings; convert an application's
+numeric or compound group keys to stable strings before adding them. See the
+[API reference](api.md#component-registries-and-discovery) for the complete report schema and
+validation behavior.
 
 The dependency-light validator supports the descriptor subset used by SDK contracts:
 `type`, `enum`, `const`, `allOf`, `anyOf`, `oneOf`, numeric bounds, string length and `pattern`,

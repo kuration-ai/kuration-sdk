@@ -5,11 +5,42 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+## 0.1.0rc4
+
 - Added a discoverable `analyzer` registry kind for user-owned capabilities that aggregate
   across segments, with `register_analyzer()`, `get_analyzer()`, and CLI discovery. The
   action-state consistency plugin now registers its real clip-level analyzer instead of an
   unrelated stateless compliance component. A dependency-free `kuration/split-leakage`
   analyzer audits existing source and group assignments across dataset splits.
+- Corrected pipeline and bounded execution around duplicate sources, exact vector widths,
+  registered-metric transform dependencies, cross-kind feature collisions, scorer parameters and
+  registry lookup, callable metric overlays, test-split validation, and checkpoint partition
+  identity. The same validation now applies consistently at direct public execution boundaries.
+- Artifact readers now verify recorded shard size and SHA-256 by default, including
+  `iter_shards()`, `read_shard_arrays()`, `ShardDataset`, and curated-dataset adapters. Pass
+  `verify=False` only for explicitly trusted artifacts. Commit sidecars, rebased legacy paths,
+  split names, and shard paths are validated before reads, preventing traversal and stale or
+  corrupted shard reuse.
+- Made shard filenames and manifest entity IDs type-preserving so values such as integer `1` and
+  string `"1"` cannot overwrite each other. Shard writing now rejects non-finite or extension
+  object IDs that have no canonical value identity instead of relying on unsafe string or pickle
+  representations.
+- Fixed adapter and media correctness for large integer timestamps, missing categorical values,
+  Parquet dataset glob preflight and source fingerprints, Arrow chunk/batch ingestion, duplicate
+  columnar bin names, joined-media fingerprints, multi-video frame rate and shape validation, and
+  finite ordered timestamp alignment.
+- Tightened registry and plugin contracts: malformed targets and true no-op entry points fail
+  transactionally with persistent diagnostics; pre-imported package-owned registrations remain
+  valid; nested parameter schemas are checked at registration; and `enum`, `const`, and
+  `uniqueItems` use JSON-type-sensitive equality rather than Python's boolean/integer aliasing.
+- Corrected job-versus-artifact migration classification, strict-mode `kur-explain` policy,
+  vector event-reduction preflight, nested non-finite review JSON conversion, group-report identity
+  collisions, actionable video inference errors, and feature-schema drift detection.
+- Hardened the SLAM plugin with exact timestamp coverage and explicit point-cloud format/version
+  validation in both manifests and NPZ artifacts.
+- Added focused regression suites for the comprehensive correctness review and its independent
+  cross-subsystem follow-up, alongside full core, plugin, typing, lint, example, and distribution
+  build verification.
 
 ## 0.1.0rc3
 

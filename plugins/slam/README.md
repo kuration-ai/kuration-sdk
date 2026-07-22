@@ -214,6 +214,10 @@ manifest = export_slam_output(
 )
 ```
 
+When `timestamps=` is supplied, its keys must cover exactly every exported trajectory clip. Each
+clip's timestamp sequence must match that trajectory's length, contain only finite values, and be
+strictly increasing. Use `sample_hz=` instead when every trajectory was sampled uniformly.
+
 The export contains:
 
 ```text
@@ -350,9 +354,10 @@ pipeline.output(
 
 ## 6. Curate and write the scene point cloud
 
-Load a point cloud from either `manifest.json`, the NPZ path, or an existing
-`PointCloudArtifact`. Colors and any row-aligned numeric attributes remain attached through every
-selection:
+Load a point cloud from either `manifest.json`, a Kuration point-cloud NPZ, or an existing
+`PointCloudArtifact`. Direct NPZ inputs must declare `_format="kuration-pointcloud-npz"` and
+`_version=1`; arbitrary NPZ files are rejected. Colors and any row-aligned numeric attributes
+remain attached through every selection:
 
 ```python
 from kuration_slam import curate_point_cloud, load_point_cloud

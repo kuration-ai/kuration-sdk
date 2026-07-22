@@ -174,6 +174,13 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
         from .registry import default_registry
         registry = default_registry
     sources = list(sources)
+    seen_sources: set[str] = set()
+    for source in sources:
+        if not isinstance(source, str) or not source:
+            raise ValueError("sources must contain only non-empty strings")
+        if source in seen_sources:
+            raise ValueError(f"sources must be unique; duplicate source ID {source!r}")
+        seen_sources.add(source)
     registered = tuple(registered)
     feature_names = tuple(dict.fromkeys([*define, *registered,
                                         *(output for call in transforms

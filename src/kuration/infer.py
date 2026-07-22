@@ -147,6 +147,10 @@ def sample_source(source, *, n: int = 200) -> tuple[str, object]:
             sample = {k: np.asarray(f[k][:n]) for k in f.keys()
                       if isinstance(f[k], h5py.Dataset)}
         return kind, sample
+    if kind == "video":
+        raise ValueError(
+            "sample_source() does not decode video for tabular schema inference; "
+            "use input(video_path) or VideoAdapter to probe the media schema")
     # parquet-dataset: sample the first part file (sorted)
     from .io import glob
     parts = glob(f"{p.rstrip('/')}/**/*.parquet")

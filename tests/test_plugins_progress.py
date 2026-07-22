@@ -75,10 +75,18 @@ def test_score_progress_event_contract():
 
 def test_entry_point_initializer_is_idempotent(monkeypatch):
     import kuration.plugins as plugin_state
+    from kuration import default_registry
     calls = []
+
+    def metric(window):
+        return 1.0
 
     def initialize():
         calls.append(1)
+        default_registry.register_metric("test/idempotent", metric)
+
+    metric.__module__ = "fake_plugin"
+    initialize.__module__ = "fake_plugin"
 
     class FakeEP:
         name, value = "fake", "fake_plugin:initialize"
@@ -90,8 +98,9 @@ def test_entry_point_initializer_is_idempotent(monkeypatch):
             return self if kwargs == {"group": "kuration.plugins"} else []
 
     key = "fake=fake_plugin:initialize"
-    plugin_state._LOADED_ENTRY_POINTS.discard(key)
+    snapshot = plugin_state._plugin_state_snapshot()
     old_scanned = plugin_state._ENTRY_POINTS_SCANNED
+    plugin_state._LOADED_ENTRY_POINTS.discard(key)
     plugin_state._ENTRY_POINTS_SCANNED = False
     monkeypatch.setattr(plugin_state, "entry_points", lambda: FakeEPs([FakeEP()]))
     try:
@@ -102,8 +111,7 @@ def test_entry_point_initializer_is_idempotent(monkeypatch):
                           "value": "fake_plugin:initialize"}]
         assert second == []
     finally:
-        plugin_state._LOADED_ENTRY_POINTS.discard(key)
-        plugin_state._LOADED_MODULES.discard(initialize.__module__)
+        plugin_state._restore_plugin_state(snapshot, None)
         plugin_state._ENTRY_POINTS_SCANNED = old_scanned
 
 

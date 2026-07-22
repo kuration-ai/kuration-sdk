@@ -53,6 +53,61 @@ from ._pipeline_support import (
 __all__ = ["Pipeline", "input"]
 
 
+def _unique_sources(sources: list[str], *, context: str) -> list[str]:
+    """Reject repeated source identities before they can duplicate windows or checkpoint keys."""
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for source in sources:
+        if source in seen and source not in duplicates:
+            duplicates.append(source)
+        seen.add(source)
+    if duplicates:
+        raise ValueError(f"{context}: duplicate source ID(s) {duplicates}; sources must be unique")
+    return sources
+
+
+def _adapter_chain(adapter):
+    """Yield transparent adapter wrappers and their nested data adapter once each."""
+    current, seen = adapter, set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        current = getattr(current, "adapter", None)
+
+
+def _registry_inherits(registry, ancestor) -> bool:
+    """Return whether a live registry overlay ultimately resolves through ``ancestor``."""
+    current = registry
+    while current is not None:
+        if current is ancestor:
+            return True
+        current = current.parent
+    return False
+
+
+def _clone_adapter(adapter, memo=None):
+    """Copy wrapper/configuration state without copying potentially large source payloads."""
+    memo = {} if memo is None else memo
+    identity = id(adapter)
+    if identity in memo:
+        return memo[identity]
+    cloned = copy.copy(adapter)
+    memo[identity] = cloned
+    for attr in ("fields", "globals", "videos", "load_kwargs", "dataset_of", "_container"):
+        value = getattr(cloned, attr, None)
+        if isinstance(value, dict):
+            setattr(cloned, attr, dict(value))
+    nested = getattr(adapter, "adapter", None)
+    if nested is not None:
+        cloned.adapter = _clone_adapter(nested, memo)
+    return cloned
+
+
+def _adapter_with_fields(adapter):
+    return next((current for current in _adapter_chain(adapter)
+                 if hasattr(current, "fields")), None)
+
+
 def _normalized_source_mapping(src: dict, *, value_copy: Callable) -> dict[str, Any]:
     """String-normalize source IDs without silently merging distinct keys."""
     normalized: dict[str, Any] = {}
@@ -119,6 +174,7 @@ def input(src=None, *, schema=None, adapter=None, sources=None, fields=None,
                              "(or an adapter exposing .sources())")
         if any(not isinstance(source, str) or not source for source in srcs):
             raise ValueError("input(adapter=...) sources must be non-empty strings")
+        _unique_sources(srcs, context="input(adapter=...)")
         return Pipeline(schema=schema, adapter=adapter, sources=srcs,
                         in_memory=bool(getattr(adapter, "in_memory", False)), ops=[op],
                         registry=registry)
@@ -243,6 +299,7 @@ def _expand_paths(src) -> tuple[list[str], str]:
             return [src], sniff(src)
     else:
         paths = list(src)
+    _unique_sources(paths, context="input()")
     kinds_ = {p: sniff(p) for p in paths}
     if len(set(kinds_.values())) > 1:
         raise ValueError(f"input(): mixed source kinds {kinds_} — all sources must be the "
@@ -286,6 +343,7 @@ def _input_files(src, op, *, schema, fields, time, entity, hz, kinds, sample, gl
         ad = ParquetDatasetAdapter(schema, fields=fmap, path=paths[0], time_column=tc,
                                    entity_column=ec, globals=globals, **adapter_kw)
         paths = ad.sources()
+        _unique_sources(paths, context="input()")
     else:
         raise ValueError(f"input(): unsupported sniffed source kind {kind!r}")
     return Pipeline(schema=schema, adapter=ad, sources=paths, in_memory=False, ops=[op],
@@ -372,16 +430,10 @@ class Pipeline:
         p.__dict__.update(self.__dict__)
         p.sources = list(self.sources)
         p.schema = copy.deepcopy(self.schema)
-        p.adapter = copy.copy(self.adapter)
-        if hasattr(p.adapter, "schema"):
-            p.adapter.schema = p.schema
-        # Copy mutable adapter configuration without duplicating the potentially enormous
-        # in-memory source payload, model, or media provider.
-        for attr in ("fields", "globals", "videos", "load_kwargs", "dataset_of",
-                     "_container"):
-            value = getattr(p.adapter, attr, None)
-            if isinstance(value, dict):
-                setattr(p.adapter, attr, dict(value))
+        p.adapter = _clone_adapter(self.adapter)
+        for configured in _adapter_chain(p.adapter):
+            if hasattr(configured, "schema"):
+                configured.schema = p.schema
         for attr in ("_ops", "_define", "_registered_metrics", "_predicates", "_prepass", "_axes", "_tags",
                      "_scorers", "_transforms", "_method_params", "_window_desc",
                      "_expectations", "_weights", "_target", "_tag_coverage", "_group_cap",
@@ -425,7 +477,8 @@ class Pipeline:
         if not isinstance(name, str) or not name:
             raise ValueError("apply() needs a non-empty registered operator name")
         from .registry import default_registry
-        if name not in self._registry.names("operator") and self._registry is default_registry:
+        if (name not in self._registry.names("operator")
+                and _registry_inherits(self._registry, default_registry)):
             load_plugins()
         descriptor = self._registry.descriptor("operator", name)
         validate_parameters(descriptor, params)
@@ -454,8 +507,9 @@ class Pipeline:
     def _with_schema(self, schema: SchemaSpec, opname: str, *args, **kwargs) -> "Pipeline":
         p = self._next(opname, *args, **kwargs)
         p.schema = schema
-        p.adapter = copy.copy(self.adapter)
-        p.adapter.schema = schema
+        for configured in _adapter_chain(p.adapter):
+            if hasattr(configured, "schema"):
+                configured.schema = schema
         return p
 
     def semantic(self, field: str, semantics: str, *, dims=None, bits=None,
@@ -487,10 +541,11 @@ class Pipeline:
             fd = {"kind": "vector", "dims": list(dims)}
             for d in dims:
                 fields.pop(d)
-            if hasattr(self.adapter, "fields"):
+            field_adapter = _adapter_with_fields(self.adapter)
+            if field_adapter is not None:
                 mapped = []
                 for d in dims:
-                    value = self.adapter.fields[d]
+                    value = field_adapter.fields[d]
                     if isinstance(value, (list, tuple)):
                         raise ValueError(f"position component {d!r} is already vector-mapped")
                     mapped.append(value)
@@ -505,9 +560,13 @@ class Pipeline:
         schema = SchemaSpec.from_dict(raw)
         p = self._with_schema(schema, "semantic", field, semantics, dims=dims, bits=bits,
                               max_rate=max_rate)
-        if field not in self.schema.fields and hasattr(p.adapter, "fields"):
-            p.adapter.fields = {k: v for k, v in p.adapter.fields.items() if k not in set(dims)}
-            p.adapter.fields[field] = mapped
+        target_adapter = _adapter_with_fields(p.adapter)
+        if field not in self.schema.fields and target_adapter is not None:
+            target_adapter.fields = {
+                k: v for k, v in target_adapter.fields.items() if k not in set(dims)}
+            target_adapter.fields[field] = mapped
+            if hasattr(target_adapter, "available_fields"):
+                target_adapter.available_fields = frozenset(target_adapter.fields)
         return p
 
     def as_position(self, field: str, *, dims=None, max_rate=None) -> "Pipeline":
@@ -556,7 +615,7 @@ class Pipeline:
         from .media import JoinedMediaAdapter
         p = self._next("join_video", videos=mapping, column=column, on=on,
                        tolerance=tolerance, mismatch=mismatch)
-        p.adapter = JoinedMediaAdapter(self.adapter, mapping, provider=provider, column=column,
+        p.adapter = JoinedMediaAdapter(p.adapter, mapping, provider=provider, column=column,
                                        on=on, tolerance=tolerance, mismatch=mismatch)
         p.schema = p.adapter.schema
         return p
@@ -569,6 +628,7 @@ class Pipeline:
                                  device=device, params=params, schema=self.schema,
                                  registry=self._registry,
                                  available_features=(set(self._define) | set(self._callables) |
+                                     set(self._registered_metrics) |
                                      {o for t in self._transforms for o in t["outputs"]}))
         collisions = set(call["outputs"]) & self._metric_names()
         if collisions:
@@ -586,8 +646,15 @@ class Pipeline:
         measure(name, {full DSL dict})     -> passed through
         measure(name, callable)            -> registered Python metric (escape hatch)
         """
-        if name in self._define or name in self._callables or name in self._registered_metrics:
+        if name in self._metric_names():
             raise ValueError(f"measure {name!r} already declared — names must be unique")
+        bare_measure = (spec is None and of is None and map is None and filter is None
+                        and scope is None)
+        if bare_measure and name not in self._registry.names("metric"):
+            from .plugins import load_plugins
+            from .registry import default_registry
+            if _registry_inherits(self._registry, default_registry):
+                load_plugins()
         p = self._next("measure", name, spec, of=of, map=map, filter=filter, scope=scope)
         if callable(spec):
             if of is not None or map is not None or filter is not None or scope is not None:
@@ -597,7 +664,7 @@ class Pipeline:
             p._registry.register_metric(name, spec)
             p._callables[name] = spec
             return p
-        if (spec is None and of is None and map is None and filter is None and scope is None
+        if (bare_measure
                 and name in self._registry.names("metric") and name not in self.schema.fields
                 and name not in self.schema.globals):
             p._registered_metrics.append(name)
@@ -704,11 +771,14 @@ class Pipeline:
         """Add a whole-pool SegmentScorer; its output feature is `out` (default: name)."""
         from .plugins import load_plugins
         from .registry import default_registry
-        if name not in self._registry.names("scorer") and self._registry is default_registry:
+        if (name not in self._registry.names("scorer")
+                and _registry_inherits(self._registry, default_registry)):
             load_plugins()
         if name not in self._registry.names("scorer"):
             raise ValueError(f"unknown scorer {name!r}; registered: "
                              f"{self._registry.names('scorer')}")
+        from .scorers import validate_scorer_parameters
+        validate_scorer_parameters(name, params, registry=self._registry)
         out_name = out or name
         if out_name in self._metric_names():
             raise ValueError(f"scorer output {out_name!r} collides with a declared metric")
@@ -1585,7 +1655,8 @@ class Pipeline:
 
     def _bounded_count_result(self, out_dir: str, strategy):
         """Execute the currently supported exact count plan without a total Python pool."""
-        from .bounded import SizedSegmentPool, checkpoint_feature_stage
+        from .bounded import (SizedSegmentPool, checkpoint_feature_stage,
+                              resolve_bounded_memory_limits)
         from .checkpoints import CheckpointIdentity, StageCheckpoint
         from .curate import CurateResult
         from .external import external_top_k, external_uniform_bins
@@ -1599,11 +1670,21 @@ class Pipeline:
                           or f"{out_dir}/.kuration/checkpoints")
         physical = compile_physical_plan(
             self, memory_budget=self._options["memory_budget"], spill_path=spill_dir)
+        partition_policy = resolve_bounded_memory_limits(
+            schema=self.schema, segmenter=self._segmenter_or_default(),
+            memory_budget=self._options["memory_budget"],
+            batch_size=self._options["batch_size"],
+            max_in_flight=self._options["max_in_flight"], transforms=self._transforms)
         logical = {"schema": self.schema.to_dict(), "strategy": strategy.resolved,
                    "window": dict(self._window_desc), "sources": [str(s) for s in self.sources],
                    "transforms": list(self._transforms)}
         transform_outputs = {output for call in self._transforms for output in call["outputs"]}
-        registered = sorted(name for name in strategy.referenced_metrics()
+        transform_inputs = {
+            token.split(":", 1)[1]
+            for call in self._transforms for token in call["inputs"]
+            if token.startswith("feature:")
+        }
+        registered = sorted(name for name in strategy.referenced_metrics() | transform_inputs
                             if name not in strategy.define and name not in transform_outputs)
         identity = CheckpointIdentity.from_plans(
             logical, physical,
@@ -1617,7 +1698,8 @@ class Pipeline:
                   for call in self._transforms),
             ]),
             parameters={"seed": self._options["seed"],
-                        "adapter": component_identity(self.adapter)})
+                        "adapter": component_identity(self.adapter),
+                        "partition_policy": {"version": 1, **partition_policy}})
         checkpoint = StageCheckpoint(checkpoint_dir, physical.stages[0].id, identity)
         if self._n is None:  # guarded by output(); keeps this private method type-safe
             raise ValueError("bounded count output requires a target size")

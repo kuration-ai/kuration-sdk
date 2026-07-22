@@ -23,13 +23,15 @@ from .loaders import read_shard_arrays, shard_entries
 
 class ShardDataset:
     """A map-style dataset (`__len__` + `__getitem__`) — works with `DataLoader` without
-    subclassing `torch.utils.data.Dataset`. `transform(item)` runs per item if given."""
+    subclassing `torch.utils.data.Dataset`. `transform(item)` runs per item if given.
+    Recorded shard checksums and sizes are verified by default; pass ``verify=False`` only
+    for trusted artifacts when the extra integrity read is an unacceptable cost."""
 
     def __init__(self, dataset, *, split: Optional[str] = None,
                  modalities: Optional[Sequence[str]] = None, trim: bool = True,
                  container: Optional[str] = None,
                  transform: Optional[Callable[[dict], dict]] = None,
-                 include_meta: bool = False):
+                 include_meta: bool = False, verify: bool = True):
         try:
             import torch
         except ImportError as e:
@@ -41,13 +43,18 @@ class ShardDataset:
         self.trim = trim
         self.transform = transform
         self.include_meta = include_meta
+        if not isinstance(verify, bool):
+            raise ValueError("verify must be true or false")
+        self.verify = verify
 
     def __len__(self) -> int:
         return len(self.entries)
 
     def __getitem__(self, i: int) -> dict:
         entry = self.entries[i]
-        arrays = read_shard_arrays(entry, self.container, modalities=self.modalities, trim=self.trim)
+        arrays = read_shard_arrays(
+            entry, self.container, modalities=self.modalities, trim=self.trim,
+            verify=self.verify)
         item: dict[str, Any] = {
             k: self._torch.from_numpy(np.ascontiguousarray(v)) for k, v in arrays.items()}
         if self.include_meta:

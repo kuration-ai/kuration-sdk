@@ -244,6 +244,7 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
         total = None
     emit(progress, "scoring", "start", total=total)
     source_count = 0
+    seen_sources: set[str] = set()
 
     def prepared_items():
         nonlocal source_count
@@ -251,6 +252,9 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
             source_count += 1
             if not isinstance(src, str) or not src:
                 raise ValueError("sources must contain only non-empty strings")
+            if src in seen_sources:
+                raise ValueError(f"sources must be unique; duplicate source ID {src!r}")
+            seen_sources.add(src)
             try:
                 group = group_of(src) if group_of else None
             except Exception as error:

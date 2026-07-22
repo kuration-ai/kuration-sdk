@@ -87,9 +87,10 @@ def inspect_dataset(dataset, *, verify: bool = False,
                         if shape != list(expected.get("shape") or ()) or dtype != expected["dtype"]:
                             raise ValueError(f"manifest contract mismatch for {name!r}: "
                                              f"shape={shape}, dtype={dtype}")
-                if entry.get("sha256"):
+                if entry.get("sha256") is not None or entry.get("size_bytes") is not None:
                     actual = file_integrity(path)
-                    if actual["sha256"] != entry["sha256"]:
+                    if (entry.get("sha256") is not None
+                            and actual["sha256"] != entry["sha256"]):
                         raise ValueError(
                             f"checksum mismatch: expected {entry['sha256']}, "
                             f"got {actual['sha256']}"
@@ -102,7 +103,7 @@ def inspect_dataset(dataset, *, verify: bool = False,
                         )
                 read_shard_arrays(entry, resolved_container,
                                   modalities=list(expected_modalities) or None,
-                                  registry=registry)
+                                  registry=registry, verify=False)
                 checked += 1
             except Exception as error:
                 verification_errors.append({"path": path, "error": repr(error)})

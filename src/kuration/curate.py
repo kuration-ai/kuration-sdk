@@ -9,6 +9,7 @@ The hours-over-output-spans budget fill is deferred to the output phase (you can
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any, Callable, Iterable, Optional
 
 from .adapters.base import InputAdapter
@@ -50,7 +51,14 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     """
     from .strategy import validate_target_size
     target_size = validate_target_size(target_size)
+    if (not isinstance(test_frac, (int, float)) or isinstance(test_frac, bool)
+            or not math.isfinite(test_frac) or not 0 <= test_frac <= 1):
+        raise ValueError(f"test_frac must be a finite number in [0, 1], got {test_frac!r}")
     referenced = strategy.referenced_metrics()
+    referenced |= {
+        token.split(":", 1)[1]
+        for call in transforms for token in call["inputs"] if token.startswith("feature:")
+    }
     # scorer outputs are produced by the scorer stage, not the feature pass — exclude them.
     transform_outputs = {o for t in transforms for o in t["outputs"]}
     registered = [r for r in referenced if r not in strategy.define

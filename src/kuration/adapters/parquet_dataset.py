@@ -57,6 +57,16 @@ class ParquetDatasetAdapter(TimeseriesAdapter):
             raise ValueError(f"no .parquet parts found under {self.path!r}")
         return parts if self.source_per == "part" else [self.path]
 
+    def source_fingerprint(self, source_uri: str):
+        """Fingerprint resolved parts, not a literal dataset glob identifier."""
+        from ..provenance import source_descriptor, source_descriptors
+        if self.source_per == "part":
+            return source_descriptor(source_uri, None)
+        parts = self._parts()
+        if not parts:
+            raise ValueError(f"no .parquet parts found under {self.path!r}")
+        return {"parts": source_descriptors(parts, None)}
+
     @property
     def sources_are_paths(self) -> bool:
         """In "dataset" mode the single source URI is the root path/glob itself — a plain
@@ -74,7 +84,7 @@ class ParquetDatasetAdapter(TimeseriesAdapter):
         """Preflight: in "part" mode the source is one .parquet file (inherited footer-schema
         sniff); in "dataset" mode the source is the whole tree — resolve the parts and sniff
         each footer (schema metadata only, no row data)."""
-        if source_uri.endswith(".parquet"):
+        if self.source_per == "part":
             return super().check_source(source_uri)
         parts = self._parts()
         if not parts:

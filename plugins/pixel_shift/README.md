@@ -5,9 +5,9 @@ key/mouse press found in a dataset recorded in the DIAMOND/TeaPearce 51-dim acti
 convention (11 keys + 2 clicks + 23-bin mouse_x one-hot + 15-bin mouse_y one-hot). It makes
 no judgment about whether the measured shift is "consistent" with anything — it only
 reports what pixel motion actually happened for a given control. That's deliberate: a
-separate, genuinely dataset-agnostic outlier-finding operator is meant to be layered on
-top of this one's output (config-driven controls + expected direction per control, not
-hardcoded), kept out of this contribution.
+separate [action-state consistency analyzer](../action_state_consistency/README.md) layers
+config-driven controls, expected directions, and baselines over these measurements. Keeping
+that stateful judgment separate makes this transform reusable on its own.
 
 ## What it produces
 

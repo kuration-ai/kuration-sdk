@@ -14,11 +14,17 @@ kur-report     job.json [--out rep.json]   # report job -> metric distribution p
 kur-inspect    DATASET [--verify] [--json] [--html PATH] # artifact summary/integrity check
 kur-diff       LEFT RIGHT [--verify] [--json] [--html PATH] # compare two artifacts
 kur-check      DATASET --policy POLICY [--verify] [--json] [--html PATH] # quality gates
-kur-list       KIND [--json]                  # list adapters, transforms, and other components
+kur-list       KIND [--json]                  # list one plural component kind
 kur-plugin-check [ENTRY-POINT|MODULE] [--json] # validate plugin loading and descriptors
 kur-describe   KIND NAME [--json]             # inspect one component contract
 kur-migrate    JOB_OR_CONFIG [--out PATH]     # migrate a versioned JSON document
 ```
+
+`kur-list` accepts `adapters`, `analyzers`, `containers`, `encoders`, `filters`, `methods`,
+`metrics`, `operators`, `presets`, `scorers`, and `transforms`. `kur-describe` accepts the
+corresponding singular or plural kind. Analyzers are discoverable here, but they are user-owned
+direct APIs rather than job-spec or implicit pipeline stages; construct one with
+`get_analyzer()` and drive its documented update methods in Python.
 
 Every CLI accepts `--debug`: failures normally print a one-line `error: ...` and exit 1;
 `--debug` re-raises for the full traceback.

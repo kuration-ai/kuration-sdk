@@ -60,8 +60,9 @@ def explain_job(job: dict) -> dict:
     if any(is_remote(source) for source in job.get("sources") or ()):
         extras.add("cloud")
 
+    on_error = resolved.on_error
     warnings = []
-    if job.get("on_error", "skip") == "skip":
+    if on_error == "skip":
         warnings.append({"code": "source-errors-skipped",
                          "message": "source errors will be skipped and reported",
                          "hint": "Set mode='strict' or on_error='raise' while developing."})
@@ -74,7 +75,7 @@ def explain_job(job: dict) -> dict:
                           "workers": job.get("workers", 1),
                           "streaming": job.get("streaming", False),
                           "resume": job.get("resume", False),
-                          "on_error": job.get("on_error", "skip")},
+                          "on_error": on_error},
             "optional_extras": sorted(extras), "warnings": warnings,
             "validation": dict(summary)}
 

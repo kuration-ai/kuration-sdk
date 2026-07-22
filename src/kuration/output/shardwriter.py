@@ -10,6 +10,7 @@ short_policy generalizes the reference chunker:
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from typing import Optional
 
@@ -40,6 +41,56 @@ def _chunks(records: list[dict], shard_length: int, short_policy: str):
         yield tail, rem, False
 
 
+def _typed_identity(value):
+    """Return a deterministic, type-preserving representation for path identity.
+
+    ``str(value)`` is not an identity function (notably ``1`` and ``"1"`` collide). Only values
+    with an intrinsic canonical representation are accepted: pickleability alone is insufficient
+    because distinct identity-based objects can serialize to identical bytes and overwrite a
+    shard. Extension-defined IDs therefore fail loudly instead of receiving a false-stability
+    promise.
+    """
+    type_name = f"{type(value).__module__}.{type(value).__qualname__}"
+    payload: object
+    if value is None or type(value) in {bool, int, str}:
+        payload = value
+    elif type(value) is float:
+        if not np.isfinite(value):
+            raise ValueError(f"cannot derive a stable shard identity for {type_name}: "
+                             "floating-point IDs must be finite")
+        payload = value.hex()
+    elif type(value) is bytes:
+        payload = value.hex()
+    elif type(value) is tuple:
+        payload = [_typed_identity(item) for item in value]
+    elif type(value) is frozenset:
+        payload = sorted((_typed_identity(item) for item in value),
+                         key=lambda item: json.dumps(item, sort_keys=True))
+    elif isinstance(value, np.generic):
+        payload = _typed_identity(value.item())
+    else:
+        raise ValueError(
+            f"cannot derive a stable shard identity for {type_name}; use None, bool, int, "
+            "finite float, str, bytes, tuple, frozenset, or a NumPy scalar composed from "
+            "those types")
+    return {"type": type_name, "value": payload}
+
+
+def entity_id_token(entity_id) -> str:
+    """Portable manifest identity that does not collapse values with the same ``str``."""
+    return json.dumps(_typed_identity(entity_id), sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=True)
+
+
+def _safe_split(split: str) -> str:
+    if (not isinstance(split, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", split)
+            or split in {".", ".."}):
+        raise ValueError("split must be one safe path component using letters, digits, dot, "
+                         "underscore, or hyphen")
+    return split
+
+
 def track_name(source_id, entity_id, name_suffix: str = "") -> str:
     """Filesystem-safe, collision-free shard basename for one (source, entity, span).
     The readable prefix flattens '/' to '_', which can alias distinct pairs
@@ -47,7 +98,11 @@ def track_name(source_id, entity_id, name_suffix: str = "") -> str:
     raw = f"{source_id}_{entity_id}{name_suffix}"
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip(". _") or "track"
     safe = safe[:96].rstrip(". ")
-    h = hashlib.sha256(f"{source_id}\x00{entity_id}\x00{name_suffix}".encode()).hexdigest()[:12]
+    identity = [_typed_identity(source_id), _typed_identity(entity_id),
+                _typed_identity(name_suffix)]
+    encoded = json.dumps(identity, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=True).encode()
+    h = hashlib.sha256(encoded).hexdigest()[:12]
     return f"{safe}_{h}"
 
 
@@ -65,8 +120,9 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
                    (rec if PRESENT_KEY not in rec else
                     {k: v for k, v in rec.items() if k != PRESENT_KEY}) for rec in piece]
     enc_batch = None
-    if enc_mods and hasattr(encoder, "encode_batch"):
-        enc_batch = encoder.encode_batch(clean_piece, ctx)
+    batch_encoder = getattr(encoder, "encode_batch", None)
+    if enc_mods and callable(batch_encoder):
+        enc_batch = batch_encoder(clean_piece, ctx)
         if not isinstance(enc_batch, dict):
             raise ValueError("output encoder encode_batch must return a dict")
         for key, value in enc_batch.items():
@@ -166,6 +222,7 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
     shard filenames across sub-track spans of one track.
     """
     from ..io import exists as _exists, file_integrity
+    split = _safe_split(split)
     if any(m.src_kind in {"field", "media", "vocab"} for m in spec.modalities):
         if schema is None:
             raise ValueError("write_track needs schema when OutputSpec contains field: modalities")
@@ -200,7 +257,7 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
                                real_len, registry=registry)
             integrity = file_integrity(path)
         entries.append({"path": path, "source_id": track.source_id,
-                        "entity_id": str(track.entity_id), "split": split,
+                        "entity_id": entity_id_token(track.entity_id), "split": split,
                         "shard_index": k, "n_steps": real_len, "padded": padded,
                         "shape": shape, "dtype": dtype, **integrity})
     return entries

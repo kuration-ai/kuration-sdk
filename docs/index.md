@@ -28,7 +28,7 @@ the package's module layout.
 - [Building operators](operators.md) — package a reusable curation decision, connect bounded
   computation, test its contract, and distribute it as a plugin.
 - [Customization and discovery](customization.md) — registries, descriptors, metrics, scorers,
-  adapters, encoders, methods, filters, containers, and presets.
+  analyzers, adapters, encoders, methods, filters, containers, and presets.
 - [Architecture](architecture.md) — internal layers, execution boundaries, and design decisions.
 
 ## Operate and audit
@@ -38,6 +38,8 @@ the package's module layout.
   bounded checkpoints, Ray, cloud paths, failure behavior, and resume.
 - [Compatibility policy](compatibility.md) — supported surfaces, beta evolution, migrations, and
   deprecation.
+- [Release notes](releases.md) — what changed in the current release candidate and any migration
+  considerations.
 - [Security policy](https://github.com/aintropy-ai/kuration-sdk/blob/main/SECURITY.md) — private reporting and runtime trust boundaries.
 - [Releasing](releasing.md) — build, smoke-test, tag, and trusted-publishing process.
 

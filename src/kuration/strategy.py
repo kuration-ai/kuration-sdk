@@ -314,9 +314,11 @@ def load_strategy(name_or_spec, schema: SchemaSpec, *, registry=None, available_
         compile_tagger(strat.tags, schema)  # validate tag sources at load
     active_registry = strat.registry or default_registry
     if strat.scorers:
-        for name, _out, _p in strat.scorers:
+        from .registry import validate_parameters
+        for name, _out, params in strat.scorers:
             if name not in active_registry.names("scorer"):
                 raise ValueError(f"strategy {strat.name!r} references unregistered scorer {name!r}")
+            validate_parameters(active_registry.descriptor("scorer", name), params)
     # Scorer outputs are produced at runtime, so they count as available metric references.
     # Registry overlays are the authoritative extension namespace; consulting only the legacy
     # process-global mapping makes ``Pipeline.using(registry)`` fail during strategy loading.

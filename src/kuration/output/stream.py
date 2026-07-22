@@ -12,7 +12,7 @@ from __future__ import annotations
 from ..io import exists as _exists, file_integrity
 from .base import PassthroughEncoder
 from .containers import container_extension, write_shard
-from .shardwriter import _build_arrays, track_name
+from .shardwriter import _build_arrays, _safe_split, entity_id_token, track_name
 from .track import PRESENT_KEY
 
 
@@ -30,9 +30,10 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
         dtype["_present"] = "bool"
     st: dict = {}
     for j in jobs:
+        split = _safe_split(j["split"])
         st[(j["eid"], j["span_index"])] = {
             "buf": [], "shard": 0, "entries": [], "start": j["start"], "end": j["end"],
-            "split": j["split"], "eid": j["eid"], "suffix": j.get("name_suffix", ""),
+            "split": split, "eid": j["eid"], "suffix": j.get("name_suffix", ""),
             "group": j.get("group"), "meta": dict(j.get("meta") or {}), "consumed": 0}
 
     def _flush(key, pad_to=None):
@@ -63,7 +64,8 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
             path = write_shard(base, spec.container, _build_arrays(piece, spec, encoder, ctx),
                                real_len, registry=registry)
             integrity = file_integrity(path)
-        s["entries"].append({"path": path, "source_id": source_id, "entity_id": str(s["eid"]),
+        s["entries"].append({"path": path, "source_id": source_id,
+                             "entity_id": entity_id_token(s["eid"]),
                              "split": s["split"], "shard_index": s["shard"], "n_steps": real_len,
                              "padded": padded, "shape": shape, "dtype": dtype, **integrity})
         s["shard"] += 1
@@ -95,7 +97,7 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
             f"entity roster {sorted(map(str, observed_entities))} != expected "
             f"{sorted(map(str, expected_entity_set))}")
     invalid = [
-        {"entity_id": str(s["eid"]), "start": s["start"], "end": s["end"],
+        {"entity_id": entity_id_token(s["eid"]), "start": s["start"], "end": s["end"],
          "consumed": s["consumed"]}
         for s in st.values()
         if observed_ticks < s["end"] or s["consumed"] != s["end"] - s["start"]]
