@@ -97,7 +97,7 @@ For edge-sensitive events, registration accepts `lookbehind=<ticks>`, `lookahead
 `ownership="rightmost-start"`. Read the typed context with `ctx.before("field:signal")` and
 `ctx.after("field:signal")`; source-edge entries are `None`. Immutable `ctx.owned_lengths` gives
 the prefix of each logical window whose event starts belong to that segment. The corresponding
-rc2 batch keys remain available in rc3 for compatibility.
+rc2 batch keys remain available during the release-candidate compatibility window.
 
 For video, declare `inputs=("media:frame",)` and a semantic requirement such as
 `media_requirements={"kind": "video-frame", "layout": "HWC", "color_space": "RGB"}`.

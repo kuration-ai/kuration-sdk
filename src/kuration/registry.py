@@ -12,6 +12,17 @@ from typing import Any, Callable, Optional
 _KINDS = {"adapter", "metric", "scorer", "encoder", "method", "filter", "container",
           "preset", "operator", "transform", "analyzer"}
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?$")
+_JSON_SCHEMA_TYPES = {"string", "integer", "number", "boolean", "object", "array", "null"}
+_PARAMETER_SCHEMA_KEYS = {
+    "type", "enum", "const", "allOf", "anyOf", "oneOf",
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+    "minLength", "maxLength", "pattern",
+    "minItems", "maxItems", "uniqueItems", "items",
+    "properties", "required", "additionalProperties",
+    # JSON-Schema annotations used by built-in and repository-plugin descriptors. They do not
+    # affect validation, but retaining them makes component discovery useful to UIs.
+    "title", "description", "default", "examples", "deprecated", "readOnly", "writeOnly",
+}
 
 
 def _freeze(value):
@@ -50,6 +61,121 @@ def _validate_json(value, *, label: str) -> None:
         return
     raise ValueError(f"component {label} must contain JSON-compatible values, got "
                      f"{type(value).__name__}")
+
+
+def validate_parameter_schema(schema: dict, *, label: str = "parameters") -> None:
+    """Validate the recursively supported descriptor JSON-Schema subset.
+
+    Runtime parameter checking deliberately has no ``jsonschema`` dependency. Consequently a
+    descriptor must not advertise keywords or malformed rules that the runtime cannot honor.
+    This validator is shared by registration and ``kur-plugin-check`` so a bad regex or nested
+    rule fails while the plugin is loaded, not when a long-running job first uses it.
+    """
+    if not isinstance(schema, dict):
+        raise ValueError(f"component {label} must be a JSON Schema object")
+
+    def fail(path: str, detail: str) -> None:
+        raise ValueError(f"component {label} schema {path} {detail}")
+
+    def bounded_integer(rule: dict, name: str, path: str) -> None:
+        if name not in rule:
+            return
+        value = rule[name]
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            fail(path, f"keyword {name!r} must be a non-negative integer")
+
+    def visit(rule, path: str) -> None:
+        if isinstance(rule, bool):
+            return
+        if not isinstance(rule, dict):
+            fail(path, f"must be an object or boolean, got {type(rule).__name__}")
+        unknown = sorted(set(rule) - _PARAMETER_SCHEMA_KEYS)
+        if unknown:
+            fail(path, f"contains unsupported keyword(s) {unknown}")
+
+        expected = rule.get("type")
+        if expected is not None:
+            allowed = [expected] if isinstance(expected, str) else expected
+            if (not isinstance(allowed, (list, tuple)) or not allowed
+                    or any(not isinstance(kind, str) or kind not in _JSON_SCHEMA_TYPES
+                           for kind in allowed)
+                    or len(set(allowed)) != len(allowed)):
+                fail(path, f"has invalid type declaration {expected!r}")
+
+        if "enum" in rule:
+            enum = rule["enum"]
+            if not isinstance(enum, (list, tuple)) or not enum:
+                fail(path, "keyword 'enum' must be a non-empty array")
+
+        for keyword in ("allOf", "anyOf", "oneOf"):
+            if keyword not in rule:
+                continue
+            branches = rule[keyword]
+            if not isinstance(branches, (list, tuple)) or not branches:
+                fail(path, f"keyword {keyword!r} must be a non-empty array of schemas")
+            for index, branch in enumerate(branches):
+                visit(branch, f"{path}.{keyword}[{index}]")
+
+        for keyword in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"):
+            if keyword not in rule:
+                continue
+            value = rule[keyword]
+            if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                    or not math.isfinite(float(value))):
+                fail(path, f"keyword {keyword!r} must be a finite number")
+        if "minimum" in rule and "maximum" in rule and rule["minimum"] > rule["maximum"]:
+            fail(path, "has minimum greater than maximum")
+
+        for keyword in ("minLength", "maxLength", "minItems", "maxItems"):
+            bounded_integer(rule, keyword, path)
+        for low, high in (("minLength", "maxLength"), ("minItems", "maxItems")):
+            if low in rule and high in rule and rule[low] > rule[high]:
+                fail(path, f"has {low} greater than {high}")
+
+        if "pattern" in rule:
+            pattern = rule["pattern"]
+            if not isinstance(pattern, str):
+                fail(path, "keyword 'pattern' must be a string")
+            try:
+                re.compile(pattern)
+            except re.error as error:
+                fail(path, f"contains invalid regex pattern {pattern!r}: {error}")
+        if "uniqueItems" in rule and not isinstance(rule["uniqueItems"], bool):
+            fail(path, "keyword 'uniqueItems' must be a boolean")
+        if "items" in rule:
+            visit(rule["items"], f"{path}.items")
+
+        properties = rule.get("properties", {})
+        if not isinstance(properties, dict) or any(not isinstance(name, str)
+                                                   for name in properties):
+            fail(path, "keyword 'properties' must map string names to schemas")
+        for name, child in properties.items():
+            visit(child, f"{path}.properties[{name!r}]")
+
+        required = rule.get("required", ())
+        if (not isinstance(required, (list, tuple))
+                or any(not isinstance(name, str) for name in required)
+                or len(set(required)) != len(required)):
+            fail(path, "keyword 'required' must contain unique string property names")
+
+        if "additionalProperties" in rule:
+            additional = rule["additionalProperties"]
+            if not isinstance(additional, (bool, dict)):
+                fail(path, "keyword 'additionalProperties' must be a boolean or schema")
+            if isinstance(additional, dict):
+                visit(additional, f"{path}.additionalProperties")
+
+        for keyword in ("title", "description"):
+            if keyword in rule and not isinstance(rule[keyword], str):
+                fail(path, f"annotation {keyword!r} must be a string")
+        for keyword in ("deprecated", "readOnly", "writeOnly"):
+            if keyword in rule and not isinstance(rule[keyword], bool):
+                fail(path, f"annotation {keyword!r} must be a boolean")
+        if "examples" in rule and not isinstance(rule["examples"], (list, tuple)):
+            fail(path, "annotation 'examples' must be an array")
+
+    _validate_json(schema, label=label)
+    visit(schema, "root")
 
 
 @dataclass(frozen=True)
@@ -97,6 +223,7 @@ class ComponentDescriptor:
         if not isinstance(self.stability, str) or not self.stability:
             raise ValueError("component stability must be a non-empty string")
         _validate_json(self.parameters, label="parameters")
+        validate_parameter_schema(self.parameters)
         if self.execution_traits is not None:
             _validate_json(self.execution_traits, label="execution_traits")
         object.__setattr__(self, "parameters", _freeze(copy.deepcopy(self.parameters)))
@@ -174,8 +301,8 @@ class Registry:
         module, fingerprint = _identity(component)
         desc = ComponentDescriptor(
             name=name, kind=kind, description=description,
-            parameters=parameters or {"type": "object", "properties": {},
-                                      "additionalProperties": False},
+            parameters=({"type": "object", "properties": {}, "additionalProperties": False}
+                        if parameters is None else parameters),
             capabilities=dict(capabilities or {}), execution_traits=execution_traits,
             extra=extra, install_hint=install_hint,
             package=package, version=version, schema_version=schema_version,
@@ -360,6 +487,27 @@ def validate_parameters(descriptor: ComponentDescriptor, params: dict) -> None:
         except ValueError:
             return False
 
+    def json_equal(left, right) -> bool:
+        """Compare JSON values without Python's bool/int equality aliasing."""
+        if left is None or right is None:
+            return left is None and right is None
+        if isinstance(left, bool) or isinstance(right, bool):
+            return isinstance(left, bool) and isinstance(right, bool) and left == right
+        if (isinstance(left, (int, float)) and not isinstance(left, bool)
+                and isinstance(right, (int, float)) and not isinstance(right, bool)):
+            return left == right
+        if isinstance(left, str) or isinstance(right, str):
+            return isinstance(left, str) and isinstance(right, str) and left == right
+        if isinstance(left, (list, tuple)) or isinstance(right, (list, tuple)):
+            return (isinstance(left, (list, tuple)) and isinstance(right, (list, tuple))
+                    and len(left) == len(right)
+                    and all(json_equal(a, b) for a, b in zip(left, right)))
+        if isinstance(left, dict) or isinstance(right, dict):
+            return (isinstance(left, dict) and isinstance(right, dict)
+                    and set(left) == set(right)
+                    and all(json_equal(left[key], right[key]) for key in left))
+        return left is right
+
     def check(value, rule, path: str) -> None:
         if isinstance(rule, bool):
             if not rule:
@@ -378,9 +526,9 @@ def validate_parameters(descriptor: ComponentDescriptor, params: dict) -> None:
         allowed = [expected] if isinstance(expected, str) else list(expected or [])
         if allowed and not any(kind in json_types and json_types[kind](value) for kind in allowed):
             fail(path, f"must have JSON type {' or '.join(allowed)}, got {type(value).__name__}")
-        if "enum" in rule and value not in rule["enum"]:
+        if "enum" in rule and not any(json_equal(value, item) for item in rule["enum"]):
             fail(path, f"must be one of {rule['enum']}, got {value!r}")
-        if "const" in rule and value != rule["const"]:
+        if "const" in rule and not json_equal(value, rule["const"]):
             fail(path, f"must equal {rule['const']!r}, got {value!r}")
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             if "minimum" in rule and value < rule["minimum"]:
@@ -404,7 +552,7 @@ def validate_parameters(descriptor: ComponentDescriptor, params: dict) -> None:
             if "maxItems" in rule and len(value) > rule["maxItems"]:
                 fail(path, f"must contain at most {rule['maxItems']} items")
             if rule.get("uniqueItems") and any(
-                    value[left] == value[right] for left in range(len(value))
+                    json_equal(value[left], value[right]) for left in range(len(value))
                     for right in range(left + 1, len(value))):
                 fail(path, "must contain unique items")
             items = rule.get("items")
@@ -429,7 +577,7 @@ def validate_parameters(descriptor: ComponentDescriptor, params: dict) -> None:
                 for name in unknown:
                     check(value[name], additional, f"{path}.{name}")
 
-    check(params, descriptor.parameters or {}, "parameters")
+    check(params, descriptor.parameters, "parameters")
 
 
 def register_method(name: str, fn: Callable, **metadata) -> None:

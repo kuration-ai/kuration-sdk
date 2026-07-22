@@ -501,6 +501,10 @@ def _compile_event(stream: str, rest: str, spec: dict, schema: SchemaSpec) -> Ca
     reduce = spec["reduce"]
     if reduce not in _CATEGORICAL_REDUCES and reduce != "rate":
         raise ValueError(f"event reduce must be rate/{sorted(_CATEGORICAL_REDUCES)}, got {reduce!r}")
+    if sfields[field].kind == "vector" and reduce in {"nunique", "entropy"}:
+        raise ValueError(
+            f"event reduce {reduce!r} needs hashable scalar/categorical values; "
+            f"source {stream}.{field!r} is a vector (use count/rate instead)")
     filt = spec.get("filter")
     want = None
     if filt is not None:

@@ -71,6 +71,11 @@ def _descriptor_errors(descriptor, *, expected_package: str | None) -> list[str]
     if not descriptor.version:
         errors.append(f"{prefix} needs a component version")
     schema = descriptor.to_dict().get("parameters", {})
+    from .registry import validate_parameter_schema
+    try:
+        validate_parameter_schema(schema)
+    except ValueError as error:
+        errors.append(f"{prefix} has an invalid parameter schema: {error}")
     if schema.get("type") != "object":
         errors.append(f"{prefix} parameters must have type='object'")
     if not isinstance(schema.get("properties"), dict):
@@ -98,19 +103,10 @@ def _descriptor_errors(descriptor, *, expected_package: str | None) -> list[str]
     return errors
 
 
-def _owned_entries(module_name: str | None, previous: dict) -> dict:
-    from .plugins import _MODULE_COMPONENTS, _registry_entries
+def _owned_entries(module_names, previous: dict) -> dict:
+    from .plugins import _owned_plugin_entries
 
-    current = _registry_entries()
-    changed = {key: entry for key, entry in current.items()
-               if key not in previous or entry != previous[key]}
-    if changed or not module_name:
-        return changed
-    recorded = _MODULE_COMPONENTS.get(module_name, {})
-    if recorded:
-        return dict(recorded)
-    return {key: entry for key, entry in current.items()
-            if getattr(entry.descriptor, "module", None) == module_name}
+    return _owned_plugin_entries(module_names, previous)
 
 
 def _check_one(*, name: str, value: str, point=None) -> PluginCheckResult:
@@ -127,6 +123,7 @@ def _check_one(*, name: str, value: str, point=None) -> PluginCheckResult:
         errors: list[str] = []
         warnings: list[str] = []
         descriptors: list[dict[str, Any]] = []
+        target_module: str | None = module_name
         try:
             if point is None:
                 importlib.import_module(value)
@@ -134,9 +131,17 @@ def _check_one(*, name: str, value: str, point=None) -> PluginCheckResult:
                 distribution = getattr(point, "dist", None)
                 expected_package = getattr(distribution, "name", None)
                 target = point.load()
-                if callable(target) and not inspect_ismodule(target):
+                if inspect_ismodule(target):
+                    pass
+                elif callable(target):
                     target()
-            entries = _owned_entries(module_name, previous)
+                else:
+                    raise TypeError(
+                        "entry point must resolve to a module or zero-argument initializer, "
+                        f"got {type(target).__name__}")
+                target_module = target.__name__ if inspect_ismodule(target) \
+                    else getattr(target, "__module__", None)
+            entries = _owned_entries((module_name, target_module), previous)
             if not entries:
                 errors.append("plugin loaded but registered no components")
             for key in sorted(entries):

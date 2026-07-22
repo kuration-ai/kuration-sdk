@@ -96,7 +96,12 @@ def _resume_entries(out_dir: str, resume: bool) -> dict[str, dict]:
 
 def _registered_features(strategy, transforms):
     transform_outputs = {output for call in transforms for output in call["outputs"]}
-    return [name for name in strategy.referenced_metrics()
+    transform_inputs = {
+        token.split(":", 1)[1]
+        for call in transforms for token in call["inputs"]
+        if token.startswith("feature:")
+    }
+    return [name for name in strategy.referenced_metrics() | transform_inputs
             if name not in strategy.define and name not in strategy.scorer_outputs()
             and name not in transform_outputs]
 

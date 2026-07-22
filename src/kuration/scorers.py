@@ -51,26 +51,35 @@ def register_scorer(name: str, factory: Callable[..., SegmentScorer], **metadata
     default_registry.register("scorer", name, factory, replace=True, **metadata)
 
 
+def validate_scorer_parameters(name: str, params: dict, *, registry=None) -> None:
+    """Validate scorer factory kwargs against its component descriptor."""
+    from .registry import default_registry, validate_parameters
+    active = registry or default_registry
+    if active is default_registry and name not in active.names("scorer"):
+        from .plugins import load_plugins
+        load_plugins()
+    if name not in active.names("scorer"):
+        raise ValueError(f"unknown scorer {name!r}; registered: {active.names('scorer')}")
+    validate_parameters(active.descriptor("scorer", name), params)
+
+
 def get_scorer(name: str, *, registry=None, **kwargs) -> SegmentScorer:
     """Construct a named scorer, loading plugins on demand.
 
     ``kwargs`` are passed to the factory. An unknown name raises ``ValueError``.
     """
-    if registry is not None:
-        return registry.get("scorer", name)(**kwargs)
-    if name not in _SCORERS:
-        from .plugins import load_plugins
-        load_plugins()
-    if name not in _SCORERS:
-        raise ValueError(f"unknown scorer {name!r}; registered: {sorted(_SCORERS)}")
-    return _SCORERS[name](**kwargs)
+    from .registry import default_registry
+    active = registry or default_registry
+    validate_scorer_parameters(name, kwargs, registry=active)
+    return active.get("scorer", name)(**kwargs)
 
 
 def has_scorer(name: str) -> bool:
-    if name not in _SCORERS:
+    from .registry import default_registry
+    if name not in default_registry.names("scorer"):
         from .plugins import load_plugins
         load_plugins()
-    return name in _SCORERS
+    return name in default_registry.names("scorer")
 
 
 def parse_scorers(raw) -> list[tuple]:
@@ -171,4 +180,18 @@ class ActionResidualScorer:
         return np.linalg.norm(Y - knn.predict(X), axis=1)
 
 
-register_scorer("action_residual", ActionResidualScorer)
+register_scorer(
+    "action_residual",
+    ActionResidualScorer,
+    description="Action-conditioned k-nearest-neighbor predictive residual.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "obs": {"type": "string", "minLength": 1},
+            "action": {"type": "string", "minLength": 1},
+            "k": {"type": "integer", "minimum": 1},
+        },
+        "required": ["obs", "action"],
+        "additionalProperties": False,
+    },
+)

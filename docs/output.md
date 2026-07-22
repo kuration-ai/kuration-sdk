@@ -188,7 +188,8 @@ for arr in iter_shards("out/", split="train"):
     obs, act, present = arr["obs"], arr["act"], arr["_present"]
 ```
 
-`iter_shards(dataset, *, split=None, modalities=None, trim=True, container=None, with_meta=False)`
+`iter_shards(dataset, *, split=None, modalities=None, trim=True, container=None,
+with_meta=False, registry=None, verify=True)`
 accepts a **dataset directory** or a path to its `dataset_manifest.json`. Legacy absolute-path
 manifest dictionaries remain usable, but current portable manifests must be loaded by path so
 their relative shard paths and commit sidecar can be resolved and verified. It
@@ -196,13 +197,22 @@ handles all four containers, stages remote shards (`gs://`/`s3://`/…) automati
 rows** to each shard's real `n_steps`, **reshapes** tensor modalities back to their declared
 rank (Parquet stores them flat), and **restores the declared dtype** (the json/parquet
 round-trips widen to float64/int64 on disk; the loaders cast back, so a `uint8` frame comes
-back `uint8` from every container). A dataset directory that has been **moved or copied**
+back `uint8` from every container). Recorded shard SHA-256 and size metadata are verified before
+each shard is returned; `verify=False` is an explicit opt-out for trusted artifacts where that
+extra integrity read is too expensive. A dataset directory that has been **moved or copied**
 still loads: current entries are always relative to—and every legacy entry is independently
 rebased onto—the directory you passed, even when the original dataset still exists.
 `with_meta=True` yields `(arrays, entry)` so you also get the
-shard's `source_id`/`entity_id`/`split`/`padded`. `shard_entries(dataset, split=...)` and
-`read_shard_arrays(entry, container)` are the building blocks if you want manifest entries or a
-single shard directly.
+shard's `source_id`/`entity_id`/`split`/`padded`. Manifest `entity_id` is an opaque,
+type-tagged string so distinct IDs such as integer `1` and string `"1"` cannot alias a shard.
+Writable entity IDs must have a canonical value representation: `None`, booleans, integers,
+finite floats, strings, bytes, tuples, frozensets, and NumPy scalars composed from those types
+are supported. Extension objects are rejected with `ValueError` instead of risking a shard-name
+collision.
+
+`shard_entries(dataset, split=...)` and
+`read_shard_arrays(entry, container, verify=True)` are the building blocks if you want manifest
+entries or a single shard directly.
 
 Before handing an artifact to training, summarize it without the original job or input corpus:
 

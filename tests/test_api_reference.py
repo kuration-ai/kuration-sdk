@@ -68,6 +68,10 @@ def test_primary_api_signatures_match_the_reference():
         "Pipeline.sample": kuration.Pipeline.sample,
         "Pipeline.output": kuration.Pipeline.output,
         "Pipeline.review": kuration.Pipeline.review,
+        "SplitLeakageAnalyzer": kuration.SplitLeakageAnalyzer,
+        "SplitLeakageAnalyzer.add_assignment": kuration.SplitLeakageAnalyzer.add_assignment,
+        "SplitLeakageAnalyzer.add_assignments": kuration.SplitLeakageAnalyzer.add_assignments,
+        "SplitLeakageAnalyzer.summary": kuration.SplitLeakageAnalyzer.summary,
     }
     drift = {
         name: {"documented": _documented_signature(text, name),

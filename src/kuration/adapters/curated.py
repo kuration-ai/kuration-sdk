@@ -60,14 +60,17 @@ class CuratedDatasetAdapter:
         self._container: dict = {}     # shard path -> container
         self._registry = registry
         self._config: dict = {}        # shard path -> originating resolved config
+        self._entries: dict = {}       # shard path -> rebased manifest entry
         self.dataset_of: dict = {}     # shard path -> originating dataset dir
         self._shards: list = []
         from ..io import read_text
         from ..loaders import rebase_entries
         loaded = [(d, json.loads(read_text(f"{d}/config.json")),
                    json.loads(read_text(f"{d}/dataset_manifest.json"))) for d in dirs]
+        from ..loaders import _verify_commit
         from ..versioning import check_version
         for _d, cfg, manifest in loaded:
+            _verify_commit(str(_d).rstrip("/"), manifest)
             check_version(cfg.get("artifact_format_version"), kind="artifact")
             check_version(manifest.get("artifact_format_version"), kind="artifact")
         first_cfg = loaded[0][1]
@@ -99,6 +102,7 @@ class CuratedDatasetAdapter:
                 self._shards.append(e["path"])
                 self._container[e["path"]] = cfg["output"]["container"]
                 self._config[e["path"]] = cfg
+                self._entries[e["path"]] = e
                 self.dataset_of[e["path"]] = d
 
     def sources(self) -> list:
@@ -119,7 +123,15 @@ class CuratedDatasetAdapter:
     def ticks(self, shard_path: str) -> list[Tick]:
         if shard_path not in self._container:
             raise KeyError(f"unknown shard {shard_path!r} — not in this adapter's manifests")
-        arrays, n = _load_shard(shard_path, self._container[shard_path], registry=self._registry)
+        entry = self._entries[shard_path]
+        if entry.get("n_steps") is None:             # legacy manifest without in-band contract
+            arrays, n = _load_shard(shard_path, self._container[shard_path],
+                                    registry=self._registry)
+        else:
+            from ..loaders import read_shard_arrays
+            arrays = read_shard_arrays(entry, self._container[shard_path], trim=True,
+                                       registry=self._registry, verify=True)
+            n = int(entry["n_steps"])
         missing = [f for f in self._fields if f not in arrays]
         if missing:
             raise KeyError(f"shard {shard_path!r} lacks modalities {missing} required by "

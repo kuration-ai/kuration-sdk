@@ -112,6 +112,19 @@ def _manifest_pointcloud(path: Path) -> Path:
     value = scene.get("pointcloud")
     if not isinstance(value, str) or not value:
         raise ValueError(f"SLAM manifest {str(path)!r} has no scene point cloud")
+    format_value = scene.get("format")
+    if format_value != POINTCLOUD_FORMAT:
+        raise ValueError(
+            f"SLAM manifest {str(path)!r} scene has format {format_value!r}; "
+            f"expected {POINTCLOUD_FORMAT!r}"
+        )
+    version_value = scene.get("version")
+    if (not isinstance(version_value, Integral) or isinstance(version_value, bool)
+            or int(version_value) != POINTCLOUD_VERSION):
+        raise ValueError(
+            f"SLAM manifest {str(path)!r} scene has unsupported version "
+            f"{version_value!r}; expected {POINTCLOUD_VERSION}"
+        )
     source = Path(value)
     return source if source.is_absolute() else path.parent / source
 
@@ -130,11 +143,24 @@ def load_point_cloud(source: str | Path | PointCloudArtifact) -> PointCloudArtif
             names = set(archive.files)
             points = np.asarray(archive["points"])
             colors = np.asarray(archive["colors"]) if "colors" in names else None
+            format_value = np.asarray(archive["_format"]).item() \
+                if "_format" in names else None
+            version_value = np.asarray(archive["_version"]).item() \
+                if "_version" in names else None
             attributes = {
                 name: np.asarray(archive[name]) for name in sorted(names - _RESERVED)
             }
     except (OSError, KeyError, ValueError) as error:
         raise ValueError(f"cannot read point cloud {str(path)!r}") from error
+    if format_value != POINTCLOUD_FORMAT:
+        raise ValueError(
+            f"point cloud {str(path)!r} has format {format_value!r}; "
+            f"expected {POINTCLOUD_FORMAT!r}")
+    if (not isinstance(version_value, Integral) or isinstance(version_value, bool)
+            or int(version_value) != POINTCLOUD_VERSION):
+        raise ValueError(
+            f"point cloud {str(path)!r} has unsupported version {version_value!r}; "
+            f"expected {POINTCLOUD_VERSION}")
     return PointCloudArtifact(points, colors, attributes)
 
 

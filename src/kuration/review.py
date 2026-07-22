@@ -14,10 +14,12 @@ from .results import DatasetPreview, HoursSelectionReview, SelectionReview
 
 def _json_value(value: Any) -> Any:
     if isinstance(value, np.ndarray):
-        return value.tolist()
+        return _json_value(value.tolist())
     if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, (str, int, float, bool)) or value is None:
+        return _json_value(value.item())
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, (str, int, bool)) or value is None:
         return value
     if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in value]

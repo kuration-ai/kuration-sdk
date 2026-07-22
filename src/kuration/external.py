@@ -610,12 +610,22 @@ def iter_external_hash_dedup(partitions: Iterable[PartitionCommit | str], *,
         connection.execute(
             "CREATE TABLE seen (scope BLOB NOT NULL,digest BLOB NOT NULL,payload BLOB NOT NULL,"
             "PRIMARY KEY(scope,digest,payload))")
+        infer_names = feature_names is None
         resolved_names = tuple(feature_names) if feature_names is not None else None
+        inferred_schema: set[str] | None = None
         for path in paths:
             batch = SegmentBatch.read_ipc(path)
-            if resolved_names is None:
-                resolved_names = tuple(name.split(":", 1)[1] for name in batch.column_names
-                                       if name.startswith("feature:"))
+            current_names = tuple(name.split(":", 1)[1] for name in batch.column_names
+                                  if name.startswith("feature:"))
+            if infer_names and resolved_names is None:
+                resolved_names = current_names
+                inferred_schema = set(current_names)
+            elif infer_names and set(current_names) != inferred_schema:
+                raise ValueError(
+                    "hash dedup feature schema differs across partitions: "
+                    f"expected {sorted(inferred_schema or ())}, got {sorted(current_names)} "
+                    f"in {path!r}")
+            assert resolved_names is not None
             unknown = [name for name in resolved_names
                        if f"feature:{name}" not in batch.column_names]
             if unknown:

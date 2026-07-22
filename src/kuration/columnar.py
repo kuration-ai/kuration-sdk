@@ -93,6 +93,8 @@ class SegmentBatch:
         bin_names = tuple(bin_names)
         if len(bin_names) != width:
             raise ValueError(f"bin_names has length {len(bin_names)}, expected {width}")
+        if len(set(bin_names)) != len(bin_names):
+            raise ValueError("bin_names must be unique")
 
         columns: dict[str, Any] = {
             "source_id": pa.array([str(segment.source_id) for segment in segments],
@@ -192,7 +194,10 @@ class SegmentBatch:
             import os
             size_bytes = os.path.getsize(local_path)
             with open(local_path, "rb") as file:
-                digest = hashlib.sha256(file.read()).hexdigest()
+                hasher = hashlib.sha256()
+                while chunk := file.read(1024 * 1024):
+                    hasher.update(chunk)
+                digest = hasher.hexdigest()
         return {"path": str(path), "rows": len(self), "sha256": digest,
                 "columns": list(self.column_names), "size_bytes": size_bytes}
 
@@ -202,7 +207,7 @@ class SegmentBatch:
         with local_copy(path) as local_path:
             with pa.memory_map(local_path, "r") as source:
                 reader = pa.ipc.open_file(source)
-                table = reader.read_all()
+                table = reader.read_all().combine_chunks()
                 if columns is not None:
                     wanted = tuple(dict.fromkeys((*IDENTITY_COLUMNS, *columns)))
                     table = table.select(wanted)

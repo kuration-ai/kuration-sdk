@@ -43,7 +43,9 @@ def _times_for_clip(
     timestamps: Mapping[str, object] | None,
     sample_hz: float | None,
 ) -> np.ndarray:
-    if timestamps is not None and name in timestamps:
+    if timestamps is not None:
+        if name not in timestamps:
+            raise ValueError(f"timestamps is missing clip {name!r}")
         values = np.asarray(timestamps[name], dtype=np.float64)
     elif sample_hz is not None:
         values = np.arange(length, dtype=np.float64) / sample_hz
@@ -157,16 +159,27 @@ def export_slam_output(
     if not isinstance(poses, Mapping):
         raise ValueError("output.poses must be a mapping")
 
+    clip_names = sorted(trajectories, key=str)
+    if any(not isinstance(name, str) or not name for name in clip_names):
+        raise ValueError("SLAM clip names must be non-empty strings")
+    missing_poses = [name for name in clip_names if name not in poses]
+    if missing_poses:
+        raise ValueError(f"output.poses is missing clip(s) {missing_poses}")
+    if timestamps is not None:
+        if not isinstance(timestamps, Mapping):
+            raise ValueError("timestamps must be a mapping covering every SLAM clip")
+        missing = [name for name in clip_names if name not in timestamps]
+        extra = [name for name in timestamps if name not in trajectories]
+        if missing or extra:
+            raise ValueError(
+                "timestamps must cover exactly the exported clips; "
+                f"missing={missing}, unknown={sorted(extra, key=str)}")
+
     root = Path(out_dir)
     clips_dir = root / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
     manifest_clips = {}
-    for raw_name in sorted(trajectories, key=str):
-        if not isinstance(raw_name, str) or not raw_name:
-            raise ValueError("SLAM clip names must be non-empty strings")
-        name = raw_name
-        if name not in poses:
-            raise ValueError(f"output.poses is missing clip {name!r}")
+    for name in clip_names:
         trajectory = _finite_array(
             trajectories[name], name=f"output.trajectories[{name!r}]", shape_tail=(3,)
         )

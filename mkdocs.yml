@@ -73,6 +73,7 @@ nav:
   - Operate:
       - Jobs and CLI: jobs.md
       - Compatibility: compatibility.md
+      - Release notes: releases.md
       - Community and support: community.md
       - Releasing: releasing.md
   - Reference:

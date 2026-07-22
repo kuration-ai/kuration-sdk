@@ -62,15 +62,15 @@ while construction produces the same actionable installation error as direct cla
 
 ```
 kuration_action_state_consistency/
-├── anomaly_checker.py   # generic core -- baseline validation, the consistency check,
-│                        # clip-level verdict aggregation. Operates on plain
-│                        # (source_id, control, cell_key, frame, shift) tuples. No
-│                        # pixel_shift import anywhere in this file, ever.
-└── action_state.py      # the "action_state" anomaly type: validates baselines against
-                          # kuration_pixel_shift.ALL_CONTROLS, discovers instances via
-                          # pixel_shift's public iter_instances API, and builds an
-                          # AnomalyChecker on top. The ONLY file that references
-                          # kuration_pixel_shift, and only inside function bodies.
+├── action_state.py      # the "action_state" anomaly type: validates baselines against
+│                        # kuration_pixel_shift.ALL_CONTROLS, discovers instances via
+│                        # pixel_shift's public iter_instances API, and builds an
+│                        # AnomalyChecker on top. The ONLY file that references
+│                        # kuration_pixel_shift, and only inside function bodies.
+└── anomaly_checker.py   # generic core -- baseline validation, the consistency check,
+                         # clip-level verdict aggregation. Operates on plain
+                         # (source_id, control, cell_key, frame, shift) tuples. No
+                         # pixel_shift import anywhere in this file, ever.
 ```
 
 If a future anomaly type has nothing to do with pixel shift, it can reuse
@@ -87,10 +87,6 @@ config = {
             "1": {"expected_sign": 1, "min": 0.001363, "max": 1.669654},
             "2": {"expected_sign": 1, "min": 0.00099,  "max": 1.632512},
             "3": {"expected_sign": 1, "min": 0.000227, "max": 1.818079},
-        },
-        "MOUSE_X_POS": {
-            "2": {"expected_sign": 1, "min": 0.000001, "max": 0.535586},
-            ...
         },
     },
 }
@@ -150,7 +146,7 @@ checker = get_analyzer("aintropy/action-state-consistency", **config)
 for frames, actions, segment_id in your_own_segments:
     # segment_id is (source_id, start_idx, end_idx) -- same contract as
     # PixelShiftReport.add_segment. Segments sharing a source_id are one clip.
-    checker.add_segment(frames, actions, segment_id, controls=["W", "S", "A", "D"])
+    checker.add_segment(frames, actions, segment_id)
 
 checker.print_report()          # counts + exact clip IDs per verdict, printed to stdout
 print(checker.summary())        # {"consistent": [...], "inconsistent": [...], "inconclusive": [...]}

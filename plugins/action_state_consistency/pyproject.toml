@@ -1,11 +1,11 @@
 [project]
 name = "kuration-plugin-action-state-consistency"
 version = "0.1.0"
-description = "Kuration anomaly-detection operator; the action_state type checks measured pixel shift against user-supplied consistency baselines."
+description = "Kuration action-state analyzer that checks measured pixel shift against user-supplied consistency baselines."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "kuration-sdk>=0.1.0rc3",
+    "kuration-sdk>=0.1.0rc4",
     "numpy>=1.24",
 ]
 

@@ -17,7 +17,8 @@ class TransformContext(Mapping[str, Any]):
 
     ``before(token)`` and ``after(token)`` return one optional array per batch row. Source-edge
     rows are ``None``. The mapping interface preserves existing ``ctx["schema"]`` style access.
-    Legacy boundary values also remain in the batch mapping for the rc3 compatibility window.
+    Legacy boundary values also remain in the batch mapping during the release-candidate
+    compatibility window.
     """
 
     device: str | None

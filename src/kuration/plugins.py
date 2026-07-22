@@ -102,6 +102,37 @@ def _changed_entries(previous: dict[tuple[str, str], Any]) -> dict[tuple[str, st
             if key not in previous or entry != previous[key]}
 
 
+def _owned_plugin_entries(module_names, previous: dict[tuple[str, str], Any]) \
+        -> dict[tuple[str, str], Any]:
+    """Return components registered by this load or already owned by its target modules.
+
+    Entry-point targets may already be imported (for example, after an explicit plugin load),
+    making a second import or idempotent initializer leave the registry unchanged.  Recorded
+    ownership and descriptor implementation modules distinguish that case from a true no-op.
+    """
+    changed = _changed_entries(previous)
+    if changed:
+        return changed
+    if isinstance(module_names, str):
+        module_names = (module_names,)
+    candidates = {name for name in module_names if isinstance(name, str) and name}
+    current = _registry_entries()
+    owned: dict[tuple[str, str], Any] = {}
+    for name in candidates:
+        owned.update({key: entry for key, entry in _MODULE_COMPONENTS.get(name, {}).items()
+                      if current.get(key) == entry})
+    if owned:
+        return owned
+    return {
+        key: entry for key, entry in current.items()
+        if any(
+            getattr(entry.descriptor, "module", None) == candidate
+            or str(getattr(entry.descriptor, "module", "")).startswith(candidate + ".")
+            for candidate in candidates
+        )
+    }
+
+
 def _record_module_components(module: str | None,
                               changed: dict[tuple[str, str], Any]) -> None:
     if module and changed:
@@ -177,8 +208,21 @@ def load_plugins(modules=(), *, include_entry_points: bool = True) -> list[dict]
                 previous_entries = _registry_entries()
                 try:
                     target = ep.load()
-                    if callable(target) and not inspect.ismodule(target):
+                    if inspect.ismodule(target):
+                        pass
+                    elif callable(target):
                         target()
+                    else:
+                        raise TypeError(
+                            "entry point must resolve to a module or zero-argument initializer, "
+                            f"got {type(target).__name__}")
+                    module = target.__name__ if inspect.ismodule(target) \
+                        else getattr(target, "__module__", None)
+                    value_module = ep.value.split(":", 1)[0] \
+                        if isinstance(ep.value, str) else None
+                    changed = _changed_entries(previous_entries)
+                    if not _owned_plugin_entries((value_module, module), previous_entries):
+                        raise ValueError("plugin loaded but registered no components")
                 except Exception as e:
                     module_name = ep.value.split(":", 1)[0] if isinstance(ep.value, str) else None
                     _restore_plugin_state(state, module_name)
@@ -191,14 +235,13 @@ def load_plugins(modules=(), *, include_entry_points: bool = True) -> list[dict]
                     loaded.append(dict(failure))
                     continue
                 _PLUGIN_FAILURES.pop(key, None)
-                module = target.__name__ if inspect.ismodule(target) \
-                    else getattr(target, "__module__", None)
                 if module:
                     _LOADED_MODULES.add(module)
-                changed = _changed_entries(previous_entries)
                 for component_key in changed:
                     _ENTRY_POINT_BASELINES.setdefault(
                         component_key, previous_entries.get(component_key))
+                if value_module != module:
+                    _record_module_components(value_module, changed)
                 _record_module_components(module, changed)
                 _record_component_modules(previous_components)
                 loaded.append({"kind": "entry_point", "name": ep.name, "value": ep.value})

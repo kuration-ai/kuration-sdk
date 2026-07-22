@@ -111,11 +111,12 @@ def build_window(schema: SchemaSpec, ticks: list[Tick]) -> WindowBuffer:
                     voc = cat_codes[fname]
                     w.codes[fname][ti, j] = voc.setdefault(str(val), len(voc))
                 elif fs.kind == "vector":
-                    if np.ndim(val) == 0:        # a scalar would silently broadcast across D
+                    vector = np.asarray(val)
+                    if vector.ndim != 1 or vector.shape[0] != fs.width:
                         raise ValueError(
                             f"field {fname!r} is a {fs.width}-dim vector but entity {eid!r} "
-                            f"supplied scalar {val!r} at tick {ti}")
-                    w.numeric[fname][ti, j, :] = val
+                            f"supplied shape {vector.shape} at tick {ti}")
+                    w.numeric[fname][ti, j, :] = vector
                 else:
                     w.numeric[fname][ti, j, 0] = float(val)
         for stream, evs in (tk.events or {}).items():

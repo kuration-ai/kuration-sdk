@@ -10,6 +10,24 @@ ARTIFACT_FORMAT_VERSION = "1.0"
 JOB_SCHEMA_VERSION = "1.0"
 LEGACY_VERSION = "0.0"
 
+# Keys that exist only on executable job documents. Resolved artifact configs deliberately share
+# ``schema``/``strategy``/``output`` with jobs, so those common provenance keys cannot classify an
+# unversioned document by themselves.
+_JOB_MARKERS = {
+    "command", "adapter", "sources", "segmenter", "arms", "baseline", "target_size",
+    "output_preset", "encoder", "train_hours", "test_hours", "out", "resume", "streaming",
+    "executor", "mode", "workers", "on_error", "span_steps", "span_seconds",
+    "clip_aggregate", "memory_budget", "batch_size", "checkpoint_dir", "spill_dir",
+    "approximation", "max_in_flight", "include_plugin_entry_points",
+}
+
+# Resolved dataset configs can retain job-like presentation fields such as ``mode`` and
+# ``output_preset``. Prefer fields written only after execution when classifying an unversioned
+# document so those artifacts are never migrated as executable jobs.
+_ARTIFACT_MARKERS = {
+    "results", "pipeline", "output_request", "provenance", "started", "ended",
+}
+
 
 def _major(value: str) -> int:
     try:
@@ -53,8 +71,14 @@ def migrate(value, out=None):
     source = json.loads(Path(value).read_text()) if isinstance(value, (str, Path)) else value
     if not isinstance(source, dict):
         raise ValueError("migration input must be a JSON object")
-    result = migrate_job(source) if ("command" in source or "job_schema_version" in source) \
-        else migrate_config(source)
+    if "job_schema_version" in source and "artifact_format_version" in source:
+        raise ValueError("migration input declares both job_schema_version and "
+                         "artifact_format_version")
+    is_job = "job_schema_version" in source or (
+        "artifact_format_version" not in source
+        and not bool(set(source) & _ARTIFACT_MARKERS)
+        and bool(set(source) & _JOB_MARKERS))
+    result = migrate_job(source) if is_job else migrate_config(source)
     if out is not None:
         Path(out).write_text(json.dumps(result, indent=2) + "\n")
     return result

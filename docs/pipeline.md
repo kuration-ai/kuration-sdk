@@ -148,8 +148,8 @@ a measure/scorer feature is accepted: predicates, bins, weights, and feature-spa
 Transforms that declare bounded lookbehind/lookahead read neighboring field/media inputs through
 the typed `TransformContext`: `ctx.before(token)` and `ctx.after(token)`. The `rightmost-start`
 ownership policy supplies immutable `ctx.owned_lengths`, one prefix length per window, so
-overlapping windows produce deterministic event ownership. The rc2 batch keys remain available in
-rc3 as a compatibility path.
+overlapping windows produce deterministic event ownership. The rc2 batch keys remain available
+during the release-candidate compatibility window.
 Framework imports and model loading remain inside the optional transform implementation; core
 import and ordinary pipelines stay NumPy-only.
 
