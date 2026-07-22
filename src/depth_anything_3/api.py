@@ -1,4 +1,5 @@
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
+# Modified for kuration-sdk optional-runtime integration and validation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -157,7 +158,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         # Feat_vis export parameters
         feat_vis_fps: int = 15,
         # Other export parameters, e.g., gs_ply, gs_video
-        export_kwargs: Optional[dict] = {},
+        export_kwargs: Optional[dict] = None,
     ) -> Prediction:
         """
         Run inference on input images.
@@ -208,6 +209,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
 
         # Run model forward pass
         export_feat_layers = list(export_feat_layers) if export_feat_layers is not None else []
+        export_kwargs = dict(export_kwargs or {})
 
         raw_output = self._run_model_forward(
             imgs, ex_t_norm, in_t, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy

@@ -1,9 +1,10 @@
 # API reference — the public Python surface
 
-Every name importable from `kuration` (plus `kuration.torch`), grouped by layer, with its real
+Every name importable from `kuration` (plus the public `kuration.torch` and `kuration.slam`
+modules), grouped by layer, with its real
 signature. Optional-extra requirements are tagged (`[methods]`, `[parquet]`, `[array]`,
 `[video]`, `[ray]`,
-`[cloud]`, `[torch]`, `[hf]`, `[zarr]`). For concepts and recipes see the per-layer docs
+`[cloud]`, `[torch]`, `[hf]`, `[zarr]`, `[slam]`, `[slam-viz]`). For concepts and recipes see the per-layer docs
 ([schema](schema.md) · [dsl](dsl.md) · [adapters](adapters.md) · [strategies](strategies.md) ·
 [output](output.md)) and the [usage cookbook](usage.md).
 
@@ -302,6 +303,39 @@ executes resolved calls over canonical segments; `get_execution_backend` resolve
 Built-in presets are `numpy-timeseries`, `pytorch-sequences`, and `tabular`. Preset parameters
 are validated through their component descriptors; unknown presets and parameters raise before
 any output is written.
+
+## SLAM reconstruction and curation
+
+`kuration.slam` is public but stays outside the top-level namespace so precomputed trajectory
+curation remains NumPy-only and live model dependencies stay optional. See [slam.md](slam.md) for
+the end-to-end workflow.
+
+| name | signature | does |
+|---|---|---|
+| `kuration.slam.SLAMPipeline` | `(depth_model=None, *, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, pipeline_factory=None, **pipeline_options)` | configure the native global reconstruction workflow; raw execution needs `[slam]` unless a compatible runtime is injected |
+| `SLAMPipeline.run` / `SLAMPipeline.__call__` | `(data, *, progress=None) -> SLAMOutput` | notebook-style in-memory reconstruction from `{clip: (T,H,W,3)}` frames |
+| `SLAMPipeline.reconstruct` | `(source, out_dir=None, *, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False) -> SLAMReconstruction` | reuse/export/run as needed and return a portable manifest artifact |
+| `SLAMReconstruction` | `(manifest: Path)`; `.to_pipeline(join_video=False, tolerance=None, mismatch="error", provider=None)` | typed result that opens the reconstruction as a normal fluent `Pipeline` |
+| `SLAMOperator` | `(depth_model, embedding_model=None, embeddings=None, output_pointcloud=True, devices=None, window_size=48, overlap=4, bridge_size=24, process_res=504, conf_thresh=20.0, num_max_points=1000000, top_k=5, similarity_threshold=0.5, seed=0, verbose=False)` | low-level intersection/chunk/depth/stitch engine (`[slam]`) |
+| `CameraPose` / `SLAMOutput` | dataclasses containing camera basis/frustum data and trajectory/pose/point-cloud arrays | stable in-memory reconstruction data contract |
+| `input_slam` | `(manifest, *, join_video=False, tolerance=None, mismatch="error", provider=None) -> Pipeline` | open a precomputed manifest without loading the SLAM runtime |
+| `prepare_slam_input` | `(source, out_dir=None, *, run_if_needed=True, runner_options=None, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False) -> Path` | normalize a manifest, completed output, frame mapping, or video mapping |
+| `run_slam_pipeline` | `(data, *, depth_model=None, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, pipeline_factory=None, progress=None, **pipeline_options) -> SLAMOutput` | lower-level injected-runtime execution boundary |
+| `decode_video_clips` | `(videos, *, frame_skip=1, batch_size=64, color_space="RGB", provider=None, progress=None) -> (frames, timestamps)` | decode named clips while preserving processed-frame timestamps (`[slam]` unless a provider is injected) |
+| `export_slam_output` | `(output, out_dir, *, timestamps=None, sample_hz=None, videos=None, point_attributes=None, tracking_confidence=None, provenance=None) -> Path` | validate and write the portable trajectory/scene manifest |
+| `preflight_slam` | `(source, out_dir=None, *, run_if_needed=True, runner_options=None, decoder_options=None, require_gpu=False) -> SLAMPreflightResult` | side-effect-free input/runtime/output readiness report |
+| `slam_provenance` | `(options) -> dict` | stable JSON-safe engine, model, and option identity without live-object reprs |
+| `curate_slam_gameplay` | `(manifest, output, *, window=32, stride=16, n=2000, min_quality=0.5, quality_options=None, feature_space=None, selection_method="uniform-bins", bins=4, seed=0, progress=None) -> SLAMCurationResult` | one-call trajectory quality/diversity selection workflow |
+| `PointCloudArtifact` | `(points, colors=None, attributes={})`; `.select(...)`, `.save(...)` | validated immutable point cloud |
+| `load_point_cloud` / `curate_point_cloud` | `(source)` / `(source, *, method="voxel", max_points=None, voxel_size=None, min_confidence=None, seed=0, output=None)` | load or deterministically reduce an exported scene |
+| `build_pointcloud_scene` / `load_slam_output` | visualization helpers | build a notebook scene (`[slam-viz]`) or load a duck-typed output view |
+| `slam_schema` | `(*, sample_hz=None) -> SchemaSpec` | canonical camera trajectory schema |
+
+The public constants name the manifest/point-cloud/selection format versions, registered
+component names, camera fields, and transform output features. `SLAMMotion`, `SLAMQuality`, and
+`SLAMTrajectoryAdapter` are the concrete public transform/adapter implementations. Live
+reconstruction is not a registered compositional operator; the registered operator names only
+compose bounded trajectory transforms.
 
 ## Read side
 

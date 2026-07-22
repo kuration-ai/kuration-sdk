@@ -274,7 +274,7 @@ class VideoAdapter:
     supports_streaming = True
 
     def __init__(self, sources: Iterable[str], *, provider: Optional[MediaProvider] = None,
-                 column: str = "frame", rate_tolerance: float = 0.02):
+                 column: str = "frame", rate_tolerance: float = 1e-9):
         self._sources = list(sources)
         self.provider = provider or PyAVMediaProvider()
         self.column = column

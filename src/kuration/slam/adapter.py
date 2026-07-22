@@ -65,7 +65,7 @@ class SLAMTrajectoryAdapter:
         if self.timebase not in {"timestamp", "frame_index"}:
             raise ValueError("SLAM manifest timebase must be 'timestamp' or 'frame_index'")
         self.available_fields = frozenset(FIELD_TO_ARRAY)
-        self.available_globals = frozenset()
+        self.available_globals: frozenset[str] = frozenset()
         self.scene = document.get("scene") or {}
 
     def sources(self) -> list[str]:
@@ -119,6 +119,12 @@ def input_slam(
     provider=None,
 ):
     """Open an exported SLAM manifest as a fluent Kuration pipeline."""
+    # The native module is also an installed plugin, but direct library users should not need to
+    # know whether ambient entry-point discovery has already run. Registration is idempotent and
+    # the precomputed path only registers NumPy-backed bounded components.
+    from . import register
+
+    register()
     adapter = SLAMTrajectoryAdapter(manifest=manifest)
     pipeline = input(adapter=adapter, schema=adapter.schema)
     if not join_video:

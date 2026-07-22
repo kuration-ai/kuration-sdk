@@ -205,11 +205,14 @@ def test_registration_exposes_complete_descriptors():
     operator = describe_component("operator", OPERATOR_NAME, registry=snapshot)
     quality = describe_component("transform", QUALITY_TRANSFORM_NAME, registry=snapshot)
     assert adapter["parameters"]["required"] == ["manifest"]
+    assert "extra" not in adapter
+    assert adapter["install_hint"] == "pip install kuration-sdk"
     assert transform["package"] == "kuration-sdk"
     assert transform["description"]
     assert operator["parameters"]["properties"]["bins"]["minimum"] == 2
     assert "slam_quality_score" in QUALITY_FEATURES
     assert quality["parameters"]["properties"]["max_turn_degrees"]["maximum"] == 180
+    assert "aintropy/slam-reconstruct" not in snapshot.names("operator")
 
 
 def test_schema_has_fixed_pose_field_widths():
@@ -416,7 +419,8 @@ def test_video_decode_preserves_timestamps_skip_and_notebook_bgr_order():
             ])
 
     frames, timestamps = decode_video_clips(
-        {"clip": "clip.mp4"}, frame_skip=2, batch_size=1, provider=Provider()
+        {"clip": "clip.mp4"}, frame_skip=2, batch_size=1, color_space="BGR",
+        provider=Provider()
     )
     assert timestamps["clip"].tolist() == [0.0, 0.2]
     assert frames["clip"].shape == (2, 2, 3, 3)

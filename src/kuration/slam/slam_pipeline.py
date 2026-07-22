@@ -18,7 +18,7 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
@@ -165,6 +165,7 @@ class SLAMOutput:
     poses: Dict[str, List[CameraPose]]
     points: Optional[np.ndarray] = None
     colors: Optional[np.ndarray] = None
+    provenance: Optional[Mapping[str, Any]] = None
 
 
 class SLAMOperator:
@@ -215,6 +216,7 @@ class SLAMOperator:
             N-chunk scene balloon to `N x num_max_points` points.
         top_k, similarity_threshold: FAISS neighbor search width and minimum
             cosine similarity for a candidate cross-clip intersection match.
+        seed: Seed for deterministic final point-cloud capping.
         verbose: If True, print a tqdm progress bar while `process_chunks()`
             runs each chunk through the depth model.
     """
@@ -234,10 +236,35 @@ class SLAMOperator:
         num_max_points: int = 1_000_000,
         top_k: int = 5,
         similarity_threshold: float = 0.5,
+        seed: int = 0,
         verbose: bool = False,
     ):
         if embedding_model is not None and embeddings is not None:
             raise ValueError("Pass either embedding_model or embeddings, not both.")
+        integer_options = {
+            "window_size": window_size,
+            "overlap": overlap,
+            "bridge_size": bridge_size,
+            "process_res": process_res,
+            "num_max_points": num_max_points,
+            "top_k": top_k,
+            "seed": seed,
+        }
+        if any(isinstance(value, bool) or not isinstance(value, int)
+               for value in integer_options.values()):
+            raise ValueError("SLAM integer options must be integers, not booleans")
+        if window_size < 2:
+            raise ValueError("window_size must be at least 2")
+        if overlap < 1 or overlap >= window_size:
+            raise ValueError("overlap must be in [1, window_size)")
+        if bridge_size < 0 or bridge_size > window_size:
+            raise ValueError("bridge_size must be in [0, window_size]")
+        if process_res < 1 or num_max_points < 1 or top_k < 1:
+            raise ValueError("process_res, num_max_points, and top_k must be positive")
+        if not np.isfinite(conf_thresh) or not 0 <= conf_thresh <= 100:
+            raise ValueError("conf_thresh must be a finite percentile in [0, 100]")
+        if not np.isfinite(similarity_threshold) or not -1 <= similarity_threshold <= 1:
+            raise ValueError("similarity_threshold must be finite and in [-1, 1]")
 
         self.embedding_model = embedding_model
         self.embeddings = embeddings
@@ -252,6 +279,7 @@ class SLAMOperator:
         self.num_max_points = num_max_points
         self.top_k = top_k
         self.similarity_threshold = similarity_threshold
+        self.seed = seed
         self.verbose = verbose
 
         self.devices = self._resolve_devices(devices)
@@ -265,8 +293,8 @@ class SLAMOperator:
         self._clips: Optional[List[Dict[str, Any]]] = None
         self._bridge_pairs: Optional[Dict[Tuple[int, int], Tuple[float, int, int]]] = None
         self._all_chunks: Optional[List[Dict[str, Any]]] = None
-        self._per_clip_chunk_order: Optional[Dict[int, List[int]]] = None
-        self._chunk_results: Optional[List[Dict[str, Any]]] = None
+        self._per_clip_chunk_order: Optional[Dict[int, List[Tuple[int, int, int]]]] = None
+        self._chunk_results: Optional[List[Optional[Dict[str, Any]]]] = None
 
     # ------------------------------------------------------------------
     # setup helpers
@@ -361,6 +389,7 @@ class SLAMOperator:
     # ------------------------------------------------------------------
 
     def _embed_frames(self, frames: List[np.ndarray]) -> np.ndarray:
+        assert self.embedding_model is not None
         if hasattr(self.embedding_model, "encode"):
             emb = self.embedding_model.encode(frames)
         else:
@@ -368,6 +397,8 @@ class SLAMOperator:
         return self._to_numpy(emb).astype(np.float32)
 
     def _assign_precomputed_embeddings(self):
+        assert self._clips is not None
+        assert self.embeddings is not None
         if isinstance(self.embeddings, dict):
             for clip in self._clips:
                 if clip["name"] not in self.embeddings:
@@ -404,6 +435,7 @@ class SLAMOperator:
         same clip paired with itself."""
         import faiss
 
+        assert self._clips is not None
         all_embeddings = np.concatenate([c["embedding"] for c in self._clips], axis=0).astype(np.float32)
         owners = np.array([(ci, fi) for ci, c in enumerate(self._clips) for fi in range(len(c["frames"]))])
 
@@ -448,6 +480,7 @@ class SLAMOperator:
             return None
 
         self._require_clips(data)
+        assert self._clips is not None
 
         if self.embedding_model is not None:
             for clip in self._clips:
@@ -555,6 +588,8 @@ class SLAMOperator:
         # build time. This disambiguates loop-closure bridge chunks that
         # touch the same clip twice (clip_u == clip_v) via two different
         # ranges, which a lookup keyed only on chunk+clip couldn't resolve.
+        assert self._per_clip_chunk_order is not None
+        assert self._clips is not None
         for ci, order in self._per_clip_chunk_order.items():
             for (a_idx, a_start, a_end), (b_idx, b_start, b_end) in zip(order, order[1:]):
                 if a_idx == b_idx:
@@ -567,9 +602,12 @@ class SLAMOperator:
 
     def build_chunks(self, data=None):
         self._require_clips(data)
+        assert self._clips is not None
 
         bridge_specs: Dict[int, Dict[str, Any]] = {}
-        clip_anchors = {ci: [] for ci in range(len(self._clips))}
+        clip_anchors: Dict[int, List[Tuple[int, int, Optional[int]]]] = {
+            ci: [] for ci in range(len(self._clips))
+        }
 
         if self._bridge_pairs:
             for bridge_id, ((cu, cv), (_, fu, fv)) in enumerate(self._bridge_pairs.items()):
@@ -585,7 +623,9 @@ class SLAMOperator:
 
         all_chunks: List[Dict[str, Any]] = []
         bridge_chunk_index: Dict[int, int] = {}
-        per_clip_chunk_order = {ci: [] for ci in range(len(self._clips))}
+        per_clip_chunk_order: Dict[int, List[Tuple[int, int, int]]] = {
+            ci: [] for ci in range(len(self._clips))
+        }
 
         for ci, clip in enumerate(self._clips):
             n_frames = len(clip["frames"])
@@ -679,6 +719,7 @@ class SLAMOperator:
         )
 
     def _run_chunk(self, chunk, model) -> Dict[str, Any]:
+        assert self._clips is not None
         refs = self._local_frame_refs(chunk)
         frames = [self._clips[ci]["frames"][fi] for ci, fi in refs]
 
@@ -739,6 +780,7 @@ class SLAMOperator:
         progress_lock = threading.Lock()
 
         def _run_on_device(device, indices):
+            assert self._all_chunks is not None
             model = self._get_model_for_device(device)
             results = {}
             for idx in indices:
@@ -756,7 +798,8 @@ class SLAMOperator:
         finally:
             progress.close()
 
-        return self._chunk_results
+        assert all(result is not None for result in self._chunk_results)
+        return cast(List[Dict[str, Any]], self._chunk_results)
 
     # ------------------------------------------------------------------
     # Step 5: stitch every chunk into one global scene
@@ -783,6 +826,7 @@ class SLAMOperator:
 
     def _build_adjacency(self):
         adjacency = collections.defaultdict(list)
+        assert self._per_clip_chunk_order is not None
         for ci, order in self._per_clip_chunk_order.items():
             for (a_idx, a_start, a_end), (b_idx, b_start, b_end) in zip(order, order[1:]):
                 if a_idx == b_idx:
@@ -804,21 +848,30 @@ class SLAMOperator:
             f"chunks {cur_idx} and {nxt_idx} don't share any frame in clip {clip_idx}"
         )
 
-        cur_refs = self._chunk_results[cur_idx]["refs"]
-        nxt_refs = self._chunk_results[nxt_idx]["refs"]
-        target = self._chunk_results[cur_idx]["frustum_points"][cur_refs.index((clip_idx, shared_frame))]
-        source = self._chunk_results[nxt_idx]["frustum_points"][nxt_refs.index((clip_idx, shared_frame))]
+        assert self._chunk_results is not None
+        current = self._chunk_results[cur_idx]
+        following = self._chunk_results[nxt_idx]
+        assert current is not None and following is not None
+        cur_refs = current["refs"]
+        nxt_refs = following["refs"]
+        target = current["frustum_points"][cur_refs.index((clip_idx, shared_frame))]
+        source = following["frustum_points"][nxt_refs.index((clip_idx, shared_frame))]
         return self._affine_alignment(source, target)
 
     def _assemble_output(self, global_transform) -> SLAMOutput:
         trajectories: Dict[str, np.ndarray] = {}
         poses: Dict[str, List[CameraPose]] = {}
+        assert self._per_clip_chunk_order is not None
+        assert self._clips is not None
+        assert self._chunk_results is not None
+        assert self._all_chunks is not None
 
         for ci, order in self._per_clip_chunk_order.items():
             name = self._clips[ci]["name"]
             seen: Dict[int, Tuple[np.ndarray, CameraPose]] = {}
             for chunk_idx, start, end in order:
                 result = self._chunk_results[chunk_idx]
+                assert result is not None
                 M = global_transform[chunk_idx]
                 R = M[:, :3]  # linear part only -- direction vectors don't translate
                 ref_index = {ref: i for i, ref in enumerate(result["refs"])}
@@ -851,6 +904,7 @@ class SLAMOperator:
             all_points, all_colors = [], []
             for chunk_idx in range(len(self._all_chunks)):
                 result = self._chunk_results[chunk_idx]
+                assert result is not None
                 if result["points"].shape[0] == 0:
                     continue
                 M = global_transform[chunk_idx]
@@ -872,16 +926,17 @@ class SLAMOperator:
         v = R @ vec
         return v / np.linalg.norm(v)
 
-    @staticmethod
-    def _cap_points(points, colors, num_max):
+    def _cap_points(self, points, colors, num_max):
         if points.shape[0] <= num_max:
             return points, colors
-        idx = np.random.choice(points.shape[0], num_max, replace=False)
+        idx = np.random.default_rng(self.seed).choice(points.shape[0], num_max, replace=False)
         return points[idx], colors[idx]
 
     def stitch_chunks(self) -> SLAMOutput:
         if self._chunk_results is None:
             raise RuntimeError("No chunk results yet -- call process_chunks() first.")
+        if self._per_clip_chunk_order is None or self._all_chunks is None:
+            raise RuntimeError("No chunk layout yet -- call build_chunks() first.")
 
         adjacency = self._build_adjacency()
         root = self._per_clip_chunk_order[0][0][0]

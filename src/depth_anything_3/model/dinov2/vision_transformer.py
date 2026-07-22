@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Modified for kuration-sdk validation and safe argument defaults.
 #
 # This source code is licensed under the Apache License, Version 2.0
 # found in the LICENSE file in the root directory of this source tree.
@@ -8,7 +9,7 @@
 #   https://github.com/rwightman/pytorch-image-models/tree/master/timm/models/vision_transformer.py
 
 import math
-from typing import Callable, List, Sequence, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Tuple, Union
 import numpy as np
 import torch
 import torch.nn as nn
@@ -27,7 +28,6 @@ from .layers import (  # noqa: F401
     SwiGLUFFNFused,
 )
 from depth_anything_3.model.reference_view_selector import (
-    RefViewStrategy,
     select_reference_view,
     reorder_by_reference,
     restore_original_order,
@@ -297,13 +297,15 @@ class DinoVisionTransformer(nn.Module):
                 pos_nodiff = torch.cat([pos_special, pos_nodiff], dim=2)
         return pos, pos_nodiff
 
-    def _get_intermediate_layers_not_chunked(self, x, n=1, export_feat_layers=[], **kwargs):
+    def _get_intermediate_layers_not_chunked(self, x, n=1, export_feat_layers=None, **kwargs):
         B, S, _, H, W = x.shape
         x = self.prepare_tokens_with_masks(x)
         output, total_block_len, aux_output = [], len(self.blocks), []
+        export_feat_layers = export_feat_layers or []
         blocks_to_take = range(total_block_len - n, total_block_len) if isinstance(n, int) else n
         pos, pos_nodiff = self._prepare_rope(B, S, H, W, x.device)
 
+        local_x = x
         for i, blk in enumerate(self.blocks):
             if i < self.rope_start or self.rope is None:
                 g_pos, l_pos = None, None
@@ -373,7 +375,7 @@ class DinoVisionTransformer(nn.Module):
         self,
         x: torch.Tensor,
         n: Union[int, Sequence] = 1,  # Layers or n last layers to take
-        export_feat_layers: List[int] = [],
+        export_feat_layers: Optional[List[int]] = None,
         **kwargs,
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor]]]:
         outputs, aux_outputs = self._get_intermediate_layers_not_chunked(

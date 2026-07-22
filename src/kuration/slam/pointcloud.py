@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
-from numbers import Integral, Real
+import operator
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
+from typing import Mapping, SupportsIndex, cast
 
 import numpy as np
 
@@ -14,6 +14,27 @@ import numpy as np
 POINTCLOUD_FORMAT = "kuration-pointcloud-npz"
 POINTCLOUD_VERSION = 1
 _RESERVED = {"points", "colors", "_format", "_version"}
+
+
+def _integer(value: object, *, name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer")
+    try:
+        return operator.index(cast(SupportsIndex, value))
+    except TypeError as error:
+        raise ValueError(f"{name} must be an integer") from error
+
+
+def _number(value: object, *, name: str) -> float:
+    if isinstance(value, (bool, str, bytes)):
+        raise ValueError(f"{name} must be a finite number")
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be a finite number") from error
+    if not np.isfinite(number):
+        raise ValueError(f"{name} must be a finite number")
+    return number
 
 
 def _points(value) -> np.ndarray:
@@ -119,8 +140,11 @@ def _manifest_pointcloud(path: Path) -> Path:
             f"expected {POINTCLOUD_FORMAT!r}"
         )
     version_value = scene.get("version")
-    if (not isinstance(version_value, Integral) or isinstance(version_value, bool)
-            or int(version_value) != POINTCLOUD_VERSION):
+    try:
+        version = _integer(version_value, name="scene version")
+    except ValueError:
+        version = None
+    if version != POINTCLOUD_VERSION:
         raise ValueError(
             f"SLAM manifest {str(path)!r} scene has unsupported version "
             f"{version_value!r}; expected {POINTCLOUD_VERSION}"
@@ -156,8 +180,11 @@ def load_point_cloud(source: str | Path | PointCloudArtifact) -> PointCloudArtif
         raise ValueError(
             f"point cloud {str(path)!r} has format {format_value!r}; "
             f"expected {POINTCLOUD_FORMAT!r}")
-    if (not isinstance(version_value, Integral) or isinstance(version_value, bool)
-            or int(version_value) != POINTCLOUD_VERSION):
+    try:
+        version = _integer(version_value, name="point-cloud version")
+    except ValueError:
+        version = None
+    if version != POINTCLOUD_VERSION:
         raise ValueError(
             f"point cloud {str(path)!r} has unsupported version {version_value!r}; "
             f"expected {POINTCLOUD_VERSION}")
@@ -187,30 +214,33 @@ def curate_point_cloud(
     ``confidence`` retains the highest ``attributes['confidence']`` rows.
     """
     cloud = load_point_cloud(source)
-    if max_points is not None and (
-        not isinstance(max_points, Integral) or isinstance(max_points, bool) or max_points < 1
-    ):
-        raise ValueError("max_points must be a positive integer or None")
-    max_points = None if max_points is None else int(max_points)
-    if not isinstance(seed, Integral) or isinstance(seed, bool):
-        raise ValueError("seed must be an integer")
-    seed = int(seed)
+    if max_points is not None:
+        try:
+            max_points = _integer(max_points, name="max_points")
+        except ValueError as error:
+            raise ValueError("max_points must be a positive integer or None") from error
+        if max_points < 1:
+            raise ValueError("max_points must be a positive integer or None")
+    seed = _integer(seed, name="seed")
     indices = np.arange(len(cloud), dtype=np.int64)
     confidence = cloud.attributes.get("confidence")
     if min_confidence is not None:
         if confidence is None or confidence.ndim != 1:
             raise ValueError("min_confidence requires a scalar 'confidence' point attribute")
-        if isinstance(min_confidence, bool) or not isinstance(min_confidence, Real) \
-                or not np.isfinite(min_confidence):
-            raise ValueError("min_confidence must be a finite number")
-        indices = indices[confidence >= float(min_confidence)]
+        confidence_floor = _number(min_confidence, name="min_confidence")
+        indices = indices[confidence >= confidence_floor]
         if not len(indices):
             raise ValueError("point-cloud confidence filter removed every point")
     if method == "voxel":
-        if isinstance(voxel_size, bool) or not isinstance(voxel_size, Real) \
-                or not np.isfinite(voxel_size) or voxel_size <= 0:
+        if voxel_size is None:
             raise ValueError("voxel curation needs a positive finite voxel_size")
-        cells = np.floor(cloud.points[indices] / float(voxel_size)).astype(np.int64)
+        try:
+            size = _number(voxel_size, name="voxel_size")
+        except ValueError as error:
+            raise ValueError("voxel curation needs a positive finite voxel_size") from error
+        if size <= 0:
+            raise ValueError("voxel curation needs a positive finite voxel_size")
+        cells = np.floor(cloud.points[indices] / size).astype(np.int64)
         _, first = np.unique(cells, axis=0, return_index=True)
         indices = indices[np.sort(first)]
         indices = _limited(indices, max_points)

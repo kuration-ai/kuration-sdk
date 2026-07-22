@@ -1,8 +1,6 @@
 """Bounded reconstruction-quality signals over aligned camera trajectories."""
 from __future__ import annotations
 
-from numbers import Real
-
 import numpy as np
 
 from .schema import CAMERA_POSITION, CAMERA_Z_AXIS, TRACKING_CONFIDENCE
@@ -19,18 +17,24 @@ QUALITY_FEATURES = (
 
 
 def _positive(value, name: str, *, maximum: float | None = None) -> float:
-    if isinstance(value, bool) or not isinstance(value, Real) or not np.isfinite(value) \
-            or value <= 0 or (maximum is not None and value > maximum):
+    try:
+        number = float(value) if not isinstance(value, (bool, str, bytes)) else float("nan")
+    except (TypeError, ValueError):
+        number = float("nan")
+    if not np.isfinite(number) or number <= 0 or (maximum is not None and number > maximum):
         suffix = f" at most {maximum:g}" if maximum is not None else ""
         raise ValueError(f"{name} must be a positive finite number{suffix}")
-    return float(value)
+    return number
 
 
 def _fraction(value, name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, Real) or not np.isfinite(value) \
-            or not 0 <= value <= 1:
+    try:
+        number = float(value) if not isinstance(value, (bool, str, bytes)) else float("nan")
+    except (TypeError, ValueError):
+        number = float("nan")
+    if not np.isfinite(number) or not 0 <= number <= 1:
         raise ValueError(f"{name} must be a finite number in [0, 1]")
-    return float(value)
+    return number
 
 
 class SLAMQuality:

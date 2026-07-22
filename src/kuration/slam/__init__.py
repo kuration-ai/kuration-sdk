@@ -1,6 +1,8 @@
 """Kuration integration for precomputed SLAM trajectories and scenes."""
 from __future__ import annotations
 
+from typing import Any
+
 from .adapter import SLAMTrajectoryAdapter, input_slam
 from .export import EXPORT_FORMAT, EXPORT_VERSION, export_slam_output
 from .motion import OUTPUT_FEATURES, SLAMMotion, slam_motion_diversity
@@ -13,8 +15,14 @@ from .pointcloud import (
 )
 from .preflight import SLAMPreflightResult, preflight_slam
 from .quality import QUALITY_FEATURES, SLAMQuality, slam_quality
-from .reconstruct import RECONSTRUCT_NAME, RECONSTRUCT_PARAMETERS, slam_reconstruct
-from .runner import decode_video_clips, prepare_slam_input, run_slam_pipeline
+from .runner import (
+    SLAMPipeline,
+    SLAMReconstruction,
+    decode_video_clips,
+    prepare_slam_input,
+    run_slam_pipeline,
+    slam_provenance,
+)
 from .schema import (
     CAMERA_FRUSTUM,
     CAMERA_INTRINSICS,
@@ -35,15 +43,17 @@ from .workflow import (
 
 
 PACKAGE = "kuration-sdk"
-INSTALL_HINT = "pip install 'kuration-sdk[slam]'"
+INSTALL_HINT = "pip install kuration-sdk"
 ADAPTER_NAME = "aintropy/slam-trajectory"
 TRANSFORM_NAME = "aintropy/slam-motion"
 OPERATOR_NAME = "aintropy/slam-motion-diversity"
 QUALITY_TRANSFORM_NAME = "aintropy/slam-quality"
 QUALITY_OPERATOR_NAME = "aintropy/slam-quality"
 
-EMPTY_PARAMETERS = {"type": "object", "properties": {}, "additionalProperties": False}
-OPERATOR_PARAMETERS = {
+EMPTY_PARAMETERS: dict[str, Any] = {
+    "type": "object", "properties": {}, "additionalProperties": False
+}
+OPERATOR_PARAMETERS: dict[str, Any] = {
     "type": "object",
     "properties": {
         "axis": {"type": "string", "enum": list(OUTPUT_FEATURES)},
@@ -51,13 +61,13 @@ OPERATOR_PARAMETERS = {
     },
     "additionalProperties": False,
 }
-ADAPTER_PARAMETERS = {
+ADAPTER_PARAMETERS: dict[str, Any] = {
     "type": "object",
     "properties": {"manifest": {"type": "string", "minLength": 1}},
     "required": ["manifest"],
     "additionalProperties": False,
 }
-QUALITY_PARAMETERS = {
+QUALITY_PARAMETERS: dict[str, Any] = {
     "type": "object",
     "properties": {
         "min_tracking_confidence": {"type": "number", "minimum": 0, "maximum": 1},
@@ -68,7 +78,7 @@ QUALITY_PARAMETERS = {
     },
     "additionalProperties": False,
 }
-QUALITY_OPERATOR_PARAMETERS = {
+QUALITY_OPERATOR_PARAMETERS: dict[str, Any] = {
     "type": "object",
     "properties": {
         **QUALITY_PARAMETERS["properties"],
@@ -98,9 +108,8 @@ def register() -> None:
         register_operator,
     )
 
-    common = {
+    common: dict[str, Any] = {
         "package": PACKAGE,
-        "extra": "slam",
         "install_hint": INSTALL_HINT,
         "version": "1",
         "stability": "experimental",
@@ -155,15 +164,6 @@ def register() -> None:
             parameters=QUALITY_OPERATOR_PARAMETERS,
             **common,
         )
-    if RECONSTRUCT_NAME not in default_registry.names("operator"):
-        register_operator(
-            RECONSTRUCT_NAME,
-            slam_reconstruct,
-            description="Run a live SLAMOperator over a video Pipeline and swap in its "
-                         "trajectory manifest",
-            parameters=RECONSTRUCT_PARAMETERS,
-            **common,
-        )
 
 
 __all__ = [
@@ -176,6 +176,7 @@ __all__ = [
     "CAMERA_Z_AXIS",
     "EXPORT_FORMAT",
     "EXPORT_VERSION",
+    "INSTALL_HINT",
     "OPERATOR_NAME",
     "OUTPUT_FEATURES",
     "POINTCLOUD_FORMAT",
@@ -183,10 +184,11 @@ __all__ = [
     "QUALITY_FEATURES",
     "QUALITY_OPERATOR_NAME",
     "QUALITY_TRANSFORM_NAME",
-    "RECONSTRUCT_NAME",
     "SELECTION_FORMAT",
     "SELECTION_VERSION",
     "SLAMCurationResult",
+    "SLAMPipeline",
+    "SLAMReconstruction",
     "CameraPose",
     "PointCloudArtifact",
     "SLAMOutput",
@@ -211,6 +213,6 @@ __all__ = [
     "run_slam_pipeline",
     "slam_motion_diversity",
     "slam_quality",
-    "slam_reconstruct",
+    "slam_provenance",
     "slam_schema",
 ]

@@ -1,4 +1,5 @@
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
+# Modified for kuration-sdk validation and safe argument defaults.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -102,7 +103,7 @@ class DepthAnything3Net(nn.Module):
         x: torch.Tensor,
         extrinsics: torch.Tensor | None = None,
         intrinsics: torch.Tensor | None = None,
-        export_feat_layers: list[int] | None = [],
+        export_feat_layers: list[int] | None = None,
         infer_gs: bool = False,
         use_ray_pose: bool = False,
         ref_view_strategy: str = "saddle_balanced",
@@ -112,8 +113,8 @@ class DepthAnything3Net(nn.Module):
 
         Args:
             x: Input images (B, N, 3, H, W)
-            extrinsics: Camera extrinsics (B, N, 4, 4) 
-            intrinsics: Camera intrinsics (B, N, 3, 3) 
+            extrinsics: Camera extrinsics (B, N, 4, 4)
+            intrinsics: Camera intrinsics (B, N, 3, 3)
             feat_layers: List of layer indices to extract features from
             infer_gs: Enable Gaussian Splatting branch
             use_ray_pose: Use ray-based pose estimation
@@ -122,6 +123,7 @@ class DepthAnything3Net(nn.Module):
         Returns:
             Dictionary containing predictions and auxiliary features
         """
+        export_feat_layers = export_feat_layers or []
         # Extract features using backbone
         if extrinsics is not None:
             with torch.autocast(device_type=x.device.type, enabled=False):
@@ -144,8 +146,8 @@ class DepthAnything3Net(nn.Module):
                 output = self._process_camera_estimation(feats, H, W, output)
             if infer_gs:
                 output = self._process_gs_head(feats, H, W, output, x, extrinsics, intrinsics)
-        
-        output = self._process_mono_sky_estimation(output)    
+
+        output = self._process_mono_sky_estimation(output)
 
         # Extract auxiliary features if requested
         output.aux = self._extract_auxiliary_features(aux_feats, export_feat_layers, H, W)
@@ -163,7 +165,7 @@ class DepthAnything3Net(nn.Module):
             return output
         if (~non_sky_mask).sum() <= 10:
             return output
-        
+
         non_sky_depth = output.depth[non_sky_mask]
         if non_sky_depth.numel() > 100000:
             idx = torch.randint(0, non_sky_depth.numel(), (100000,), device=non_sky_depth.device)
@@ -338,7 +340,7 @@ class NestedDepthAnything3Net(nn.Module):
         x: torch.Tensor,
         extrinsics: torch.Tensor | None = None,
         intrinsics: torch.Tensor | None = None,
-        export_feat_layers: list[int] | None = [],
+        export_feat_layers: list[int] | None = None,
         infer_gs: bool = False,
         use_ray_pose: bool = False,
         ref_view_strategy: str = "saddle_balanced",
@@ -358,6 +360,7 @@ class NestedDepthAnything3Net(nn.Module):
         Returns:
             Dictionary containing aligned depth predictions and camera parameters
         """
+        export_feat_layers = export_feat_layers or []
         # Get predictions from both branches
         output = self.da3(
             x, extrinsics, intrinsics, export_feat_layers=export_feat_layers, infer_gs=infer_gs, use_ray_pose=use_ray_pose, ref_view_strategy=ref_view_strategy

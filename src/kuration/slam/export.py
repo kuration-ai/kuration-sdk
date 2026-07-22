@@ -16,6 +16,21 @@ EXPORT_FORMAT = "kuration-slam-export"
 EXPORT_VERSION = 1
 
 
+def _json_mapping(value: Mapping[str, object] | None, *, name: str) -> dict | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{name} must be a JSON-safe mapping or None")
+    try:
+        encoded = json.dumps(dict(value), allow_nan=False, sort_keys=True)
+        decoded = json.loads(encoded)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be a JSON-safe mapping") from error
+    if not isinstance(decoded, dict):  # pragma: no cover - guarded by Mapping above
+        raise ValueError(f"{name} must be a JSON object")
+    return decoded
+
+
 def _finite_array(value, *, name: str, shape_tail: tuple[int, ...]) -> np.ndarray:
     try:
         array = np.asarray(value, dtype=np.float64)
@@ -140,6 +155,7 @@ def export_slam_output(
     videos: Mapping[str, str | Path] | None = None,
     point_attributes: Mapping[str, object] | None = None,
     tracking_confidence: Mapping[str, object] | None = None,
+    provenance: Mapping[str, object] | None = None,
 ) -> Path:
     """Export one completed ``SLAMOperator`` output into a Kuration-readable manifest.
 
@@ -213,6 +229,12 @@ def export_slam_output(
         "sample_hz": sample_hz,
         "clips": manifest_clips,
     }
+    recorded_provenance = provenance
+    if recorded_provenance is None:
+        recorded_provenance = getattr(output, "provenance", None)
+    normalized_provenance = _json_mapping(recorded_provenance, name="provenance")
+    if normalized_provenance is not None:
+        manifest["provenance"] = normalized_provenance
     point_cloud = _point_cloud(output, root, point_attributes)
     if point_cloud is not None:
         manifest["scene"] = point_cloud

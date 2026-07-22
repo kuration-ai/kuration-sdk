@@ -26,9 +26,22 @@ def _symbol(spec: str):
     return value
 
 
-def _runtime_options(spec: str | None, *, preflight: bool = False) -> dict:
+def _runtime_options(
+    spec: str | None,
+    *,
+    depth_model: str | None = None,
+    depth_model_id: str | None = None,
+    preflight: bool = False,
+) -> dict:
+    if spec is not None and depth_model is not None:
+        raise ValueError("pass --runtime-factory or --depth-model, not both")
     if spec is None:
-        return {}
+        if depth_model is None:
+            return {}
+        return {
+            "depth_model": depth_model,
+            "depth_model_id": depth_model_id or depth_model,
+        }
     factory = _symbol(spec)
     try:
         inspect.signature(factory).bind(preflight=preflight)
@@ -74,6 +87,14 @@ def _progress(quiet: bool):
     return cli_progress(file=sys.stderr)
 
 
+def _decoder_options(args) -> dict:
+    return {
+        "frame_skip": args.frame_skip,
+        "batch_size": args.batch_size,
+        "color_space": args.color_space,
+    }
+
+
 def _add_source(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--manifest", help="Existing SLAM manifest or export directory.")
     parser.add_argument(
@@ -86,6 +107,17 @@ def _add_source(parser: argparse.ArgumentParser) -> None:
         "--runtime-factory",
         help="Callable module:attribute returning runner options and initialized models.",
     )
+    parser.add_argument(
+        "--depth-model",
+        help="Depth Anything 3 preset or Hub model id; an alternative to --runtime-factory.",
+    )
+    parser.add_argument(
+        "--depth-model-id",
+        help="Stable model revision recorded in provenance (defaults to --depth-model).",
+    )
+    parser.add_argument("--frame-skip", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--color-space", choices=("RGB", "BGR"), default="RGB")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -130,7 +162,13 @@ def main(argv: list[str] | None = None) -> int:
         report = preflight_slam(
             source,
             args.out,
-            runner_options=_runtime_options(args.runtime_factory, preflight=True),
+            runner_options=_runtime_options(
+                args.runtime_factory,
+                depth_model=args.depth_model,
+                depth_model_id=args.depth_model_id,
+                preflight=True,
+            ),
+            decoder_options=_decoder_options(args),
             require_gpu=args.require_gpu,
         )
         print(json.dumps(report.to_dict(), indent=2) if args.as_json else report.render())
@@ -163,11 +201,16 @@ def main(argv: list[str] | None = None) -> int:
     source = _source(args)
     root = Path(args.out)
     progress = _progress(args.quiet)
-    runner_options = _runtime_options(args.runtime_factory)
+    runner_options = _runtime_options(
+        args.runtime_factory,
+        depth_model=args.depth_model,
+        depth_model_id=args.depth_model_id,
+    )
     manifest = prepare_slam_input(
         source,
         root / "slam-export",
         runner_options=runner_options,
+        decoder_options=_decoder_options(args),
         resume=args.resume,
         cache_key=args.cache_key,
         progress=progress,
