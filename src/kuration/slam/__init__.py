@@ -13,6 +13,7 @@ from .pointcloud import (
 )
 from .preflight import SLAMPreflightResult, preflight_slam
 from .quality import QUALITY_FEATURES, SLAMQuality, slam_quality
+from .reconstruct import RECONSTRUCT_NAME, RECONSTRUCT_PARAMETERS, slam_reconstruct
 from .runner import decode_video_clips, prepare_slam_input, run_slam_pipeline
 from .schema import (
     CAMERA_FRUSTUM,
@@ -24,6 +25,7 @@ from .schema import (
     TRACKING_CONFIDENCE,
     slam_schema,
 )
+from .viz import build_pointcloud_scene, load_slam_output
 from .workflow import (
     SELECTION_FORMAT,
     SELECTION_VERSION,
@@ -32,8 +34,8 @@ from .workflow import (
 )
 
 
-PACKAGE = "kuration-plugin-slam"
-INSTALL_HINT = "pip install kuration-plugin-slam"
+PACKAGE = "kuration-sdk"
+INSTALL_HINT = "pip install 'kuration-sdk[slam]'"
 ADAPTER_NAME = "aintropy/slam-trajectory"
 TRANSFORM_NAME = "aintropy/slam-motion"
 OPERATOR_NAME = "aintropy/slam-motion-diversity"
@@ -76,6 +78,17 @@ QUALITY_OPERATOR_PARAMETERS = {
 }
 
 
+def __getattr__(name: str):
+    """Lazily expose `SLAMOperator`/`CameraPose`/`SLAMOutput` so importing
+    `kuration.slam` keeps its existing zero-Torch import graph -- only code
+    that actually touches `SLAMOperator` pulls in `torch`."""
+    if name in {"SLAMOperator", "CameraPose", "SLAMOutput"}:
+        from . import slam_pipeline
+
+        return getattr(slam_pipeline, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 def register() -> None:
     """Idempotently register the adapter, bounded transform, and curation operator."""
     from kuration import (
@@ -87,6 +100,7 @@ def register() -> None:
 
     common = {
         "package": PACKAGE,
+        "extra": "slam",
         "install_hint": INSTALL_HINT,
         "version": "1",
         "stability": "experimental",
@@ -141,6 +155,15 @@ def register() -> None:
             parameters=QUALITY_OPERATOR_PARAMETERS,
             **common,
         )
+    if RECONSTRUCT_NAME not in default_registry.names("operator"):
+        register_operator(
+            RECONSTRUCT_NAME,
+            slam_reconstruct,
+            description="Run a live SLAMOperator over a video Pipeline and swap in its "
+                         "trajectory manifest",
+            parameters=RECONSTRUCT_PARAMETERS,
+            **common,
+        )
 
 
 __all__ = [
@@ -160,27 +183,34 @@ __all__ = [
     "QUALITY_FEATURES",
     "QUALITY_OPERATOR_NAME",
     "QUALITY_TRANSFORM_NAME",
+    "RECONSTRUCT_NAME",
     "SELECTION_FORMAT",
     "SELECTION_VERSION",
     "SLAMCurationResult",
+    "CameraPose",
     "PointCloudArtifact",
+    "SLAMOutput",
+    "SLAMOperator",
     "SLAMPreflightResult",
     "SLAMQuality",
     "SLAMMotion",
     "SLAMTrajectoryAdapter",
     "TRANSFORM_NAME",
     "TRACKING_CONFIDENCE",
+    "build_pointcloud_scene",
     "curate_slam_gameplay",
     "curate_point_cloud",
     "decode_video_clips",
     "export_slam_output",
     "input_slam",
     "load_point_cloud",
+    "load_slam_output",
     "prepare_slam_input",
     "preflight_slam",
     "register",
     "run_slam_pipeline",
     "slam_motion_diversity",
     "slam_quality",
+    "slam_reconstruct",
     "slam_schema",
 ]

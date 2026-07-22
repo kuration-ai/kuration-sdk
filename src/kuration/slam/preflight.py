@@ -128,7 +128,7 @@ def preflight_slam(
             "input",
             "fail",
             "input is not a valid SLAM manifest, completed output, frame mapping, or video mapping",
-            "Pass manifest.json, an export directory, SLAMPipeline output, or {clip: input}.",
+            "Pass manifest.json, an export directory, SLAMOperator output, or {clip: input}.",
         ))
     else:
         checks.append(_check("input", "pass", f"recognized {kind.replace('_', ' ')} input"))
@@ -216,7 +216,7 @@ def preflight_slam(
                 "video-runtime",
                 "fail",
                 "PyAV video decoding support is not installed",
-                "Install pip install 'kuration-plugin-slam[video]' or inject a provider.",
+                "Install pip install 'kuration-sdk[slam]' or inject a provider.",
             ))
 
     if will_run:

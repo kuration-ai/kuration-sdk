@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from kuration import default_registry, describe_component
-from kuration_slam import (
+from kuration.slam import (
     ADAPTER_NAME,
     OPERATOR_NAME,
     OUTPUT_FEATURES,
@@ -31,8 +31,8 @@ from kuration_slam import (
     run_slam_pipeline,
     slam_schema,
 )
-from kuration_slam.cli import main as cli_main
-from kuration_slam.demo import write_demo_reconstruction
+from kuration.slam.cli import main as cli_main
+from kuration.slam.demo import write_demo_reconstruction
 
 
 def _pose(position, forward=(0.0, 0.0, 1.0)):
@@ -205,7 +205,7 @@ def test_registration_exposes_complete_descriptors():
     operator = describe_component("operator", OPERATOR_NAME, registry=snapshot)
     quality = describe_component("transform", QUALITY_TRANSFORM_NAME, registry=snapshot)
     assert adapter["parameters"]["required"] == ["manifest"]
-    assert transform["package"] == "kuration-plugin-slam"
+    assert transform["package"] == "kuration-sdk"
     assert transform["description"]
     assert operator["parameters"]["properties"]["bins"]["minimum"] == 2
     assert "slam_quality_score" in QUALITY_FEATURES
