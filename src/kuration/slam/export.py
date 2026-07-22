@@ -1,4 +1,4 @@
-"""Portable export of a completed ``SLAMPipeline`` reconstruction."""
+"""Portable export of a completed ``SLAMOperator`` reconstruction."""
 from __future__ import annotations
 
 from hashlib import sha256
@@ -141,7 +141,7 @@ def export_slam_output(
     point_attributes: Mapping[str, object] | None = None,
     tracking_confidence: Mapping[str, object] | None = None,
 ) -> Path:
-    """Export one completed ``SLAMPipeline`` output into a Kuration-readable manifest.
+    """Export one completed ``SLAMOperator`` output into a Kuration-readable manifest.
 
     The function is intentionally duck-typed: importing this package never imports or installs
     the heavyweight SLAM implementation. ``output`` needs the attributes demonstrated by the

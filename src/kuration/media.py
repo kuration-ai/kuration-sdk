@@ -274,10 +274,14 @@ class VideoAdapter:
     supports_streaming = True
 
     def __init__(self, sources: Iterable[str], *, provider: Optional[MediaProvider] = None,
-                 column: str = "frame"):
+                 column: str = "frame", rate_tolerance: float = 0.02):
         self._sources = list(sources)
         self.provider = provider or PyAVMediaProvider()
         self.column = column
+        if (isinstance(rate_tolerance, bool) or not isinstance(rate_tolerance, (int, float))
+                or not math.isfinite(rate_tolerance) or rate_tolerance < 0):
+            raise ValueError("VideoAdapter rate_tolerance must be a non-negative finite number")
+        self._rate_tolerance = float(rate_tolerance)
         if not self._sources:
             raise ValueError("VideoAdapter needs at least one source")
         first = self.provider.probe(self._sources[0])
@@ -300,10 +304,12 @@ class VideoAdapter:
         actual_rate = meta.average_rate
         rates_match = (expected_rate is None and actual_rate is None)
         if expected_rate is not None and actual_rate is not None:
-            rates_match = math.isclose(expected_rate, actual_rate, rel_tol=1e-9, abs_tol=0.0)
+            rates_match = math.isclose(expected_rate, actual_rate,
+                                       rel_tol=self._rate_tolerance, abs_tol=0.0)
         if not rates_match:
             raise ValueError(f"video {meta.uri!r}: average frame rate {actual_rate!r} does not "
-                             f"match the dataset rate {expected_rate!r}")
+                             f"match the dataset rate {expected_rate!r} "
+                             f"(rate_tolerance={self._rate_tolerance!r})")
 
     def sources(self) -> list[str]:
         return list(self._sources)

@@ -22,7 +22,7 @@ def _emit(progress, phase: str, event: str, **fields) -> None:
 
 def _pipeline_factory(factory: Callable | str | None) -> Callable:
     if factory is None:
-        factory = "slam_pipeline:SLAMPipeline"
+        factory = "kuration.slam.slam_pipeline:SLAMOperator"
     if isinstance(factory, str):
         module_name, separator, attribute = factory.partition(":")
         if not separator or not module_name or not attribute:
@@ -33,7 +33,7 @@ def _pipeline_factory(factory: Callable | str | None) -> Callable:
         except (ImportError, AttributeError) as error:
             raise ImportError(
                 f"cannot load SLAM pipeline factory {module_name}:{attribute}; install or "
-                "provide the SLAMPipeline implementation, or pass pipeline_factory= explicitly"
+                "provide the SLAMOperator implementation, or pass pipeline_factory= explicitly"
             ) from error
     if not callable(factory):
         raise TypeError("pipeline_factory must be callable or an import string")
@@ -61,11 +61,11 @@ def decode_video_clips(
     *,
     frame_skip: int = 1,
     batch_size: int = 64,
-    color_space: str = "BGR",
+    color_space: str = "RGB",
     provider=None,
     progress=None,
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
-    """Decode video paths into the frame mapping and timestamps expected by SLAMPipeline."""
+    """Decode video paths into the frame mapping and timestamps expected by SLAMOperator."""
     if not isinstance(videos, Mapping) or not videos:
         raise ValueError("video input must be a non-empty {clip_name: path} mapping")
     if not isinstance(frame_skip, int) or isinstance(frame_skip, bool) or frame_skip < 1:
@@ -81,8 +81,8 @@ def decode_video_clips(
             provider = PyAVMediaProvider()
         except ImportError as error:
             raise ImportError(
-                "decoding video for SLAM needs the video extra: "
-                "pip install 'kuration-plugin-slam[video]'"
+                "decoding video for SLAM needs the slam extra: "
+                "pip install 'kuration-sdk[slam]'"
             ) from error
     frames_by_clip = {}
     timestamps = {}
@@ -103,8 +103,9 @@ def decode_video_clips(
             raise ValueError(
                 f"video provider for {name!r} must decode shape (T, H, W, 3), got {frames.shape}"
             )
-        # Kuration's video provider declares RGB. The example notebook's cv2 loader supplies
-        # BGR, so BGR remains the compatibility default for SLAMPipeline integrations.
+        # Kuration's video provider declares RGB, matching what the vendored Depth Anything 3
+        # input processor assumes (it never swaps channels). Pass color_space="BGR" only for a
+        # SLAM implementation ported from a cv2-based (BGR) loader.
         if color_space == "BGR":
             frames = frames[..., ::-1].copy()
         frames_by_clip[name] = frames
@@ -139,11 +140,11 @@ def run_slam_pipeline(
     progress=None,
     **pipeline_options,
 ):
-    """Run the notebook-style ``SLAMPipeline`` over raw in-memory clip frames.
+    """Run the notebook-style ``SLAMOperator`` over raw in-memory clip frames.
 
-    Models are injected by the caller so the plugin has no mandatory Torch, Depth Anything,
-    SALAD, or FAISS dependency. With no explicit factory, the function lazily imports
-    ``slam_pipeline.SLAMPipeline`` exactly as the example notebook does.
+    Models are injected by the caller so this module has no mandatory Torch, Depth Anything,
+    SALAD, or FAISS dependency. With no explicit factory, the function lazily imports the
+    vendored ``kuration.slam.slam_pipeline.SLAMOperator``.
     """
     frames = _validated_frames(data)
     if depth_model is None:
