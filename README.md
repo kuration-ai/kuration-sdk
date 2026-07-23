@@ -110,43 +110,6 @@ kur-check out/training-v1 --policy quality.json
   incompatible.
 - Every optional integration remains outside the NumPy-only core.
 
-## Operators: package a curation decision
-
-Operators turn a reviewed sequence of normal pipeline steps into a named, validated component:
-
-```python
-from kuration import register_operator
-
-@register_operator(
-    "acme/balance-signal",
-    description="Balance windows by signal variability",
-    parameters={
-        "type": "object",
-        "properties": {
-            "field": {"type": "string"},
-            "bins": {"type": "integer", "minimum": 2},
-        },
-        "required": ["field"],
-        "additionalProperties": False,
-    },
-    version="1",
-)
-def balance_signal(pipeline, *, field, bins=8):
-    return (pipeline
-            .measure("signal_variability", "std", of=field)
-            .bin("signal_variability", bins=bins))
-
-pipeline = pipeline.apply("acme/balance-signal", field="signal", bins=6)
-```
-
-The parameter contract is checked when the operator is added. The named call, descriptor, code
-fingerprint, and expanded ordinary operations are retained in provenance. For computation over
-whole windows or video frames, pair an operator with a registered bounded batch transform.
-
-See **[Building operators](https://aintropy-ai.github.io/kuration-sdk/operators/)** for compositional, transform-backed, testing,
-discovery, and packaging examples, or run
-[`examples/05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py).
-
 ## Choose your path
 
 | I want to… | Start here |
