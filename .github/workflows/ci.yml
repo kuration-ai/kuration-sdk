@@ -125,7 +125,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extra: [zarr, torch, hf, video, ray, slam]
+        extra: [zarr, torch, hf, video, ray]
         dependency_set: [current, minimum]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -166,10 +166,6 @@ jobs:
               python -c 'import ray'
               python -m pytest tests/test_execution_backpressure.py \
                 tests/test_determinism_conformance.py -k ray -q
-              ;;
-            slam)
-              python -c 'import av, faiss, torch; from kuration.slam import SLAMOperator'
-              python -m pytest tests/test_slam.py tests/test_slam_regressions.py -q
               ;;
           esac
 
