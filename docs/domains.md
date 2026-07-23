@@ -57,6 +57,12 @@ pipeline = (
 )
 ```
 
+The lowercase `gameplay.slam_pipeline(...)` is a convenience function, not a class. It performs
+or reuses reconstruction and returns `GameplayPipeline`, which is a `Pipeline` subclass.
+The uppercase `gameplay.SLAMPipeline` is intentionally separate from `Pipeline`: it coordinates
+the global, artifact-producing video-to-reconstruction workflow, then hands its manifest to
+`GameplayPipeline` for bounded curation.
+
 The methods call the same registered descriptors used by custom modules, plugins, JSON jobs,
 discovery, and provenance. The generic core therefore contains no gameplay component names.
 Every registered operator gets the same direct fluent spelling, including operators imported

@@ -65,8 +65,16 @@ not load the model runtime.
 
 ## Advanced reconstruction control
 
-`gameplay.SLAMPipeline` exposes the intermediate reconstruction when an application needs to inspect
-or reuse it before constructing a curation pipeline:
+The names describe different layers:
+
+- `gameplay.slam_pipeline(...)` is a convenience function returning `GameplayPipeline`, a
+  subclass of the ordinary `Pipeline`.
+- `gameplay.SLAMPipeline` is a separate reconstruction coordinator, not a `Pipeline` subclass.
+  Reconstruction compares whole clips and writes a reusable artifact, so it does not satisfy the
+  immutable, bounded curation-operator contract.
+
+`gameplay.SLAMPipeline` exposes the intermediate reconstruction when an application needs to
+inspect or reuse it before constructing a curation pipeline:
 
 ```python
 import kuration.gameplay as gameplay

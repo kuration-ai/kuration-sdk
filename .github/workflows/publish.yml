@@ -121,9 +121,11 @@ jobs:
           from pathlib import Path
 
           import kuration
+          import kuration.core
 
           package = files("kuration")
-          assert package.joinpath("schemas/job.schema.json").is_file()
+          core_package = files("kuration.core")
+          assert core_package.joinpath("schemas/job.schema.json").is_file()
           assert package.joinpath("py.typed").is_file()
           assert "site-packages" in str(Path(kuration.__file__).resolve())
           assert kuration.__version__ == version("kuration-sdk")

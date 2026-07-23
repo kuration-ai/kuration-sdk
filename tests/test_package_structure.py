@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from importlib.util import find_spec
+from importlib.resources import files
 from pathlib import Path
 import tomllib
 
 import kuration
 import kuration.core
+import kuration.gameplay
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +48,18 @@ def test_removed_root_compatibility_packages_are_not_importable() -> None:
 def test_package_level_api_is_exported_by_core() -> None:
     assert kuration.__all__ is kuration.core.__all__
     assert kuration.Pipeline.__module__ == "kuration.core.pipeline"
+
+
+def test_domain_resources_resolve_from_their_own_package() -> None:
+    assert files("kuration.core").joinpath("schemas/job.schema.json").is_file()
+    assert files("kuration").joinpath("py.typed").is_file()
+
+
+def test_slam_reconstruction_and_curation_pipeline_boundaries_are_explicit() -> None:
+    assert issubclass(kuration.gameplay.GameplayPipeline, kuration.Pipeline)
+    assert not issubclass(kuration.gameplay.SLAMPipeline, kuration.Pipeline)
+    assert callable(kuration.gameplay.slam_pipeline)
+    assert not isinstance(kuration.gameplay.slam_pipeline, type)
 
 
 def test_vendored_slam_runtime_is_outside_first_party_coverage() -> None:

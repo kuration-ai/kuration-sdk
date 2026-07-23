@@ -27,7 +27,7 @@ objects as noted below.
 | `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local") -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
 | `dataset_report` | `(segments, *, metrics=None, hist_bins=10) -> dict` | per-metric distribution profile (+ tag/group counts) of a scored pool |
 | `kuration.core` | module | explicit import facade for the domain-agnostic top-level API |
-| `kuration.gameplay.slam_pipeline` | `(source, output=None, *, depth_model=None, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, pipeline_factory=None, join_video=False, tolerance=None, mismatch="error", provider=None, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False, **pipeline_options) -> GameplayPipeline` | reconstruct raw video/frames when needed, or open an existing SLAM manifest |
+| `kuration.gameplay.slam_pipeline` | `(source, output=None, *, depth_model=None, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, pipeline_factory=None, join_video=False, tolerance=None, mismatch="error", provider=None, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False, **pipeline_options) -> GameplayPipeline` | convenience function—not a class—that reconstructs raw input when needed or opens an existing SLAM manifest, then returns the `Pipeline` subclass used for curation |
 | `kuration.gameplay.action_state_checker` | `(*, baselines, anomaly_type="action_state") -> Analyzer` | construct the action-state consistency analyzer without a component-name string |
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
@@ -339,7 +339,7 @@ workflow.
 
 | name | signature | does |
 |---|---|---|
-| `kuration.gameplay.slam.SLAMPipeline` | `(depth_model=None, *, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, pipeline_factory=None, **pipeline_options)` | configure the native global reconstruction workflow; raw execution needs `[slam]` unless a compatible runtime is injected |
+| `kuration.gameplay.slam.SLAMPipeline` | `(depth_model=None, *, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, pipeline_factory=None, **pipeline_options)` | separate global reconstruction coordinator—not a `Pipeline` subclass; raw execution needs `[slam]` unless a compatible runtime is injected |
 | `SLAMPipeline.run` / `SLAMPipeline.__call__` | `(data, *, progress=None) -> SLAMOutput` | notebook-style in-memory reconstruction from `{clip: (T,H,W,3)}` frames |
 | `SLAMPipeline.reconstruct` | `(source, out_dir=None, *, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False) -> SLAMReconstruction` | reuse/export/run as needed and return a portable manifest artifact |
 | `SLAMReconstruction` | `(manifest: Path)`; `.to_pipeline(join_video=False, tolerance=None, mismatch="error", provider=None)` | typed result that opens the reconstruction as a normal fluent `Pipeline` |
