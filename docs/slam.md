@@ -20,6 +20,8 @@ Install the reconstruction runtime only when raw frames or videos must run throu
 pip install "kuration-sdk[slam]"
 ```
 
+Use `kuration-sdk[gameplay]` to install SLAM together with Pixel Shift, action-state, and
+point-cloud visualization.
 Point-cloud notebook visualization additionally needs `kuration-sdk[slam-viz]`. Consumers that
 receive `manifest.json` can use `input_slam()`, the trajectory transforms, and point-cloud
 curation with the base SDK.

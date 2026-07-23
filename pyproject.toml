@@ -65,6 +65,22 @@ slam = [
     "faiss-cpu>=1.8",
 ]                                  # SLAM trajectory curation + vendored Depth Anything 3 (kuration.slam)
 slam-viz = ["trimesh>=4"]          # kuration.slam.build_pointcloud_scene notebook viewer
+gameplay = [
+    "av>=12",
+    "torch>=2.2",
+    "torchvision>=0.16",
+    "huggingface_hub>=0.20",
+    "omegaconf>=2.3",
+    "addict>=2.4",
+    "einops>=0.7",
+    "opencv-python>=4.9",
+    "imageio>=2.31",
+    "tqdm>=4.65",
+    "pillow>=10",
+    "safetensors>=0.4",
+    "faiss-cpu>=1.8",
+    "trimesh>=4",
+]                                  # every built-in gameplay capability and visualization runtime
 standard-operators = [
     "av>=12",
     "torch>=2.2",
@@ -80,7 +96,7 @@ standard-operators = [
     "safetensors>=0.4",
     "faiss-cpu>=1.8",
     "trimesh>=4",
-]                                  # every first-party operator runtime in this evaluation
+]                                  # compatibility alias for the gameplay extra
 all = [
     "scikit-learn>=1.4",
     "pyarrow>=15",

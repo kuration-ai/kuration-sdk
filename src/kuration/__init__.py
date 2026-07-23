@@ -159,7 +159,7 @@ __all__ = [
     "describe_component", "ExecutionPlan", "ARTIFACT_FORMAT_VERSION",
     "DatasetWriteResult", "ExperimentResult", "DatasetReport", "ValidationResult",
     "JOB_SCHEMA_VERSION", "migrate", "migrate_job", "migrate_config",
-    "pixel_shift", "action_state_consistency", "slam",
+    "pixel_shift", "action_state_consistency", "slam", "gameplay",
     "SLAMPipeline", "SLAMReconstruction", "input_slam",
 ]
 
@@ -167,6 +167,7 @@ __all__ = [
 # frameworks remain lazy, but their descriptors are available in every Registry snapshot
 # without scanning the external ``kuration.plugins`` entry-point group.
 from . import action_state_consistency, pixel_shift, slam
+from . import gameplay
 from .slam import SLAMPipeline, SLAMReconstruction, input_slam
 
 pixel_shift.register()

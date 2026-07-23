@@ -49,28 +49,28 @@ and SHA-256 integrity metadata.
 
 ## Install
 
-```bash
-python -m pip install kuration-sdk
-```
-
-The NumPy-only core handles in-memory, CSV, JSON, and NPZ workflows. Add only the integrations a
-pipeline needs:
+Choose the smallest installation profile that fits the application:
 
 ```bash
-python -m pip install 'kuration-sdk[methods,parquet]'  # selection methods + Parquet
-python -m pip install 'kuration-sdk[video]'            # PyAV video frames
-python -m pip install 'kuration-sdk[ray]'              # distributed source execution
-python -m pip install 'kuration-sdk[s3]'               # fsspec + the S3 backend
-python -m pip install 'kuration-sdk[pixel-shift]'       # built-in optical-flow operator
-python -m pip install 'kuration-sdk[action-state]'      # built-in consistency analyzer
-python -m pip install 'kuration-sdk[slam]'              # built-in SLAM reconstruction
-python -m pip install 'kuration-sdk[standard-operators]' # every first-party operator runtime
-python -m pip install 'kuration-sdk[all]'              # every runtime integration/backend
+python -m pip install kuration-sdk               # NumPy-only core
+python -m pip install 'kuration-sdk[gameplay]'   # Pixel Shift + action-state + SLAM
+python -m pip install 'kuration-sdk[all]'        # every runtime integration and backend
 ```
+
+The core handles in-memory, CSV, JSON, and NPZ workflows. Targeted extras remain available when
+an application needs less than an entire profile:
+
+| Capability | Extras |
+|---|---|
+| Selection and scale | `methods`, `scale`, `ray` |
+| Data and media | `parquet`, `array`, `hf`, `zarr`, `video`, `torch` |
+| Cloud storage | `s3`, `gcs`, `azure` |
+| Gameplay pieces | `pixel-shift`, `action-state`, `slam`, `slam-viz` |
 
 `pipeline.explain()` reports the extras required by a planned run before it reads the full
 dataset. The provider-specific cloud extras are `s3`, `gcs`, and `azure`; `cloud` installs only
 the backend-neutral fsspec layer for environments that manage provider packages separately.
+`standard-operators` remains a compatibility alias for `gameplay`.
 The [`dev/eval-standard-operators` evaluation](docs/standard-operators-evaluation.md) records the
 packaging measurements and decision questions for the built-in domain capabilities.
 
@@ -83,6 +83,9 @@ pixel_pipeline = kur.input(telemetry, ...).join_video(videos).pixel_shift()
 slam_pipeline = kur.slam_pipeline("slam-export/manifest.json").slam_motion().slam_quality()
 checker = kur.action_state_checker(baselines=baselines)
 ```
+
+The same capabilities are grouped under `kur.gameplay` for advanced API discovery, while the
+fluent methods above remain the shortest ordinary path.
 
 ## Try it in five minutes
 

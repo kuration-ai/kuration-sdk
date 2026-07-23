@@ -1,11 +1,12 @@
 # API reference — the public Python surface
 
 Every name importable from `kuration` (plus the public `kuration.torch`,
-`kuration.pixel_shift`, `kuration.action_state_consistency`, and `kuration.slam` modules),
+`kuration.gameplay`, `kuration.pixel_shift`, `kuration.action_state_consistency`, and
+`kuration.slam` modules),
 grouped by layer, with its real
 signature. Optional-extra requirements are tagged (`[methods]`, `[parquet]`, `[array]`,
 `[video]`, `[ray]`,
-`[cloud]`, `[torch]`, `[hf]`, `[zarr]`, `[pixel-shift]`, `[action-state]`, `[slam]`,
+`[cloud]`, `[torch]`, `[hf]`, `[zarr]`, `[gameplay]`, `[pixel-shift]`, `[action-state]`, `[slam]`,
 `[slam-viz]`). For concepts and recipes see the per-layer docs
 ([schema](schema.md) · [dsl](dsl.md) · [adapters](adapters.md) · [strategies](strategies.md) ·
 [output](output.md)) and the [usage cookbook](usage.md).
@@ -28,6 +29,7 @@ objects as noted below.
 | `dataset_report` | `(segments, *, metrics=None, hist_bins=10) -> dict` | per-metric distribution profile (+ tag/group counts) of a scored pool |
 | `slam_pipeline` | `(source, output=None, *, depth_model=None, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, pipeline_factory=None, join_video=False, tolerance=None, mismatch="error", provider=None, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False, **pipeline_options) -> Pipeline` | reconstruct raw video/frames when needed, or open an existing SLAM manifest, and return the ordinary fluent pipeline |
 | `action_state_checker` | `(*, baselines, anomaly_type="action_state") -> Analyzer` | construct the built-in action-state consistency analyzer without a registry import or string component name |
+| `gameplay` | module | grouped facade for advanced Pixel Shift, action-state, and SLAM APIs; heavyweight runtimes remain lazy |
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
 cap and stratified splits); `tags_of(segment) -> iterable` overrides declarative tags;

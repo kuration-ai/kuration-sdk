@@ -41,6 +41,7 @@ dependencies. The implementation ships in the SDK wheel; install its runtime ext
 pip install "kuration-sdk[pixel-shift]"
 ```
 
+Use `kuration-sdk[gameplay]` to install this operator together with action-state and SLAM.
 `cv2` is imported lazily, only inside functions that touch a frame, so importing Kuration
 and discovering the built-in operator remain safe without OpenCV.
 

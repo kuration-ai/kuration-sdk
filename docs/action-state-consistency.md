@@ -18,6 +18,7 @@ Only `action_state` composes with the built-in pixel-shift measurement API.
 pip install "kuration-sdk[action-state]"
 ```
 
+Use `kuration-sdk[gameplay]` to install this analyzer together with Pixel Shift and SLAM.
 The analyzer, validation, and aggregation code ships in the base SDK. The extra installs
 OpenCV for measurements made from frames. For repository development:
 
