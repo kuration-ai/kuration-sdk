@@ -1,10 +1,12 @@
 # API reference — the public Python surface
 
-Every name importable from `kuration` (plus the public `kuration.torch` and `kuration.slam`
-modules), grouped by layer, with its real
+Every name importable from `kuration` (plus the public `kuration.torch`,
+`kuration.pixel_shift`, `kuration.action_state_consistency`, and `kuration.slam` modules),
+grouped by layer, with its real
 signature. Optional-extra requirements are tagged (`[methods]`, `[parquet]`, `[array]`,
 `[video]`, `[ray]`,
-`[cloud]`, `[torch]`, `[hf]`, `[zarr]`, `[slam]`, `[slam-viz]`). For concepts and recipes see the per-layer docs
+`[cloud]`, `[torch]`, `[hf]`, `[zarr]`, `[pixel-shift]`, `[action-state]`, `[slam]`,
+`[slam-viz]`). For concepts and recipes see the per-layer docs
 ([schema](schema.md) · [dsl](dsl.md) · [adapters](adapters.md) · [strategies](strategies.md) ·
 [output](output.md)) and the [usage cookbook](usage.md).
 
@@ -304,11 +306,29 @@ Built-in presets are `numpy-timeseries`, `pytorch-sequences`, and `tabular`. Pre
 are validated through their component descriptors; unknown presets and parameters raise before
 any output is written.
 
+## Built-in domain operators and analyzers
+
+These modules ship in the SDK wheel and register without external plugin discovery. Their heavy
+measurement runtimes remain optional.
+
+| name | signature | does |
+|---|---|---|
+| `kuration.pixel_shift.pixel_shift` | `(pipeline, *, controls=None, boundary="exclude") -> Pipeline` | compositional `aintropy/pixel-shift` operator backed by the transform of the same name (`[pixel-shift]` for OpenCV execution) |
+| `PixelShift` | `(*, controls=None, boundary="exclude")` | bounded batch transform producing per-control shift min/max/mean/count/requested features |
+| `PixelShiftReport` | `()`; `.add_segment(...)`, `.summary()`, `.print_report()` | user-owned cross-segment instance report |
+| `kuration.action_state_consistency.action_state_consistency` | `(*, anomaly_type, baselines) -> ActionStateConsistencyChecker` | factory registered as analyzer `aintropy/action-state-consistency` |
+| `ActionStateConsistencyChecker` | `(config)`; `.add_segment(...)`, `.clip_verdict(source_id)`, `.summary()`, `.print_report()` | classify clips against pixel-shift baselines (`[action-state]` for frame measurement) |
+| `AnomalyChecker` | `(validated_config)` | measurement-agnostic tuple aggregation used by the action-state adapter |
+
+The associated validation and decoding helpers are documented in
+[pixel-shift.md](pixel-shift.md) and
+[action-state-consistency.md](action-state-consistency.md).
+
 ## SLAM reconstruction and curation
 
-`kuration.slam` is public but stays outside the top-level namespace so precomputed trajectory
-curation remains NumPy-only and live model dependencies stay optional. See [slam.md](slam.md) for
-the end-to-end workflow.
+`kuration.slam` is a public built-in module. Import and precomputed trajectory curation remain
+NumPy-only while live model dependencies stay optional. See [slam.md](slam.md) for the end-to-end
+workflow.
 
 | name | signature | does |
 |---|---|---|

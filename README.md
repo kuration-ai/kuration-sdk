@@ -61,12 +61,18 @@ python -m pip install 'kuration-sdk[methods,parquet]'  # selection methods + Par
 python -m pip install 'kuration-sdk[video]'            # PyAV video frames
 python -m pip install 'kuration-sdk[ray]'              # distributed source execution
 python -m pip install 'kuration-sdk[s3]'               # fsspec + the S3 backend
+python -m pip install 'kuration-sdk[pixel-shift]'       # built-in optical-flow operator
+python -m pip install 'kuration-sdk[action-state]'      # built-in consistency analyzer
+python -m pip install 'kuration-sdk[slam]'              # built-in SLAM reconstruction
+python -m pip install 'kuration-sdk[standard-operators]' # every first-party operator runtime
 python -m pip install 'kuration-sdk[all]'              # every runtime integration/backend
 ```
 
 `pipeline.explain()` reports the extras required by a planned run before it reads the full
 dataset. The provider-specific cloud extras are `s3`, `gcs`, and `azure`; `cloud` installs only
 the backend-neutral fsspec layer for environments that manage provider packages separately.
+The [`dev/eval-standard-operators` evaluation](docs/standard-operators-evaluation.md) records the
+packaging measurements and decision questions for the built-in domain capabilities.
 
 ## Try it in five minutes
 
@@ -192,18 +198,19 @@ remaining public-release gates.
 
 ## Contributing
 
-Core changes follow [CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md).
-New maintained extensions start from the independent-distribution template in
+SDK and built-in operator changes follow
+[CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md).
+Independently distributed extensions start from the template in
 [`plugins/`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins).
 
 ```bash
-python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p]'
+python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p,pixel-shift]'
 python -m pytest tests/ -q
 python -m ruff check src tests examples
 python -m mypy
 ```
 
-Validate one repository plugin in the same isolated environment used by CI:
+Validate one external plugin distribution in the same isolated environment used by CI:
 
 ```bash
 python scripts/check_plugin.py plugins/<plugin-name>

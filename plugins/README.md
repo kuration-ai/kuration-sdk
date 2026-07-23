@@ -1,8 +1,9 @@
-# Kuration plugins
+# External Kuration plugin template
 
-This directory is the repository home for domain-specific extensions. Each child directory is an
-independent Python distribution: it owns its dependencies, release metadata, entry point, tests,
-and documentation. Plugin packages are intentionally not included in the `kuration-sdk` wheel.
+This directory contains the independent-distribution template for extensions that should not ship
+in the `kuration-sdk` wheel. On the `dev/eval-standard-operators` branch, the maintained
+pixel-shift, action-state consistency, and SLAM capabilities instead live under `src/kuration`
+and register as SDK built-ins.
 
 Start by copying [`_template`](./_template/), then rename the distribution, import package,
 entry-point key, and registered component namespace. Keep the following contract:
@@ -42,7 +43,7 @@ wheel-content checks, reinstall the wheel, and run `kur-plugin-check` against ev
 point. The shared SDK suite separately verifies discovery, worker reconstruction, provenance,
 registry isolation, bounded transform execution, and cross-mode determinism.
 
-Repository-maintained plugins release independently from core. Use a tag of the form
+Independent plugins release separately from core. Use a tag of the form
 `plugin-<directory>-v<project.version>` (for example `plugin-pixel_shift-v0.1.0`) and publish a
 GitHub release. `.github/workflows/publish-plugin.yml` validates, smoke-tests, and publishes that
 plugin's wheel and sdist through the `pypi-plugins` trusted-publisher environment. A manual run is

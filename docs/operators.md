@@ -144,12 +144,13 @@ Python callers use `list_components("operator")` and
 schemas, dependency hints, capabilities, package and module identity, stability metadata, and a
 code fingerprint.
 
-## 5. Package as a plugin
+## 5. Choose built-in or external packaging
 
-For a plugin maintained in this repository, copy
+First-party operators accepted into the standard SDK live under `src/kuration`, register during
+SDK import, and declare optional framework requirements through SDK extras. For an independently
+versioned or external plugin, copy
 [`plugins/_template`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins/_template)
-to `plugins/<plugin-name>`. Each child remains a separate distribution, so its dependencies and
-release lifecycle do not enlarge the SDK wheel. An external package uses the same layout:
+to `plugins/<plugin-name>`. The external package uses this layout:
 
 ```text
 acme-kuration/

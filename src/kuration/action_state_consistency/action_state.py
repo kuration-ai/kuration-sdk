@@ -1,15 +1,10 @@
-"""The "action_state" anomaly-type adapter: the ONLY module in this package that ever
-references kuration_pixel_shift, and even then only lazily, inside the functions/methods
-that actually need it -- never at module import time. Merely importing this module (or
-the package as a whole) never requires kuration-plugin-pixel-shift to be installed; only
-actually constructing an ActionStateConsistencyChecker, calling its add_segment(), or
-calling load_baselines_from_reference() does.
+"""The ``action_state`` analyzer built on the SDK's pixel-shift measurements.
 
 Builds on anomaly_checker.AnomalyChecker for everything generic (baseline validation, the
 consistency check, clip aggregation, reporting) -- this module adds only what's specific
 to checking pixel_shift's own measurements: validating baseline control names against
-kuration_pixel_shift.ALL_CONTROLS, and discovering instances via kuration_pixel_shift's
-own public iter_instances/validate_segment_inputs APIs rather than re-deriving isolated-press
+``kuration.pixel_shift.ALL_CONTROLS``, and discovering instances via pixel-shift's public
+``iter_instances``/``validate_segment_inputs`` APIs rather than re-deriving isolated-press
 detection, boundary handling, or optical-flow logic.
 """
 from __future__ import annotations
@@ -46,19 +41,14 @@ ACTION_STATE_ANALYZER_PARAMETERS = {
 
 
 def _require_pixel_shift():
-    try:
-        import kuration_pixel_shift
-    except ImportError as e:
-        raise ImportError(
-            "action_state anomaly detection requires kuration-plugin-pixel-shift. "
-            "Install it with `pip install \"kuration-plugin-action-state-consistency[action_state]\"`."
-        ) from e
-    return kuration_pixel_shift
+    from .. import pixel_shift
+
+    return pixel_shift
 
 
 def validate_action_state_baselines(baselines) -> dict:
     """Same shape validation as anomaly_checker.validate_baselines, plus checking every
-    control name against kuration_pixel_shift.ALL_CONTROLS -- this is the one place that
+    control name against ``kuration.pixel_shift.ALL_CONTROLS`` -- this is the one place that
     ties baseline validation specifically to pixel_shift's DIAMOND control vocabulary."""
     validated = validate_baselines(baselines)
     all_controls = _require_pixel_shift().ALL_CONTROLS
@@ -114,10 +104,7 @@ def load_baselines_from_reference(reference: dict, *, controls: Sequence[str] | 
 
 
 class ActionStateConsistencyChecker(AnomalyChecker):
-    """AnomalyChecker specialized for pixel_shift measurements. See this module's
-    docstring for why kuration_pixel_shift is imported lazily. Registration and package
-    import never require it; construction validates its control vocabulary, and
-    add_segment() uses its measurement APIs. Verdict/report methods need no further access."""
+    """AnomalyChecker specialized for the SDK's pixel-shift measurements."""
 
     def __init__(self, config):
         super().__init__(validate_action_state_config(config))
@@ -140,7 +127,7 @@ class ActionStateConsistencyChecker(AnomalyChecker):
         ``controls`` defaults to every control with a configured baseline; passing an
         explicit subset must still be a subset of the configured baselines -- there is
         nothing to check a control against without one."""
-        from kuration_pixel_shift import (
+        from ..pixel_shift import (
             iter_instances,
             validate_boundary,
             validate_color_space,

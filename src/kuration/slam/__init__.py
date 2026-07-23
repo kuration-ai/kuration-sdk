@@ -43,7 +43,7 @@ from .workflow import (
 
 
 PACKAGE = "kuration-sdk"
-INSTALL_HINT = "pip install kuration-sdk"
+INSTALL_HINT = 'pip install "kuration-sdk[slam]"'
 ADAPTER_NAME = "aintropy/slam-trajectory"
 TRANSFORM_NAME = "aintropy/slam-motion"
 OPERATOR_NAME = "aintropy/slam-motion-diversity"
@@ -110,6 +110,7 @@ def register() -> None:
 
     common: dict[str, Any] = {
         "package": PACKAGE,
+        "extra": "slam",
         "install_hint": INSTALL_HINT,
         "version": "1",
         "stability": "experimental",

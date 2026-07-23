@@ -3,10 +3,8 @@ check, and per-clip (source_id) verdict aggregation.
 
 This module knows NOTHING about pixel_shift, the DIAMOND action-vector format, or any
 specific measurement source -- it operates purely on (source_id, control, cell_key,
-frame, shift) tuples handed to it by a caller. That's deliberate: this package's whole
-point is to only pull in kuration_pixel_shift when someone actually asks for
-action-state-specific anomaly detection, not merely by installing/importing this
-package. A different, future anomaly type that has nothing to do with pixel shift could
+frame, shift) tuples handed to it by a caller. A different, future anomaly type that has
+nothing to do with pixel shift could
 reuse everything in this module without pixel_shift ever being imported; only a
 type-specific adapter (like action_state.py) needs to know how to DISCOVER those tuples
 from raw data, and only THAT adapter needs its own measurement source installed.
@@ -53,7 +51,7 @@ def validate_baselines(baselines) -> dict:
     """Validate a ``{control: {cell_key: {expected_sign, min, max}}}`` baseline dict,
     generically -- ``control``/``cell_key`` are just non-empty string labels here. A
     specific adapter (e.g. action_state.py) is responsible for checking they're valid
-    values for its own vocabulary (e.g. kuration_pixel_shift.ALL_CONTROLS); this function
+    values for its own vocabulary (e.g. ``kuration.pixel_shift.ALL_CONTROLS``); this function
     has no opinion on what a "control" is.
 
     ``min``/``max`` are non-negative MAGNITUDE bounds (not signed), checked against
@@ -138,7 +136,7 @@ def _validate_segment_id(segment_id, expected_length: int) -> tuple[str, int, in
 
 class AnomalyChecker:
     """Explicit, user-owned accumulator (same pattern as
-    kuration_pixel_shift.PixelShiftReport): classifying a clip needs to aggregate across
+    ``kuration.pixel_shift.PixelShiftReport``): classifying a clip needs to aggregate across
     every segment belonging to it, which a stateless per-segment SDK transform cannot do.
 
     Generic -- has no opinion on where instances come from. Construct it with an already
@@ -166,7 +164,7 @@ class AnomalyChecker:
         self.anomaly_type = validated_config["anomaly_type"]
         self.baselines = validated_config["baselines"]
         # A press's global frame position can be "owned" by more than one overlapping
-        # window (see kuration_pixel_shift's README, "Input and segment-boundary
+        # window (see the pixel-shift guide, "Input and segment-boundary
         # contract") -- same tie-breaker PixelShiftReport uses.
         self._seen_instances: set = set()
         self._clips_seen: set = set()

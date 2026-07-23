@@ -5,7 +5,7 @@ key/mouse press found in a dataset recorded in the DIAMOND/TeaPearce 51-dim acti
 convention (11 keys + 2 clicks + 23-bin mouse_x one-hot + 15-bin mouse_y one-hot). It makes
 no judgment about whether the measured shift is "consistent" with anything — it only
 reports what pixel motion actually happened for a given control. That's deliberate: a
-separate [action-state consistency analyzer](../action_state_consistency/README.md) layers
+separate [action-state consistency analyzer](action-state-consistency.md) layers
 config-driven controls, expected directions, and baselines over these measurements. Keeping
 that stateful judgment separate makes this transform reusable on its own.
 
@@ -35,21 +35,20 @@ that stateful judgment separate makes this transform reusable on its own.
 ## Install
 
 This operator measures optical flow with `cv2`, which is not part of Kuration's core
-dependencies. The independently released plugin owns that dependency. Install it with:
+dependencies. The implementation ships in the SDK wheel; install its runtime extra with:
 
 ```bash
-pip install kuration-plugin-pixel-shift
+pip install "kuration-sdk[pixel-shift]"
 ```
 
-`cv2` is imported lazily, only inside functions that touch a frame, so plugin discovery
-remains lightweight. The core SDK can be installed without this distribution or OpenCV.
+`cv2` is imported lazily, only inside functions that touch a frame, so importing Kuration
+and discovering the built-in operator remain safe without OpenCV.
 
-For repository development, install the SDK and plugin together, then run only this
-distribution's tests:
+For repository development:
 
 ```bash
-python -m pip install -e . -e 'plugins/pixel_shift[test]'
-python -m pytest plugins/pixel_shift/tests -q
+python -m pip install -e ".[dev,pixel-shift]"
+python -m pytest tests/test_pixel_shift.py -q
 ```
 
 ## Usage
@@ -73,8 +72,7 @@ result = pipeline.collect(n=1000)
 
 Registered under `aintropy/pixel-shift` for both the batch transform (`kur-describe
 transform aintropy/pixel-shift`) and the compositional operator (`kur-describe operator
-aintropy/pixel-shift`) -- the Python module itself stays `pixel_shift` (import-identifier
-convention), only the registration string is hyphenated.
+aintropy/pixel-shift`). The direct Python API lives at `kuration.pixel_shift`.
 
 **For the fuller per-instance report** — `PixelShiftReport` is a plain object you build
 yourself, by calling `add_segment()` directly over your own frames/actions, outside pipeline
@@ -82,7 +80,7 @@ execution (see "Why the report is a separate object" below for why it isn't just
 the transform above):
 
 ```python
-import kuration_pixel_shift as pixel_shift
+from kuration import pixel_shift
 
 report = pixel_shift.PixelShiftReport()
 for frames, actions, segment_id in your_own_segments:
@@ -114,7 +112,7 @@ same process -- just construct a new one.
 
 ## Input and segment-boundary contract
 
-The plugin fails early on malformed data instead of allowing `argmax`, OpenCV, or an
+The operator fails early on malformed data instead of allowing `argmax`, OpenCV, or an
 all-zero result to hide the cause. Actions must be a finite numeric `(T, 51)` array: the
 11 key and 2 click fields are binary, and both mouse ranges are strict one-hot rows.
 Frames must be `(T, H, W, 3)`, have the same `T`, use `uint8` or `float32`, contain only
@@ -218,14 +216,15 @@ layer is built against was itself measured at exactly this transition (see
 shift measurably decays over the frames following a key release, so measuring any other
 point in the sequence would not be comparable to that calibration at all.
 
-## Why this lives in `plugins/`, not `src/kuration/` or `examples/`
+## Evaluation-branch placement
 
 This is intentionally domain-specific — it only works on datasets using the DIAMOND
 action-vector layout, and (unlike `examples/02_robotics_action_aware.py`) it has no
 synthetic self-contained demo mode; it's meant to run against real recorded gameplay.
-`CONTRIBUTING.md`'s own design rule keeps domain knowledge out of the shared core, and the
-existing `examples/` are all self-generated-data demonstrations, not real-dataset tooling.
-`plugins/pixel_shift` is an independent distribution with its own dependencies, tests,
-documentation, and `kuration.plugins` entry point. Installing its wheel makes
-`kur-list`/`kur-describe` discover it automatically without adding plugin code or OpenCV to
-the `kuration-sdk` wheel.
+
+On `dev/eval-standard-operators`, the implementation lives under
+`src/kuration/pixel_shift` and is included in the `kuration-sdk` wheel. It registers as a
+built-in component, so `Registry.snapshot()`, `kur-list`, and `kur-describe` see it without
+plugin entry-point discovery. OpenCV remains isolated in the `pixel-shift` extra so this
+branch can evaluate the usability and packaging cost of a built-in domain operator
+separately.

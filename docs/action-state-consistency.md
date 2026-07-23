@@ -1,47 +1,34 @@
 # Kuration Anomaly Detection
 
 A generic clip-level anomaly-detection core, plus one concrete anomaly type built on top
-of it: **action_state**, which checks `kuration-plugin-pixel-shift`'s per-instance pixel
+of it: **action_state**, which checks Kuration's pixel-shift operator's per-instance pixel
 shift measurements against baselines you supply, and classifies every clip in your dataset
 as **CONSISTENT**, **INCONSISTENT**, or **INCONCLUSIVE**.
 
-`kuration-plugin-pixel-shift` measures what pixel motion happened for every isolated
+`kuration.pixel_shift` measures what pixel motion happened for every isolated
 key/mouse press — deliberately making no judgment about whether that motion was
 "consistent" with anything. `action_state` is that missing judgment layer. But this
-package is **not** a wrapper around pixel_shift: the generic core
-(`kuration_action_state_consistency.anomaly_checker`) has no dependency on pixel_shift at
-all, and never imports it, anywhere, at any time. Only `action_state` — the specific
-anomaly type that happens to check pixel-shift measurements — reaches for pixel_shift, and
-only lazily, the moment you actually use it. Installing or importing this package never
-requires `kuration-plugin-pixel-shift` to be installed; only constructing an
-`ActionStateConsistencyChecker` (or calling `load_baselines_from_reference`) does.
+module is **not** a wrapper around pixel_shift: the generic core
+(`kuration.action_state_consistency.anomaly_checker`) has no dependency on optical flow.
+Only `action_state` composes with the built-in pixel-shift measurement API.
 
 ## Install
 
 ```bash
-# Generic anomaly-checking core only -- no pixel_shift dependency at all
-pip install kuration-plugin-action-state-consistency
-
-# With the action_state anomaly type (pulls in kuration-plugin-pixel-shift)
-pip install "kuration-plugin-action-state-consistency[action_state]"
+pip install "kuration-sdk[action-state]"
 ```
 
-For repository development, install the SDK and both plugins together, then run only
-this distribution's tests:
+The analyzer, validation, and aggregation code ships in the base SDK. The extra installs
+OpenCV for measurements made from frames. For repository development:
 
 ```bash
-python -m pip install -e . -e 'plugins/pixel_shift[test]' -e 'plugins/action_state_consistency[test]'
-python -m pytest plugins/action_state_consistency/tests -q
+python -m pip install -e ".[dev,action-state]"
+python -m pytest tests/test_action_state_consistency.py tests/test_anomaly_checker.py -q
 ```
-
-`kuration-plugin-pixel-shift` is deliberately not part of `[test]` (it isn't published
-anywhere yet, and this repo's own per-plugin CI validation installs each plugin in
-isolation) -- installing it separately, as above, is what makes the action_state-specific
-tests run instead of skip.
 
 ## What gets registered with kuration-sdk
 
-This package registers its real capability as the analyzer
+The SDK registers this capability as the built-in analyzer
 `aintropy/action-state-consistency`. An analyzer is a discoverable, user-owned stateful
 object: unlike a batch transform, it may accumulate evidence across multiple segments
 before `summary()` can return a result. Kuration validates and constructs it through
@@ -54,19 +41,17 @@ kur-list analyzers
 kur-describe analyzer aintropy/action-state-consistency --json
 ```
 
-Registration only stores a dependency-light factory; it does not construct the checker.
-Plugin discovery therefore still works when the optional pixel-shift dependency is absent,
-while construction produces the same actionable installation error as direct class use.
+Registration only stores a dependency-light factory; it does not run optical flow.
+Discovery and analyzer construction therefore work without OpenCV.
 
 ## Structure
 
 ```
-kuration_action_state_consistency/
+kuration/action_state_consistency/
 ├── action_state.py      # the "action_state" anomaly type: validates baselines against
-│                        # kuration_pixel_shift.ALL_CONTROLS, discovers instances via
+│                        # kuration.pixel_shift.ALL_CONTROLS, discovers instances via
 │                        # pixel_shift's public iter_instances API, and builds an
-│                        # AnomalyChecker on top. The ONLY file that references
-│                        # kuration_pixel_shift, and only inside function bodies.
+│                        # AnomalyChecker on top.
 └── anomaly_checker.py   # generic core -- baseline validation, the consistency check,
                          # clip-level verdict aggregation. Operates on plain
                          # (source_id, control, cell_key, frame, shift) tuples. No
@@ -74,8 +59,7 @@ kuration_action_state_consistency/
 ```
 
 If a future anomaly type has nothing to do with pixel shift, it can reuse
-`anomaly_checker.AnomalyChecker` directly without ever installing pixel_shift — only an
-`action_state`-shaped workload needs `[action_state]`.
+`anomaly_checker.AnomalyChecker` directly without installing OpenCV.
 
 ## Config
 
@@ -92,7 +76,7 @@ config = {
 }
 ```
 
-- **Keys** are `kuration_pixel_shift.ALL_CONTROLS` names (`W`, `S`, `A`, `D`,
+- **Keys** are `kuration.pixel_shift.ALL_CONTROLS` names (`W`, `S`, `A`, `D`,
   `MOUSE_X_POS`, `MOUSE_X_NEG`, `MOUSE_Y_POS`, `MOUSE_Y_NEG`) -- checked by
   `validate_action_state_baselines`, the `action_state`-specific layer. The generic core's
   own `validate_baselines` accepts any non-empty string as a control name; it has no
@@ -116,12 +100,11 @@ output (`{control_lower: {cell_key: {"reliable", "floor", "ceiling", "expected_s
 `floor`/`ceiling` become `min`/`max`, and any cell marked `reliable: false` (not enough
 reference samples to trust) is skipped entirely, rather than being checked against an
 untrustworthy value. This function is part of `action_state` (it needs
-`kuration_pixel_shift.ALL_CONTROLS` to map control names), so it requires the
-`[action_state]` extra.
+`kuration.pixel_shift.ALL_CONTROLS` to map control names).
 
 ```python
 import json
-from kuration_action_state_consistency import load_baselines_from_reference
+from kuration.action_state_consistency import load_baselines_from_reference
 
 with open("action_consistency_reference.json") as f:
     reference = json.load(f)
@@ -154,7 +137,7 @@ print(checker.clip_verdict("clip_042"))  # "consistent" | "inconsistent" | "inco
 ```
 
 Direct construction with
-`kuration_action_state_consistency.ActionStateConsistencyChecker(config)` remains available
+`kuration.action_state_consistency.ActionStateConsistencyChecker(config)` remains available
 for callers that do not need registry discovery.
 
 `controls` defaults to every control with a configured baseline; passing an explicit
@@ -163,18 +146,16 @@ against). Every other keyword `add_segment()` accepts (`color_space`, `lookbehin
 `lookahead_actions`, `lookahead_frames`, `boundary`) is passed straight through to
 pixel_shift's own instance-finding — see its README for what each means.
 
-If `kuration-plugin-pixel-shift` isn't installed, constructing `ActionStateConsistencyChecker`
-(or calling `load_baselines_from_reference`) raises a clear `ImportError` naming the
-`[action_state]` extra to install — not a bare `ModuleNotFoundError`, and not a silent
-failure elsewhere.
+If OpenCV is absent, analyzer construction and baseline processing still work. An operation
+that actually measures optical flow raises a clear error naming
+`pip install "kuration-sdk[action-state]"`.
 
 ### Using the generic core directly
 
-For a workload that isn't about pixel_shift at all, build on `AnomalyChecker` directly --
-this never imports or requires `kuration-plugin-pixel-shift`:
+For a workload that isn't about pixel_shift at all, build on `AnomalyChecker` directly:
 
 ```python
-from kuration_action_state_consistency import AnomalyChecker, validate_config
+from kuration.action_state_consistency import AnomalyChecker, validate_config
 
 config = validate_config({"anomaly_type": "my_other_check", "baselines": {...}})
 checker = AnomalyChecker(config)
@@ -200,16 +181,9 @@ This is deliberately **not** the same bar as "every configured control fired at 
 once": a clip that only ever exercised W, with no violations, is CONSISTENT even if the
 baselines also configured S/A/D and none of those ever appeared in this particular clip.
 
-## Why the generic core and the action_state adapter are separate files (and why pixel_shift is optional)
+## Why the generic core and the action_state adapter are separate files
 
-pixel_shift and this package are **independent** — pixel_shift never depends on this
-package, and this package's generic core never depends on pixel_shift. They only compose
-together at the point where a caller specifically wants `action_state` anomaly detection.
-An earlier version of this plugin imported `kuration_pixel_shift` at module top level and
-listed it as a hard dependency, which meant merely installing or importing this package
-pulled pixel_shift in regardless of whether you wanted action-state checking at all.
-Splitting the generic verdict-aggregation logic (`anomaly_checker.py`) from the
-pixel_shift-specific instance-discovery logic (`action_state.py`), and moving the
-pixel_shift import inside the functions that actually use it, means a future anomaly type
-unrelated to pixel shift can reuse the generic core with zero pixel_shift footprint, and
-installing this package for that purpose never needs `kuration-plugin-pixel-shift` at all.
+The generic verdict-aggregation logic (`anomaly_checker.py`) remains independent from the
+pixel-shift-specific instance-discovery logic (`action_state.py`). On this evaluation
+branch they ship in the same SDK wheel, but the separation still lets other analyzers
+reuse tuple aggregation without depending on the DIAMOND vocabulary or OpenCV runtime.

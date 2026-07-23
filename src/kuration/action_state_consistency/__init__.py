@@ -1,13 +1,10 @@
-"""Separately packaged anomaly-detection extension for Kuration.
+"""Built-in action-state consistency analysis for Kuration.
 
 anomaly_checker.py is a generic, measurement-source-agnostic core (baseline validation,
 the sign+magnitude consistency check, per-clip verdict aggregation) with no dependency on
-kuration_pixel_shift at all. action_state.py is the "action_state" anomaly type built on
-top of it -- Operator 2 of 2, checking kuration_pixel_shift's own pixel-shift
-measurements against user-supplied baselines -- and is the ONLY place in this package
-that ever references kuration_pixel_shift, lazily, only when actually invoked. Importing
-this package never requires kuration-plugin-pixel-shift to be installed; only using the
-action_state pieces does. See action_state.py's module docstring for the full mechanism.
+the pixel-shift implementation at all. action_state.py is the "action_state" anomaly type
+built on top of it, checking the SDK's pixel-shift measurements against user-supplied
+baselines.
 
 register() exposes the real ActionStateConsistencyChecker through kuration-sdk's analyzer
 registry. Analyzer factories are discoverable direct APIs for user-owned, cross-segment
@@ -41,11 +38,12 @@ def register() -> None:
 
     common = {
         "version": "1",
-        "package": "kuration-plugin-action-state-consistency",
+        "package": "kuration-sdk",
         "stability": "experimental",
-        "install_hint": 'pip install "kuration-plugin-action-state-consistency[action_state]"',
-        "documentation": "https://github.com/aintropy-ai/kuration-sdk/tree/main/"
-                         "plugins/action_state_consistency#usage",
+        "extra": "action-state",
+        "install_hint": 'pip install "kuration-sdk[action-state]"',
+        "documentation": "https://aintropy-ai.github.io/kuration-sdk/"
+                         "action-state-consistency/",
         "capabilities": {"stateful": True, "cross_segment": True},
     }
     if ANALYZER_NAME not in default_registry.names("analyzer"):

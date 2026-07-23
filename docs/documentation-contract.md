@@ -140,11 +140,11 @@ The reference must cover these methods even though they are not individual membe
 
 ### Framework integration
 
-`kuration.torch.ShardDataset` is public and supported. `kuration.slam` is also public: its
-manifest, trajectory transforms, point-cloud artifact, preparation helpers, and native
-`SLAMPipeline`/`SLAMReconstruction` interfaces are documented in `docs/api.md` and
-`docs/slam.md`. Both modules stay out of the top-level namespace so importing `kuration` does not
-imply a PyTorch or SLAM-runtime dependency.
+`kuration.torch.ShardDataset` is public and supported. The built-in
+`kuration.pixel_shift`, `kuration.action_state_consistency`, and `kuration.slam` modules are also
+public. Their direct APIs are documented in `docs/api.md` and their focused guides. Importing
+`kuration` registers these capabilities but must not import OpenCV, PyTorch, FAISS, or another
+optional runtime.
 
 Other module members that are absent from `kuration.__all__` are internal unless a future
 contract explicitly adds them. Underscore-prefixed classes, functions, methods, and CLI helpers

@@ -205,8 +205,9 @@ def test_registration_exposes_complete_descriptors():
     operator = describe_component("operator", OPERATOR_NAME, registry=snapshot)
     quality = describe_component("transform", QUALITY_TRANSFORM_NAME, registry=snapshot)
     assert adapter["parameters"]["required"] == ["manifest"]
-    assert "extra" not in adapter
-    assert adapter["install_hint"] == "pip install kuration-sdk"
+    assert adapter["extra"] == "slam"
+    assert adapter["package"] == "kuration-sdk"
+    assert adapter["install_hint"] == 'pip install "kuration-sdk[slam]"'
     assert transform["package"] == "kuration-sdk"
     assert transform["description"]
     assert operator["parameters"]["properties"]["bins"]["minimum"] == 2

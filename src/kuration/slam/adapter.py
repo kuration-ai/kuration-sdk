@@ -119,9 +119,8 @@ def input_slam(
     provider=None,
 ):
     """Open an exported SLAM manifest as a fluent Kuration pipeline."""
-    # The native module is also an installed plugin, but direct library users should not need to
-    # know whether ambient entry-point discovery has already run. Registration is idempotent and
-    # the precomputed path only registers NumPy-backed bounded components.
+    # Registration is idempotent, which also keeps this direct API safe if an isolated test
+    # registry or unusual import order invokes the module explicitly.
     from . import register
 
     register()

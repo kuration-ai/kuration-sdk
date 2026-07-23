@@ -157,4 +157,14 @@ __all__ = [
     "describe_component", "ExecutionPlan", "ARTIFACT_FORMAT_VERSION",
     "DatasetWriteResult", "ExperimentResult", "DatasetReport", "ValidationResult",
     "JOB_SCHEMA_VERSION", "migrate", "migrate_job", "migrate_config",
+    "pixel_shift", "action_state_consistency", "slam",
 ]
+
+# First-party domain capabilities are built into this evaluation branch. Their optional
+# frameworks remain lazy, but their descriptors are available in every Registry snapshot
+# without scanning the external ``kuration.plugins`` entry-point group.
+from . import action_state_consistency, pixel_shift, slam
+
+pixel_shift.register()
+action_state_consistency.register()
+slam.register()

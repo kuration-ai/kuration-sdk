@@ -1,25 +1,23 @@
 """Tests for the action_state adapter: baseline validation against pixel_shift's control
 vocabulary, per-instance consistency checking via real optical flow, per-clip verdict
-aggregation. Requires kuration-plugin-pixel-shift -- this whole file skips gracefully
-(not a hard failure) when it isn't installed, since the [action_state] extra is optional.
-See test_anomaly_checker.py for the pixel_shift-independent generic core's own tests.
+aggregation. OpenCV remains an optional SDK extra for optical-flow execution.
 """
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-pytest.importorskip("kuration_pixel_shift")
+pytest.importorskip("cv2")
 
 from kuration import get_analyzer
-import kuration_action_state_consistency as asc
-from kuration_action_state_consistency import (
+from kuration import action_state_consistency as asc
+from kuration.action_state_consistency import (
     ActionStateConsistencyChecker,
     load_baselines_from_reference,
     validate_action_state_baselines,
     validate_action_state_config,
 )
-from kuration_pixel_shift import diamond_action_decode as dad
+from kuration.pixel_shift import diamond_action_decode as dad
 
 ACTION_DIM = dad.ACTION_WIDTH
 
@@ -254,7 +252,7 @@ def test_clip_verdict_raises_for_an_unknown_clip():
 
 
 def test_deduplicates_the_same_press_across_overlapping_windows():
-    """Same overlapping-window scenario as kuration_pixel_shift's own regression test:
+    """Same overlapping-window scenario as pixel_shift's own regression test:
     a press's global start can fall within more than one overlapping window's local
     range, so each window's add_segment() call would otherwise independently record it.
     Global timeline, frames 0..9: an isolated W press at global frame 5. Window A: global

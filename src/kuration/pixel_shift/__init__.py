@@ -1,4 +1,4 @@
-"""Separately packaged pixel-shift extension for Kuration."""
+"""Built-in pixel-shift operators for DIAMOND-compatible action streams."""
 
 from __future__ import annotations
 
@@ -32,9 +32,11 @@ def register() -> None:
 
     common = {
         "version": "1",
-        "package": "kuration-plugin-pixel-shift",
+        "package": "kuration-sdk",
         "stability": "experimental",
-        "install_hint": "pip install kuration-plugin-pixel-shift",
+        "extra": "pixel-shift",
+        "install_hint": 'pip install "kuration-sdk[pixel-shift]"',
+        "documentation": "https://aintropy-ai.github.io/kuration-sdk/pixel-shift/",
     }
     if COMPONENT_NAME not in default_registry.names("transform"):
         register_batch_transform(

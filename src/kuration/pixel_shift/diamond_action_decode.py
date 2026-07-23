@@ -24,12 +24,9 @@ from functools import lru_cache
 import numpy as np
 
 
-# cv2 is imported lazily, inside the two functions that actually touch a frame -- this
-# module is imported unconditionally by kur-list/kur-describe (entry-point scanning loads
-# every registered plugin module to read its descriptors), so an eager top-level `import
-# cv2` would break plugin discovery for EVERY kuration-sdk user the moment opencv isn't
-# installed, not just users of this plugin. Matches this repo's own stated convention
-# (the plugin distribution owns this optional framework dependency).
+# cv2 is imported lazily, inside the two functions that actually touch a frame. The
+# built-in operator is registered for every SDK installation, so an eager import would
+# break core-only users that do not install the pixel-shift extra.
 def _require_cv2():
     try:
         import cv2
@@ -38,7 +35,7 @@ def _require_cv2():
     except ImportError as e:
         raise ImportError(
             "pixel_shift requires opencv (cv2) for optical-flow measurement. "
-            "Install or repair it with `pip install kuration-plugin-pixel-shift`."
+            "Install or repair it with `pip install \"kuration-sdk[pixel-shift]\"`."
         ) from e
 
 

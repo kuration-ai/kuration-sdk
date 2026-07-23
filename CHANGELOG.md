@@ -5,6 +5,9 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+- Added pixel shift, action-state consistency, and SLAM to the SDK wheel as namespaced built-in
+  components for the `dev/eval-standard-operators` evaluation. Their descriptors are available
+  without plugin entry-point discovery; OpenCV, Torch, FAISS, and related runtimes remain extras.
 - Integrated a full native `kuration.slam.SLAMPipeline` for optional video/frame reconstruction,
   stable model/config provenance, resumable portable exports, trajectory quality and diversity
   curation, point-cloud reduction, preflight, and `kur-slam`. Precomputed manifests remain a

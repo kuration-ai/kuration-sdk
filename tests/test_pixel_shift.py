@@ -1,4 +1,4 @@
-"""Tests for the pixel_shift plugin: diamond_action_decode.py's action-decode / isolated-
+"""Tests for the built-in pixel_shift capability: action decoding, isolated-
 press-detection logic, and pixel_shift_operator.py's aggregation, registration, and
 pipeline integration. Mirrors this repo's own testing conventions (see
 tests/test_media_transforms_execution.py's FakeVideoProvider pattern, and
@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import json
 import sys
-from importlib.metadata import entry_points
 
 import numpy as np
 import pytest
 
-import kuration_pixel_shift as pixel_shift
+from kuration import pixel_shift
 from kuration import (
     FrameRef,
     VideoMetadata,
@@ -25,9 +24,9 @@ from kuration import (
     list_components,
 )
 
-from kuration_pixel_shift import diamond_action_decode as dad
-from kuration_pixel_shift import pixel_shift_operator as pso
-from kuration_pixel_shift import register
+from kuration.pixel_shift import diamond_action_decode as dad
+from kuration.pixel_shift import pixel_shift_operator as pso
+from kuration.pixel_shift import register
 
 register()
 
@@ -766,8 +765,8 @@ def test_pipeline_halo_counts_boundary_press_once(
 
 
 # ---------------------------------------------------------------------------------------
-# Registration + discovery -- both the `kuration.plugins`-entry-point-registered
-# components resolve through the ordinary Python API and the kur-list/kur-describe CLI
+# Registration + discovery -- both built-in components resolve through the ordinary
+# Python API and the kur-list/kur-describe CLI without plugin entry-point scanning.
 # ---------------------------------------------------------------------------------------
 
 
@@ -780,6 +779,8 @@ def test_pixel_shift_registered_as_both_operator_and_transform():
 
     op = describe_component("operator", "aintropy/pixel-shift")
     assert op["version"] == "1"
+    assert op["package"] == "kuration-sdk"
+    assert op["extra"] == "pixel-shift"
     assert "controls" in op["parameters"]["properties"]
     assert op["parameters"]["properties"]["boundary"]["default"] == "exclude"
 
@@ -788,17 +789,7 @@ def test_pixel_shift_registered_as_both_operator_and_transform():
     assert transform["description"]  # non-empty; was missing before this PR's fix
 
 
-def test_plugin_entry_point_and_isolated_snapshot_contract():
-    installed = entry_points()
-    candidates = (
-        installed.select(group="kuration.plugins", name="pixel_shift")
-        if hasattr(installed, "select")
-        else [
-            point for point in installed.get("kuration.plugins", ()) if point.name == "pixel_shift"
-        ]
-    )
-    assert [point.value for point in candidates] == ["kuration_pixel_shift:register"]
-
+def test_builtin_and_isolated_snapshot_contract():
     isolated = default_registry.snapshot()
     assert isolated.get("operator", "aintropy/pixel-shift") is pso.pixel_shift
     assert isolated.get("transform", "aintropy/pixel-shift") is pso.PixelShift

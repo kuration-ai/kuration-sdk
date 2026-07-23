@@ -1,23 +1,18 @@
 """Tests for the generic anomaly_checker core -- baseline validation, the sign+magnitude
 consistency check, and per-clip verdict aggregation. Deliberately uses only synthetic
-(source_id, control, cell_key, frame, shift) tuples, never kuration_pixel_shift -- this
-file must be able to run and pass with kuration-plugin-pixel-shift NOT installed at all,
-proving the generic core is genuinely measurement-source-agnostic. See
-test_action_state.py for the pixel_shift-specific adapter's own tests.
+(source_id, control, cell_key, frame, shift) tuples and remains independent of OpenCV.
 """
 from __future__ import annotations
-
-import sys
 
 import numpy as np
 import pytest
 
-from kuration_action_state_consistency import (
+from kuration.action_state_consistency import (
     AnomalyChecker,
     validate_baselines,
     validate_config,
 )
-from kuration_action_state_consistency.anomaly_checker import _is_consistent
+from kuration.action_state_consistency.anomaly_checker import _is_consistent
 
 
 def test_generic_validate_baselines_accepts_any_string_control():
@@ -165,77 +160,50 @@ def test_generic_anomaly_checker_record_instance_rejects_nonfinite_shift(bad):
     assert checker.clip_verdict("clip1") == "consistent"
 
 
-def test_register_adds_the_real_analyzer_without_pixel_shift():
-    """Discovery registers the real stateful capability without constructing it."""
-    from kuration import default_registry
-    import kuration_action_state_consistency as asc
+def test_register_adds_the_real_builtin_analyzer():
+    """The built-in analyzer is present without plugin discovery."""
+    from kuration import action_state_consistency as asc, default_registry
 
     asc.register()  # idempotent -- must not raise even if already registered
     assert asc.ANALYZER_NAME in default_registry.names("analyzer")
     descriptor = default_registry.descriptor("analyzer", asc.ANALYZER_NAME)
     assert descriptor.capabilities == {"stateful": True, "cross_segment": True}
+    assert descriptor.package == "kuration-sdk"
+    assert descriptor.extra == "action-state"
     assert "aintropy/consistency-check" not in default_registry.names("transform")
     assert "aintropy/consistency-check" not in default_registry.names("operator")
 
 
-def test_generic_anomaly_checker_is_importable_and_usable_without_pixel_shift_installed(monkeypatch):
-    """The core bifurcation guarantee: block kuration_pixel_shift from being importable at
-    all, then confirm the generic anomaly_checker module (and AnomalyChecker itself) still
-    imports and works fully -- it never references kuration_pixel_shift anywhere."""
-    monkeypatch.setitem(sys.modules, "kuration_pixel_shift", None)
-    for name in list(sys.modules):
-        if name.startswith("kuration_action_state_consistency"):
-            monkeypatch.delitem(sys.modules, name)
+def test_generic_anomaly_checker_is_usable_without_opencv(monkeypatch):
+    """Generic tuple aggregation does not need the pixel measurement runtime."""
+    monkeypatch.setitem(__import__("sys").modules, "cv2", None)
+    from kuration.action_state_consistency import anomaly_checker
 
-    import kuration_action_state_consistency.anomaly_checker as fresh_anomaly_checker
-
-    config = fresh_anomaly_checker.validate_config(
+    config = anomaly_checker.validate_config(
         {"anomaly_type": "x", "baselines": {"X": {"1": {"expected_sign": 1, "min": 0.0, "max": 10.0}}}}
     )
-    checker = fresh_anomaly_checker.AnomalyChecker(config)
+    checker = anomaly_checker.AnomalyChecker(config)
     source_id, start_idx, _ = checker.resolve_segment(("clip1", 0, 5), expected_length=5)
     checker.record_instance(source_id, "X", "1", start_idx + 1, 5.0)
     assert checker.clip_verdict("clip1") == "consistent"
 
 
-def test_register_succeeds_without_pixel_shift_installed(monkeypatch):
-    """The exact scenario kuration-sdk's plugin discovery hits in a core-only install:
-    kuration_pixel_shift unavailable, register() still called unconditionally. Must
-    succeed and register the analyzer factory -- this is what keeps `kur-list`/
-    `kur-describe`/plugin validation from crashing for anyone who installed this package
-    without the [action_state] extra."""
-    monkeypatch.setitem(sys.modules, "kuration_pixel_shift", None)
-    for name in list(sys.modules):
-        if name.startswith("kuration_action_state_consistency"):
-            monkeypatch.delitem(sys.modules, name)
+def test_builtin_action_state_constructs_without_opencv(monkeypatch):
+    """Discovery and analyzer construction stay safe in a minimal SDK install."""
+    monkeypatch.setitem(__import__("sys").modules, "cv2", None)
+    from kuration import action_state_consistency as asc, get_analyzer
 
-    import kuration_action_state_consistency as fresh_asc
-    from kuration import default_registry, get_analyzer
-
-    fresh_asc.register()
-    assert fresh_asc.ANALYZER_NAME in default_registry.names("analyzer")
-    with pytest.raises(ImportError, match="kuration-plugin-pixel-shift"):
-        get_analyzer(
-            fresh_asc.ANALYZER_NAME,
-            anomaly_type="action_state",
-            baselines={"W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1.0}}},
-        )
+    checker = get_analyzer(
+        asc.ANALYZER_NAME,
+        anomaly_type="action_state",
+        baselines={"W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1.0}}},
+    )
+    assert isinstance(checker, asc.ActionStateConsistencyChecker)
 
 
-def test_action_state_module_functions_raise_a_clear_error_without_pixel_shift_installed(monkeypatch):
-    """The flip side: block kuration_pixel_shift, and confirm the action_state-specific
-    functions (which DO need it) fail with a clear, actionable ImportError -- not an
-    opaque ModuleNotFoundError, and not a silent wrong answer."""
-    monkeypatch.setitem(sys.modules, "kuration_pixel_shift", None)
-    for name in list(sys.modules):
-        if name.startswith("kuration_action_state_consistency"):
-            monkeypatch.delitem(sys.modules, name)
+def test_pixel_shift_execution_has_sdk_extra_hint_without_opencv(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "cv2", None)
+    from kuration.pixel_shift import diamond_action_decode
 
-    import kuration_action_state_consistency.action_state as fresh_action_state
-
-    with pytest.raises(ImportError, match="kuration-plugin-pixel-shift"):
-        fresh_action_state.validate_action_state_baselines(
-            {"W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1.0}}}
-        )
-    with pytest.raises(ImportError, match="kuration-plugin-pixel-shift"):
-        fresh_action_state.load_baselines_from_reference({"cells": {}})
+    with pytest.raises(ImportError, match=r"kuration-sdk\[pixel-shift\]"):
+        diamond_action_decode._require_cv2()
