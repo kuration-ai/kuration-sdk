@@ -155,6 +155,12 @@ ignore = ["E731", "E741", "B007", "B008", "B023", "B904", "B905"]
 pythonpath = ["."]
 testpaths = ["tests"]
 
+# The optional Torch/DA3 numerical kernel is exercised in the dedicated `[slam]` integration
+# matrix with a fake depth model. Keep aggregate core coverage focused on the SDK-owned adapters,
+# execution boundary, manifests, transforms, CLI, curation, and validation layers around it.
+[tool.coverage.run]
+omit = ["src/kuration/slam/slam_pipeline.py"]
+
 [tool.mypy]
 python_version = "3.11"
 files = ["src/kuration"]

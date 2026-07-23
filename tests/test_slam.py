@@ -323,8 +323,20 @@ def test_preflight_is_actionable_for_manifest_and_missing_raw_runtime(tmp_path):
     frames = {"clip": np.zeros((1, 2, 2, 3), dtype=np.uint8)}
     missing = preflight_slam(frames, tmp_path / "raw")
     assert not missing.ready
-    assert {check["name"] for check in missing.checks if check["status"] == "fail"} \
-        >= {"depth-model", "slam-runtime"}
+    failures = {check["name"] for check in missing.checks if check["status"] == "fail"}
+    assert "depth-model" in failures
+    runtime = next(check for check in missing.checks if check["name"] == "slam-runtime")
+    assert runtime["status"] in {"pass", "fail"}  # depends on whether [slam] is installed
+
+    unavailable = preflight_slam(
+        frames,
+        tmp_path / "unavailable-runtime",
+        runner_options={"pipeline_factory": "missing_slam_runtime:SLAMOperator"},
+    )
+    assert any(
+        check["name"] == "slam-runtime" and check["status"] == "fail"
+        for check in unavailable.checks
+    )
 
 
 def test_preflight_rejects_manifest_with_missing_trajectory_archive(tmp_path):
