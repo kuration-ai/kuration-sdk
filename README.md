@@ -59,6 +59,7 @@ pipeline needs:
 ```bash
 python -m pip install 'kuration-sdk[methods,parquet]'  # selection methods + Parquet
 python -m pip install 'kuration-sdk[video]'            # PyAV video frames
+python -m pip install 'kuration-sdk[gameplay]'         # pixel shift, action-state, and SLAM
 python -m pip install 'kuration-sdk[ray]'              # distributed source execution
 python -m pip install 'kuration-sdk[s3]'               # fsspec + the S3 backend
 python -m pip install 'kuration-sdk[all]'              # every runtime integration/backend
@@ -67,6 +68,19 @@ python -m pip install 'kuration-sdk[all]'              # every runtime integrati
 `pipeline.explain()` reports the extras required by a planned run before it reads the full
 dataset. The provider-specific cloud extras are `s3`, `gcs`, and `azure`; `cloud` installs only
 the backend-neutral fsspec layer for environments that manage provider packages separately.
+
+Domain APIs are grouped without changing the core execution engine:
+
+```python
+import kuration.gameplay as gameplay
+
+pipeline = (
+    gameplay.slam_pipeline("slam-export/manifest.json")
+    .window(32, stride=16)
+    .slam_motion()
+    .slam_quality(min_score=0.6)
+)
+```
 
 ## Try it in five minutes
 

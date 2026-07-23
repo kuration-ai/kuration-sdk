@@ -40,7 +40,7 @@ history for every release.
 - Shard filenames and manifest entity IDs preserve value types. Values such as integer `1` and
   string `"1"` no longer collide, and unsupported extension objects fail before writing.
 
-### SLAM plugin
+### Built-in SLAM
 
 - Exported timestamp maps must cover every trajectory exactly; each timestamp array must match
   the trajectory length, contain finite values, and increase strictly.
@@ -55,8 +55,7 @@ history for every release.
   NumPy scalars.
 - A plugin entry point must register at least one owned component; a successful import with no
   registration is reported as a plugin failure.
-- The action-state consistency plugin requires `kuration-sdk>=0.1.0rc4` because it uses the new
-  analyzer registry API.
+- Action-state consistency now ships as a built-in analyzer using the analyzer registry API.
 
 See the [compatibility policy](compatibility.md) for beta-version guarantees and the
 [releasing guide](releasing.md) for the maintainer workflow.

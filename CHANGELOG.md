@@ -5,6 +5,16 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+- Added `kuration.core` and `kuration.gameplay` domain surfaces. Pixel shift, action-state
+  consistency, and SLAM now ship together in the SDK wheel instead of separate first-party
+  plugin distributions; OpenCV, Torch, FAISS, and related runtimes remain extras.
+- Integrated a full native `kuration.gameplay.slam.SLAMPipeline` for optional
+  video/frame reconstruction,
+  stable model/config provenance, resumable portable exports, trajectory quality and diversity
+  curation, point-cloud reduction, preflight, and `kur-slam`. Precomputed manifests remain a
+  lightweight NumPy-only SDK input; global model execution is intentionally separate from
+  bounded compositional operators.
+
 ## 0.1.0rc4
 
 - Added a discoverable `analyzer` registry kind for user-owned capabilities that aggregate

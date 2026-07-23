@@ -105,14 +105,14 @@ The dependency-light validator supports the descriptor subset used by SDK contra
 array length/uniqueness/`items`, and nested object `properties`, `required`, and
 `additionalProperties`. Validation is recursive and reports the failing parameter path.
 
-## Repository plugins
+## Built-ins and external plugins
 
-New maintained extensions belong under the repository's
-[`plugins/` workspace](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins). Each child is an
-independent Python distribution with its own dependencies, tests, documentation, and
-`kuration.plugins` entry point; plugin code is intentionally excluded from the core SDK wheel.
-Copy `plugins/_template`, use a namespaced component name, and let the plugin CI job exercise the
-same installation and wheel checks used for every sibling.
+First-party standard capabilities such as pixel shift, action-state consistency, and SLAM ship in
+the SDK wheel under `kuration.gameplay`, register when that domain is imported or discovered,
+and keep heavy frameworks in optional extras.
+Use [`plugins/_template`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins/_template)
+for independently versioned or externally distributed behavior. An external plugin owns its
+dependencies, tests, documentation, and `kuration.plugins` entry point.
 
 Run the complete isolated contribution contract locally with:
 
