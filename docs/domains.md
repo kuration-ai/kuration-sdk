@@ -51,13 +51,18 @@ pipeline = (
 )
 ```
 
-The methods call the same registered descriptors used by `.apply(...)`, JSON jobs, discovery,
-and provenance. The generic core therefore contains no gameplay component names, while dynamic
-callers can continue using:
+The methods call the same registered descriptors used by custom modules, plugins, JSON jobs,
+discovery, and provenance. The generic core therefore contains no gameplay component names.
+Every registered operator gets the same direct fluent spelling, including operators imported
+after the pipeline was created:
 
 ```python
-pipeline.apply("aintropy/slam-quality", min_score=0.6)
+pipeline.slam_quality(min_score=0.6)
 ```
+
+For a custom name such as `acme/signal-diversity`, use
+`pipeline.signal_diversity(...)`. The namespace-qualified
+`pipeline.acme__signal_diversity(...)` spelling disambiguates collisions.
 
 Importing `kuration` does not import gameplay. Importing `kuration.gameplay` registers the
 maintained gameplay components but still does not import OpenCV, PyTorch, FAISS, PyAV, or Trimesh.

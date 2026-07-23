@@ -413,7 +413,7 @@ class Registry:
         self.register("preset", name, component, **metadata)
 
     def register_operator(self, name: str, component: Any, **metadata) -> None:
-        """Register a compositional ``Pipeline.apply`` operator in this registry."""
+        """Register a compositional operator exposed as a fluent ``Pipeline`` method."""
         if not callable(component):
             raise ValueError("operator component must be callable")
         self.register("operator", name, component, **metadata)

@@ -171,7 +171,7 @@ aliases case-insensitively (`le`/`lte`/`leq`/`<=`, `ge`/`gte`/`geq`/`>=`, `lt`/`
 pre-filter**: they gate every selection method (not only `"filter"`), on both the count and
 hours paths — see [strategies.md](strategies.md).
 
-### Reusable compositions with `.apply()`
+### Reusable compositions as direct methods
 
 `register_operator()` packages a validated sequence of existing operators under a discoverable
 name. The handler receives a cloned pipeline and keyword parameters, and must return a pipeline
@@ -197,13 +197,17 @@ def balance_motion(pipeline, *, field, bins=8):
             .measure("motion", "mean", of=field)
             .bin("motion", bins=bins))
 
-pipeline = pipeline.apply("acme/balance-motion", field="velocity", bins=8)
+pipeline = pipeline.balance_motion(field="velocity", bins=8)
 ```
 
 Parameter names and required keys are checked before expansion; the ordinary operators then
 perform their usual schema and value validation. `config.json` records the named call, component
 descriptor/code fingerprint, parameters, and nested expansion. Operators resolve through the
 pipeline's active registry, so `.using(local_registry)` and plugin entry points work normally.
+Hyphens and dots in the local component name become underscores. When two namespaces register
+the same local spelling, use the qualified form such as
+`pipeline.acme__balance_motion(...)`. `Pipeline.apply(name, **params)` remains a compatibility
+wrapper for serialized integrations, but normal Python code does not need it.
 
 This is deliberately a composition seam, not a native execution-stage seam: a handler cannot
 introduce a new terminal or bypass the validation and execution contracts of existing operators.

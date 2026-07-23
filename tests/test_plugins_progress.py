@@ -4,7 +4,15 @@ from __future__ import annotations
 import io
 import sys
 
-from kuration import SchemaSpec, Segmenter, Tick, load_plugins, load_strategy, write_dataset
+from kuration import (
+    SchemaSpec,
+    Segmenter,
+    Tick,
+    input,
+    load_plugins,
+    load_strategy,
+    write_dataset,
+)
 from kuration.core.dsl.registry import METRICS
 from kuration.core.output import OutputSpec
 from kuration.core.progress import cli_progress
@@ -110,6 +118,55 @@ def test_entry_point_initializer_is_idempotent(monkeypatch):
         assert first == [{"kind": "entry_point", "name": "fake",
                           "value": "fake_plugin:initialize"}]
         assert second == []
+    finally:
+        plugin_state._restore_plugin_state(snapshot, None)
+        plugin_state._ENTRY_POINTS_SCANNED = old_scanned
+
+
+def test_entry_point_operator_is_discovered_as_a_direct_method(monkeypatch):
+    import kuration.core.plugins as plugin_state
+    from kuration import default_registry
+
+    def plugin_window(pipeline, *, size):
+        return pipeline.window(size)
+
+    def initialize():
+        default_registry.register_operator(
+            "plugin/direct-window",
+            plugin_window,
+            parameters={
+                "type": "object",
+                "properties": {"size": {"type": "integer", "minimum": 1}},
+                "required": ["size"],
+                "additionalProperties": False,
+            },
+        )
+
+    plugin_window.__module__ = "fake_direct_plugin"
+    initialize.__module__ = "fake_direct_plugin"
+
+    class FakeEP:
+        name, value = "fake-direct", "fake_direct_plugin:initialize"
+
+        def load(self):
+            return initialize
+
+    class FakeEPs(list):
+        def select(self, **kwargs):
+            return self if kwargs == {"group": "kuration.plugins"} else []
+
+    key = "fake-direct=fake_direct_plugin:initialize"
+    snapshot = plugin_state._plugin_state_snapshot()
+    old_scanned = plugin_state._ENTRY_POINTS_SCANNED
+    plugin_state._LOADED_ENTRY_POINTS.discard(key)
+    plugin_state._ENTRY_POINTS_SCANNED = False
+    monkeypatch.setattr(plugin_state, "entry_points", lambda: FakeEPs([FakeEP()]))
+    try:
+        # Attribute lookup itself performs the same lazy entry-point discovery as apply().
+        pipeline = input([{"x": float(i)} for i in range(8)])
+        expanded = pipeline.direct_window(size=4)
+        assert expanded._window_desc["window"] == 4
+        assert expanded._ops[-1]["args"] == ["plugin/direct-window"]
     finally:
         plugin_state._restore_plugin_state(snapshot, None)
         plugin_state._ENTRY_POINTS_SCANNED = old_scanned

@@ -71,7 +71,7 @@ sessions = {
 base = input(sessions, time="t", hz=10).window(8, stride=4)
 
 variability = (base
-               .apply("example/signal-diversity", field="signal", bins=3)
+               .signal_diversity(field="signal", bins=3)
                .sample("equal", n=5)
                .options(mode="strict", seed=4)
                .collect())
@@ -79,7 +79,7 @@ assert len(variability.selected) == 5
 assert all("signal_variability" in segment.features for segment in variability.selected)
 
 window_range = (base
-                .apply("example/range-diversity", field="signal", bins=3)
+                .range_diversity(field="signal", bins=3)
                 .sample("equal", n=5)
                 .options(mode="strict", seed=4)
                 .collect())

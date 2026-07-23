@@ -18,6 +18,7 @@ import json
 import math
 import os
 import copy
+import re
 from itertools import islice
 from typing import Any, Callable, Optional
 
@@ -83,6 +84,38 @@ def _registry_inherits(registry, ancestor) -> bool:
             return True
         current = current.parent
     return False
+
+
+def _friendly_operator_part(value: str) -> str:
+    """Turn one public component-name part into a readable Python identifier."""
+    identifier = re.sub(r"[^A-Za-z0-9_]", "_", value)
+    if identifier[0].isdigit():
+        identifier = f"operator_{identifier}"
+    return identifier
+
+
+def _canonical_operator_part(value: str) -> str:
+    """Encode a component-name part injectively for an unambiguous method fallback."""
+    substitutions = {"_": "_u", "-": "_h", ".": "_d"}
+    identifier = "".join(substitutions.get(character, character) for character in value)
+    if identifier[0].isdigit():
+        identifier = f"operator__{identifier}"
+    return identifier
+
+
+def _operator_aliases(name: str) -> tuple[str, ...]:
+    """Return short, qualified, and collision-proof method names in preference order."""
+    parts = name.split("/", 1)
+    local = parts[-1]
+    aliases = [_friendly_operator_part(local)]
+    if len(parts) == 2:
+        aliases.append("__".join(_friendly_operator_part(part) for part in parts))
+    aliases.append("__".join(_canonical_operator_part(part) for part in parts))
+    return tuple(dict.fromkeys(aliases))
+
+
+def _canonical_operator_alias(name: str) -> str:
+    return "__".join(_canonical_operator_part(part) for part in name.split("/", 1))
 
 
 def _clone_adapter(adapter, memo=None):
@@ -424,6 +457,73 @@ class Pipeline:
         from .registry import default_registry
         self._registry = default_registry if registry is None else registry.snapshot()
 
+    def _operator_method_map(self, *, discover_plugins: bool) -> dict[str, list[str]]:
+        """Map fluent Python spellings to the registered operator names they identify."""
+        registry = self.__dict__.get("_registry")
+        if registry is None:
+            return {}
+        if discover_plugins:
+            from .plugins import load_plugins
+            from .registry import default_registry
+            if _registry_inherits(registry, default_registry):
+                load_plugins()
+        methods: dict[str, list[str]] = {}
+        for operator_name in registry.names("operator"):
+            for alias in _operator_aliases(operator_name):
+                methods.setdefault(alias, []).append(operator_name)
+        return methods
+
+    def __getattr__(self, name: str) -> Callable[..., "Pipeline"]:
+        """Resolve registered operators as immutable fluent methods.
+
+        The local component name is the normal spelling (``acme/signal-diversity`` becomes
+        ``pipeline.signal_diversity(...)``). Namespace-qualified and collision-proof aliases
+        keep every registered operator callable without a string-based dispatch escape hatch.
+        """
+        if name.startswith("_"):
+            raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
+        matches = self._operator_method_map(discover_plugins=False).get(name, [])
+        if not matches:
+            matches = self._operator_method_map(discover_plugins=True).get(name, [])
+        if not matches:
+            raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
+        if len(matches) > 1:
+            methods = self._operator_method_map(discover_plugins=False)
+            alternatives = []
+            for operator_name in matches:
+                alternative = next(
+                    (
+                        alias for alias in _operator_aliases(operator_name)
+                        if methods.get(alias) == [operator_name]
+                    ),
+                    _canonical_operator_alias(operator_name),
+                )
+                alternatives.append(f"{alternative}()")
+            raise AttributeError(
+                f"registered operator method {name!r} is ambiguous between {matches}; "
+                f"use one of {alternatives}")
+
+        operator_name = matches[0]
+        descriptor = self._registry.descriptor("operator", operator_name)
+
+        def registered_operator(**params: Any) -> "Pipeline":
+            return self._invoke_operator(operator_name, params)
+
+        registered_operator.__name__ = name
+        registered_operator.__qualname__ = f"{type(self).__name__}.{name}"
+        registered_operator.__doc__ = (
+            descriptor.description
+            or f"Run the registered {operator_name!r} compositional operator."
+        )
+        return registered_operator
+
+    def __dir__(self) -> list[str]:
+        """Include currently registered operator methods in interactive discovery."""
+        names = set(super().__dir__())
+        methods = self._operator_method_map(discover_plugins=False)
+        names.update(name for name, matches in methods.items() if len(matches) == 1)
+        return sorted(names)
+
     # ---- immutability plumbing -------------------------------------------------------
     def _clone(self) -> "Pipeline":
         # Preserve domain-specific Pipeline subclasses across immutable fluent calls.
@@ -468,17 +568,10 @@ class Pipeline:
         p._registry = registry.snapshot()
         return p
 
-    def apply(self, name: str, **params) -> "Pipeline":
-        """Expand a registered compositional operator over this pipeline.
-
-        The operator receives a clone and must return a derived ``Pipeline`` containing at
-        least one additional ordinary operator. Its descriptor validates parameters before
-        expansion. Provenance records the named call, descriptor, and nested expansion.
-        """
+    def _invoke_operator(self, name: str, params: dict[str, Any]) -> "Pipeline":
+        """Validate and expand one registered compositional operator."""
         from .plugins import load_plugins
         from .registry import validate_parameters
-        if not isinstance(name, str) or not name:
-            raise ValueError("apply() needs a non-empty registered operator name")
         from .registry import default_registry
         if (name not in self._registry.names("operator")
                 and _registry_inherits(self._registry, default_registry)):
@@ -506,6 +599,18 @@ class Pipeline:
             "expansion": expansion,
         }]
         return p
+
+    def apply(self, name: str, **params) -> "Pipeline":
+        """Compatibility wrapper for string-based registered-operator dispatch.
+
+        The operator receives a clone and must return a derived ``Pipeline`` containing at
+        least one additional ordinary operator. Its descriptor validates parameters before
+        expansion. Prefer the direct fluent method generated at registration time, such as
+        ``pipeline.signal_diversity(...)`` for ``acme/signal-diversity``.
+        """
+        if not isinstance(name, str) or not name:
+            raise ValueError("apply() needs a non-empty registered operator name")
+        return self._invoke_operator(name, params)
 
     def _with_schema(self, schema: SchemaSpec, opname: str, *args, **kwargs) -> "Pipeline":
         p = self._next(opname, *args, **kwargs)

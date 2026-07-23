@@ -47,7 +47,7 @@ Use it like a built-in operation:
 pipeline = (
     input("sessions/*.parquet", time="t")
     .window(64, stride=32)
-    .apply("acme/signal-diversity", field="motor_current", bins=6)
+    .signal_diversity(field="motor_current", bins=6)
     .sample("equal", n=10_000)
 )
 ```
@@ -110,7 +110,7 @@ Test the operator at three levels:
 ```python
 def test_signal_operator_expands_and_selects():
     base = input([{"signal": float(i)} for i in range(16)]).window(4)
-    pipeline = base.apply("acme/signal-diversity", field="signal", bins=3)
+    pipeline = base.signal_diversity(field="signal", bins=3)
 
     description = pipeline.describe()
     assert "signal_variability" in description["strategy"]["define"]
@@ -143,6 +143,20 @@ Python callers use `list_components("operator")` and
 `describe_component("operator", "acme/signal-diversity")`. Descriptors include parameter
 schemas, dependency hints, capabilities, package and module identity, stability metadata, and a
 code fingerprint.
+
+Registration also creates the fluent import flow. Import a custom registration module, or let
+Kuration discover an installed `kuration.plugins` entry point, then call the operator by its
+normalized local name:
+
+```python
+import acme_kuration
+
+pipeline = pipeline.signal_diversity(field="signal")
+```
+
+`acme/signal-diversity` maps to `signal_diversity`; the always-available qualified spelling is
+`acme__signal_diversity`. Ambiguous short names fail with the qualified alternatives instead of
+silently choosing one.
 
 ## 5. Choose built-in or external packaging
 

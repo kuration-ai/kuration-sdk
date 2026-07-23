@@ -207,7 +207,7 @@ def test_registered_operator_runs_end_to_end(tmp_path):
     pipeline = (
         input_slam(manifest)
         .window(3)
-        .apply(OPERATOR_NAME, axis="slam_path_length", bins=3)
+        .slam_motion_diversity(axis="slam_path_length", bins=3)
         .curate("top-k", n=1, weights={"slam_path_length": 1.0})
     )
     result = pipeline.collect()

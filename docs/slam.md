@@ -176,7 +176,7 @@ kur-slam demo --out slam-demo
 
 Live reconstruction is intentionally not a registered compositional operator: it is a global,
 artifact-producing `SLAMPipeline` operation. The registered components remain bounded and work
-with normal `Pipeline.apply()`, planning, provenance, and curation.
+with direct fluent methods, planning, provenance, and curation.
 
 ## Point clouds
 

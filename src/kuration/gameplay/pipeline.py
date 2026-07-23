@@ -24,7 +24,7 @@ class GameplayPipeline(Pipeline):
         params: dict[str, Any] = {"boundary": boundary}
         if controls is not None:
             params["controls"] = controls
-        return cast(GameplayPipeline, self.apply("aintropy/pixel-shift", **params))
+        return cast(GameplayPipeline, self._invoke_operator("aintropy/pixel-shift", params))
 
     def slam_motion(
         self,
@@ -35,10 +35,9 @@ class GameplayPipeline(Pipeline):
         """Add SLAM motion features and organize one diversity axis."""
         return cast(
             GameplayPipeline,
-            self.apply(
+            self._invoke_operator(
                 "aintropy/slam-motion-diversity",
-                axis=axis,
-                bins=bins,
+                {"axis": axis, "bins": bins},
             ),
         )
 
@@ -63,7 +62,7 @@ class GameplayPipeline(Pipeline):
             params["min_score"] = min_score
         if max_translation_step is not None:
             params["max_translation_step"] = max_translation_step
-        return cast(GameplayPipeline, self.apply("aintropy/slam-quality", **params))
+        return cast(GameplayPipeline, self._invoke_operator("aintropy/slam-quality", params))
 
 
 def as_gameplay(pipeline: Pipeline) -> GameplayPipeline:

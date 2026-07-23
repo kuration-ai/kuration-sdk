@@ -59,7 +59,8 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `GameplayPipeline.slam_quality` | `(*, min_score=None, min_tracking_confidence=0.5, translation_ratio=10.0, translation_mad_multiplier=8.0, max_translation_step=None, max_turn_degrees=90.0) -> GameplayPipeline` | add SLAM quality features and optionally filter weak windows |
 | `Pipeline.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params) -> Pipeline` | add a registered bounded scalar-feature transform |
 | `Pipeline.using` | `(registry) -> Pipeline` | resolve adapters, metrics, scorers, encoders, methods, filters, containers, and presets through an explicit `Registry` overlay |
-| `Pipeline.apply` | `(name, **params) -> Pipeline` | validate and expand a registered compositional operator; provenance retains its descriptor and ordinary-operator expansion |
+| registered operator methods | `(**params) -> Pipeline` | every operator is callable by normalized local name (`acme/signal-diversity` → `signal_diversity`) or qualified name (`acme__signal_diversity`); custom modules and plugins use the same flow |
+| `Pipeline.apply` | `(name, **params) -> Pipeline` | compatibility wrapper for string-based operator dispatch |
 | `Pipeline.semantic` | `(field, semantics, *, dims=None, bits=None, max_rate=None) -> Pipeline` | refine an inferred field as `"position"`, `"angular"`, or `"bitmask"` |
 | `Pipeline.as_position` | `(field, *, dims=None, max_rate=None) -> Pipeline` | position-semantic convenience wrapper |
 | `Pipeline.as_angular` | `(field, *, max_rate=None) -> Pipeline` | angular-semantic convenience wrapper |
