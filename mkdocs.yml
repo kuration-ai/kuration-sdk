@@ -69,6 +69,7 @@ nav:
   - Extend:
       - Operators: operators.md
       - Customization and discovery: customization.md
+      - SLAM trajectory curation: slam.md
       - Architecture: architecture.md
   - Operate:
       - Jobs and CLI: jobs.md

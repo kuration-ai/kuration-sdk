@@ -140,8 +140,11 @@ The reference must cover these methods even though they are not individual membe
 
 ### Framework integration
 
-`kuration.torch.ShardDataset` is public and supported. It is kept out of the top-level namespace
-so importing `kuration` does not imply a PyTorch dependency.
+`kuration.torch.ShardDataset` is public and supported. `kuration.slam` is also public: its
+manifest, trajectory transforms, point-cloud artifact, preparation helpers, and native
+`SLAMPipeline`/`SLAMReconstruction` interfaces are documented in `docs/api.md` and
+`docs/slam.md`. Both modules stay out of the top-level namespace so importing `kuration` does not
+imply a PyTorch or SLAM-runtime dependency.
 
 Other module members that are absent from `kuration.__all__` are internal unless a future
 contract explicitly adds them. Underscore-prefixed classes, functions, methods, and CLI helpers
@@ -154,6 +157,7 @@ The installed commands are public end-user interfaces:
 - Run and analyze: `kur-curate`, `kur-experiment`, `kur-report`.
 - Validate and inspect: `kur-validate`, `kur-explain`, `kur-inspect`, `kur-diff`, `kur-check`.
 - Discover extensions: `kur-list`, `kur-describe`, `kur-plugin-check`.
+- Reconstruct and curate SLAM data: `kur-slam`.
 - Upgrade documents: `kur-migrate`.
 
 Their command options and exit behavior belong in `docs/jobs.md` or a linked CLI reference. The
