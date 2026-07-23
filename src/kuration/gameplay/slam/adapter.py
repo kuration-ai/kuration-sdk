@@ -7,8 +7,8 @@ from urllib.parse import urlparse
 
 import numpy as np
 
-from ...adapters.base import iter_arrays_to_ticks
-from ...buffer import Tick
+from ...core.adapters.base import iter_arrays_to_ticks
+from ...core.buffer import Tick
 from ..pipeline import as_gameplay
 
 from .export import EXPORT_FORMAT, EXPORT_VERSION
@@ -126,7 +126,7 @@ def input_slam(
 
     register()
     adapter = SLAMTrajectoryAdapter(manifest=manifest)
-    from ...pipeline import input
+    from ...core.pipeline import input
 
     pipeline = as_gameplay(input(adapter=adapter, schema=adapter.schema))
     if not join_video:

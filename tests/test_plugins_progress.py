@@ -5,10 +5,10 @@ import io
 import sys
 
 from kuration import SchemaSpec, Segmenter, Tick, load_plugins, load_strategy, write_dataset
-from kuration.dsl.registry import METRICS
-from kuration.output import OutputSpec
-from kuration.progress import cli_progress
-from kuration.scoring import score_sources
+from kuration.core.dsl.registry import METRICS
+from kuration.core.output import OutputSpec
+from kuration.core.progress import cli_progress
+from kuration.core.scoring import score_sources
 
 
 SCHEMA = SchemaSpec.from_dict({
@@ -55,7 +55,7 @@ def test_explicit_plugin_metric_loads_and_reaches_spawned_workers(tmp_path, monk
         assert all("plugin_mean" in s.features for s in segs)
         assert strategy.referenced_metrics() == {"plugin_mean"}
     finally:
-        from kuration import plugins as plugin_state
+        from kuration.core import plugins as plugin_state
         METRICS.pop("plugin_mean", None)
         sys.modules.pop(name, None)
         plugin_state._LOADED_MODULES.discard(name)
@@ -74,7 +74,7 @@ def test_score_progress_event_contract():
 
 
 def test_entry_point_initializer_is_idempotent(monkeypatch):
-    import kuration.plugins as plugin_state
+    import kuration.core.plugins as plugin_state
     from kuration import default_registry
     calls = []
 
@@ -127,10 +127,10 @@ def test_job_plugins_load_before_strategy_validation(tmp_path, monkeypatch):
         "strategy": {"selection": {"method": "top-k", "weights": {"plugin_mean": 1.0}}},
     }
     try:
-        from kuration.cli.validate import validate_job
+        from kuration.core.cli.validate import validate_job
         assert validate_job(job)["kind"] == "report"
     finally:
-        import kuration.plugins as plugin_state
+        import kuration.core.plugins as plugin_state
         METRICS.pop("plugin_mean", None)
         sys.modules.pop(name, None)
         plugin_state._LOADED_MODULES.discard(name)

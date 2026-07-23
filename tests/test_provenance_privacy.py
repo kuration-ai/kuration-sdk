@@ -1,5 +1,5 @@
 """Portable provenance must be strong without leaking host paths or URL credentials."""
-from kuration.provenance import source_descriptor
+from kuration.core.provenance import source_descriptor
 
 
 class _Adapter:
@@ -24,7 +24,7 @@ def test_remote_source_redacts_credentials_query_and_fragment(monkeypatch):
         def info(self, _path):
             return {"type": "file", "size": 1, "etag": "v1"}
 
-    monkeypatch.setattr("kuration.io._fs", lambda _path: _FS())
+    monkeypatch.setattr("kuration.core.io._fs", lambda _path: _FS())
     descriptor = source_descriptor("s3://user:secret@bucket/data?a=token#private", _Adapter())
     rendered = str(descriptor)
     assert descriptor["source"] == "s3://bucket/data"

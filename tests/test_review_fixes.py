@@ -23,11 +23,11 @@ from kuration import (
     write_dataset,
     write_track,
 )
-from kuration.adapters.curated import CuratedDatasetAdapter
-from kuration.binning import bin_codes
-from kuration.buffer import empty_like
-from kuration.dsl import compile_metric
-from kuration.io import staged_write
+from kuration.core.adapters.curated import CuratedDatasetAdapter
+from kuration.core.binning import bin_codes
+from kuration.core.buffer import empty_like
+from kuration.core.dsl import compile_metric
+from kuration.core.io import staged_write
 
 SCHEMA = SchemaSpec.from_dict({
     "name": "rf", "entity_axis": "e", "sample_hz": 1.0,
@@ -109,8 +109,8 @@ def test_resume_rejects_changed_output_spec(tmp_path):
 
 
 def test_resume_signature_includes_resolved_transforms(tmp_path):
-    from kuration.output.dataset import _check_resume_run
-    from kuration.provenance import build_run_signature
+    from kuration.core.output.dataset import _check_resume_run
+    from kuration.core.provenance import build_run_signature
 
     data = _data()
     common = dict(schema=SCHEMA, strategy=_strategy(), spec=SPEC,
@@ -133,7 +133,7 @@ def test_resume_signature_includes_resolved_transforms(tmp_path):
 
 
 def test_directory_source_fingerprint_tracks_child_changes(tmp_path):
-    from kuration.provenance import source_descriptor
+    from kuration.core.provenance import source_descriptor
 
     store = tmp_path / "store.zarr"
     store.mkdir()
@@ -174,7 +174,7 @@ def test_manifest_entries_sorted(tmp_path):
 def test_parquet_missing_n_steps_raises(tmp_path):
     pytest.importorskip("pyarrow")
     import pyarrow.parquet as pq
-    from kuration.output.containers import read_shard, write_shard
+    from kuration.core.output.containers import read_shard, write_shard
     p = write_shard(str(tmp_path / "s"), "parquet", {"a": np.zeros(4, np.float32)}, 4)
     pq.write_table(pq.read_table(p).replace_schema_metadata(None), p)  # strip metadata
     with pytest.raises(ValueError, match="_n_steps"):
@@ -287,8 +287,8 @@ def test_dataset_commit_sidecar_rejects_incomplete_or_changed_metadata(tmp_path)
     assert set(commit["files"]) == {"dataset_manifest.json", "config.json"}
 
     shutil.copytree(root, tmp_path / "writing")
-    from kuration.manifest import begin_dataset
-    from kuration.output.dataset import _resume_entries
+    from kuration.core.manifest import begin_dataset
+    from kuration.core.output.dataset import _resume_entries
     begin_dataset(str(tmp_path / "writing"))
     with pytest.raises(ValueError, match="commit state"):
         shard_entries(str(tmp_path / "writing"))
@@ -395,15 +395,15 @@ def test_max_rate_validated_at_load():
 
 
 def test_scalar_into_vector_field_rejected():
-    from kuration.buffer import build_window
+    from kuration.core.buffer import build_window
     ticks = [Tick(time=0, entities={0: {"pos": 3.0}})]      # scalar for a 2-dim vector
     with pytest.raises(ValueError, match="vector"):
         build_window(GS, ticks)
 
 
 def test_registered_metric_cannot_shadow_define():
-    from kuration.dsl.registry import METRICS
-    from kuration.features import FeatureEngine
+    from kuration.core.dsl.registry import METRICS
+    from kuration.core.features import FeatureEngine
     METRICS.setdefault("rf_shadow_test", lambda w: 0.0)
     try:
         with pytest.raises(ValueError, match="shadow"):
@@ -417,15 +417,15 @@ def test_registered_metric_cannot_shadow_define():
 # ---- minors: selection accounting ----------------------------------------------
 def test_uniform_bins_respects_target_size():
     import random
-    from kuration.segment import Segment
-    from kuration.select import sample_uniform_bins
+    from kuration.core.segment import Segment
+    from kuration.core.select import sample_uniform_bins
     segs = [Segment("s", i, i + 1, (i, i + 1), bin=(i,)) for i in range(500)]  # 500 bins
     out = sample_uniform_bins(segs, target_size=100, rng=random.Random(0))
     assert len(out) == 100                    # was: one PER BIN -> 500
 
 
 def test_empty_pool_raises():
-    from kuration.scoring import score_sources
+    from kuration.core.scoring import score_sources
     data = {"s": [Tick(time=i, entities={0: {"pos": (0.0, 0.0), "act": 0.0}})
                   for i in range(3)]}         # shorter than the window
     with pytest.raises(RuntimeError, match="EMPTY"):
@@ -436,13 +436,13 @@ def test_empty_pool_raises():
 
 # ---- minors: adapters/containers -------------------------------------------------
 def test_arrays_to_ticks_length_mismatch_raises():
-    from kuration.adapters.base import arrays_to_ticks
+    from kuration.core.adapters.base import arrays_to_ticks
     with pytest.raises(ValueError, match="length mismatch"):
         arrays_to_ticks(SCHEMA, {"act": np.zeros(3), "pos": np.zeros((5, 2))})
 
 
 def test_arrays_to_ticks_accepts_shape_only_arrays():
-    from kuration.adapters.base import arrays_to_ticks
+    from kuration.core.adapters.base import arrays_to_ticks
 
     class ShapeOnlyArray:
         def __init__(self, values):
@@ -461,7 +461,7 @@ def test_arrays_to_ticks_accepts_shape_only_arrays():
 
 
 def test_timeseries_unordered_rows_raise():
-    from kuration.adapters.timeseries import TimeseriesAdapter
+    from kuration.core.adapters.timeseries import TimeseriesAdapter
     ad = TimeseriesAdapter(SCHEMA, fields={"act": "a"}, time_column="t", entity_column="e")
     rows = [{"t": 1, "e": "A", "a": 1}, {"t": 2, "e": "A", "a": 1},
             {"t": 1, "e": "B", "a": 2}, {"t": 2, "e": "B", "a": 2}]   # entity-major
@@ -470,7 +470,7 @@ def test_timeseries_unordered_rows_raise():
 
 
 def test_npz_underscore_modality_preserved(tmp_path):
-    from kuration.output.containers import read_shard, write_shard
+    from kuration.core.output.containers import read_shard, write_shard
     p = write_shard(str(tmp_path / "s"), "npz", {"_mask": np.ones(4)}, 4)
     arrays, n = read_shard(p, "npz")
     assert "_mask" in arrays and n == 4
@@ -518,7 +518,7 @@ def test_hours_fill_has_no_implicit_group_cap():
 
 
 def test_split_global_quota_survives_singleton_strata():
-    from kuration.select import assign_splits
+    from kuration.core.select import assign_splits
     split = assign_splits({f"s{i}": f"g{i}" for i in range(10)}, 0.2, 0)
     assert sum(v == "test" for v in split.values()) == 2
 
@@ -546,7 +546,7 @@ def test_strategy_rejects_scorer_output_collisions():
 
 
 def test_array_adapters_reject_undeclared_globals():
-    from kuration.adapters import HDF5Adapter, NpzAdapter, ZarrAdapter
+    from kuration.core.adapters import HDF5Adapter, NpzAdapter, ZarrAdapter
     schema = SchemaSpec.from_dict({"name": "g", "fields": {"x": {"kind": "scalar"}},
                                    "globals": {"known": {"kind": "scalar"}}})
     for cls in (NpzAdapter, HDF5Adapter, ZarrAdapter):
@@ -555,14 +555,14 @@ def test_array_adapters_reject_undeclared_globals():
 
 
 def test_streaming_timeseries_uses_lazy_iterator(tmp_path):
-    from kuration.adapters.timeseries import TimeseriesAdapter
+    from kuration.core.adapters.timeseries import TimeseriesAdapter
     p = tmp_path / "data.csv"
     p.write_text("t,a,x,y\n" + "".join(f"{i},1,{i},0\n" for i in range(8)))
     class LazyOnly(TimeseriesAdapter):
         def ticks(self, source_uri):
             raise AssertionError("streaming path called materializing ticks()")
     ad = LazyOnly(SCHEMA, fields={"act": "a", "pos": ["x", "y"]}, time_column="t")
-    from kuration.scoring import score_sources
+    from kuration.core.scoring import score_sources
     segs, _, _ = score_sources(schema=SCHEMA, adapter=ad, sources=[str(p)],
                                define=_strategy().define, registered=[],
                                segmenter=Segmenter(4, 4), streaming=True, on_error="raise")
@@ -570,8 +570,8 @@ def test_streaming_timeseries_uses_lazy_iterator(tmp_path):
 
 
 def test_npz_streaming_rejected_loudly():
-    from kuration.adapters import NpzAdapter
-    from kuration.scoring import score_sources
+    from kuration.core.adapters import NpzAdapter
+    from kuration.core.scoring import score_sources
     with pytest.raises(ValueError, match="cannot provide bounded-memory streaming"):
         score_sources(schema=SCHEMA, adapter=NpzAdapter(SCHEMA, fields={"act": "a"}),
                       sources=["unused.npz"], define={}, registered=[],
@@ -579,7 +579,7 @@ def test_npz_streaming_rejected_loudly():
 
 
 def test_track_name_is_portable_and_bounded():
-    from kuration.output.shardwriter import track_name
+    from kuration.core.output.shardwriter import track_name
     name = track_name("C:\\bad?path/" + "x" * 400, "entity:*", "_span001")
     assert len(name) <= 109
     assert set(name) <= set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
@@ -681,7 +681,7 @@ def test_write_dataset_rejects_invalid_numeric_options(tmp_path, kwargs, match):
 
 
 def test_callable_provenance_includes_closure_state():
-    from kuration.provenance import component_identity
+    from kuration.core.provenance import component_identity
 
     def make(value):
         return lambda source: (source, value)
@@ -692,7 +692,7 @@ def test_callable_provenance_includes_closure_state():
 
 def test_filter_uses_its_own_feature_space_without_strategy_default(monkeypatch):
     from types import SimpleNamespace
-    import kuration.methods as methods
+    import kuration.core.methods as methods
     from kuration import Segment
 
     seen = []
@@ -708,7 +708,7 @@ def test_filter_uses_its_own_feature_space_without_strategy_default(monkeypatch)
 
 def test_per_group_filter_accepts_heterogeneous_group_keys(monkeypatch):
     from types import SimpleNamespace
-    import kuration.methods as methods
+    import kuration.core.methods as methods
     from kuration import Segment
 
     monkeypatch.setitem(methods._FILTERS, "anomaly", lambda segs, names, **kw: segs)

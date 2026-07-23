@@ -183,7 +183,7 @@ cost of recomputation if one process repeatedly alternates among more than two r
   silently swaps the red/blue channel weighting in the grayscale conversion, systematically
   biasing the resulting flow, without erroring. This matters concretely, not just
   hypothetically: kuration-sdk's `.join_video()` always tags its media column
-  `color_space: "RGB"` (`src/kuration/media.py` — its first-party PyAV provider decodes
+  `color_space: "RGB"` (`src/kuration/core/media.py` — its first-party PyAV provider decodes
   `rgb24`), the *opposite* of this function's default. The registered `aintropy/pixel-shift`
   transform handles this for you -- `PixelShift.transform_batch` reads the real declared
   `color_space` off `ctx["schema"].media["frame"]` (populated by the SDK runtime itself)

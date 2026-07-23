@@ -1,6 +1,6 @@
 # API reference — the public Python surface
 
-Every name importable from `kuration` (plus the public `kuration.core`, `kuration.torch`,
+Every name importable from `kuration` (plus the public `kuration.core`, `kuration.core.torch`,
 and `kuration.gameplay` domain),
 grouped by layer, with its real
 signature. Optional-extra requirements are tagged (`[methods]`, `[parquet]`, `[array]`,
@@ -370,7 +370,7 @@ compose bounded trajectory transforms.
 | `iter_shards` | `(dataset, *, split=None, modalities=None, trim=True, container=None, with_meta=False, registry=None, verify=True) -> Iterator[dict]` | shards back as `{modality -> array}` plus `_present` when enabled; checksum/size verification defaults on |
 | `shard_entries` | `(dataset, *, split=None, container=None) -> (entries, container)` | manifest entries (paths rebased if the dataset moved) |
 | `read_shard_arrays` | `(entry, container, *, modalities=None, trim=True, registry=None, verify=True) -> {name: array}` | one shard: verify integrity, trim pad, reshape, restore dtype |
-| `kuration.torch.ShardDataset` | `(dataset, *, split=None, modalities=None, trim=True, container=None, transform=None, include_meta=False, verify=True)` | map-style PyTorch `Dataset` over the above (`[torch]`) |
+| `kuration.core.torch.ShardDataset` | `(dataset, *, split=None, modalities=None, trim=True, container=None, transform=None, include_meta=False, verify=True)` | map-style PyTorch `Dataset` over the above (`[torch]`) |
 
 `dataset` is a dataset directory, a `dataset_manifest.json` path, or a loaded manifest dict.
 

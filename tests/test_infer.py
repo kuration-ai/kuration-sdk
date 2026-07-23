@@ -6,8 +6,8 @@ import json
 import numpy as np
 import pytest
 
-from kuration.buffer import Tick
-from kuration.infer import infer_schema, load_rows, sample_source, sniff
+from kuration.core.buffer import Tick
+from kuration.core.infer import infer_schema, load_rows, sample_source, sniff
 
 
 def _rows(n=6):

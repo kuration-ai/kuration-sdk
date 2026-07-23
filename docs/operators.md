@@ -146,7 +146,7 @@ code fingerprint.
 
 ## 5. Choose built-in or external packaging
 
-First-party domain operators accepted into the SDK live under `src/kuration/<domain>`, register
+First-party gameplay operators accepted into the SDK live under `src/kuration/gameplay/`, register
 when that domain is imported or discovered, and declare optional framework requirements through
 SDK extras. For an independently versioned or external plugin, copy
 [`plugins/_template`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins/_template)

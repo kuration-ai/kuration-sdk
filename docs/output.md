@@ -177,8 +177,8 @@ to reuse shards when any fingerprinted input changes.
 ## Reading a dataset back
 
 The write side produces shards + a manifest; the read side turns them back into arrays. This is
-**numpy-only** (`kuration.loaders`) so a JAX/TF/plain-numpy consumer needs no extra dependency;
-the PyTorch wrapper (`kuration.torch`, the `[torch]` extra) is a thin layer over it.
+**numpy-only** (`kuration.core.loaders`) so a JAX/TF/plain-numpy consumer needs no extra dependency;
+the PyTorch wrapper (`kuration.core.torch`, the `[torch]` extra) is a thin layer over it.
 
 ```python
 from kuration import iter_shards
@@ -246,7 +246,7 @@ minimum sources/shards, full verification, budget utilization, and skipped-sourc
 **PyTorch.**
 
 ```python
-from kuration.torch import ShardDataset            # pip install 'kuration-sdk[torch]'
+from kuration.core.torch import ShardDataset            # pip install 'kuration-sdk[torch]'
 from torch.utils.data import DataLoader
 
 ds = ShardDataset("out/", split="train")           # one shard = one item, modalities -> tensors

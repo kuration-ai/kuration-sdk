@@ -55,7 +55,8 @@ error handling and assert that their candidate and output pools are non-empty.
 
 Keep public interfaces synchronized across:
 
-- implementation and exports in `src/kuration/`;
+- generic implementation and exports in `src/kuration/core/`;
+- maintained domain implementation in `src/kuration/gameplay/`;
 - exact signatures in [docs/api.md](docs/api.md);
 - fluent behavior in [docs/pipeline.md](docs/pipeline.md);
 - runnable examples when the recommended workflow changes;

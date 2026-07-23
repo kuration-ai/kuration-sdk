@@ -77,7 +77,10 @@ def check_plugin(plugin: str | Path, *, artifacts: str | Path | None = None) -> 
         _run([python, "-m", "pip", "install", "--force-reinstall", "--no-deps",
               str(wheels[0])])
         for entry_point in entry_points:
-            _run([python, "-m", "kuration.cli.plugin_check", entry_point, "--json"], cwd=work)
+            _run(
+                [python, "-m", "kuration.core.cli.plugin_check", entry_point, "--json"],
+                cwd=work,
+            )
         _run([python, "-m", "pip", "check"])
         built = [*wheels, *sdists]
         labels = [item.name for item in built]

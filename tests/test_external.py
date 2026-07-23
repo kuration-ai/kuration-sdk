@@ -2,14 +2,14 @@
 import numpy as np
 import pytest
 
-import kuration.external as external_module
+import kuration.core.external as external_module
 from kuration import (Segment, SegmentBatch, external_quantile_edges, external_top_k,
                        external_uniform_bins, external_weighted, iter_external_span_items,
                        iter_external_hash_dedup, iter_external_top_k_priorities,
                        iter_external_uniform_priorities,
                        iter_external_weighted_priorities)
-from kuration.output.external_fill import external_fill_to_hours
-from kuration.output.fill import fill_to_hours
+from kuration.core.output.external_fill import external_fill_to_hours
+from kuration.core.output.fill import fill_to_hours
 
 pytest.importorskip("pyarrow")
 
@@ -127,8 +127,8 @@ def test_external_uniform_bins_is_balanced_bounded_and_deterministic(tmp_path):
 
 def test_external_uniform_bins_matches_seeded_reference_exactly(tmp_path):
     import random
-    from kuration.binning import bin_segments
-    from kuration.select import sample_uniform_bins
+    from kuration.core.binning import bin_segments
+    from kuration.core.select import sample_uniform_bins
     segments, paths = _partitions(tmp_path)
     reference = [Segment(segment.source_id, segment.start_idx, segment.end_idx,
                          segment.time_range, dict(segment.features)) for segment in segments]
@@ -142,8 +142,8 @@ def test_external_uniform_bins_matches_seeded_reference_exactly(tmp_path):
 
 def test_external_uniform_materializes_each_selected_partition_once(tmp_path, monkeypatch):
     import random
-    from kuration.binning import bin_segments
-    from kuration.select import sample_uniform_bins
+    from kuration.core.binning import bin_segments
+    from kuration.core.select import sample_uniform_bins
 
     segments, paths = _partitions(tmp_path)
     reference = [Segment(segment.source_id, segment.start_idx, segment.end_idx,
@@ -167,7 +167,7 @@ def test_external_uniform_materializes_each_selected_partition_once(tmp_path, mo
 
 def test_external_uniform_priorities_match_hours_reference_exactly(tmp_path):
     import random
-    from kuration.binning import bin_segments
+    from kuration.core.binning import bin_segments
     segments, paths = _partitions(tmp_path)
     reference = [Segment(segment.source_id, segment.start_idx, segment.end_idx,
                          segment.time_range, dict(segment.features)) for segment in segments]

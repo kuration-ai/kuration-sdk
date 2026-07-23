@@ -1,14 +1,14 @@
 """Gameplay-specific fluent pipeline facade.
 
-The generic :class:`kuration.pipeline.Pipeline` owns execution and registry semantics.
+The generic :class:`kuration.core.pipeline.Pipeline` owns execution and registry semantics.
 This subclass adds only typed gameplay spellings for maintained compositional operators.
 """
 from __future__ import annotations
 
 from typing import Any, cast
 
-from ..pipeline import Pipeline
-from ..pipeline import input as core_input
+from ..core.pipeline import Pipeline
+from ..core.pipeline import input as core_input
 
 
 class GameplayPipeline(Pipeline):

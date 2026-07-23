@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 from kuration import check_plugins, default_registry
-from kuration.plugin_validation import PluginCheckResult
+from kuration.core.plugin_validation import PluginCheckResult
 
 
 def _plugin_module(tmp_path: Path, name: str, *, complete: bool) -> str:
@@ -115,7 +115,7 @@ def test_plugin_check_cli_reports_explicit_module(tmp_path):
     environment["PYTHONPATH"] = os.pathsep.join(
         [str(tmp_path), environment.get("PYTHONPATH", "")])
     result = subprocess.run(
-        [sys.executable, "-m", "kuration.cli.plugin_check", module, "--json"],
+        [sys.executable, "-m", "kuration.core.cli.plugin_check", module, "--json"],
         cwd=tmp_path, env=environment, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)

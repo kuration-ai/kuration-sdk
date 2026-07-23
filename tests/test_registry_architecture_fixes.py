@@ -8,13 +8,13 @@ import pytest
 
 from kuration import (ComponentDescriptor, Registry, SchemaSpec, Segment, Segmenter, Tick,
                        default_registry, input)
-from kuration.execution import ResourceSpec
-from kuration.features import FeatureEngine
-from kuration.output.containers import Container, read_shard
-from kuration.output.spec import Modality, OutputSpec
-from kuration.output.stream import stream_source_shards
-from kuration.plugins import plugin_provenance
-from kuration.scoring import score_sources
+from kuration.core.execution import ResourceSpec
+from kuration.core.features import FeatureEngine
+from kuration.core.output.containers import Container, read_shard
+from kuration.core.output.spec import Modality, OutputSpec
+from kuration.core.output.stream import stream_source_shards
+from kuration.core.plugins import plugin_provenance
+from kuration.core.scoring import score_sources
 
 
 SCHEMA = SchemaSpec.from_dict({
@@ -286,7 +286,7 @@ def test_ray_worker_receives_metric_plugin_modules_even_with_one_worker(monkeypa
             seen["modules"] = items[0][1][-2]
             return iter(fn(item) for item in items)
 
-    import kuration.execution as execution
+    import kuration.core.execution as execution
     monkeypatch.setattr(execution, "RayExecutionBackend", FakeRayBackend)
     ticks = [Tick(i, {0: {"x": float(i), "y": 0.0}}) for i in range(2)]
 

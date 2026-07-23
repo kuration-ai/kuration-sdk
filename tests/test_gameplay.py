@@ -7,7 +7,7 @@ import sys
 import tomllib
 
 from kuration import core, gameplay
-from kuration.pipeline import Pipeline
+from kuration.core.pipeline import Pipeline
 
 
 ROOT = Path(__file__).parents[1]

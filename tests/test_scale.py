@@ -135,7 +135,7 @@ def test_resume_repairs_corrupt_existing_shards(tmp_path):
     second = write_dataset(str(tmp_path / "out"), resume=True, **common)
     assert second["results"]["shards"] == first["results"]["shards"]   # same manifest
     assert open(victim, "rb").read() != b"CORRUPT"
-    from kuration.io import file_integrity
+    from kuration.core.io import file_integrity
     repaired = next(entry for entry in second["shards"] if entry["path"] == victim)
     assert file_integrity(victim) == {
         "sha256": repaired["sha256"], "size_bytes": repaired["size_bytes"]}

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...schema import SchemaSpec
+from ...core.schema import SchemaSpec
 
 
 CAMERA_POSITION = "camera_position"

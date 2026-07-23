@@ -1,4 +1,4 @@
-"""Fluent operator pipeline: input() -> chained operators -> terminals (src/kuration/pipeline.py).
+"""Fluent operator pipeline: input() -> chained operators -> terminals (src/kuration/core/pipeline.py).
 
 Synthesizes plain .json sources (array-of-row-objects — a numeric "t" time column, an
 "agent" entity column, a scalar "hp", and a categorical "action"), then runs the

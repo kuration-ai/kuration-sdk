@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-import kuration.io as kio
+import kuration.core.io as kio
 from kuration import (
     CuratedDatasetAdapter,
     OutputSpec,

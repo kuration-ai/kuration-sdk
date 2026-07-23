@@ -69,7 +69,7 @@ full explanation. In particular:
 - `docs/quickstart.md` owns the complete first run; the README contains a short tested version.
 - `docs/pipeline.md` owns fluent operator behavior; the API reference owns exact signatures.
 - Layer guides own concepts and examples; `docs/api.md` links to them rather than repeating them.
-- `docs/jobs.md` explains the job format; `src/kuration/schemas/job.schema.json` is the
+- `docs/jobs.md` explains the job format; `src/kuration/core/schemas/job.schema.json` is the
   machine-readable key and validation authority.
 - `docs/architecture.md` explains design decisions, not ordinary usage.
 
@@ -140,7 +140,7 @@ The reference must cover these methods even though they are not individual membe
 
 ### Framework integration
 
-`kuration.torch.ShardDataset` is public and supported. The built-in
+`kuration.core.torch.ShardDataset` is public and supported. The built-in
 `kuration.gameplay.pixel_shift`, `kuration.gameplay.action_state_consistency`, and
 `kuration.gameplay.slam` modules are also
 public. Their direct APIs are documented in `docs/api.md` and their focused guides. Importing
@@ -162,8 +162,8 @@ The installed commands are public end-user interfaces:
 - Upgrade documents: `kur-migrate`.
 
 Their command options and exit behavior belong in `docs/jobs.md` or a linked CLI reference. The
-JSON job contract is the shipped `src/kuration/schemas/job.schema.json`, including supported version
-and migration behavior. Internal functions under `kuration.cli` are not a supported Python API.
+JSON job contract is the shipped `src/kuration/core/schemas/job.schema.json`, including supported version
+and migration behavior. Internal functions under `kuration.core.cli` are not a supported Python API.
 
 ### Artifact interface
 

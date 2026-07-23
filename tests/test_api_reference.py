@@ -24,7 +24,7 @@ def test_api_reference_covers_every_top_level_export():
 
 
 def test_api_reference_covers_every_public_pipeline_method():
-    tree = ast.parse((ROOT / "src" / "kuration" / "pipeline.py").read_text())
+    tree = ast.parse((ROOT / "src" / "kuration" / "core" / "pipeline.py").read_text())
     pipeline = next(
         node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "Pipeline")
     methods = [
@@ -60,7 +60,7 @@ def _documented_signature(text: str, name: str) -> str:
 def test_primary_api_signatures_match_the_reference():
     text = REFERENCE.read_text()
     public = {
-        "curate": kuration.curate,
+        "curate": kuration.core.curate,
         "write_dataset": kuration.write_dataset,
         "run_experiment": kuration.run_experiment,
         "dataset_report": kuration.dataset_report,
@@ -83,7 +83,7 @@ def test_primary_api_signatures_match_the_reference():
 
 
 def test_api_reference_covers_optional_torch_surface():
-    assert "kuration.torch.ShardDataset" in REFERENCE.read_text()
+    assert "kuration.core.torch.ShardDataset" in REFERENCE.read_text()
 
 
 def test_public_objects_have_source_docstrings():

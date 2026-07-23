@@ -3,6 +3,26 @@
 Kuration separates its dataset-agnostic engine from maintained domain capabilities while
 shipping both in one distribution:
 
+```text
+src/kuration/
+├── __init__.py             # concise package-level exports only
+├── py.typed
+├── core/                   # generic SDK implementation
+│   ├── adapters/
+│   ├── cli/
+│   ├── dsl/
+│   ├── output/
+│   └── ...
+└── gameplay/               # maintained gameplay implementation
+    ├── action_state_consistency/
+    ├── pixel_shift/
+    └── slam/
+        └── _vendor/        # private SLAM runtime dependencies
+```
+
+No implementation modules or domain compatibility packages live beside `core/` and
+`gameplay/`. Third-party code used only by SLAM is private to that domain.
+
 | module | responsibility | required runtime |
 |---|---|---|
 | `kuration.core` | schemas, adapters, segmentation, features, selection, output, registries | NumPy |
@@ -10,7 +30,7 @@ shipping both in one distribution:
 | `kuration.gameplay.action_state_consistency` | cross-segment baseline analysis | `[action-state]` when measuring frames |
 | `kuration.gameplay.slam` | reconstruction, trajectory quality/diversity, point clouds | `[slam]`, `[slam-viz]` |
 
-The historical top-level core API remains supported:
+The concise package-level core API remains supported through exports from `kuration.core`:
 
 ```python
 from kuration import input

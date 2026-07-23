@@ -200,7 +200,7 @@ def test_measure_lazily_loads_ambient_plugin_metrics(monkeypatch):
         if name not in default_registry.names("metric"):
             default_registry.register_metric(name, lambda window: float(window.T))
 
-    monkeypatch.setattr("kuration.plugins.load_plugins", load_plugin)
+    monkeypatch.setattr("kuration.core.plugins.load_plugins", load_plugin)
     try:
         pipeline = input([{"x": 1.0}, {"x": 2.0}]).measure(name)
         assert pipeline._registered_metrics == [name]
@@ -258,7 +258,7 @@ def test_get_scorer_resolves_default_registry_only_registrations():
     default_registry.register_scorer(name, lambda: scorer)
     try:
         assert get_scorer(name) is scorer
-        from kuration.scorers import has_scorer
+        from kuration.core.scorers import has_scorer
         assert has_scorer(name)
     finally:
         default_registry._entries["scorer"].pop(name, None)

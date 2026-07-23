@@ -14,9 +14,9 @@ import math
 import numpy as np
 import pytest
 
-from kuration.buffer import empty_like
-from kuration.dsl import compile_metric
-from kuration.schema import SchemaSpec
+from kuration.core.buffer import empty_like
+from kuration.core.dsl import compile_metric
+from kuration.core.schema import SchemaSpec
 
 SCHEMA = SchemaSpec.from_dict({
     "name": "demo", "entity_axis": "agent", "sample_hz": 2.0,

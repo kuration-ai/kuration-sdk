@@ -1,4 +1,4 @@
-"""Read side: kuration.loaders (numpy) + kuration.torch.ShardDataset (the [torch] extra)."""
+"""Read side: kuration.core.loaders (numpy) + kuration.core.torch.ShardDataset (the [torch] extra)."""
 from __future__ import annotations
 
 import json
@@ -25,7 +25,7 @@ SCHEMA = SchemaSpec.from_dict({
 
 
 def test_loader_does_not_hide_future_config_version(tmp_path):
-    from kuration.versioning import ARTIFACT_FORMAT_VERSION
+    from kuration.core.versioning import ARTIFACT_FORMAT_VERSION
 
     (tmp_path / "dataset_manifest.json").write_text(json.dumps({
         "artifact_format_version": ARTIFACT_FORMAT_VERSION, "shards": []}))
@@ -36,7 +36,7 @@ def test_loader_does_not_hide_future_config_version(tmp_path):
 
 
 def test_loader_does_not_hide_malformed_config(tmp_path):
-    from kuration.versioning import ARTIFACT_FORMAT_VERSION
+    from kuration.core.versioning import ARTIFACT_FORMAT_VERSION
 
     (tmp_path / "dataset_manifest.json").write_text(json.dumps({
         "artifact_format_version": ARTIFACT_FORMAT_VERSION, "shards": []}))
@@ -131,7 +131,7 @@ def test_read_shard_reshapes_flattened_parquet_tensor(tmp_path):
     # (L, 2, 2). Exercises read_shard_arrays' reshape directly (write_dataset's modalities are
     # only rank<=1, so this guards the encoder/image case).
     pytest.importorskip("pyarrow")
-    from kuration.output.containers import write_shard
+    from kuration.core.output.containers import write_shard
     L = 6
     img = np.arange(L * 2 * 2, dtype="float32").reshape(L, 2, 2)
     path = write_shard(str(tmp_path / "s"), "parquet", {"img": img}, n_steps=L)
@@ -142,7 +142,7 @@ def test_read_shard_reshapes_flattened_parquet_tensor(tmp_path):
 
 def test_torch_shard_dataset(tmp_path):
     torch = pytest.importorskip("torch")
-    from kuration.torch import ShardDataset
+    from kuration.core.torch import ShardDataset
     out = _write(tmp_path, short_policy="pad", shard_length=4)
     ds = ShardDataset(out, split="train", include_meta=True)
     assert len(ds) > 0

@@ -1,4 +1,4 @@
-"""Fluent pipeline facade: input() -> operators -> terminals (src/kuration/pipeline.py).
+"""Fluent pipeline facade: input() -> operators -> terminals (src/kuration/core/pipeline.py).
 
 Data is synthesized in-memory with a controlled distribution: source s{i} has hp ~ 25*i
 (+ a small j%5 ripple), so filter/bin assertions are checkable. Every test that should
@@ -23,7 +23,7 @@ from kuration import (
     segment_priorities,
     select,
 )
-from kuration.pipeline import Pipeline, input as kur_input
+from kuration.core.pipeline import Pipeline, input as kur_input
 
 N_SOURCES, N_STEPS = 4, 64
 

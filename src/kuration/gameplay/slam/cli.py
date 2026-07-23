@@ -82,7 +82,7 @@ def _source(args):
 def _progress(quiet: bool):
     if quiet or not sys.stderr.isatty():
         return None
-    from kuration.progress import cli_progress
+    from kuration.core.progress import cli_progress
 
     return cli_progress(file=sys.stderr)
 

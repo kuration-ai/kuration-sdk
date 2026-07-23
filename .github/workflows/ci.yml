@@ -174,7 +174,7 @@ jobs:
                 -k 'hf or huggingface' -q
               ;;
             video)
-              python -c 'import av; from kuration.media import _av; assert _av() is av'
+              python -c 'import av; from kuration.core.media import _av; assert _av() is av'
               python -m pytest tests/test_media_transforms_execution.py -k 'video or pyav' -q
               ;;
             ray)

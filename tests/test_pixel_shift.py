@@ -804,7 +804,7 @@ def test_supported_direct_api_is_exported_from_the_package_root():
 
 
 def test_pixel_shift_discoverable_through_the_kur_list_cli(monkeypatch, capsys):
-    from kuration.cli.discovery import list_main
+    from kuration.core.cli.discovery import list_main
 
     monkeypatch.setattr(sys, "argv", ["kur-list", "operators", "--json"])
     list_main()

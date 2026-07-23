@@ -8,6 +8,11 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 - Added `kuration.core` and `kuration.gameplay` domain surfaces. Pixel shift, action-state
   consistency, and SLAM now ship together in the SDK wheel instead of separate first-party
   plugin distributions; OpenCV, Torch, FAISS, and related runtimes remain extras.
+- Physically moved the generic SDK implementation under `kuration.core` and made
+  `kuration.gameplay` the only maintained domain package. Direct implementation imports such as
+  `kuration.pipeline` now use `kuration.core.pipeline`; package-level imports such as
+  `from kuration import Pipeline` remain available. Removed the former gameplay compatibility
+  packages, and nested Depth Anything privately under gameplay SLAM.
 - Integrated a full native `kuration.gameplay.slam.SLAMPipeline` for optional
   video/frame reconstruction,
   stable model/config provenance, resumable portable exports, trajectory quality and diversity

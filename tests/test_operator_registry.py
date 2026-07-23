@@ -116,7 +116,7 @@ def test_operator_provenance_reaches_written_config(tmp_path):
 
 
 def test_operator_is_available_through_discovery_cli(monkeypatch, capsys):
-    from kuration.cli.discovery import list_main
+    from kuration.core.cli.discovery import list_main
 
     monkeypatch.setattr(sys, "argv", ["kur-list", "operators", "--json"])
     list_main()

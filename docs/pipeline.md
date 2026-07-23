@@ -2,7 +2,7 @@
 
 The primary way to drive the SDK for the common case: no explicit `SchemaSpec`,
 no explicit adapter, no raw strategy dict. `kuration.input(...)` sniffs a source, infers a
-schema (via [`kuration.infer`](#schema-inference-kurationinfer)), and returns an immutable `Pipeline`; every
+schema (via [`kuration.core.infer`](#schema-inference-kurationcoreinfer)), and returns an immutable `Pipeline`; every
 operator returns a *new* `Pipeline` (nothing is mutated in place); a terminal compiles the
 chain into the classic strategy dict and calls the existing engine
 (`curate` / `write_dataset` / `dataset_report` / `run_experiment` — see [api.md](api.md)).
@@ -43,7 +43,7 @@ the right adapter, eagerly — a bad source fails at `input()` time, not mid-pip
 | `{source_id: list[Tick]}` | in-memory ticks, **multi-source** |
 | `input(adapter=<InputAdapter or registered name>, sources=[...], schema=..., registry=...)` | escape hatch — no inference, `schema=` is required; a named adapter resolves only through the supplied registry snapshot |
 
-File-kind sniffing (`kuration.infer.sniff`): `.csv`/`.parquet` → timeseries, `.jsonl` → JSONL
+File-kind sniffing (`kuration.core.infer.sniff`): `.csv`/`.parquet` → timeseries, `.jsonl` → JSONL
 (one row-object per line), `.json` → a JSON array of row objects *or* a columnar dict of
 equal-length lists, `.npz` → NpzAdapter, `.h5`/`.hdf5` → HDF5Adapter, a directory containing
 `.parquet` parts → `ParquetDatasetAdapter`; `.mp4`/`.m4v`/`.mov` → `VideoAdapter`. Anything else raises with a pointer at
@@ -60,11 +60,11 @@ Notes:
 - `time=`/`entity=`/`hz=`/`kinds=` steer inference (see below) without forcing a full explicit
   schema.
 
-## Schema inference (`kuration.infer`)
+## Schema inference (`kuration.core.infer`)
 
 `input()` calls `infer_schema(sample, ...)` on a small sample (`sample=200` rows by default)
 pulled by `sample_source`. It is deliberately conservative and loud: an ambiguous column
-raises rather than guessing. Summary (full behavior: [`src/kuration/infer.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/src/kuration/infer.py),
+raises rather than guessing. Summary (full behavior: [`src/kuration/core/infer.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/src/kuration/core/infer.py),
 concepts: [schema.md](schema.md)):
 
 - **Time column** — first case-insensitive match among `t, time, timestamp, ts, step, frame,

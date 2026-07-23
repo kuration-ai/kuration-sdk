@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from kuration import Segment, default_registry, input
-from kuration.report import dataset_report
-from kuration.versioning import migrate
+from kuration.core.report import dataset_report
+from kuration.core.versioning import migrate
 
 
 class _SameTextGroup:
@@ -28,7 +28,7 @@ def test_callable_metric_overlay_still_discovers_ambient_plugin_metrics(monkeypa
         if name not in default_registry.names("metric"):
             default_registry.register_metric(name, lambda window: float(window.T))
 
-    monkeypatch.setattr("kuration.plugins.load_plugins", load_plugin)
+    monkeypatch.setattr("kuration.core.plugins.load_plugins", load_plugin)
     try:
         pipeline = (input([{"x": 1.0}, {"x": 2.0}])
                     .measure("local", lambda window: 1.0)

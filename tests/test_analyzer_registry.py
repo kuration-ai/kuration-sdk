@@ -80,7 +80,7 @@ def test_analyzer_factory_contract_is_validated():
 
 
 def test_analyzer_is_available_through_discovery_cli(monkeypatch, capsys):
-    from kuration.cli.discovery import list_main
+    from kuration.core.cli.discovery import list_main
 
     monkeypatch.setattr(sys, "argv", ["kur-list", "analyzers", "--json"])
     list_main()

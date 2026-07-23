@@ -122,6 +122,19 @@ def test_bundled_slam_operator_runs_a_complete_fake_depth_reconstruction():
     assert output.points is None
 
 
+def test_private_depth_vendor_resolves_nested_config_modules():
+    pytest.importorskip("omegaconf")
+    from kuration.gameplay.slam._vendor.depth_anything_3.cfg import load_config
+    from kuration.gameplay.slam._vendor.depth_anything_3.registry import MODEL_REGISTRY
+
+    config = load_config(MODEL_REGISTRY["da3nested-giant-large"])
+    package = "kuration.gameplay.slam._vendor.depth_anything_3"
+
+    assert config.__object__.path == f"{package}.model.da3"
+    assert config.anyview.__object__.path == f"{package}.model.da3"
+    assert config.metric.__object__.path == f"{package}.model.da3"
+
+
 def test_export_requires_timestamp_coverage_before_writing(tmp_path):
     output = SimpleNamespace(
         trajectories={"one": np.zeros((1, 3)), "two": np.ones((1, 3))},

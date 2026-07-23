@@ -319,7 +319,7 @@ class SLAMOperator:
         and move it onto `device` in eval mode. Imported lazily so this module
         has no import-time dependency on `depth_anything_3` for callers who
         already pass a constructed `depth_model` object."""
-        from depth_anything_3.api import DepthAnything3
+        from ._vendor.depth_anything_3.api import DepthAnything3
 
         repo_id = model_name if "/" in model_name else f"depth-anything/{model_name}"
         model = DepthAnything3.from_pretrained(repo_id)

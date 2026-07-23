@@ -40,7 +40,7 @@ cloud = ["fsspec>=2024.2"]        # gs:// / s3:// / az:// I/O (plus a backend: g
 s3 = ["fsspec>=2024.2", "s3fs>=2024.2"]      # s3:// I/O
 gcs = ["fsspec>=2024.2", "gcsfs>=2024.2"]    # gs:// I/O
 azure = ["fsspec>=2024.2", "adlfs>=2024.2"]  # az:// I/O
-torch = ["torch>=2.2"]            # PyTorch ShardDataset over a curated dataset (kuration.torch)
+torch = ["torch>=2.2"]            # PyTorch ShardDataset over a curated dataset (kuration.core.torch)
 hf = ["datasets>=2.18"]           # HuggingFace datasets input adapter
 zarr = ["zarr>=2.17"]             # Zarr array-store input adapter
 video = ["av>=12"]                # optional CPU MP4 provider
@@ -139,18 +139,18 @@ dev = [
 docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5"]
 
 [project.scripts]
-kur-curate = "kuration.cli.curate:main"
-kur-experiment = "kuration.cli.experiment:main"
-kur-report = "kuration.cli.report:main"
-kur-validate = "kuration.cli.validate:main"
-kur-list = "kuration.cli.discovery:list_main"
-kur-describe = "kuration.cli.discovery:describe_main"
-kur-migrate = "kuration.cli.migrate:main"
-kur-explain = "kuration.cli.explain:main"
-kur-inspect = "kuration.cli.inspect:main"
-kur-diff = "kuration.cli.diff:main"
-kur-check = "kuration.cli.check:main"
-kur-plugin-check = "kuration.cli.plugin_check:main"
+kur-curate = "kuration.core.cli.curate:main"
+kur-experiment = "kuration.core.cli.experiment:main"
+kur-report = "kuration.core.cli.report:main"
+kur-validate = "kuration.core.cli.validate:main"
+kur-list = "kuration.core.cli.discovery:list_main"
+kur-describe = "kuration.core.cli.discovery:describe_main"
+kur-migrate = "kuration.core.cli.migrate:main"
+kur-explain = "kuration.core.cli.explain:main"
+kur-inspect = "kuration.core.cli.inspect:main"
+kur-diff = "kuration.core.cli.diff:main"
+kur-check = "kuration.core.cli.check:main"
+kur-plugin-check = "kuration.core.cli.plugin_check:main"
 kur-slam = "kuration.gameplay.slam.cli:main"
 
 [project.entry-points."kuration.plugins"]
@@ -162,17 +162,21 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["kuration*", "depth_anything_3*"]
+include = ["kuration", "kuration.*"]
 
 [tool.setuptools.package-data]
-kuration = ["schemas/*.json", "py.typed"]   # shipped JSON Schema (kur-validate) + PEP 561 marker
-depth_anything_3 = ["configs/*.yaml", "LICENSE", "NOTICE"]
+kuration = ["py.typed"]
+"kuration.core" = ["schemas/*.json"]
+"kuration.gameplay.slam._vendor.depth_anything_3" = [
+    "configs/*.yaml",
+    "LICENSE",
+    "NOTICE",
+]
 
-# `depth_anything_3` is an intentional bundled top-level compatibility package. Its mono and
-# metric preset names currently resolve to identical upstream configs, but both public names are
-# retained. All other wheel-content checks remain enabled.
+# Upstream exposes mono and metric preset names whose current YAML payloads are identical.
+# Both identifiers remain valid runtime choices, so retain both files and only suppress W002.
 [tool.check-wheel-contents]
-ignore = ["W002", "W009"]
+ignore = ["W002"]
 
 [tool.ruff]
 target-version = "py311"
@@ -198,6 +202,7 @@ omit = ["src/kuration/gameplay/slam/slam_pipeline.py"]
 [tool.mypy]
 python_version = "3.11"
 files = ["src/kuration"]
+exclude = ["^src/kuration/gameplay/slam/_vendor/"]
 check_untyped_defs = true
 ignore_missing_imports = true
 no_implicit_optional = false
@@ -206,6 +211,9 @@ warn_redundant_casts = true
 warn_unreachable = true
 strict_equality = true
 follow_imports_for_stubs = true
+
+# Depth Anything is vendored third-party runtime code. Kuration-owned adapters and orchestration
+# around it are type-checked; the upstream implementation is validated through integration tests.
 
 # Optional libraries may ship interpreter-specific stubs using that interpreter's syntax
 # (for example PEP 695 `type` statements in NumPy or Zarr).  We intentionally

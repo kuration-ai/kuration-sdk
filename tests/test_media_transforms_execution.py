@@ -180,8 +180,8 @@ def test_pyav_provider_reuses_and_cleans_remote_staging(monkeypatch):
         opens.append((uri, mode))
         return io.BytesIO(b"video-bytes")
 
-    monkeypatch.setattr("kuration.io.is_remote", lambda uri: str(uri).startswith("s3://"))
-    monkeypatch.setattr("kuration.io.open_file", open_file)
+    monkeypatch.setattr("kuration.core.io.is_remote", lambda uri: str(uri).startswith("s3://"))
+    monkeypatch.setattr("kuration.core.io.open_file", open_file)
     provider = PyAVMediaProvider(remote_cache_size=1)
     with provider._local_path("s3://bucket/clip.mp4") as first:
         assert Path(first).read_bytes() == b"video-bytes"

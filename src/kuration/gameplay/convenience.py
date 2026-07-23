@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ..analyzers import Analyzer
+    from ..core.analyzers import Analyzer
     from .pipeline import GameplayPipeline
 
 

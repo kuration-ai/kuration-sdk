@@ -9,21 +9,21 @@ import numpy as np
 import pytest
 
 from kuration import OutputSpec, SchemaSpec, Segment, Tick
-from kuration.adapters.curated import CuratedDatasetAdapter
-from kuration.adapters.parquet_dataset import ParquetDatasetAdapter
-from kuration.adapters.timeseries import TimeseriesAdapter
-from kuration.buffer import build_window
-from kuration.external import iter_external_hash_dedup
-from kuration.io import write_text
-from kuration.loaders import read_shard_arrays, rebase_entries
-from kuration.manifest import begin_dataset, commit_dataset, portable_shard_entries
-from kuration.media import FrameRef, JoinedMediaAdapter, VideoAdapter, VideoMetadata
-from kuration.output.external_fill import external_fill_to_hours
-from kuration.output.shardwriter import track_name, write_track
-from kuration.output.stream import stream_source_shards
-from kuration.output.track import Track
-from kuration.provenance import source_descriptor
-from kuration.versioning import ARTIFACT_FORMAT_VERSION
+from kuration.core.adapters.curated import CuratedDatasetAdapter
+from kuration.core.adapters.parquet_dataset import ParquetDatasetAdapter
+from kuration.core.adapters.timeseries import TimeseriesAdapter
+from kuration.core.buffer import build_window
+from kuration.core.external import iter_external_hash_dedup
+from kuration.core.io import write_text
+from kuration.core.loaders import read_shard_arrays, rebase_entries
+from kuration.core.manifest import begin_dataset, commit_dataset, portable_shard_entries
+from kuration.core.media import FrameRef, JoinedMediaAdapter, VideoAdapter, VideoMetadata
+from kuration.core.output.external_fill import external_fill_to_hours
+from kuration.core.output.shardwriter import track_name, write_track
+from kuration.core.output.stream import stream_source_shards
+from kuration.core.output.track import Track
+from kuration.core.provenance import source_descriptor
+from kuration.core.versioning import ARTIFACT_FORMAT_VERSION
 
 
 SCHEMA = SchemaSpec.from_dict({
@@ -225,7 +225,7 @@ def test_external_fill_uses_python_equality_for_duplicate_ids(tmp_path):
 def test_columnar_rejects_duplicate_bins_reads_all_batches_and_hashes_streaming(
         tmp_path, monkeypatch):
     pa = pytest.importorskip("pyarrow")
-    from kuration.columnar import SegmentBatch
+    from kuration.core.columnar import SegmentBatch
 
     segments = [Segment("a", 0, 1, (0, 1), {"x": 1.0}, bin=(1, 2))]
     with pytest.raises(ValueError, match="bin_names must be unique"):
@@ -273,7 +273,7 @@ def test_columnar_rejects_duplicate_bins_reads_all_batches_and_hashes_streaming(
 
 def test_external_hash_dedup_rejects_partition_feature_drift(tmp_path):
     pytest.importorskip("pyarrow")
-    from kuration.columnar import SegmentBatch
+    from kuration.core.columnar import SegmentBatch
 
     first = tmp_path / "first.arrow"
     second = tmp_path / "second.arrow"

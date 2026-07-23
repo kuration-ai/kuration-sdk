@@ -74,7 +74,7 @@ def test_segmenter_context_is_bounded_and_shortens_only_at_source_edges():
 
 
 def test_segmenter_context_discards_sparse_stride_gaps(monkeypatch):
-    import kuration.segment as segment_module
+    import kuration.core.segment as segment_module
 
     class TrackingDeque(stdlib_deque):
         peak = 0

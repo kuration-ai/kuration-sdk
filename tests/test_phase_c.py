@@ -16,7 +16,7 @@ from kuration import (
     load_strategy,
     select,
 )
-from kuration.select import assign_splits, enforce_group_cap, enforce_tag_coverage
+from kuration.core.select import assign_splits, enforce_group_cap, enforce_tag_coverage
 
 SCHEMA = SchemaSpec.from_dict({
     "name": "c", "entity_axis": "e", "sample_hz": 1.0,

@@ -4,8 +4,8 @@ import pytest
 
 from kuration import (Registry, SchemaSpec, Segment, default_registry, input, load_strategy,
                        output_preset, segment_priorities)
-from kuration.loaders import shard_entries
-from kuration.output.containers import read_shard, register_container, write_shard
+from kuration.core.loaders import shard_entries
+from kuration.core.output.containers import read_shard, register_container, write_shard
 
 
 def _schema(categorical=False):

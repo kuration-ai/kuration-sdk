@@ -77,7 +77,7 @@ def test_kur_check_artifact_policy_pass_and_fail(tmp_path):
         "min_budget_utilization": 1.0,
         "max_skipped_sources": 0,
     }))
-    command = [sys.executable, "-m", "kuration.cli.check", str(destination),
+    command = [sys.executable, "-m", "kuration.core.cli.check", str(destination),
                "--policy", str(policy), "--json"]
     passed = subprocess.run(command, check=True, capture_output=True, text=True)
     assert json.loads(passed.stdout)["passed"] is True
