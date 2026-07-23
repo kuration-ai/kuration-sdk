@@ -74,6 +74,16 @@ the backend-neutral fsspec layer for environments that manage provider packages 
 The [`dev/eval-standard-operators` evaluation](docs/standard-operators-evaluation.md) records the
 packaging measurements and decision questions for the built-in domain capabilities.
 
+On that evaluation branch, maintained domain capabilities also have a single-import facade:
+
+```python
+import kuration as kur
+
+pixel_pipeline = kur.input(telemetry, ...).join_video(videos).pixel_shift()
+slam_pipeline = kur.slam_pipeline("slam-export/manifest.json").slam_motion().slam_quality()
+checker = kur.action_state_checker(baselines=baselines)
+```
+
 ## Try it in five minutes
 
 The repository includes a deterministic, download-free sensor example using only NumPy:

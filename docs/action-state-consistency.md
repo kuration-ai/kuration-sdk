@@ -120,12 +120,12 @@ nothing stops any caller from building a baselines dict by hand instead.
 `ActionStateConsistencyChecker` is a user-owned analyzer — same ownership pattern as
 `PixelShiftReport`, and for the same reason: classifying a clip means aggregating across
 every segment that belongs to it, which a stateless per-segment SDK transform cannot do.
-Construct it through the SDK registry for discovery and parameter validation:
+The normal Python path needs only the SDK import:
 
 ```python
-from kuration import get_analyzer
+import kuration as kur
 
-checker = get_analyzer("aintropy/action-state-consistency", **config)
+checker = kur.action_state_checker(**config)
 for frames, actions, segment_id in your_own_segments:
     # segment_id is (source_id, start_idx, end_idx) -- same contract as
     # PixelShiftReport.add_segment. Segments sharing a source_id are one clip.
@@ -135,6 +135,11 @@ checker.print_report()          # counts + exact clip IDs per verdict, printed t
 print(checker.summary())        # {"consistent": [...], "inconsistent": [...], "inconclusive": [...]}
 print(checker.clip_verdict("clip_042"))  # "consistent" | "inconsistent" | "inconclusive"
 ```
+
+`action_state_checker()` delegates to the registered
+`aintropy/action-state-consistency` analyzer, preserving discovery and parameter validation.
+`kur.get_analyzer("aintropy/action-state-consistency", **config)` remains available for
+declarative or dynamically selected components.
 
 Direct construction with
 `kuration.action_state_consistency.ActionStateConsistencyChecker(config)` remains available

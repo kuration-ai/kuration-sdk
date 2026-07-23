@@ -5,9 +5,9 @@ camera trajectories, camera poses, and an optional scene point cloud. The trajec
 then an ordinary Kuration input, so windows can be scored for motion, reconstruction quality, and
 diversity with the normal fluent SDK.
 
-The two execution paths are deliberately separate:
+The public facade handles both execution paths:
 
-1. Live reconstruction is an optional, global `SLAMPipeline` operation. It may compare clips,
+1. Live reconstruction is an optional, global operation. It may compare clips,
    download a depth model, use a GPU, and stitch a shared scene.
 2. Precomputed SLAM output is lightweight. Opening, validating, transforming, and curating a
    manifest needs only the base SDK and NumPy; it does not run or import the model runtime.
@@ -24,38 +24,56 @@ Point-cloud notebook visualization additionally needs `kuration-sdk[slam-viz]`. 
 receive `manifest.json` can use `input_slam()`, the trajectory transforms, and point-cloud
 curation with the base SDK.
 
-## Reconstruct videos with the native API
+## Reconstruct and curate with one SDK import
 
 ```python
-from kuration.slam import SLAMPipeline
+import kuration as kur
 
-slam = SLAMPipeline(
-    depth_model="da3-base",
-    depth_model_id="depth-anything/da3-base@MODEL_REVISION",
-    output_pointcloud=True,
-    window_size=48,
-    overlap=4,
-)
-
-reconstruction = slam.reconstruct(
+pipeline = kur.slam_pipeline(
     {
         "match-001": "/data/match-001.mp4",
         "match-002": "/data/match-002.mp4",
     },
     "slam-export",
+    depth_model="da3-base",
+    depth_model_id="depth-anything/da3-base@MODEL_REVISION",
+    output_pointcloud=True,
+    window_size=48,
+    overlap=4,
     decoder_options={"frame_skip": 4, "color_space": "RGB"},
     resume=True,
+    join_video=True,
 )
 
-pipeline = reconstruction.to_pipeline(join_video=True)
 result = (
     pipeline
     .window(32, stride=16)
-    .apply("aintropy/slam-motion-diversity", axis="slam_path_length", bins=8)
-    .apply("aintropy/slam-quality", min_score=0.6)
+    .slam_motion(axis="slam_path_length", bins=8)
+    .slam_quality(min_score=0.6)
     .sample("uniform-bins", n=2_000)
     .collect()
 )
+```
+
+`slam_pipeline()` always returns the ordinary immutable `Pipeline`; its fluent methods delegate
+to the registered operators, so declarative jobs and provenance retain their stable component
+names. Raw input requires the `slam` extra and an output directory. Passing an existing manifest
+does not load the model runtime.
+
+## Advanced reconstruction control
+
+`kur.SLAMPipeline` exposes the intermediate reconstruction when an application needs to inspect
+or reuse it before constructing a curation pipeline:
+
+```python
+import kuration as kur
+
+slam = kur.SLAMPipeline(
+    depth_model="da3-base",
+    depth_model_id="depth-anything/da3-base@MODEL_REVISION",
+)
+reconstruction = slam.reconstruct(videos, "slam-export", resume=True)
+pipeline = reconstruction.to_pipeline(join_video=True)
 ```
 
 When a model is supplied as an object, set `depth_model_id` and, when applicable,
@@ -86,17 +104,18 @@ object with `trajectories` and `poses` mappings plus optional `points` and `colo
 ## Curate precomputed output without running SLAM
 
 ```python
-from kuration.slam import input_slam
+import kuration as kur
 
 pipeline = (
-    input_slam("slam-export/manifest.json")
+    kur.slam_pipeline("slam-export/manifest.json")
     .window(32, stride=16)
-    .apply("aintropy/slam-motion-diversity", axis="slam_path_length", bins=8)
-    .apply("aintropy/slam-quality", min_score=0.6)
+    .slam_motion(axis="slam_path_length", bins=8)
+    .slam_quality(min_score=0.6)
 )
 ```
 
-`prepare_slam_input()` is the lower-level normalization API. It reuses an existing manifest,
+`kur.input_slam()` is the direct manifest-only equivalent. `prepare_slam_input()` is the
+lower-level normalization API. It reuses an existing manifest,
 exports a completed `SLAMOutput`, or runs raw inputs only when necessary. Set
 `run_if_needed=False` when an application must reject raw input rather than trigger an expensive
 run.

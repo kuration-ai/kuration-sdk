@@ -8,9 +8,9 @@ an implementation experiment, not a permanent admission policy.
 
 | capability | built-in surface | optional runtime |
 |---|---|---|
-| Pixel shift | `kuration.pixel_shift`; operator and transform `aintropy/pixel-shift` | `[pixel-shift]` |
-| Action-state consistency | `kuration.action_state_consistency`; analyzer `aintropy/action-state-consistency` | `[action-state]` for frame measurement |
-| SLAM | `kuration.slam`; trajectory adapter, motion/quality transforms and operators, native reconstruction API | `[slam]`, `[slam-viz]` |
+| Pixel shift | `Pipeline.pixel_shift()`; lower-level `kuration.pixel_shift` and `aintropy/pixel-shift` | `[pixel-shift]` |
+| Action-state consistency | `action_state_checker()`; lower-level `kuration.action_state_consistency` and `aintropy/action-state-consistency` | `[action-state]` for frame measurement |
+| SLAM | `slam_pipeline()`, `Pipeline.slam_motion()`, and `Pipeline.slam_quality()`; advanced `kuration.slam` API | `[slam]`, `[slam-viz]` |
 
 The SLAM implementation includes the three commits at the tip of the original `slam` branch:
 `009901a`, `3324564`, and `b98877c`.
@@ -19,6 +19,8 @@ The SLAM implementation includes the three commits at the tip of the original `s
 
 - First-party implementations live under `src/kuration` and ship in the SDK wheel.
 - Their descriptors register during `import kuration`, before external plugin discovery.
+- Ordinary Python use needs one import and no component-name strings:
+  `import kuration as kur`.
 - The base dependency list remains NumPy-only. OpenCV, PyTorch, FAISS, PyAV, and related
   frameworks remain optional and are not imported during SDK startup.
 - `standard-operators` installs every first-party operator runtime for a single-command setup.
@@ -32,12 +34,12 @@ Measured from clean wheels built on the same machine and revision family:
 
 | check | post-revert `dev/main` | evaluation branch |
 |---|---:|---:|
-| wheel size | 254,873 bytes | 418,662 bytes |
-| wheel increase | — | 163,789 bytes (64.3%) |
+| wheel size | 254,873 bytes | 420,626 bytes |
+| wheel increase | — | 165,753 bytes (65.0%) |
 | required dependencies | NumPy | NumPy |
 | eager `torch`, `cv2`, or `faiss` import | no | no |
-| full test suite | — | 817 passed, 7 skipped |
-| focused maintained-capability suite | — | 144 passed, 1 skipped |
+| full test suite | — | 819 passed, 7 skipped |
+| focused maintained-capability suite | — | 146 passed, 1 skipped |
 
 The wheel increase measures bundled Python/configuration code, including the vendored Depth
 Anything 3 implementation. It does not include the much larger optional runtime wheels or model
@@ -55,6 +57,24 @@ pip install "kuration-sdk[standard-operators]"
 
 The base installation exposes descriptors and lightweight APIs. Execution that reaches a missing
 framework fails with the relevant extra's installation command.
+
+## Single-import facade
+
+```python
+import kuration as kur
+
+pixel_pipeline = kur.input(telemetry, ...).join_video(videos).pixel_shift()
+slam_pipeline = (
+    kur.slam_pipeline("slam-export/manifest.json")
+    .window(32, stride=16)
+    .slam_motion()
+    .slam_quality(min_score=0.6)
+)
+checker = kur.action_state_checker(baselines=baselines)
+```
+
+These methods are aliases over the same registered descriptors used by declarative jobs and
+provenance. They improve discovery and imports without forking operator behavior.
 
 ## Evaluation questions
 

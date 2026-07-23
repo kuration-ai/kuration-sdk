@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+import kuration as kur
 from kuration import default_registry, describe_component
 from kuration.slam import (
     ADAPTER_NAME,
@@ -103,6 +104,23 @@ def test_export_and_adapter_round_trip(tmp_path):
         assert cloud["points"].shape == (2, 3)
         assert cloud["colors"].dtype == np.uint8
         assert cloud["confidence"].tolist() == [0.25, 0.9]
+
+
+def test_top_level_slam_pipeline_returns_the_normal_fluent_pipeline(tmp_path):
+    manifest = export_slam_output(_output(), tmp_path / "export", sample_hz=2.0)
+
+    pipeline = (
+        kur.slam_pipeline(manifest)
+        .window(2, stride=1)
+        .slam_motion(axis="slam_turn_degrees", bins=2)
+        .slam_quality(min_score=0.0)
+    )
+    result = pipeline.collect(n=10)
+
+    assert not result.errors
+    assert len(result.all_segments) == 2
+    assert all("slam_path_length" in segment.features for segment in result.all_segments)
+    assert all("slam_quality_score" in segment.features for segment in result.all_segments)
 
 
 def test_export_rejects_mismatched_pose_count(tmp_path):

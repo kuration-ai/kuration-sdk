@@ -92,6 +92,9 @@ Each operator returns a new `Pipeline`; the pipeline being extended is never mut
 | operator | signature | compiles to |
 |---|---|---|
 | `.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None)` | a `JoinedMediaAdapter` with a resolved source→video mapping and lazy media column |
+| `.pixel_shift` | `(*, controls=None, boundary="exclude")` | the built-in `aintropy/pixel-shift` operator |
+| `.slam_motion` | `(*, axis="slam_path_length", bins=8)` | the built-in `aintropy/slam-motion-diversity` operator |
+| `.slam_quality` | `(*, min_score=None, **quality_options)` | the built-in `aintropy/slam-quality` operator |
 | `.window` | `(window, stride=None, unit="steps")` | the `Segmenter` (stride defaults to `window`) |
 | `.measure` | `(name, spec=None, *, of=None, map=None, filter=None, scope=None)` | a `strategy.define[name]` entry — 4 forms below |
 | `.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params)` | a registered bounded batch transform whose scalar outputs become selection features |

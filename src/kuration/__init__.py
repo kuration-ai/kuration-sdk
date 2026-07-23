@@ -43,6 +43,7 @@ from .external import (external_quantile_edges, external_top_k, external_uniform
                        iter_external_uniform_priorities,
                        iter_external_weighted_priorities)
 from .curate import CurateResult, curate
+from .convenience import action_state_checker, slam_pipeline
 from .dsl import compile_metric, register_compiled, register_metric
 from .experiment import Arm, run_experiment, union_define
 from .features import FeatureEngine
@@ -150,6 +151,7 @@ __all__ = [
     "QualityGateResult", "QualityGateError",
     "render_html_report", "write_html_report",
     "infer_schema", "Pipeline", "input",
+    "action_state_checker", "slam_pipeline",
     "load_plugins", "loaded_plugin_modules", "plugin_failures", "plugin_provenance",
     "check_plugins",
     "PluginCheckResult", "ProgressCallback",
@@ -158,12 +160,14 @@ __all__ = [
     "DatasetWriteResult", "ExperimentResult", "DatasetReport", "ValidationResult",
     "JOB_SCHEMA_VERSION", "migrate", "migrate_job", "migrate_config",
     "pixel_shift", "action_state_consistency", "slam",
+    "SLAMPipeline", "SLAMReconstruction", "input_slam",
 ]
 
 # First-party domain capabilities are built into this evaluation branch. Their optional
 # frameworks remain lazy, but their descriptors are available in every Registry snapshot
 # without scanning the external ``kuration.plugins`` entry-point group.
 from . import action_state_consistency, pixel_shift, slam
+from .slam import SLAMPipeline, SLAMReconstruction, input_slam
 
 pixel_shift.register()
 action_state_consistency.register()

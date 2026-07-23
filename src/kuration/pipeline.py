@@ -620,6 +620,49 @@ class Pipeline:
         p.schema = p.adapter.schema
         return p
 
+    def pixel_shift(self, *, controls=None, boundary: str = "exclude") -> "Pipeline":
+        """Measure isolated key/mouse pixel motion with the built-in operator."""
+        params = {"boundary": boundary}
+        if controls is not None:
+            params["controls"] = controls
+        return self.apply("aintropy/pixel-shift", **params)
+
+    def slam_motion(
+        self,
+        *,
+        axis: str = "slam_path_length",
+        bins: int = 8,
+    ) -> "Pipeline":
+        """Add built-in SLAM motion features and organize one diversity axis."""
+        return self.apply(
+            "aintropy/slam-motion-diversity",
+            axis=axis,
+            bins=bins,
+        )
+
+    def slam_quality(
+        self,
+        *,
+        min_score: float | None = None,
+        min_tracking_confidence: float = 0.5,
+        translation_ratio: float = 10.0,
+        translation_mad_multiplier: float = 8.0,
+        max_translation_step: float | None = None,
+        max_turn_degrees: float = 90.0,
+    ) -> "Pipeline":
+        """Add built-in SLAM quality features and optionally reject weak windows."""
+        params = {
+            "min_tracking_confidence": min_tracking_confidence,
+            "translation_ratio": translation_ratio,
+            "translation_mad_multiplier": translation_mad_multiplier,
+            "max_turn_degrees": max_turn_degrees,
+        }
+        if min_score is not None:
+            params["min_score"] = min_score
+        if max_translation_step is not None:
+            params["max_translation_step"] = max_translation_step
+        return self.apply("aintropy/slam-quality", **params)
+
     def transform(self, name: str, *, using=None, inputs=None, batch_size=None,
                   device="cpu", **params) -> "Pipeline":
         """Add a registered bounded transform that produces scalar segment features."""

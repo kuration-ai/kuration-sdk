@@ -9,6 +9,7 @@ import pytest
 
 pytest.importorskip("cv2")
 
+import kuration as kur
 from kuration import get_analyzer
 from kuration import action_state_consistency as asc
 from kuration.action_state_consistency import (
@@ -85,6 +86,17 @@ def test_sdk_registry_constructs_the_real_action_state_checker():
         anomaly_type="action_state",
         baselines=baselines,
     )
+
+    assert isinstance(checker, ActionStateConsistencyChecker)
+    assert checker.baselines == baselines
+
+
+def test_top_level_action_state_checker_needs_only_the_sdk_import():
+    baselines = {
+        "W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1.0}},
+    }
+
+    checker = kur.action_state_checker(baselines=baselines)
 
     assert isinstance(checker, ActionStateConsistencyChecker)
     assert checker.baselines == baselines

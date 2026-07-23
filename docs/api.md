@@ -26,6 +26,8 @@ objects as noted below.
 | `write_dataset` | `(out_dir, *, schema, adapter, sources, strategy, segmenter, spec, encoder=None, train_hours, test_hours=0.0, sample_hz=None, seed=0, group_of=None, tags_of=None, clip_aggregate="max", span_steps=None, span_seconds=None, workers=1, on_error="skip", resume=False, streaming=False, progress=None, transforms=(), registry=None, executor="local", memory_budget=None, batch_size=1024, checkpoint_dir=None, spill_dir=None, approximation="exact", max_in_flight=2) -> dict` | score/transform, fill a train/test **hour budget**, write shards + manifests + config; a memory budget selects the exact bounded checkpoint path |
 | `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local") -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
 | `dataset_report` | `(segments, *, metrics=None, hist_bins=10) -> dict` | per-metric distribution profile (+ tag/group counts) of a scored pool |
+| `slam_pipeline` | `(source, output=None, *, depth_model=None, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, pipeline_factory=None, join_video=False, tolerance=None, mismatch="error", provider=None, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False, **pipeline_options) -> Pipeline` | reconstruct raw video/frames when needed, or open an existing SLAM manifest, and return the ordinary fluent pipeline |
+| `action_state_checker` | `(*, baselines, anomaly_type="action_state") -> Analyzer` | construct the built-in action-state consistency analyzer without a registry import or string component name |
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
 cap and stratified splits); `tags_of(segment) -> iterable` overrides declarative tags;
@@ -51,6 +53,9 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `infer_schema` | `(sample, *, name="inferred", time=None, entity=None, hz=None, kinds=None) -> (SchemaSpec, hints)` | classify a sample (rows/dict-of-arrays/ticks) into a schema + adapter `fields=` hints |
 | `Pipeline.window` | `(window, stride=None, unit="steps") -> Pipeline` | set the `Segmenter` |
 | `Pipeline.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None) -> Pipeline` | attach a strictly aligned lazy video media column |
+| `Pipeline.pixel_shift` | `(*, controls=None, boundary="exclude") -> Pipeline` | add the built-in DIAMOND action/pixel-motion features (`[pixel-shift]` when frames are measured) |
+| `Pipeline.slam_motion` | `(*, axis="slam_path_length", bins=8) -> Pipeline` | add built-in SLAM motion features and bin one diversity axis |
+| `Pipeline.slam_quality` | `(*, min_score=None, min_tracking_confidence=0.5, translation_ratio=10.0, translation_mad_multiplier=8.0, max_translation_step=None, max_turn_degrees=90.0) -> Pipeline` | add built-in SLAM quality features and optionally filter weak windows |
 | `Pipeline.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params) -> Pipeline` | add a registered bounded scalar-feature transform |
 | `Pipeline.using` | `(registry) -> Pipeline` | resolve adapters, metrics, scorers, encoders, methods, filters, containers, and presets through an explicit `Registry` overlay |
 | `Pipeline.apply` | `(name, **params) -> Pipeline` | validate and expand a registered compositional operator; provenance retains its descriptor and ordinary-operator expansion |

@@ -713,7 +713,7 @@ def test_full_pipeline_with_fake_video_provider():
         input(rows, schema=schema, fields={"action": action_cols}, time="t")
         .join_video({"mem": "fake.mp4"}, provider=provider, on="frame_index")
         .window(n_frames, stride=n_frames)
-        .apply("aintropy/pixel-shift", controls=["W"])
+        .pixel_shift(controls=["W"])
         .organize("w_n_instances", bins=1)
     )
     result = pipeline.collect(n=10)

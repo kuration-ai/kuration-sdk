@@ -57,22 +57,22 @@ python -m pytest tests/test_pixel_shift.py -q
 composable with `.bin()`/`.filter()`/`.sample()` like any other kuration feature:
 
 ```python
+import kuration as kur
+
 pipeline = (
-    input(telemetry, fields={"action": action_columns}, time="t")
+    kur.input(telemetry, fields={"action": action_columns}, time="t")
     .join_video({"my_source": "clip.mp4"}, on="frame_index")
     .window(32, stride=32)
-    .apply(
-        "aintropy/pixel-shift",
-        controls=["W", "S", "A", "D"],
-        boundary="exclude",
-    )
+    .pixel_shift(controls=["W", "S", "A", "D"], boundary="exclude")
 )
 result = pipeline.collect(n=1000)
 ```
 
 Registered under `aintropy/pixel-shift` for both the batch transform (`kur-describe
 transform aintropy/pixel-shift`) and the compositional operator (`kur-describe operator
-aintropy/pixel-shift`). The direct Python API lives at `kuration.pixel_shift`.
+aintropy/pixel-shift`). The fluent method delegates to that registered operator, so serialized
+jobs and provenance retain the stable component name. The lower-level Python API lives at
+`kuration.pixel_shift`.
 
 **For the fuller per-instance report** — `PixelShiftReport` is a plain object you build
 yourself, by calling `add_segment()` directly over your own frames/actions, outside pipeline
