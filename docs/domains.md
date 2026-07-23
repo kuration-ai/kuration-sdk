@@ -23,6 +23,12 @@ src/kuration/
 No implementation modules or domain compatibility packages live beside `core/` and
 `gameplay/`. Third-party code used only by SLAM is private to that domain.
 
+The `_vendor/` subtree is an attributed upstream source snapshot, not Kuration-owned
+implementation. CI validates its packaging, imports, configuration resolution, and integration
+through the public SLAM boundary, while first-party line coverage measures the surrounding
+Kuration adapters and orchestration. The subtree is also excluded from mypy; changes to the
+vendored snapshot require the focused SLAM regression suite and preserved license notices.
+
 | module | responsibility | required runtime |
 |---|---|---|
 | `kuration.core` | schemas, adapters, segmentation, features, selection, output, registries | NumPy |

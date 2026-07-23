@@ -193,11 +193,15 @@ ignore = ["E731", "E741", "B007", "B008", "B023", "B904", "B905"]
 pythonpath = ["."]
 testpaths = ["tests"]
 
-# The optional Torch/DA3 numerical kernel is exercised in the dedicated `[slam]` integration
-# matrix with a fake depth model. Keep aggregate core coverage focused on the SDK-owned adapters,
-# execution boundary, manifests, transforms, CLI, curation, and validation layers around it.
+# The optional Torch/DA3 numerical kernel and the private Depth Anything 3 source snapshot are
+# exercised through focused integration and compatibility tests. Keep aggregate coverage focused
+# on Kuration-owned adapters, execution boundaries, manifests, transforms, CLI, curation, and
+# validation layers rather than treating vendored upstream implementation lines as SDK debt.
 [tool.coverage.run]
-omit = ["src/kuration/gameplay/slam/slam_pipeline.py"]
+omit = [
+    "src/kuration/gameplay/slam/slam_pipeline.py",
+    "src/kuration/gameplay/slam/_vendor/**",
+]
 
 [tool.mypy]
 python_version = "3.11"

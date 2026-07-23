@@ -129,14 +129,16 @@ All non-underscore methods intentionally exposed by `Pipeline` are public:
 
 - Schema and resolution: `using`, `semantic`, `as_position`, `as_angular`, `as_bitmask`,
   `at_rate`.
-- Pipeline construction: `apply`, `window`, `join_video`, `transform`, `measure`, `filter`,
-  `bin`, `score`, `tag`, `split`, `group`, `options`, `expect`, `sample`; `organize` and
-  `curate` remain compatibility aliases.
+- Pipeline construction: `window`, `join_video`, `transform`, `measure`, `filter`, `bin`,
+  `score`, `tag`, `split`, `group`, `options`, `expect`, `sample`, plus direct methods generated
+  for registered operators; `apply`, `organize`, and `curate` remain compatibility aliases.
 - Inspection: `head`, `describe`, `preview`, `review`, `explain`.
 - Terminals: `collect`, `report`, `experiment`, `output`.
 
-The reference must cover these methods even though they are not individual members of
-`kuration.__all__`.
+Registered operator methods normalize the local component name (`acme/signal-diversity` becomes
+`signal_diversity`) and expose a namespace-qualified spelling (`acme__signal_diversity`) for
+collisions. The reference must cover this generated method contract and the static methods above
+even though they are not individual members of `kuration.__all__`.
 
 ### Framework integration
 

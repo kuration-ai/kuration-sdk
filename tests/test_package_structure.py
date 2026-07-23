@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from importlib.util import find_spec
 from pathlib import Path
+import tomllib
 
 import kuration
 import kuration.core
@@ -45,3 +46,12 @@ def test_removed_root_compatibility_packages_are_not_importable() -> None:
 def test_package_level_api_is_exported_by_core() -> None:
     assert kuration.__all__ is kuration.core.__all__
     assert kuration.Pipeline.__module__ == "kuration.core.pipeline"
+
+
+def test_vendored_slam_runtime_is_outside_first_party_coverage() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        configuration = tomllib.load(handle)
+
+    omitted = configuration["tool"]["coverage"]["run"]["omit"]
+    assert "src/kuration/gameplay/slam/_vendor/**" in omitted
+    assert all(not path.startswith("src/kuration/core/") for path in omitted)
