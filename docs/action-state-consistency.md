@@ -113,7 +113,7 @@ baselines = load_baselines_from_reference(reference)  # or controls=["W", "S", "
 ```
 
 That reference-building script is itself dataset-specific tooling (it derives values from
-real ASG/TeaPearce reference gameplay) and is kept out of this data-agnostic plugin —
+real ASG/TeaPearce reference gameplay) and is kept out of the reusable gameplay domain —
 nothing stops any caller from building a baselines dict by hand instead.
 
 ## Usage
@@ -190,6 +190,6 @@ baselines also configured S/A/D and none of those ever appeared in this particul
 ## Why the generic core and the action_state adapter are separate files
 
 The generic verdict-aggregation logic (`anomaly_checker.py`) remains independent from the
-pixel-shift-specific instance-discovery logic (`action_state.py`). In this implementation,
-branch they ship in the same SDK wheel, but the separation still lets other analyzers
+pixel-shift-specific instance-discovery logic (`action_state.py`). They ship in the same SDK
+wheel, but the separation still lets other analyzers
 reuse tuple aggregation without depending on the DIAMOND vocabulary or OpenCV runtime.

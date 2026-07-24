@@ -40,6 +40,17 @@ def test_gameplay_operators_extend_the_plain_core_pipeline():
     assert not hasattr(gameplay, "input")
 
 
+def test_action_state_convenience_uses_the_registered_analyzer():
+    baselines = {
+        "W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1.0}},
+    }
+
+    checker = gameplay.action_state_checker(baselines=baselines)
+
+    assert isinstance(checker, gameplay.ActionStateConsistencyChecker)
+    assert checker.baselines == baselines
+
+
 def test_gameplay_import_does_not_load_heavy_runtimes():
     code = """
 import sys

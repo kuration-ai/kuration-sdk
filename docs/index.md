@@ -58,6 +58,7 @@ public-data workflows. Start with:
 ```bash
 python examples/quickstart.py --out quickstart-out
 python examples/05_custom_operators.py
+python examples/06_gameplay_operator_methods.py
 ```
 
 Every example used as a primary documentation path is exercised by CI.

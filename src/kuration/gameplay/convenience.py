@@ -20,7 +20,7 @@ def action_state_checker(
     This is the direct Python spelling for
     ``get_analyzer("aintropy/action-state-consistency", ...)``.
     """
-    from .analyzers import get_analyzer
+    from ..core.analyzers import get_analyzer
 
     return get_analyzer(
         "aintropy/action-state-consistency",

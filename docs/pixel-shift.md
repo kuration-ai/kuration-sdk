@@ -66,8 +66,10 @@ pipeline = (
     .join_video({"my_source": "clip.mp4"}, on="frame_index")
     .window(32, stride=32)
     .pixel_shift(controls=["W", "S", "A", "D"], boundary="exclude")
+    .bin("w_shift_mean", bins=8)
+    .sample("equal", n=1000)
 )
-result = pipeline.collect(n=1000)
+result = pipeline.collect()
 ```
 
 Registered under `aintropy/pixel-shift` for both the batch transform (`kur-describe

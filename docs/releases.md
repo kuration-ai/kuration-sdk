@@ -14,7 +14,8 @@ history for every release.
   evidence across multiple segments. Register and resolve analyzers with `register_analyzer()`
   and `get_analyzer()`, or inspect them with `kur-list analyzers` and
   `kur-describe analyzer ...`.
-- The action-state consistency plugin now exposes its clip-level checker as an analyzer.
+- The gameplay domain's action-state consistency capability now exposes its clip-level checker
+  as an analyzer.
 - The dependency-free `kuration/split-leakage` analyzer audits existing source and group
   assignments across dataset splits.
 

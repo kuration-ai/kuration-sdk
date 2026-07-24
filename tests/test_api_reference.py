@@ -37,6 +37,30 @@ def test_api_reference_covers_every_public_pipeline_method():
     assert not missing, f"docs/api.md is missing Pipeline methods: {missing}"
 
 
+def test_operator_guides_cover_every_bundled_gameplay_operator():
+    import kuration.gameplay  # noqa: F401
+
+    expected = {
+        "aintropy/pixel-shift": "pixel_shift",
+        "aintropy/slam-motion-diversity": "slam_motion_diversity",
+        "aintropy/slam-quality": "slam_quality",
+    }
+    registered = {
+        name for name in kuration.default_registry.names("operator")
+        if name.startswith("aintropy/")
+    }
+    assert registered == set(expected)
+
+    references = [
+        (ROOT / "docs" / "operators.md").read_text(),
+        (ROOT / "docs" / "pipeline.md").read_text(),
+        REFERENCE.read_text(),
+    ]
+    for component, method in expected.items():
+        assert all(component in text for text in references)
+        assert all(method in text for text in references)
+
+
 def _plain_signature(obj) -> str:
     signature = inspect.signature(obj)
     parameters = [

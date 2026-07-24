@@ -88,7 +88,7 @@ pipeline = reconstruction.to_pipeline(join_video=True)
 
 When a model is supplied as an object, set `depth_model_id` and, when applicable,
 `embedding_model_id` to a stable model name plus revision. Those IDs, the engine, and JSON-safe
-pipeline options are recorded in the manifest. `resume=True` derives its cache identity from that
+runtime options are recorded in the manifest. `resume=True` derives its cache identity from that
 provenance plus the input clips/frame content and decoder/export settings; a caller can override
 it with `cache_key=`.
 

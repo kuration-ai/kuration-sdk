@@ -1,9 +1,9 @@
 """Measure pixel shift for every isolated key or mouse press in a segment.
 
 The implementation handles one-, two-, and three-frame key presses and isolated mouse taps. It reports what
-happened -- makes NO judgment about whether it's "consistent." That's Operator 2's job
-(a separate, genuinely data-agnostic outlier-finding operator built on top of this one's
-output), kept deliberately out of this file.
+happened -- makes NO judgment about whether it's "consistent." That is the action-state
+analyzer's job: a separate, genuinely data-agnostic outlier-finding layer built on top of
+this operator's output, kept deliberately out of this file.
 
 Two things this operator produces:
 

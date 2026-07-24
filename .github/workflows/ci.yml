@@ -60,6 +60,7 @@ jobs:
           python examples/03_compare_strategies.py
           python examples/04_operator_pipeline.py
           python examples/05_custom_operators.py
+          python examples/06_gameplay_operator_methods.py
 
   minimum-dependencies:
     name: Minimum dependencies

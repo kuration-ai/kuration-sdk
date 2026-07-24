@@ -70,6 +70,12 @@ sessions = {
 
 base = input(sessions, time="t", hz=10).window(8, stride=4)
 
+# Registration creates both a readable short method and a namespace-qualified method.
+# There is no need to call Pipeline.apply("example/signal-diversity", ...).
+short_form = base.signal_diversity(field="signal", bins=3)
+qualified_form = base.example__signal_diversity(field="signal", bins=3)
+assert short_form.describe()["strategy"] == qualified_form.describe()["strategy"]
+
 variability = (base
                .signal_diversity(field="signal", bins=3)
                .sample("equal", n=5)
@@ -92,6 +98,7 @@ assert descriptor["parameters"] == PARAMETERS
 
 print("compositional operator selected:", len(variability.selected), "windows")
 print("transform-backed operator selected:", len(window_range.selected), "windows")
+print("direct methods:", "signal_diversity()", "example__signal_diversity()")
 print("discoverable component:", descriptor["kind"], descriptor["name"],
       "version", descriptor["version"])
 print("all assertions passed")

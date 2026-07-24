@@ -151,7 +151,8 @@ started, guides, extensions, operations, and reference.
 |---|---|
 | [`quickstart.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection |
 | [`02_robotics_action_aware.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Action-aware scoring composed with geometric and phase coverage |
-| [`05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py) | A compositional operator and a transform-backed operator with discovery metadata |
+| [`05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py) | Custom compositional and transform-backed operators called through generated fluent methods |
+| [`06_gameplay_operator_methods.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py) | Built-in gameplay operators on the core `Pipeline`, including namespace-qualified syntax |
 | [TeaPearce Counter-Strike](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | HDF5 adaptation, rare-event coverage, and optional image output |
 | [Open P2P](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Protobuf annotations, cross-game action coverage, corrections, instructions, and video joins |
 
@@ -172,9 +173,10 @@ remaining public-release gates.
 
 ## Contributing
 
-Core changes follow [CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md).
-New maintained extensions start from the independent-distribution template in
-[`plugins/`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins).
+Core and maintained domain changes follow
+[CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md).
+First-party domain capabilities ship in the SDK; independently distributed extensions can start
+from the template in [`plugins/`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins).
 
 ```bash
 python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p]'

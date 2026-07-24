@@ -112,7 +112,7 @@ custom domains and plugins follow the same registered-operator mechanism.
 | `.as_position/.as_angular/.as_bitmask` | semantic convenience wrappers | `.semantic(...)` |
 | `.at_rate` | `(hz)` | `SchemaSpec.sample_hz` |
 | `.using` | `(Registry)` | explicit component-resolution overlay |
-| `.apply` | `(name, **params)` | a registered composition expanded into ordinary operators |
+| `.apply` | `(name, **params)` | compatibility-only string dispatch; prefer the generated direct method |
 
 `.measure`'s four forms:
 ```python
