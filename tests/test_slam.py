@@ -20,6 +20,7 @@ from kuration.gameplay.slam import (
     TRANSFORM_NAME,
     SLAMMotion,
     SLAMTrajectoryAdapter,
+    build_pointcloud_scene,
     curate_point_cloud,
     curate_slam_gameplay,
     decode_video_clips,
@@ -83,7 +84,8 @@ def test_export_and_adapter_round_trip(tmp_path):
     document = json.loads(manifest_path.read_text())
     assert document["format"] == "kuration-slam-export"
     assert document["timebase"] == "timestamp"
-    assert document["scene"]["pointcloud"] == "scene_pointcloud.npz"
+    assert document["scene"]["pointcloud"].startswith("scene_pointcloud-")
+    assert document["scene"]["pointcloud"].endswith(".npz")
     assert document["scene"]["count"] == 2
     assert document["scene"]["attributes"] == ["confidence"]
     trajectory_name = document["clips"]["clip one"]["trajectory"]
@@ -104,6 +106,17 @@ def test_export_and_adapter_round_trip(tmp_path):
         assert cloud["points"].shape == (2, 3)
         assert cloud["colors"].dtype == np.uint8
         assert cloud["confidence"].tolist() == [0.25, 0.9]
+
+
+def test_build_pointcloud_scene_covers_exported_geometry():
+    trimesh = pytest.importorskip("trimesh")
+
+    scene = build_pointcloud_scene(_output(), max_display_points=1)
+
+    assert isinstance(scene, trimesh.Scene)
+    assert any(isinstance(geometry, trimesh.PointCloud) for geometry in scene.geometry.values())
+    assert sum(isinstance(geometry, trimesh.path.Path3D)
+               for geometry in scene.geometry.values()) == 4
 
 
 def test_top_level_slam_pipeline_returns_the_normal_fluent_pipeline(tmp_path):
@@ -333,6 +346,39 @@ def test_prepare_resume_reuses_matching_cache_and_reports_progress(tmp_path):
     assert calls["run"] == 1
     assert any(event["phase"] == "slam-cache" and "reused" in event["detail"]
                for event in events)
+
+
+def test_prepare_resume_rejects_cache_marker_for_changed_manifest(tmp_path):
+    calls = {"run": 0}
+
+    class FakeRuntime:
+        def __init__(self, *, depth_model):
+            assert depth_model == "depth"
+
+        def __call__(self, frames):
+            calls["run"] += 1
+            return _output()
+
+    frames = {"clip one": np.zeros((3, 2, 2, 3), dtype=np.uint8)}
+    options = {"depth_model": "depth", "runtime_factory": FakeRuntime}
+    manifest = prepare_slam_input(
+        frames,
+        tmp_path / "cached",
+        runner_options=options,
+        resume=True,
+        cache_key="fixture-v1",
+    )
+    manifest.write_text(manifest.read_text() + "\n")
+
+    prepare_slam_input(
+        frames,
+        tmp_path / "cached",
+        runner_options=options,
+        resume=True,
+        cache_key="fixture-v1",
+    )
+
+    assert calls["run"] == 2
 
 
 def test_preflight_is_actionable_for_manifest_and_missing_raw_runtime(tmp_path):

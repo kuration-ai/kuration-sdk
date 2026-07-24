@@ -99,6 +99,26 @@ def test_gameplay_extra_and_compatibility_alias_cover_the_domain_runtimes():
     assert extras["standard-operators"] == extras["gameplay"]
 
 
+def test_minimum_constraints_cover_every_slam_runtime_dependency():
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    extras = config["project"]["optional-dependencies"]
+    requirements = [*extras["slam"], *extras["slam-viz"]]
+    constrained = {
+        line.split("==", 1)[0].strip().lower().replace("_", "-"): line.split("==", 1)[1]
+        for line in (ROOT / ".github/constraints/minimum.txt").read_text().splitlines()
+        if line and not line.startswith("#") and "==" in line
+    }
+
+    def numeric_version(value: str) -> tuple[int, ...]:
+        return tuple(int(part) for part in value.split("."))
+
+    for requirement in requirements:
+        name, minimum = requirement.split(">=", 1)
+        normalized_name = name.strip().lower().replace("_", "-")
+        assert normalized_name in constrained
+        assert numeric_version(constrained[normalized_name]) >= numeric_version(minimum)
+
+
 def test_all_extra_is_the_union_of_every_runtime_extra():
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
     extras = config["project"]["optional-dependencies"]

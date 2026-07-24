@@ -1,10 +1,10 @@
 # SLAM reconstruction and gameplay curation
 
 `kuration.gameplay.slam` turns one or more gameplay videos into a portable 3D reconstruction:
-aligned
-camera trajectories, camera poses, and an optional scene point cloud. The trajectory manifest is
-then an ordinary Kuration input, so windows can be scored for motion, reconstruction quality, and
-diversity with the normal fluent SDK.
+camera trajectories, camera poses, and an optional scene point cloud. Clips connected by
+place-recognition matches share an aligned coordinate frame; unmatched clips remain valid,
+independent local reconstructions. The trajectory manifest is then an ordinary Kuration input, so
+windows can be scored for motion, reconstruction quality, and diversity with the normal fluent SDK.
 
 The public facade handles both execution paths:
 

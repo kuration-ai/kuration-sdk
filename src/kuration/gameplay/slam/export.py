@@ -3,13 +3,15 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import re
+import tempfile
 from typing import Mapping
 
 import numpy as np
 
-from .pointcloud import PointCloudArtifact
+from .pointcloud import POINTCLOUD_FORMAT, POINTCLOUD_VERSION, PointCloudArtifact
 
 
 EXPORT_FORMAT = "kuration-slam-export"
@@ -45,10 +47,61 @@ def _finite_array(value, *, name: str, shape_tail: tuple[int, ...]) -> np.ndarra
     return array
 
 
-def _clip_filename(name: str) -> str:
+def _payload_digest(values: Mapping[str, np.ndarray]) -> str:
+    digest = sha256()
+    for name, value in sorted(values.items()):
+        array = np.ascontiguousarray(value)
+        header = json.dumps(
+            {"name": name, "dtype": str(array.dtype), "shape": list(array.shape)},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        digest.update(header.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(memoryview(array).cast("B"))
+    return digest.hexdigest()
+
+
+def _clip_filename(name: str, payload_digest: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip(".-") or "clip"
-    digest = sha256(name.encode("utf-8")).hexdigest()[:10]
-    return f"{slug[:70]}-{digest}.npz"
+    name_digest = sha256(name.encode("utf-8")).hexdigest()[:10]
+    return f"{slug[:56]}-{name_digest}-{payload_digest[:12]}.npz"
+
+
+def _atomic_savez(target: Path, payload: Mapping[str, np.ndarray]) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=target.parent,
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            np.savez_compressed(handle, **payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _atomic_write_text(target: Path, value: str) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=target.parent,
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _times_for_clip(
@@ -124,9 +177,8 @@ def _pose_arrays(name: str, poses, length: int) -> dict[str, np.ndarray]:
 
 def _point_cloud(
     output,
-    root: Path,
     point_attributes: Mapping[str, object] | None,
-) -> dict | None:
+) -> tuple[dict, dict[str, np.ndarray]] | None:
     points = getattr(output, "points", None)
     if points is None:
         return None
@@ -135,15 +187,45 @@ def _point_cloud(
         getattr(output, "colors", None),
         point_attributes or {},
     )
-    relative = "scene_pointcloud.npz"
-    artifact.save(root / relative)
-    return {
+    payload = {
+        "_format": np.asarray(POINTCLOUD_FORMAT),
+        "_version": np.asarray(POINTCLOUD_VERSION, dtype=np.int64),
+        "points": artifact.points,
+        **dict(artifact.attributes),
+    }
+    if artifact.colors is not None:
+        payload["colors"] = artifact.colors
+    relative = f"scene_pointcloud-{_payload_digest(payload)[:12]}.npz"
+    metadata = {
         "pointcloud": relative,
-        "format": "kuration-pointcloud-npz",
-        "version": 1,
+        "format": POINTCLOUD_FORMAT,
+        "version": POINTCLOUD_VERSION,
         "count": len(artifact),
         "attributes": sorted(artifact.attributes),
     }
+    return metadata, payload
+
+
+def _cleanup_unreferenced_payloads(
+    root: Path,
+    *,
+    clip_filenames: set[str],
+    pointcloud_filename: str | None,
+) -> None:
+    clips_dir = root / "clips"
+    if clips_dir.is_dir():
+        for candidate in clips_dir.glob("*.npz"):
+            if candidate.name not in clip_filenames:
+                try:
+                    candidate.unlink()
+                except OSError:
+                    pass
+    for candidate in root.glob("scene_pointcloud*.npz"):
+        if candidate.name != pointcloud_filename:
+            try:
+                candidate.unlink()
+            except OSError:
+                pass
 
 
 def export_slam_output(
@@ -174,6 +256,8 @@ def export_slam_output(
         raise ValueError("output.trajectories must be a non-empty mapping")
     if not isinstance(poses, Mapping):
         raise ValueError("output.poses must be a mapping")
+    if videos is not None and not isinstance(videos, Mapping):
+        raise ValueError("videos must be a mapping or None")
 
     clip_names = sorted(trajectories, key=str)
     if any(not isinstance(name, str) or not name for name in clip_names):
@@ -191,9 +275,12 @@ def export_slam_output(
                 "timestamps must cover exactly the exported clips; "
                 f"missing={missing}, unknown={sorted(extra, key=str)}")
 
-    root = Path(out_dir)
-    clips_dir = root / "clips"
-    clips_dir.mkdir(parents=True, exist_ok=True)
+    recorded_provenance = provenance
+    if recorded_provenance is None:
+        recorded_provenance = getattr(output, "provenance", None)
+    normalized_provenance = _json_mapping(recorded_provenance, name="provenance")
+
+    prepared_clips: dict[str, tuple[str, dict[str, np.ndarray], dict[str, str]]] = {}
     manifest_clips = {}
     for name in clip_names:
         trajectory = _finite_array(
@@ -210,9 +297,8 @@ def export_slam_output(
             ),
             **_pose_arrays(name, poses[name], len(trajectory)),
         }
-        filename = _clip_filename(name)
+        filename = _clip_filename(name, _payload_digest(arrays))
         relative = str(Path("clips") / filename)
-        np.savez_compressed(clips_dir / filename, **arrays)
         entry = {"trajectory": relative}
         if videos is not None and name in videos:
             video = str(videos[name])
@@ -220,6 +306,9 @@ def export_slam_output(
                 raise ValueError(f"videos[{name!r}] must be a non-empty path or URI")
             entry["video"] = video
         manifest_clips[name] = entry
+        prepared_clips[name] = (filename, arrays, entry)
+
+    point_cloud = _point_cloud(output, point_attributes)
 
     manifest = {
         "format": EXPORT_FORMAT,
@@ -229,15 +318,28 @@ def export_slam_output(
         "sample_hz": sample_hz,
         "clips": manifest_clips,
     }
-    recorded_provenance = provenance
-    if recorded_provenance is None:
-        recorded_provenance = getattr(output, "provenance", None)
-    normalized_provenance = _json_mapping(recorded_provenance, name="provenance")
     if normalized_provenance is not None:
         manifest["provenance"] = normalized_provenance
-    point_cloud = _point_cloud(output, root, point_attributes)
     if point_cloud is not None:
-        manifest["scene"] = point_cloud
+        manifest["scene"] = point_cloud[0]
+
+    root = Path(out_dir)
+    clips_dir = root / "clips"
+    for filename, arrays, _entry in prepared_clips.values():
+        _atomic_savez(clips_dir / filename, arrays)
+    pointcloud_filename = None
+    if point_cloud is not None:
+        pointcloud_filename = point_cloud[0]["pointcloud"]
+        _atomic_savez(root / pointcloud_filename, point_cloud[1])
+
     manifest_path = root / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    _atomic_write_text(
+        manifest_path,
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+    )
+    _cleanup_unreferenced_payloads(
+        root,
+        clip_filenames={filename for filename, _arrays, _entry in prepared_clips.values()},
+        pointcloud_filename=pointcloud_filename,
+    )
     return manifest_path

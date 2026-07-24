@@ -15,7 +15,7 @@ from .export import EXPORT_FORMAT, EXPORT_VERSION, export_slam_output
 
 
 _CACHE_FORMAT = "kuration-slam-prepare-cache"
-_CACHE_VERSION = 1
+_CACHE_VERSION = 2
 
 
 def _callable_identity(value: object) -> str:
@@ -161,6 +161,25 @@ def _source_identity(source: object) -> dict[str, object]:
     return {"kind": "python-object", "type": _callable_identity(type(source))}
 
 
+def _validate_automatic_resume_identity(options: Mapping[str, object]) -> None:
+    """Require stable caller identities for opaque runtime state used by automatic resume."""
+    depth_model = options.get("depth_model")
+    if depth_model is not None and not isinstance(depth_model, str) \
+            and not options.get("depth_model_id"):
+        raise ValueError(
+            "automatic SLAM resume with a depth-model object requires depth_model_id; "
+            "pass a stable model revision or an explicit cache_key"
+        )
+    embedding_model = options.get("embedding_model")
+    embeddings = options.get("embeddings")
+    if (embedding_model is not None or embeddings is not None) \
+            and not options.get("embedding_model_id"):
+        raise ValueError(
+            "automatic SLAM resume with an embedding model or precomputed embeddings requires "
+            "embedding_model_id; pass a stable model/data revision or an explicit cache_key"
+        )
+
+
 @dataclass(frozen=True)
 class SLAMReconstruction:
     """A portable reconstruction artifact and its Kuration pipeline entry point."""
@@ -249,12 +268,15 @@ class SLAMReconstructor:
     ) -> SLAMReconstruction:
         exports = dict(export_options or {})
         exports.setdefault("provenance", self.provenance)
-        automatic_cache_key = _provenance_key({
-            "runtime": self.provenance,
-            "source": _source_identity(source),
-            "decoder": _identity_value(dict(decoder_options or {})),
-            "export": _identity_value(exports),
-        })
+        resolved_cache_key = cache_key
+        if resume and resolved_cache_key is None:
+            _validate_automatic_resume_identity(self.runner_options)
+            resolved_cache_key = _provenance_key({
+                "runtime": self.provenance,
+                "source": _source_identity(source),
+                "decoder": _identity_value(dict(decoder_options or {})),
+                "export": _identity_value(exports),
+            })
         manifest = prepare_slam_input(
             source,
             out_dir,
@@ -263,7 +285,7 @@ class SLAMReconstructor:
             decoder_options=decoder_options,
             export_options=exports,
             resume=resume,
-            cache_key=(cache_key or automatic_cache_key) if resume else cache_key,
+            cache_key=resolved_cache_key,
             progress=progress,
             preflight=preflight,
             require_gpu=require_gpu,
@@ -482,11 +504,15 @@ def _cache_manifest(out_dir: str | Path, cache_key: str) -> Path | None:
         metadata = json.loads(metadata_path.read_text())
     except (OSError, json.JSONDecodeError):
         return None
-    if metadata != {
-        "format": _CACHE_FORMAT,
-        "version": _CACHE_VERSION,
-        "cache_key": cache_key,
-    }:
+    if metadata.get("format") != _CACHE_FORMAT \
+            or metadata.get("version") != _CACHE_VERSION \
+            or metadata.get("cache_key") != cache_key:
+        return None
+    try:
+        manifest_digest = sha256(manifest_path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+    if metadata.get("manifest_sha256") != manifest_digest:
         return None
     return _existing_manifest(manifest_path)
 
@@ -495,7 +521,13 @@ def _write_cache(out_dir: str | Path, cache_key: str) -> None:
     root = Path(out_dir)
     target = root / ".kuration-slam-prepare.json"
     temporary = root / ".kuration-slam-prepare.json.tmp"
-    document = {"format": _CACHE_FORMAT, "version": _CACHE_VERSION, "cache_key": cache_key}
+    manifest_path = root / "manifest.json"
+    document = {
+        "format": _CACHE_FORMAT,
+        "version": _CACHE_VERSION,
+        "cache_key": cache_key,
+        "manifest_sha256": sha256(manifest_path.read_bytes()).hexdigest(),
+    }
     temporary.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
     temporary.replace(target)
 

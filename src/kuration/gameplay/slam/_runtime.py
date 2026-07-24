@@ -137,7 +137,7 @@ def _estimate_scene_scale(points: np.ndarray, fallback: float = 1.0) -> float:
 
 @dataclass
 class CameraPose:
-    """Pose of one camera, in the global stitched frame.
+    """Pose of one camera in its connected component's stitched frame.
 
     `frustum_points` is `(5,3)`: apex, top-left, top-right, bottom-left,
     bottom-right. `cx`, `cy`, `f` are the camera intrinsics in real pixels
@@ -159,8 +159,10 @@ class SLAMOutput:
     """`trajectories`/`poses` are keyed by clip name, ordered by frame
     index, de-duplicated across overlapping chunks (first reconstruction of
     a shared frame wins). `poses[name]` is a list of `CameraPose`, one per
-    frame in `trajectories[name]`. `points`/`colors` are `None` unless the
-    runtime was built with `output_pointcloud=True`."""
+    frame in `trajectories[name]`. Place-recognition-connected clips share a
+    coordinate frame; disconnected clips retain independent local frames.
+    `points`/`colors` are `None` unless the runtime was built with
+    `output_pointcloud=True`."""
     trajectories: Dict[str, np.ndarray]
     poses: Dict[str, List[CameraPose]]
     points: Optional[np.ndarray] = None
@@ -939,26 +941,30 @@ class SLAMOperator:
             raise RuntimeError("No chunk layout yet -- call build_chunks() first.")
 
         adjacency = self._build_adjacency()
-        root = self._per_clip_chunk_order[0][0][0]
-        global_transform = {root: self._IDENTITY_AFFINE}
-        visited = {root}
-        queue = collections.deque([root])
-        while queue:
-            cur = queue.popleft()
-            for nxt, ci, r_cur, r_nxt in adjacency[cur]:
-                if nxt in visited:
-                    continue
-                M_local = self._fit_chunk_edge(cur, nxt, ci, r_cur, r_nxt)
-                global_transform[nxt] = (
-                    self._to_homogeneous(global_transform[cur]) @ self._to_homogeneous(M_local)
-                )[:3, :]
-                visited.add(nxt)
-                queue.append(nxt)
+        global_transform = {}
+        visited = set()
 
-        assert len(visited) == len(self._all_chunks), (
-            f"only reached {len(visited)}/{len(self._all_chunks)} chunks via BFS -- "
-            f"chunk-adjacency graph is disconnected"
-        )
+        # Place-recognition matches connect clips that share one reconstructed scene. Clips with
+        # no qualifying match are still valid inputs: reconstruct each disconnected component in
+        # its own local coordinate frame instead of failing the entire multi-clip run.
+        for root in range(len(self._all_chunks)):
+            if root in visited:
+                continue
+            global_transform[root] = self._IDENTITY_AFFINE.copy()
+            visited.add(root)
+            queue = collections.deque([root])
+            while queue:
+                cur = queue.popleft()
+                for nxt, ci, r_cur, r_nxt in adjacency[cur]:
+                    if nxt in visited:
+                        continue
+                    M_local = self._fit_chunk_edge(cur, nxt, ci, r_cur, r_nxt)
+                    global_transform[nxt] = (
+                        self._to_homogeneous(global_transform[cur])
+                        @ self._to_homogeneous(M_local)
+                    )[:3, :]
+                    visited.add(nxt)
+                    queue.append(nxt)
 
         return self._assemble_output(global_transform)
 

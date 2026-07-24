@@ -141,7 +141,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extra: [zarr, torch, hf, video, ray, pixel-shift, action-state, slam]
+        extra: [zarr, torch, hf, video, ray, pixel-shift, action-state, slam, slam-viz]
         dependency_set: [current, minimum]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -195,6 +195,10 @@ jobs:
             slam)
               python -c 'import av, faiss, torch; from kuration.gameplay.slam import SLAMOperator'
               python -m pytest tests/test_slam.py tests/test_slam_regressions.py -q
+              ;;
+            slam-viz)
+              python -c 'import trimesh; from kuration.gameplay.slam import build_pointcloud_scene'
+              python -m pytest tests/test_slam.py -k pointcloud_scene -q
               ;;
           esac
 

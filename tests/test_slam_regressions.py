@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+import kuration.gameplay.slam.export as slam_export_module
+import kuration.gameplay.slam.runner as slam_runner_module
 from kuration.gameplay.slam import (
     PointCloudArtifact,
     SLAMReconstructor,
@@ -120,6 +122,118 @@ def test_bundled_slam_operator_runs_a_complete_fake_depth_reconstruction():
     assert output.trajectories["clip"].shape == (3, 3)
     assert len(output.poses["clip"]) == 3
     assert output.points is None
+
+
+def test_bundled_slam_operator_keeps_disconnected_clips_in_local_frames():
+    torch = pytest.importorskip("torch")
+    from kuration.gameplay.slam import SLAMOperator
+
+    class FakeDepth(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.anchor = torch.nn.Parameter(torch.zeros(()))
+
+        def inference(self, *, image, process_res, export_dir):
+            count = len(image)
+            return SimpleNamespace(
+                depth=np.ones((count, 2, 2), dtype=np.float32),
+                intrinsics=np.repeat(np.eye(3)[None, ...], count, axis=0),
+                extrinsics=np.repeat(np.eye(4)[None, ...], count, axis=0),
+                conf=np.ones((count, 2, 2), dtype=np.float32),
+                processed_images=np.asarray(image),
+            )
+
+    operator = SLAMOperator(
+        FakeDepth(),
+        output_pointcloud=False,
+        devices=["cpu"],
+        window_size=2,
+        overlap=1,
+        bridge_size=1,
+        process_res=32,
+    )
+    frames = np.zeros((2, 2, 2, 3), dtype=np.uint8)
+
+    output = operator({"first": frames, "second": frames.copy()})
+
+    assert set(output.trajectories) == {"first", "second"}
+    assert output.trajectories["first"].shape == (2, 3)
+    assert output.trajectories["second"].shape == (2, 3)
+
+
+def test_automatic_resume_requires_stable_opaque_runtime_identities(tmp_path):
+    frames = {"clip": np.zeros((2, 2, 2, 3), dtype=np.uint8)}
+
+    depth = SLAMReconstructor(depth_model=object(), runtime_factory=lambda **_: None)
+    with pytest.raises(ValueError, match="depth_model_id"):
+        depth.reconstruct(frames, tmp_path / "depth", resume=True)
+
+    embedded = SLAMReconstructor(
+        depth_model="da3-base",
+        embeddings={"clip": np.ones((2, 4), dtype=np.float32)},
+        runtime_factory=lambda **_: None,
+    )
+    with pytest.raises(ValueError, match="embedding_model_id"):
+        embedded.reconstruct(frames, tmp_path / "embedding", resume=True)
+
+
+def test_reconstruct_skips_source_hash_without_automatic_resume(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeRuntime:
+        def __init__(self, *, depth_model):
+            assert depth_model is model
+
+        def __call__(self, frames):
+            calls.append(sorted(frames))
+            return _output()
+
+    def unexpected_hash(_source):
+        raise AssertionError("source identity should not be calculated")
+
+    model = object()
+    monkeypatch.setattr(slam_runner_module, "_source_identity", unexpected_hash)
+    slam = SLAMReconstructor(depth_model=model, runtime_factory=FakeRuntime)
+    frames = {"clip": np.zeros((2, 2, 2, 3), dtype=np.uint8)}
+
+    slam.reconstruct(frames, tmp_path / "ordinary")
+    slam.reconstruct(frames, tmp_path / "manual-cache", resume=True, cache_key="caller-v1")
+
+    assert calls == [["clip"], ["clip"]]
+
+
+def test_invalid_export_provenance_does_not_create_partial_artifact(tmp_path):
+    destination = tmp_path / "export"
+
+    with pytest.raises(ValueError, match="provenance must be a JSON-safe mapping"):
+        export_slam_output(_output(), destination, provenance={"invalid": object()})
+
+    assert not destination.exists()
+
+
+def test_failed_manifest_commit_preserves_previous_export(tmp_path, monkeypatch):
+    destination = tmp_path / "export"
+    manifest = export_slam_output(_output(), destination, sample_hz=1.0)
+    original_manifest = manifest.read_bytes()
+    original_document = json.loads(original_manifest)
+    original_clip = destination / original_document["clips"]["clip"]["trajectory"]
+    original_clip_bytes = original_clip.read_bytes()
+
+    changed = _output()
+    changed.trajectories["clip"] = changed.trajectories["clip"] + 10.0
+
+    def fail_commit(_target, _value):
+        raise OSError("simulated manifest publication failure")
+
+    monkeypatch.setattr(slam_export_module, "_atomic_write_text", fail_commit)
+    with pytest.raises(OSError, match="publication failure"):
+        export_slam_output(changed, destination, sample_hz=1.0)
+
+    assert manifest.read_bytes() == original_manifest
+    assert original_clip.read_bytes() == original_clip_bytes
+    from kuration.gameplay.slam import SLAMTrajectoryAdapter
+
+    SLAMTrajectoryAdapter(manifest=manifest).check_source("clip")
 
 
 def test_private_depth_vendor_resolves_nested_config_modules():
