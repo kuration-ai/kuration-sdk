@@ -30,6 +30,7 @@ import numpy as np
 from .binning import bin_codes
 from .segment import Segment
 from .registry import default_registry as _default_registry
+from .strategy import _feature_value
 
 _DEFAULT_CLUSTERS = 2048
 _DSIR_BINS = 8
@@ -65,7 +66,8 @@ def feature_matrix(segments: list[Segment], names: Sequence[str], *,
     n, d = len(segments), len(names)
     X = np.empty((n, d), dtype=np.float64)
     for j, name in enumerate(names):
-        X[:, j] = np.fromiter((s.features.get(name, 0.0) for s in segments), dtype=np.float64, count=n)
+        X[:, j] = np.fromiter((_feature_value(s, name) for s in segments),
+                              dtype=np.float64, count=n)
     if not np.isfinite(X).all():
         raise ValueError("feature_space contains non-finite metric values; metrics/scorers must "
                          "return finite scalars")
@@ -211,20 +213,22 @@ def dsir_priorities(segments, names, *, n_bins=_DSIR_BINS, target=None,
     codes = np.zeros(n, dtype=np.int64)
     base = 1
     for name in names:
-        vals = np.fromiter((s.features.get(name, 0.0) for s in segments), dtype=np.float64, count=n)
+        vals = np.fromiter((_feature_value(s, name) for s in segments),
+                           dtype=np.float64, count=n)
         codes = codes + base * bin_codes(vals, n_bins, axis_name=name)
         base *= (n_bins + 1)
     uniq, inv, counts = np.unique(codes, return_inverse=True, return_counts=True)
     q = counts[inv].astype(np.float64) / n
     if isinstance(target, dict) and "anchor_metric" in target:
-        vals = np.fromiter((s.features.get(target["anchor_metric"], 0.0) for s in segments),
+        vals = np.fromiter((_feature_value(s, target["anchor_metric"]) for s in segments),
                            dtype=np.float64, count=n)
         anchor = vals >= np.quantile(vals, float(target.get("anchor_quantile", 0.75)))
         per_code = np.zeros(uniq.size)
         np.add.at(per_code, inv[anchor], 1.0)
         p = per_code[inv] / (per_code.sum() or 1.0)
     elif isinstance(target, dict) and "metric" in target:
-        mvals = np.fromiter((max(0.0, s.features.get(target["metric"], 0.0)) for s in segments),
+        mvals = np.fromiter((max(0.0, _feature_value(s, target["metric"]))
+                             for s in segments),
                             dtype=np.float64, count=n)
         per_code = np.zeros(uniq.size)
         np.add.at(per_code, inv, mvals)

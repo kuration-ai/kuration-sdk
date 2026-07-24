@@ -21,8 +21,14 @@ OUTPUT_FEATURES = (
 
 def _vectors(batch, token: str) -> np.ndarray:
     value = np.asarray(batch[token], dtype=np.float64)
+    if value.ndim == 4:
+        if value.shape[2] != 1:
+            raise ValueError(
+                f"{token} requires exactly one camera entity per timestep, got {value.shape}")
+        value = value[:, :, 0, :]
     if value.ndim != 3 or value.shape[-1] != 3:
-        raise ValueError(f"{token} must have batch shape (B, T, 3), got {value.shape}")
+        raise ValueError(
+            f"{token} must have batch shape (B, T, 3) or (B, T, 1, 3), got {value.shape}")
     if value.shape[1] < 1:
         raise ValueError(f"{token} windows must contain at least one timestep")
     if not np.isfinite(value).all():

@@ -56,6 +56,22 @@ def _materialize_selected_rows(selected):
     return materialized
 
 
+def _shuffle_slots(connection: sqlite3.Connection, rng: random.Random) -> None:
+    """Shuffle each canonical bin in memory, then persist it in one batch."""
+    bins = connection.execute(
+        "SELECT b.bin_key FROM bins b JOIN slots s ON s.bin_key=b.bin_key "
+        "GROUP BY b.bin_key,b.bin_order ORDER BY b.bin_order").fetchall()
+    for bin_key, in bins:
+        candidate_ids = [row[0] for row in connection.execute(
+            "SELECT candidate_id FROM slots WHERE bin_key=? ORDER BY position",
+            (bin_key,))]
+        rng.shuffle(candidate_ids)
+        connection.executemany(
+            "UPDATE slots SET candidate_id=? WHERE bin_key=? AND position=?",
+            ((candidate_id, bin_key, position)
+             for position, candidate_id in enumerate(candidate_ids)))
+
+
 def external_quantile_edges(partitions: Iterable[PartitionCommit | str], feature: str,
                             n_bins: int, *, spill_dir: str | None = None) -> np.ndarray:
     """Compute NumPy-compatible exact quantile edges with disk-proportional state."""
@@ -106,99 +122,15 @@ def external_top_k(partitions: Iterable[PartitionCommit | str], *, weights: dict
     """
     if not isinstance(target_size, int) or isinstance(target_size, bool) or target_size < 1:
         raise ValueError("target_size must be a positive integer")
-    if not weights:
-        raise ValueError("external_top_k requires at least one feature weight")
-    if normalize not in {"quantile", "minmax", "zscore", "none"}:
-        raise ValueError("normalize must be quantile, minmax, zscore, or none")
-    names = tuple(weights)
-    columns = [f"feature:{name}" for name in names]
-    paths = _paths(partitions)
-    connection, db_path = _database(spill_dir)
-    try:
-        connection.executescript(
-            "CREATE TABLE candidates ("
-            "id INTEGER PRIMARY KEY, source_id TEXT NOT NULL, start_idx INTEGER NOT NULL, "
-            "end_idx INTEGER NOT NULL, data_file TEXT NOT NULL, row_idx INTEGER NOT NULL, "
-            "score REAL NOT NULL DEFAULT 0, UNIQUE(source_id,start_idx,end_idx));"
-            "CREATE TABLE features (candidate_id INTEGER NOT NULL, name TEXT NOT NULL, "
-            "value REAL NOT NULL, PRIMARY KEY(candidate_id,name));")
-        candidate_id = 0
-        for path in paths:
-            batch = SegmentBatch.read_ipc(path, columns=columns)
-            raw = batch.record_batch.to_pydict()
-            rows, feature_rows = [], []
-            for row_idx in range(len(batch)):
-                rows.append((candidate_id, raw["source_id"][row_idx],
-                             raw["start_idx"][row_idx], raw["end_idx"][row_idx],
-                             path, row_idx))
-                for name in names:
-                    value = raw[f"feature:{name}"][row_idx]
-                    value = 0.0 if value is None else float(value)
-                    if not math.isfinite(value):
-                        raise ValueError(f"top-k feature {name!r} contains non-finite values")
-                    feature_rows.append((candidate_id, name, value))
-                candidate_id += 1
-            try:
-                connection.executemany(
-                    "INSERT INTO candidates(id,source_id,start_idx,end_idx,data_file,row_idx) "
-                    "VALUES (?,?,?,?,?,?)", rows)
-            except sqlite3.IntegrityError as error:
-                raise ValueError("duplicate stable segment key in external feature table") from error
-            connection.executemany("INSERT INTO features VALUES (?,?,?)", feature_rows)
-        connection.execute("CREATE INDEX feature_lookup ON features(name,value)")
-        connection.commit()
-        total = candidate_id
-        if total == 0:
+    with _top_k_priority_index(
+            partitions, weights=weights, normalize=normalize,
+            spill_dir=spill_dir) as (connection, total):
+        if not total:
             return []
-
-        for name, weight in weights.items():
-            weight = float(weight)
-            if not math.isfinite(weight):
-                raise ValueError("top-k weights must be finite")
-            if normalize == "quantile":
-                low, high = connection.execute(
-                    "SELECT MIN(value),MAX(value) FROM features WHERE name=?", (name,)
-                ).fetchone()
-                if total > 1 and high > low:
-                    connection.execute(
-                        "WITH ranked AS ("
-                        " SELECT f.candidate_id AS id,("
-                        " CAST(RANK() OVER (ORDER BY f.value)-1 AS REAL)"
-                        " +(COUNT(*) OVER (PARTITION BY f.value)-1)/2.0)/? AS norm"
-                        " FROM features f WHERE f.name=?"
-                        ") UPDATE candidates SET score=score + ?*(SELECT norm FROM ranked "
-                        "WHERE ranked.id=candidates.id)", (total - 1, name, weight))
-            elif normalize == "minmax":
-                low, high = connection.execute(
-                    "SELECT MIN(value),MAX(value) FROM features WHERE name=?", (name,)
-                ).fetchone()
-                scale = high - low
-                connection.execute(
-                    "UPDATE candidates SET score=score + ?*COALESCE((SELECT CASE WHEN ? > 0 "
-                    "THEN (value-?)/? ELSE 0 END FROM features WHERE candidate_id=candidates.id "
-                    "AND name=?),0)", (weight, scale, low, scale or 1.0, name))
-            elif normalize == "zscore":
-                mean, mean_square = connection.execute(
-                    "SELECT AVG(value),AVG(value*value) FROM features WHERE name=?", (name,)
-                ).fetchone()
-                std = math.sqrt(max(0.0, mean_square - mean * mean))
-                connection.execute(
-                    "UPDATE candidates SET score=score + ?*COALESCE((SELECT CASE WHEN ? > 0 "
-                    "THEN (value-?)/? ELSE 0 END FROM features WHERE candidate_id=candidates.id "
-                    "AND name=?),0)", (weight, std, mean, std or 1.0, name))
-            else:
-                connection.execute(
-                    "UPDATE candidates SET score=score + ?*COALESCE((SELECT value FROM features "
-                    "WHERE candidate_id=candidates.id AND name=?),0)", (weight, name))
-        connection.commit()
         selected = connection.execute(
             "SELECT data_file,row_idx FROM candidates ORDER BY score DESC,source_id,start_idx,end_idx "
             "LIMIT ?", (target_size,)).fetchall()
         return [segment for segment, in _materialize_selected_rows(selected)]
-    finally:
-        connection.close()
-        if os.path.exists(db_path):
-            os.unlink(db_path)
 
 
 def external_uniform_bins(partitions: Iterable[PartitionCommit | str], *,
@@ -239,7 +171,12 @@ def external_uniform_bins(partitions: Iterable[PartitionCommit | str], *,
                 codes = []
                 for name, _ in axes:
                     value = raw[f"feature:{name}"][row_idx]
-                    value = 0.0 if value is None else float(value)
+                    if value is None:
+                        raise ValueError(
+                            f"binning feature {name!r} is missing for segment "
+                            f"{raw['source_id'][row_idx]!r} "
+                            f"[{raw['start_idx'][row_idx]}, {raw['end_idx'][row_idx]})")
+                    value = float(value)
                     if not math.isfinite(value):
                         raise ValueError(f"binning feature {name!r} contains non-finite values")
                     codes.append(int(np.searchsorted(edges[name], value, side="left")))
@@ -263,28 +200,7 @@ def external_uniform_bins(partitions: Iterable[PartitionCommit | str], *,
             "INSERT INTO slots "
             "SELECT bin_key,ROW_NUMBER() OVER (PARTITION BY bin_key "
             "ORDER BY source_id,start_idx,end_idx)-1,id FROM candidates;")
-        rng = random.Random(seed)
-        for bin_key, count in connection.execute(
-                "SELECT b.bin_key,COUNT(s.candidate_id) FROM bins b JOIN slots s "
-                "ON s.bin_key=b.bin_key GROUP BY b.bin_key,b.bin_order ORDER BY b.bin_order"):
-            # Same Fisher-Yates swaps and shared RNG sequence as random.shuffle over each
-            # canonical member list, without retaining that list in Python.
-            for position in range(count - 1, 0, -1):
-                other = rng.randrange(position + 1)
-                if other == position:
-                    continue
-                left = connection.execute(
-                    "SELECT candidate_id FROM slots WHERE bin_key=? AND position=?",
-                    (bin_key, position)).fetchone()[0]
-                right = connection.execute(
-                    "SELECT candidate_id FROM slots WHERE bin_key=? AND position=?",
-                    (bin_key, other)).fetchone()[0]
-                connection.execute(
-                    "UPDATE slots SET candidate_id=? WHERE bin_key=? AND position=?",
-                    (right, bin_key, position))
-                connection.execute(
-                    "UPDATE slots SET candidate_id=? WHERE bin_key=? AND position=?",
-                    (left, bin_key, other))
+        _shuffle_slots(connection, random.Random(seed))
         connection.commit()
         selected = connection.execute(
             "SELECT c.data_file,c.row_idx,c.bin_key FROM slots s "
@@ -330,7 +246,12 @@ def iter_external_uniform_priorities(partitions: Iterable[PartitionCommit | str]
                 codes = []
                 for name, _ in axes:
                     value = raw[f"feature:{name}"][row_idx]
-                    value = 0.0 if value is None else float(value)
+                    if value is None:
+                        raise ValueError(
+                            f"binning feature {name!r} is missing for segment "
+                            f"{raw['source_id'][row_idx]!r} "
+                            f"[{raw['start_idx'][row_idx]}, {raw['end_idx'][row_idx]})")
+                    value = float(value)
                     if not math.isfinite(value):
                         raise ValueError(f"binning feature {name!r} contains non-finite values")
                     codes.append(int(np.searchsorted(edges[name], value, side="left")))
@@ -352,26 +273,7 @@ def iter_external_uniform_priorities(partitions: Iterable[PartitionCommit | str]
             "candidate_id INTEGER NOT NULL,PRIMARY KEY(bin_key,position));"
             "INSERT INTO slots SELECT bin_key,ROW_NUMBER() OVER (PARTITION BY bin_key "
             "ORDER BY source_id,start_idx,end_idx)-1,id FROM candidates;")
-        rng = random.Random(seed)
-        for bin_key, count in connection.execute(
-                "SELECT b.bin_key,COUNT(s.candidate_id) FROM bins b JOIN slots s "
-                "ON s.bin_key=b.bin_key GROUP BY b.bin_key,b.bin_order ORDER BY b.bin_order"):
-            for position in range(count - 1, 0, -1):
-                other = rng.randrange(position + 1)
-                if other == position:
-                    continue
-                left = connection.execute(
-                    "SELECT candidate_id FROM slots WHERE bin_key=? AND position=?",
-                    (bin_key, position)).fetchone()[0]
-                right = connection.execute(
-                    "SELECT candidate_id FROM slots WHERE bin_key=? AND position=?",
-                    (bin_key, other)).fetchone()[0]
-                connection.execute(
-                    "UPDATE slots SET candidate_id=? WHERE bin_key=? AND position=?",
-                    (right, bin_key, position))
-                connection.execute(
-                    "UPDATE slots SET candidate_id=? WHERE bin_key=? AND position=?",
-                    (left, bin_key, other))
+        _shuffle_slots(connection, random.Random(seed))
         connection.commit()
         cached_path, cached_batch = None, None
         query = ("SELECT c.data_file,c.row_idx,c.bin_key,s.position FROM candidates c "
@@ -420,14 +322,22 @@ def _top_k_priority_index(partitions: Iterable[PartitionCommit | str], *,
                                    path, row_idx))
                 for name in names:
                     value = raw[f"feature:{name}"][row_idx]
-                    value = 0.0 if value is None else float(value)
+                    if value is None:
+                        raise ValueError(
+                            f"top-k feature {name!r} is missing for segment "
+                            f"{raw['source_id'][row_idx]!r} "
+                            f"[{raw['start_idx'][row_idx]}, {raw['end_idx'][row_idx]})")
+                    value = float(value)
                     if not math.isfinite(value):
                         raise ValueError(f"top-k feature {name!r} contains non-finite values")
                     features.append((candidate_id, name, value))
                 candidate_id += 1
-            connection.executemany(
-                "INSERT INTO candidates(id,source_id,start_idx,end_idx,data_file,row_idx) "
-                "VALUES (?,?,?,?,?,?)", candidates)
+            try:
+                connection.executemany(
+                    "INSERT INTO candidates(id,source_id,start_idx,end_idx,data_file,row_idx) "
+                    "VALUES (?,?,?,?,?,?)", candidates)
+            except sqlite3.IntegrityError as error:
+                raise ValueError("duplicate stable segment key in external feature table") from error
             connection.executemany("INSERT INTO features VALUES (?,?,?)", features)
         connection.execute("CREATE INDEX feature_lookup ON features(name,value)")
         total = candidate_id
@@ -449,13 +359,19 @@ def _top_k_priority_index(partitions: Iterable[PartitionCommit | str], *,
                             "UPDATE candidates SET score=score+?*(SELECT norm FROM ranked WHERE "
                             "ranked.id=candidates.id)", (total - 1, name, weight))
                 elif normalize in {"minmax", "zscore"}:
-                    low, high, mean, mean_square = connection.execute(
-                        "SELECT MIN(value),MAX(value),AVG(value),AVG(value*value) FROM features "
+                    low, high, mean = connection.execute(
+                        "SELECT MIN(value),MAX(value),AVG(value) FROM features "
                         "WHERE name=?", (name,)).fetchone()
                     if normalize == "minmax":
                         center, scale = low, high - low
                     else:
-                        center, scale = mean, math.sqrt(max(0.0, mean_square - mean * mean))
+                        # Center before squaring.  AVG(x*x)-AVG(x)**2 catastrophically
+                        # cancels for low-variance values with a large offset, causing the
+                        # bounded path to silently drop a feature that NumPy retains.
+                        variance = connection.execute(
+                            "SELECT AVG((value-?)*(value-?)) FROM features WHERE name=?",
+                            (mean, mean, name)).fetchone()[0]
+                        center, scale = mean, math.sqrt(max(0.0, variance))
                     connection.execute(
                         "UPDATE candidates SET score=score+?*COALESCE((SELECT CASE WHEN ?>0 THEN "
                         "(value-?)/? ELSE 0 END FROM features WHERE candidate_id=candidates.id "
@@ -631,7 +547,8 @@ def iter_external_hash_dedup(partitions: Iterable[PartitionCommit | str], *,
             if unknown:
                 raise ValueError(f"hash dedup feature(s) missing from partition: {unknown}")
             for segment in batch.to_segments():
-                values = [float(segment.features.get(name, 0.0)) for name in resolved_names]
+                from .strategy import _feature_value
+                values = [float(_feature_value(segment, name)) for name in resolved_names]
                 if not all(math.isfinite(value) for value in values):
                     raise ValueError("hash dedup features must be finite")
                 payload = b"".join(struct.pack(">d", value) for value in values)

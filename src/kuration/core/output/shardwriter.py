@@ -125,8 +125,9 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
         enc_batch = batch_encoder(clean_piece, ctx)
         if not isinstance(enc_batch, dict):
             raise ValueError("output encoder encode_batch must return a dict")
+        enc_batch = {key: np.asarray(value) for key, value in enc_batch.items()}
         for key, value in enc_batch.items():
-            if np.asarray(value).shape[:1] != (L,):
+            if value.shape[:1] != (L,):
                 raise ValueError(f"output encoder batch {key!r} needs leading dimension {L}")
     media_values: dict[str, np.ndarray] = {}
     media_mods = [m for m in spec.modalities if m.src_kind == "media"]
@@ -165,7 +166,7 @@ def _build_arrays(piece: list, spec: OutputSpec, encoder: OutputEncoder, ctx: di
         if spec.presence_mask:
             arrays["_present"][t] = present
         if enc_batch is not None:
-            enc_out = {k: np.asarray(v)[t] for k, v in enc_batch.items()}
+            enc_out = {k: v[t] for k, v in enc_batch.items()}
         elif enc_mods:
             timestep = getattr(encoder, "timestep", None)
             if not callable(timestep):  # guarded above; keeps the union protocol type-safe

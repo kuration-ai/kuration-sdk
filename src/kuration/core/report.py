@@ -17,6 +17,7 @@ import numpy as np
 
 from .segment import Segment
 from .results import DatasetReport
+from .strategy import _feature_value
 
 
 def _group_identity(value) -> str:
@@ -138,7 +139,7 @@ def dataset_report(segments: list[Segment], *, metrics: Optional[Sequence[str]] 
 
     metric_rep: dict = {}
     for m in names:
-        v = np.array([s.features.get(m, 0.0) for s in segments], dtype=np.float64)
+        v = np.array([_feature_value(s, m) for s in segments], dtype=np.float64)
         counts, edges = np.histogram(v, bins=hist_bins)
         metric_rep[m] = {
             "mean": float(v.mean()), "std": float(v.std()),

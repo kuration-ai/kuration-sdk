@@ -161,10 +161,6 @@ class OutputSpec:
             raise ValueError("output spec needs at least one modality")
         mods = []
         for name, m in raw.items():
-            if not isinstance(name, str) or not name:
-                raise ValueError("modality names must be non-empty strings")
-            if name in _RESERVED_MODALITY_NAMES:
-                raise ValueError(f"modality name {name!r} is reserved for container metadata")
             if not isinstance(m, dict):
                 raise ValueError(f"modality {name!r} must be an object")
             unknown_modality = set(m) - _MODALITY_KEYS
@@ -176,40 +172,9 @@ class OutputSpec:
             if ":" not in src:
                 raise ValueError(f"modality {name!r}: source must be '<kind>:<arg>', got {src!r}")
             kind, arg = src.split(":", 1)
-            if kind not in _SRC_KINDS:
-                raise ValueError(f"modality {name!r}: source kind must be {sorted(_SRC_KINDS)}")
-            if not arg:
-                raise ValueError(f"modality {name!r}: source argument must not be empty")
-            try:
-                dtype = np.dtype(m["dtype"])
-            except (KeyError, TypeError, ValueError) as e:
-                raise ValueError(f"modality {name!r}: bad dtype {m.get('dtype')!r}") from e
-            allowed_kinds = None
-            if container in _CONTAINERS:
-                allowed_kinds = {"b", "i", "u", "f"}
-                if container in {"npz", "json"}:
-                    allowed_kinds.add("U")
-                if container == "npz":
-                    allowed_kinds.add("S")
-            if dtype.hasobject or (allowed_kinds is not None and dtype.kind not in allowed_kinds):
-                detail = ("object dtypes are unsafe and never supported"
-                          if dtype.hasobject else
-                          f"container {container!r} does not safely round-trip this dtype")
-                raise ValueError(
-                    f"modality {name!r}: dtype {dtype.name!r} is unsupported: {detail}; "
-                    "use boolean, integer, unsigned integer, float, or a container-supported "
-                    "fixed-width string dtype")
-            try:
-                shape = tuple(m.get("shape") or ())
-            except TypeError as error:
-                raise ValueError(f"modality {name!r}: shape must be an array of positive "
-                                 "integers") from error
-            if any(not isinstance(x, int) or isinstance(x, bool) or x < 1 for x in shape):
-                raise ValueError(f"modality {name!r}: shape dimensions must be positive integers")
-            dtype_name = (f"U{dtype.itemsize // np.dtype('U1').itemsize}"
-                          if dtype.kind == "U" else
-                          f"S{dtype.itemsize}" if dtype.kind == "S" else dtype.name)
-            mods.append(Modality(name=name, dtype=dtype_name, shape=shape,
+            if "dtype" not in m:
+                raise ValueError(f"modality {name!r}: bad dtype None")
+            mods.append(Modality(name=name, dtype=m["dtype"], shape=m.get("shape") or (),
                                  src_kind=kind, src_arg=arg))
         shard_length = d.get("shard_length", 0)
         if (not isinstance(shard_length, int) or isinstance(shard_length, bool)

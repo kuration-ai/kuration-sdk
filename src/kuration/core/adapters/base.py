@@ -12,7 +12,6 @@ pickles the configured adapter into spawned workers.
 """
 from __future__ import annotations
 
-import re
 from typing import Callable, Iterable, Protocol, runtime_checkable
 
 import numpy as np
@@ -56,9 +55,10 @@ def validate_adapter_availability(adapter, schema: SchemaSpec, *, define: dict |
                 required_globals.add(source)
         filter_expr = spec.get("filter")
         if isinstance(filter_expr, str):
-            identifiers = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", filter_expr))
-            required_fields.update(identifiers & set(schema.fields))
-            required_globals.update(identifiers & set(schema.globals))
+            from ..dsl.grammar import _parse_filter
+            field = _parse_filter(filter_expr)[1]
+            if field in schema.fields:
+                required_fields.add(field)
     for source in ((tags_spec or {}).get("from") or ()):
         if source in schema.fields:
             required_fields.add(source)
@@ -178,11 +178,9 @@ def register_adapter(name: str, factory: Callable[..., InputAdapter], **metadata
 
     ``metadata`` becomes its component descriptor. Duplicate names raise ``ValueError``.
     """
-    if name in _ADAPTERS:
-        raise ValueError(f"adapter {name!r} already registered")
-    _ADAPTERS[name] = factory
     from ..registry import default_registry
     default_registry.register("adapter", name, factory, **metadata)
+    _ADAPTERS[name] = factory
 
 
 def get_adapter(name: str, *, registry=None, **kwargs) -> InputAdapter:
@@ -191,11 +189,9 @@ def get_adapter(name: str, *, registry=None, **kwargs) -> InputAdapter:
     ``kwargs`` are passed to the factory. An explicit ``registry`` bypasses the legacy global
     adapter table; an unknown name raises ``ValueError``.
     """
-    if registry is not None:
-        return registry.get("adapter", name)(**kwargs)
-    if name not in _ADAPTERS:
+    from ..registry import default_registry
+    active_registry = registry or default_registry
+    if name not in active_registry.names("adapter") and active_registry is default_registry:
         from ..plugins import load_plugins
         load_plugins()
-    if name not in _ADAPTERS:
-        raise ValueError(f"unknown adapter {name!r}; registered: {sorted(_ADAPTERS)}")
-    return _ADAPTERS[name](**kwargs)
+    return active_registry.get("adapter", name)(**kwargs)

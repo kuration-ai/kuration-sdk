@@ -150,9 +150,9 @@ def _legacy_hours_selection(*, out_dir, schema, adapter, sources, strategy, segm
     pool = all_segments
     if strategy.filters:
         from ..methods import apply_filters
-        pool = apply_filters(all_segments, strategy, seed=seed)
+        pool = apply_filters(all_segments, strategy, seed=seed, workers=workers)
     bin_segments(pool, strategy.axes)
-    priorities = segment_priorities(pool, strategy, seed=seed)
+    priorities = segment_priorities(pool, strategy, seed=seed, workers=workers)
     by_source: dict[str, list[tuple[Any, float]]] = {}
     for index, segment in enumerate(pool):
         by_source.setdefault(segment.source_id, []).append(
@@ -532,8 +532,10 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     results = {"shards": len(entries), "tracks_admitted": len(admitted),
                "tracks_total": n_tracks, "segments_total": segment_count,
                "sources_skipped": len(errors),
-               "n_train": sum(1 for v in split.values() if v == "train"),
-               "n_test": sum(1 for v in split.values() if v == "test"),
+               "n_train": len({entry["source_id"] for entry in entries
+                               if entry["split"] == "train"}),
+               "n_test": len({entry["source_id"] for entry in entries
+                              if entry["split"] == "test"}),
                "budget": budget}
     ended = datetime.now(timezone.utc).isoformat()
     cfg = build_config(schema, strategy, results=results, seed=seed, started=started, ended=ended)

@@ -102,11 +102,22 @@ def _cmp(a: float, op: str, b: float) -> bool:
             "==": a == b, "!=": a != b}[op]
 
 
+def _feature_value(seg, metric: str) -> float:
+    """Return a required selection feature, with one loud missing-feature policy."""
+    try:
+        return seg.features[metric]
+    except KeyError as error:
+        raise ValueError(
+            f"segment {seg.source_id!r} [{seg.start_idx}, {seg.end_idx}) has no feature "
+            f"{metric!r}; ensure every metric/transform/scorer populates every candidate"
+        ) from error
+
+
 def _passes(seg, predicates: Optional[list]) -> bool:
     """True iff a segment satisfies every DSL-metric predicate. Predicates are a universal
     pre-filter: with `method: filter` they ARE the selection; with any other method the
     failing segments are dropped from the pool (set path) / priced -inf (hours path)."""
-    return all(_cmp(seg.features.get(p["metric"], 0.0), p["op"], p["value"])
+    return all(_cmp(_feature_value(seg, p["metric"]), p["op"], p["value"])
                for p in (predicates or []))
 
 
@@ -363,7 +374,8 @@ def _weighted_score(segments: list[Segment], weights: dict[str, float], normaliz
     n = len(segments)
     score = np.zeros(n, dtype=np.float64)
     for name, w in weights.items():
-        vals = np.fromiter((s.features.get(name, 0.0) for s in segments), dtype=np.float64, count=n)
+        vals = np.fromiter((_feature_value(s, name) for s in segments),
+                           dtype=np.float64, count=n)
         score += w * _normalize(vals, normalize)
     return score
 
@@ -417,7 +429,7 @@ def _raw_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
         bins.setdefault(s.bin, []).append(i)
     if strategy.method == "target-distribution" and isinstance(strategy.target, dict):
         name = strategy.target["metric"]
-        binw = {b: max(1e-9, sum(segments[i].features.get(name, 0.0) for i in idxs))
+        binw = {b: max(1e-9, sum(_feature_value(segments[i], name) for i in idxs))
                 for b, idxs in bins.items()}
     else:
         binw = {b: 1.0 for b in bins}
@@ -459,7 +471,7 @@ def _select_target_distribution(segments, *, target, target_size, py_rng) -> lis
         w = {k: 1.0 for k in keys}
     else:
         name = target["metric"]
-        w = {k: max(0.0, sum(s.features.get(name, 0.0) for s in bins[k])) for k in keys}
+        w = {k: max(0.0, sum(_feature_value(s, name) for s in bins[k])) for k in keys}
     total = sum(w.values()) or 1.0
     # Proportional quotas capped by bin population, largest-remainder for the residue, then
     # spill capped bins' shortfall into bins with room — lands on exactly min(target, n)

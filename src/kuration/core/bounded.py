@@ -10,16 +10,7 @@ import numpy as np
 from .checkpoints import PartitionCommit, StageCheckpoint
 from .columnar import SegmentBatch
 from .features import FeatureEngine
-
-
-_OPS = {
-    ">": lambda left, right: left > right,
-    ">=": lambda left, right: left >= right,
-    "<": lambda left, right: left < right,
-    "<=": lambda left, right: left <= right,
-    "==": lambda left, right: left == right,
-    "!=": lambda left, right: left != right,
-}
+from .strategy import _passes
 
 
 def _deep_size(value, seen: set[int] | None = None) -> int:
@@ -91,13 +82,6 @@ def resolve_bounded_memory_limits(*, schema, segmenter, memory_budget: int | Non
             "batch_size": min(batch_size, max(1, available // minimum)),
             "max_in_flight": 1, "batch_memory_limit": available,
             "declared_transform_memory": declared}
-
-
-def _passes(segment, predicates) -> bool:
-    return all(_OPS[predicate["op"]](segment.features[predicate["metric"]],
-                                     predicate["value"])
-               for predicate in predicates or ())
-
 
 @dataclass(frozen=True)
 class FeatureStageResult:

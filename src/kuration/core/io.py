@@ -139,6 +139,7 @@ def staged_write(path):
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
         tmp.close()
         remote_attempt = f"{str(path)}.kuration-attempt-{uuid.uuid4().hex}"
+        attempt_published = False
         try:
             yield tmp.name
             # Upload under a unique invisible-to-manifest name, then publish only the completed
@@ -148,8 +149,9 @@ def staged_write(path):
             # Never pre-delete the last good generation. Backends that cannot replace an existing
             # key must fail while leaving it intact rather than creating a destructive gap.
             fs.mv(remote_attempt, str(path))
+            attempt_published = True
         finally:
-            if fs.exists(remote_attempt):
+            if not attempt_published and fs.exists(remote_attempt):
                 fs.rm(remote_attempt)
             if os.path.exists(tmp.name):
                 os.unlink(tmp.name)

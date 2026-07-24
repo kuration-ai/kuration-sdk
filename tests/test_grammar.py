@@ -102,10 +102,35 @@ def test_categorical_nunique_and_entropy():
     assert m({"source": "agent.weapon", "reduce": "entropy"}) == pytest.approx(1.0)  # 4 A / 4 B
 
 
+def test_categorical_scope_is_applied_per_entity():
+    w = _buffer()
+    w.codes["weapon"][:, 0] = 0
+    w.codes["weapon"][:, 1] = [1, 1, 2, 2]
+    pooled = compile_metric(
+        {"source": "agent.weapon", "reduce": "nunique", "scope": "pooled"}, SCHEMA)(w)
+    per_entity = compile_metric(
+        {"source": "agent.weapon", "reduce": "nunique",
+         "scope": "per_entity_mean"}, SCHEMA)(w)
+    assert pooled == pytest.approx(3.0)
+    assert per_entity == pytest.approx(1.5)
+
+
 # ---- spatial ----------------------------------------------------------------
 def test_spatial_dispersion():
     # per tick dispersion = (10-t)/2 for t=0..3 -> mean of 5,4.5,4,3.5 = 4.25
     assert m({"source": "agent.pos", "reduce": "dispersion"}) == pytest.approx(4.25)
+
+
+def test_spatial_distance_reducers_use_all_position_dimensions():
+    w = _buffer()
+    w.numeric["pos"][:] = 0
+    w.numeric["pos"][:, 1, 2] = 2
+    dispersion = compile_metric(
+        {"source": "agent.pos", "reduce": "dispersion"}, SCHEMA)(w)
+    min_distance = compile_metric(
+        {"source": "agent.pos", "reduce": "min_pair_dist"}, SCHEMA)(w)
+    assert dispersion == pytest.approx(1.0)
+    assert min_distance == pytest.approx(2.0)
 
 
 def test_spatial_hull_area_two_points_is_zero():

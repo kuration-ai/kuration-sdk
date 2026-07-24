@@ -75,6 +75,18 @@ class SLAMQuality:
         positions = np.asarray(batch[f"field:{CAMERA_POSITION}"], dtype=np.float64)
         forwards = np.asarray(batch[f"field:{CAMERA_Z_AXIS}"], dtype=np.float64)
         confidence = np.asarray(batch[f"field:{TRACKING_CONFIDENCE}"], dtype=np.float64)
+        if positions.ndim == 4:
+            if positions.shape[2] != 1:
+                raise ValueError("SLAM quality requires exactly one camera entity per timestep")
+            positions = positions[:, :, 0, :]
+        if forwards.ndim == 4:
+            if forwards.shape[2] != 1:
+                raise ValueError("SLAM quality requires exactly one camera entity per timestep")
+            forwards = forwards[:, :, 0, :]
+        if confidence.ndim == 4:
+            if confidence.shape[2:] != (1, 1):
+                raise ValueError("SLAM quality requires scalar confidence for one camera entity")
+            confidence = confidence[:, :, 0, 0]
         if positions.ndim != 3 or positions.shape[-1] != 3:
             raise ValueError("camera positions must have batch shape (B, T, 3)")
         if forwards.shape != positions.shape:

@@ -108,6 +108,7 @@ def build_config(schema: SchemaSpec, strategy: Strategy, *, results: dict, seed:
     The returned dictionary contains the artifact version, resolved schema and strategy, seed,
     optional timestamps, result accounting, and loaded-plugin provenance.
     """
+    from .plugins import plugin_provenance
     return {
         "artifact_format_version": ARTIFACT_FORMAT_VERSION,
         "schema": schema.to_dict(),
@@ -116,7 +117,7 @@ def build_config(schema: SchemaSpec, strategy: Strategy, *, results: dict, seed:
         "started": started,
         "ended": ended,
         "results": results,
-        "plugins": __import__("kuration.core.plugins", fromlist=["plugin_provenance"]).plugin_provenance(),
+        "plugins": plugin_provenance(),
     }
 
 

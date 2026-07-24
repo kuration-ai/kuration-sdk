@@ -454,6 +454,15 @@ class PixelShiftReport:
         print()
 
 
+def _single_action_entity(value, label: str):
+    actions = np.asarray(value)
+    if actions.ndim == 3:
+        if actions.shape[1] != 1:
+            raise ValueError(f"pixel-shift {label} require exactly one entity per timestep")
+        actions = actions[:, 0, :]
+    return actions
+
+
 class PixelShift:
     """Kuration batch transform implementing the per-segment measurements."""
 
@@ -467,7 +476,13 @@ class PixelShift:
 
     def transform_batch(self, batch, ctx):
         frames_batch = batch["media:frame"]  # (N, T, H, W, 3)
-        actions_batch = batch["field:action"]  # (N, T, action_dim)
+        actions_batch = np.asarray(batch["field:action"])
+        if actions_batch.ndim == 4:
+            if actions_batch.shape[2] != 1:
+                raise ValueError(
+                    "pixel-shift requires exactly one action entity per timestep")
+            actions_batch = actions_batch[:, :, 0, :]
+        # Schema-driven core inputs are (N,T,E,D); this single-agent plugin consumes E=1.
         # Read the declared media color space rather than assuming the BGR direct-call default.
         color_space = ctx["schema"].media["frame"].color_space
         count = len(frames_batch)
@@ -481,6 +496,12 @@ class PixelShift:
             after_actions_batch = batch.get("lookahead:field:action", [None] * count)
             after_frames_batch = batch.get("lookahead:media:frame", [None] * count)
             owned_lengths = batch.get("owned_lengths")
+        before_batch = tuple(
+            None if value is None else _single_action_entity(value, "lookbehind actions")
+            for value in before_batch)
+        after_actions_batch = tuple(
+            None if value is None else _single_action_entity(value, "lookahead actions")
+            for value in after_actions_batch)
         if owned_lengths is None:
             owned_lengths = [len(actions) for actions in actions_batch]
         rows = [

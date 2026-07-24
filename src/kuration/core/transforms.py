@@ -260,15 +260,46 @@ def _invoke(transform, batch, ctx):
     )
 
 
-def _field_window(ticks, field):
-    values = []
+def _field_window(ticks, field, schema):
+    """Build one schema-shaped transform input without roster-dependent rank changes."""
+    if field in schema.globals:
+        return np.asarray(
+            [tick.globals.get(field, np.nan) for tick in ticks], dtype=np.float64)
+    if field not in schema.fields:
+        raise ValueError(f"transform input field {field!r} is not declared by the schema")
+
+    spec = schema.fields[field]
+    if spec.kind != "categorical":
+        from .buffer import build_window
+        # Numeric entity fields always use (T,E,D), including a one-entity scalar field.
+        return build_window(schema, list(ticks)).numeric_field(field)
+
+    roster = {}
     for tick in ticks:
-        if field in tick.globals:
-            values.append(tick.globals[field])
-        else:
-            entities = [v[field] for v in tick.entities.values() if field in v]
-            values.append(entities[0] if len(entities) == 1 else entities)
-    return np.asarray(values)
+        for entity in tick.entities:
+            roster.setdefault(entity, len(roster))
+    values = np.full((len(ticks), max(1, len(roster))), None, dtype=object)
+    for tick_index, tick in enumerate(ticks):
+        for entity, fields in tick.entities.items():
+            if field in fields:
+                values[tick_index, roster[entity]] = fields[field]
+    return values
+
+
+def _stack_field_windows(windows):
+    """Pad variable time/entity extents before adding the transform batch dimension."""
+    if not windows:
+        return np.asarray([])
+    ndim = windows[0].ndim
+    if any(value.ndim != ndim for value in windows):
+        raise ValueError("transform field windows changed rank within one batch")
+    shape = tuple(max(value.shape[axis] for value in windows) for axis in range(ndim))
+    dtype = np.result_type(*(value.dtype for value in windows))
+    fill = None if dtype.kind == "O" else np.nan
+    out = np.full((len(windows), *shape), fill, dtype=dtype)
+    for row, value in enumerate(windows):
+        out[(row, *(slice(0, width) for width in value.shape))] = value
+    return out
 
 
 def apply_transforms(calls, segments, *, adapter, registry, progress=None):
@@ -420,7 +451,8 @@ class _TransformRunner:
                 for token in call["inputs"]:
                     kind, arg = token.split(":", 1)
                     if kind == "field":
-                        batch[token] = np.stack([_field_window(w, arg) for w in chunk_windows])
+                        batch[token] = _stack_field_windows(
+                            [_field_window(w, arg, adapter.schema) for w in chunk_windows])
                     elif kind == "feature":
                         batch[token] = np.asarray([s.features[arg] for s in chunk])
                     else:
@@ -444,7 +476,7 @@ class _TransformRunner:
                             ticks = ticks[-amount:] if direction == "lookbehind" else ticks[:amount]
                             tick_groups.append(ticks)
                         if kind == "field":
-                            values = [_field_window(group, arg) if group else None
+                            values = [_field_window(group, arg, adapter.schema) if group else None
                                       for group in tick_groups]
                         else:
                             if provider is None:

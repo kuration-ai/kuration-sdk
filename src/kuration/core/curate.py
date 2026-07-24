@@ -95,10 +95,11 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     pool = all_segments
     if strategy.filters:
         from .methods import apply_filters
-        pool = apply_filters(all_segments, strategy, seed=seed)
+        pool = apply_filters(all_segments, strategy, seed=seed, workers=workers)
     bin_segments(pool, strategy.axes)
     tag_vocab = sorted({t for s in pool for t in s.tags}, key=str)
-    selected = select(pool, strategy, target_size=target_size, tag_vocab=tag_vocab, seed=seed)
+    selected = select(pool, strategy, target_size=target_size, tag_vocab=tag_vocab,
+                      seed=seed, workers=workers)
     emit(progress, "selection", "complete", current=len(selected), total=len(pool),
          detail=f"{len(selected)} selected")
 

@@ -155,43 +155,56 @@ def _convex_hull_area(pts: np.ndarray) -> float:
     return float(abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) / 2.0)
 
 
-def _spatial_reduce(name: str, plane: np.ndarray, valid: np.ndarray) -> float:
-    """Per-tick aggregate across present entities, averaged over ticks. `plane` is (T,E,2)."""
+def _spatial_reduce(name: str, points: np.ndarray, valid: np.ndarray) -> float:
+    """Per-tick aggregate across present entities, averaged over ticks.
+
+    Dispersion and pair distance operate in every declared position dimension. Hull area is
+    planar and its caller supplies the established first-two-dimensions projection.
+    """
     per_tick = []
-    for ti in range(plane.shape[0]):
+    for ti in range(points.shape[0]):
         m = valid[ti]
-        xy = plane[ti, m]
-        xy = xy[~np.isnan(xy).any(axis=1)]
-        if xy.shape[0] < 2:
+        coordinates = points[ti, m]
+        coordinates = coordinates[~np.isnan(coordinates).any(axis=1)]
+        if coordinates.shape[0] < 2:
             continue
         if name == "dispersion":
-            c = xy.mean(axis=0)
-            per_tick.append(float(np.sqrt(np.mean(np.sum((xy - c) ** 2, axis=1)))))
+            center = coordinates.mean(axis=0)
+            per_tick.append(float(np.sqrt(
+                np.mean(np.sum((coordinates - center) ** 2, axis=1)))))
         elif name == "min_pair_dist":
-            d = np.sqrt(((xy[:, None, :] - xy[None, :, :]) ** 2).sum(-1))
+            d = np.sqrt(((coordinates[:, None, :] - coordinates[None, :, :]) ** 2).sum(-1))
             np.fill_diagonal(d, np.inf)
             per_tick.append(float(d.min()))
         elif name == "hull_area":
-            per_tick.append(_convex_hull_area(xy))
+            per_tick.append(_convex_hull_area(coordinates))
     return float(np.mean(per_tick)) if per_tick else 0.0
 
 
-def _reduce_categorical(reduce: str, codes: np.ndarray, mask: Optional[np.ndarray]) -> float:
+def _reduce_categorical(reduce: str, codes: np.ndarray, scope: str,
+                        mask: Optional[np.ndarray]) -> float:
     c = codes.copy()
     if mask is not None:
         c = np.where(mask, c, -1)
-    valid = c[c >= 0]
-    if reduce == "nunique":
-        return float(np.unique(valid).size)
-    if reduce == "count":
-        return float(valid.size)
-    if reduce == "entropy":
-        if valid.size == 0:
-            return 0.0
-        _, counts = np.unique(valid, return_counts=True)
-        return _shannon_counts(counts.tolist())
-    raise ValueError(f"reduce {reduce!r} not applicable to a categorical source "
-                     f"(use {sorted(_CATEGORICAL_REDUCES)})")
+
+    def aggregate(valid: np.ndarray) -> float:
+        if reduce == "nunique":
+            return float(np.unique(valid).size)
+        if reduce == "count":
+            return float(valid.size)
+        if reduce == "entropy":
+            if valid.size == 0:
+                return 0.0
+            _, counts = np.unique(valid, return_counts=True)
+            return _shannon_counts(counts.tolist())
+        raise ValueError(f"reduce {reduce!r} not applicable to a categorical source "
+                         f"(use {sorted(_CATEGORICAL_REDUCES)})")
+
+    if scope == "per_entity_mean":
+        per_entity = [aggregate(column[column >= 0]) for column in c.T
+                      if np.any(column >= 0)]
+        return float(np.mean(per_entity)) if per_entity else 0.0
+    return aggregate(c[c >= 0])
 
 
 def _wrap_deg(d: np.ndarray) -> np.ndarray:
@@ -421,7 +434,12 @@ def _compile_entity(rest: str, spec: dict, schema: SchemaSpec) -> Callable[[Wind
             valid = w.valid
             if filt is not None:
                 valid = valid & _filter_mask(filt, w, schema, 0)
-            return _spatial_reduce(reduce, w.numeric_field(field)[..., :2], valid)
+            points = w.numeric_field(field)
+            # Hull area is the established planar projection contract. The other spatial
+            # reducers are dimension-agnostic and must retain every position component.
+            if reduce == "hull_area":
+                points = points[..., :2]
+            return _spatial_reduce(reduce, points, valid)
         return fn_spatial
 
     field = fs.name
@@ -450,7 +468,7 @@ def _compile_entity(rest: str, spec: dict, schema: SchemaSpec) -> Callable[[Wind
         if is_cat:
             codes, _ = w.categorical_field(field)
             mask = _filter_mask(filt, w, schema, 0)
-            return _reduce_categorical(reduce, codes, mask)
+            return _reduce_categorical(reduce, codes, scope, mask)
         arr = w.numeric_field(field)
         if dim_idx is not None:
             grid, is_vec = arr[..., dim_idx], False

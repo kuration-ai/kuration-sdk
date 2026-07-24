@@ -531,6 +531,7 @@ class Pipeline:
         p = object.__new__(type(self))
         p.__dict__.update(self.__dict__)
         p.sources = list(self.sources)
+        # Keep clone identities isolated as part of the fluent immutability contract.
         p.schema = copy.deepcopy(self.schema)
         p.adapter = _clone_adapter(self.adapter)
         for configured in _adapter_chain(p.adapter):
@@ -1943,18 +1944,20 @@ class Pipeline:
         emit(progress, "writing", "complete", current=len(by_source), total=len(by_source),
              detail=f"{len(entries)} shards")
         from .provenance import assert_sources_unchanged
+        from .versioning import ARTIFACT_FORMAT_VERSION
         assert_sources_unchanged(self.sources, self.adapter, signature["payload"]["sources"])
         write_text(f"{out_dir}/dataset_manifest.json",
-                   json.dumps({"artifact_format_version":
-                               __import__("kuration.core.versioning", fromlist=["ARTIFACT_FORMAT_VERSION"]).ARTIFACT_FORMAT_VERSION,
+                   json.dumps({"artifact_format_version": ARTIFACT_FORMAT_VERSION,
                                "commit_protocol": "sidecar-v1",
                                "count": len(entries),
                                "shards": portable_shard_entries(out_dir, entries)}, indent=2))
         results = {"shards": len(entries), "selected": len(result.selected),
                    "segments_total": len(result.all_segments),
                    "sources_skipped": len(result.errors),
-                   "n_train": sum(1 for v in result.splits.values() if v == "train"),
-                   "n_test": sum(1 for v in result.splits.values() if v == "test")}
+                   "n_train": len({entry["source_id"] for entry in entries
+                                   if entry["split"] == "train"}),
+                   "n_test": len({entry["source_id"] for entry in entries
+                                  if entry["split"] == "test"})}
         cfg = build_config(self.schema, result.strategy, results=results, seed=seed)
         cfg["output"] = spec.to_dict()
         cfg["provenance"] = signature

@@ -11,6 +11,7 @@ construction (a whole source goes to one split), seeded + sorted for determinism
 """
 from __future__ import annotations
 
+import math
 import random
 from collections import Counter, defaultdict
 from typing import Iterable
@@ -124,7 +125,9 @@ def enforce_group_cap(selected: list[Segment], *, max_group_overshoot: float) ->
         return selected
     bin_counts: Counter = Counter(s.bin for s in selected)
     fair_share = len(selected) / len(group_counts)
-    max_per_group = int(fair_share * max_group_overshoot)
+    # This is an inclusive population ceiling. Flooring a fractional fair share makes
+    # overshoot=1.0 stricter than the fair share itself (for example, 2.5 becomes 2).
+    max_per_group = math.ceil(fair_share * max_group_overshoot)
     for g, cnt in list(group_counts.items()):
         if cnt <= max_per_group:
             continue

@@ -20,7 +20,7 @@ import numpy as np
 from .binning import bin_segments
 from .schema import SchemaSpec
 from .scoring import score_sources
-from .strategy import Strategy, select
+from .strategy import Strategy, _feature_value, select
 
 
 @dataclass
@@ -188,10 +188,10 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
         pool = all_segments
         if arm.strategy.filters:
             from .methods import apply_filters
-            pool = apply_filters(all_segments, arm.strategy, seed=seed)
+            pool = apply_filters(all_segments, arm.strategy, seed=seed, workers=workers)
         bin_segments(pool, arm.strategy.axes)                    # sequential; bin overwritten per arm
         selected[arm.name] = select(pool, arm.strategy, target_size=target_size,
-                                    tag_vocab=tag_vocab, seed=seed)
+                                    tag_vocab=tag_vocab, seed=seed, workers=workers)
         emit(progress, "selection", "advance", current=len(selected), total=len(arms),
              source=arm.name, status="ok")
     emit(progress, "selection", "complete", current=len(arms), total=len(arms),
@@ -199,11 +199,11 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
 
     metrics = sorted(set(union) | referenced)
     edges = {m: np.histogram_bin_edges(
-                 np.array([s.features.get(m, 0.0) for s in all_segments] or [0.0]), bins=20)
+                 np.array([_feature_value(s, m) for s in all_segments] or [0.0]), bins=20)
              for m in metrics}
 
     def hist(segs, m):
-        v = np.array([s.features.get(m, 0.0) for s in segs] or [0.0])
+        v = np.array([_feature_value(s, m) for s in segs] or [0.0])
         c, _ = np.histogram(v, bins=edges[m])
         total = c.sum()
         return c / total if total > 0 else np.ones(len(c)) / len(c)
@@ -218,7 +218,7 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
     for name, segs in selected.items():
         per_metric: dict = {}
         for m in metrics:
-            v = np.array([s.features.get(m, 0.0) for s in segs])
+            v = np.array([_feature_value(s, m) for s in segs])
             entry = {"mean": float(v.mean()) if v.size else 0.0}
             if base_hist is not None and name != base:
                 entry["js_vs_baseline"] = round(_js(hist(segs, m), base_hist[m]), 4)
