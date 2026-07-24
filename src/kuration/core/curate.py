@@ -31,6 +31,13 @@ class CurateResult:
     errors: list = field(default_factory=list)   # [{source, error}] for skipped sources
     source_tracks: dict = field(default_factory=dict)  # source -> [(entity_id, n_steps)]
     execution: Optional[dict] = None
+    seed: int = 0
+
+    def stats(self, **kwargs):
+        """Summarize candidate-versus-selected statistics without rescoring."""
+        from .stats import stats
+
+        return stats(self, **kwargs)
 
 
 def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
@@ -101,4 +108,4 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
         splits = assign_splits(source_groups, test_frac, seed)
     return CurateResult(selected=selected, all_segments=all_segments, schema=schema,
                         strategy=strategy, splits=splits, errors=errors,
-                        source_tracks=source_tracks)
+                        source_tracks=source_tracks, seed=seed)

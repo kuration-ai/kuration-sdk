@@ -45,6 +45,7 @@ hf = ["datasets>=2.18"]           # HuggingFace datasets input adapter
 zarr = ["zarr>=2.17"]             # Zarr array-store input adapter
 video = ["av>=12"]                # optional CPU MP4 provider
 ray = ["ray>=2.20"]               # optional distributed execution backend
+stats = ["matplotlib>=3.8"]        # optional plotting for StatsReport.plot()
 p2p = ["protobuf>=4.25"]          # Open P2P worked example (annotation.proto parsing)
 cli = ["jsonschema>=4.21"]        # kur-validate --json-schema (JSON Schema cross-check)
 pixel-shift = ["opencv-python>=4.9"]  # DIAMOND action-aligned optical-flow operator
@@ -112,6 +113,7 @@ all = [
     "jsonschema>=4.21",
     "av>=12",
     "ray>=2.20",
+    "matplotlib>=3.8",
     "torchvision>=0.17",
     "huggingface_hub>=0.20",
     "omegaconf>=2.3",

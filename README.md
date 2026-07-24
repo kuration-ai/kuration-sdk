@@ -38,7 +38,7 @@ and SHA-256 integrity metadata.
 | Make a large corpus trainable | Count- or duration-budget selection over fixed or overlapping windows |
 | Preserve useful diversity | Quantile bins, tag coverage, weighted ranking, filters, and feature-space methods |
 | Avoid train/test leakage | Source- and group-aware deterministic splits |
-| Understand what changed | Input previews, candidate-versus-selected review, artifact comparison, and static HTML reports |
+| Understand what changed | Lifecycle stats, candidate-versus-selected review, artifact comparison, plots, and static HTML reports |
 | Resume long runs safely | Atomic writes, complete run fingerprints, and checksum-verified shard reuse |
 | Add domain intelligence | Discoverable operators, analyzers, metrics, scorers, adapters, transforms, encoders, and presets |
 | Move from laptop to scale | Streaming sources, bounded Arrow checkpoints, process workers, cloud paths, and optional Ray execution |
@@ -59,6 +59,7 @@ pipeline needs:
 ```bash
 python -m pip install 'kuration-sdk[methods,parquet]'  # selection methods + Parquet
 python -m pip install 'kuration-sdk[video]'            # PyAV video frames
+python -m pip install 'kuration-sdk[stats]'            # Matplotlib stats plots
 python -m pip install 'kuration-sdk[gameplay]'         # pixel shift, action-state, and SLAM
 python -m pip install 'kuration-sdk[ray]'              # distributed source execution
 python -m pip install 'kuration-sdk[s3]'               # fsspec + the S3 backend

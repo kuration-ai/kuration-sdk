@@ -1386,6 +1386,25 @@ class Pipeline:
                           registry=self._registry)
         return dataset_report(segments, **kw)
 
+    def stats(self, *, hist_bins: int = 10, max_sources: int = 3,
+              max_ticks_per_source: int = 10_000, examples: int = 5):
+        """Summarize this pipeline at its current uncurated or count-selected stage.
+
+        With no count selection this profiles the input and complete candidate pool. After
+        ``sample(n=...)`` it compares candidates with the selected set. Hours admission is
+        finalized by the output layer, so an hours-configured pipeline reports candidates and
+        directs callers to ``output(path).stats()`` for admitted/emitted statistics.
+        """
+        from .stats import stats
+
+        return stats(
+            self,
+            hist_bins=hist_bins,
+            max_sources=max_sources,
+            max_ticks_per_source=max_ticks_per_source,
+            examples=examples,
+        )
+
     def experiment(self, arms: dict, n: int, baseline: Optional[str] = None) -> dict:
         """Multi-arm comparison over THIS pipeline's sources. `arms` maps name ->
         Pipeline (its compiled strategy) or raw strategy dict."""
@@ -1841,7 +1860,8 @@ class Pipeline:
             splits = assign_splits(source_groups, self._split_test, self._options["seed"])
         result = CurateResult(selected=selected, all_segments=SizedSegmentPool(
             stage.candidate_rows), schema=self.schema, strategy=strategy,
-            splits=splits, errors=list(stage.errors), source_tracks=dict(stage.source_tracks))
+            splits=splits, errors=list(stage.errors), source_tracks=dict(stage.source_tracks),
+            seed=self._options["seed"])
         result.execution = {"physical_plan": physical.to_dict(), "checkpoint": marker,
                             "bounded": True, "telemetry": stage.telemetry}
         return result
@@ -1930,5 +1950,6 @@ class Pipeline:
         cfg["errors"] = list(result.errors)
         write_config(f"{out_dir}/config.json", cfg)
         from .results import DatasetWriteResult
-        return DatasetWriteResult(shards=entries, selected=len(result.selected), results=results,
+        return DatasetWriteResult(dataset=str(out_dir), shards=entries,
+                                  selected=len(result.selected), results=results,
                                   errors=result.errors)

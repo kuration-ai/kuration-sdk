@@ -23,6 +23,7 @@ zarr==2.17.0
 numcodecs==0.12.1
 av==12.0.0
 ray==2.20.0
+matplotlib==3.8.0
 opencv-python==4.9.0.80
 s3fs==2024.2.0
 gcsfs==2024.2.0

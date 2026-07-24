@@ -546,5 +546,5 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     from ..manifest import commit_dataset
     commit_dataset(out_dir)
     from ..results import DatasetWriteResult
-    return DatasetWriteResult(shards=entries, split=split, admitted=admitted, results=results,
-                              errors=errors)
+    return DatasetWriteResult(dataset=str(out_dir), shards=entries, split=split,
+                              admitted=admitted, results=results, errors=errors)

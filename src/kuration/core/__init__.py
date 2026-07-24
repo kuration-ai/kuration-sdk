@@ -58,6 +58,7 @@ from .plugins import load_plugins, loaded_plugin_modules, plugin_failures, plugi
 from .plugin_validation import PluginCheckResult, check_plugins
 from .progress import ProgressCallback
 from .report import dataset_report
+from .stats import stats
 from .review import hours_selection_review, preview_dataset, selection_review
 from .quality import (QualityGateError, check_quality, evaluate_quality,
                       validate_expectations)
@@ -97,7 +98,7 @@ from .registry import (ComponentDescriptor, Registry, default_registry, describe
 from .results import (DatasetComparison, DatasetInspection, DatasetPreview, DatasetReport,
                       DatasetWriteResult, ExecutionPlan, ExperimentResult,
                       HoursSelectionReview, QualityGateResult, SelectionReview,
-                      ValidationResult)
+                      StatsReport, ValidationResult)
 from .versioning import (ARTIFACT_FORMAT_VERSION, JOB_SCHEMA_VERSION, migrate,
                          migrate_config, migrate_job)
 
@@ -132,7 +133,7 @@ __all__ = [
     "Segment", "Segmenter", "FeatureEngine",
     "bin_segments", "quantile_bins",
     "Strategy", "load_strategy", "select", "segment_priorities", "assign_splits",
-    "apply_filters", "method_priorities", "score_sources", "dataset_report",
+    "apply_filters", "method_priorities", "score_sources", "dataset_report", "stats",
     "register_method", "register_filter", "register_operator",
     "SegmentScorer", "register_scorer", "get_scorer", "apply_scorers",
     "curate", "CurateResult",
@@ -155,6 +156,7 @@ __all__ = [
     "PluginCheckResult", "ProgressCallback",
     "Registry", "default_registry", "ComponentDescriptor", "list_components",
     "describe_component", "ExecutionPlan", "ARTIFACT_FORMAT_VERSION",
-    "DatasetWriteResult", "ExperimentResult", "DatasetReport", "ValidationResult",
+    "DatasetWriteResult", "ExperimentResult", "DatasetReport", "StatsReport",
+    "ValidationResult",
     "JOB_SCHEMA_VERSION", "migrate", "migrate_job", "migrate_config",
 ]

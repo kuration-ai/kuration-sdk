@@ -86,7 +86,8 @@ are grouped below by user task.
 
 - Entry and results: `input`, `Pipeline`, `infer_schema`, `curate`, `CurateResult`,
   `write_dataset`, `DatasetWriteResult`, `run_experiment`, `Arm`, `union_define`,
-  `ExperimentResult`, `dataset_report`, `DatasetReport`, `preview_dataset`, `DatasetPreview`,
+  `ExperimentResult`, `dataset_report`, `DatasetReport`, `stats`, `StatsReport`,
+  `preview_dataset`, `DatasetPreview`,
   `selection_review`, `SelectionReview`, `inspect_dataset`, `DatasetInspection`,
   `compare_datasets`, `DatasetComparison`, `render_html_report`, `write_html_report`,
   `hours_selection_review`, `HoursSelectionReview`, `evaluate_quality`, `check_quality`,

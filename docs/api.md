@@ -26,6 +26,7 @@ objects as noted below.
 | `write_dataset` | `(out_dir, *, schema, adapter, sources, strategy, segmenter, spec, encoder=None, train_hours, test_hours=0.0, sample_hz=None, seed=0, group_of=None, tags_of=None, clip_aggregate="max", span_steps=None, span_seconds=None, workers=1, on_error="skip", resume=False, streaming=False, progress=None, transforms=(), registry=None, executor="local", memory_budget=None, batch_size=1024, checkpoint_dir=None, spill_dir=None, approximation="exact", max_in_flight=2) -> dict` | score/transform, fill a train/test **hour budget**, write shards + manifests + config; a memory budget selects the exact bounded checkpoint path |
 | `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local") -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
 | `dataset_report` | `(segments, *, metrics=None, hist_bins=10) -> dict` | per-metric distribution profile (+ tag/group counts) of a scored pool |
+| `stats` | `(subject, *, hist_bins=10, max_sources=3, max_ticks_per_source=10000, examples=5, max_values=100000, content=True, verify=False, progress=None, registry=None) -> StatsReport` | unified statistics for a pipeline, count selection, write result, typed report, or existing artifact path |
 | `kuration.core` | module | explicit import facade for the domain-agnostic top-level API |
 | `kuration.gameplay.slam_pipeline` | `(source, output=None, *, depth_model=None, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, runtime_factory=None, join_video=False, tolerance=None, mismatch="error", provider=None, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False, **runtime_options) -> Pipeline` | convenience function—not a class—that reconstructs raw input when needed or opens an existing SLAM manifest, then returns the sole curation pipeline type |
 | `kuration.gameplay.action_state_checker` | `(*, baselines, anomaly_type="action_state") -> Analyzer` | construct the action-state consistency analyzer without a component-name string |
@@ -39,8 +40,8 @@ or `"raise"`; `streaming=True` is the out-of-core path; `progress(event_dict)` r
 events without coupling execution to a particular UI.
 
 - `CurateResult` — dataclass: `selected`, `all_segments`, `schema`, `strategy`, `splits`, `errors`,
-  scored `source_tracks`, and optional bounded-execution metadata in `execution`.
-- `write_dataset` returns `{"shards": [entries], "split": {source -> "train"/"test"}, "admitted": set, "results": {...counts}, "errors": [...]}`.
+  scored `source_tracks`, optional bounded-execution metadata in `execution`, and `seed`.
+- `write_dataset` returns `{"dataset": out_dir, "shards": [entries], "split": {source -> "train"/"test"}, "admitted": set, "results": {...counts}, "errors": [...]}`.
 - `Arm(name, strategy)` — one experiment arm; `union_define(arms) -> dict` merges their `define`s.
 
 ## Fluent pipeline
@@ -81,6 +82,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.collect` | `(n=None) -> CurateResult` | terminal — count-path selection |
 | `Pipeline.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, preset_params=None, dry_run=False, inspect_sources=False) -> DatasetWriteResult \| ExecutionPlan` | terminal — write shards + manifests + `config.json`; with `dry_run=True`, validate and estimate without writing |
 | `Pipeline.report` | `(**kw) -> dict` | terminal — feature pass only → `dataset_report` |
+| `Pipeline.stats` | `(*, hist_bins=10, max_sources=3, max_ticks_per_source=10000, examples=5) -> StatsReport` | terminal — input/candidate statistics before selection, candidate-versus-selected statistics after `sample(n=...)`, or a planned-hours report before output |
 | `Pipeline.experiment` | `(arms: dict, n: int, baseline=None) -> dict` | terminal — multi-arm comparison (`arms` maps name → `Pipeline` or raw strategy dict) |
 | `Pipeline.head` | `(k=5) -> list[Tick]` | inspector — first `k` ticks of the first source |
 | `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources, expectations}`, no data touched |
@@ -96,10 +98,11 @@ See [pipeline.md](pipeline.md) for accepted operator forms and validation behavi
 
 | name | signature / stable fields | does |
 |---|---|---|
-| `CurateResult` | `(selected, all_segments, schema, strategy, splits={}, errors=[], source_tracks={}, execution=None)` | typed count-path result, including the scored source roster/length contract and bounded execution metadata when applicable |
-| `DatasetWriteResult` | dict-compatible; `.to_dict()` and attribute access | dataset write result returned by output paths |
+| `CurateResult` | `(selected, all_segments, schema, strategy, splits={}, errors=[], source_tracks={}, execution=None, seed=0)`; `.stats()` | typed count-path result, including the scored source roster/length contract and bounded execution metadata when applicable |
+| `DatasetWriteResult` | dict-compatible; `dataset` path, `.stats()`, `.to_dict()`, and attribute access | dataset write result returned by output paths |
 | `ExperimentResult` | dict-compatible; `.to_dict()` and attribute access | multi-arm experiment result |
 | `DatasetReport` | dict-compatible; `.to_dict()` and attribute access | distribution report result |
+| `StatsReport` | dict-compatible; `.render()`, `.plot(metric=None, kind=None, ax=None)`, `.save(path)`, rich HTML display, and attribute access | unified input, selection, or output statistics; plotting requires `[stats]` |
 | `DatasetInspection` | dict-compatible; `.to_dict()` and attribute access | artifact summary and optional shard-integrity result |
 | `DatasetPreview` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | bounded source/field-quality preview |
 | `SelectionReview` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | candidate-versus-selected metrics, coverage, rationale, and examples |

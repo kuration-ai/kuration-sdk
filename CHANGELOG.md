@@ -5,6 +5,10 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+- Added unified lifecycle stats for pipelines, curated selections, write results, and existing
+  dataset artifacts. Reports render directly in notebooks, can be saved as standalone HTML, and
+  offer optional Matplotlib plots through the `stats` extra; artifact stats inspect the actual
+  emitted, padding-trimmed arrays.
 - Added `kuration.core` and `kuration.gameplay` domain surfaces. Pixel shift, action-state
   consistency, and SLAM now ship together in the SDK wheel instead of separate first-party
   plugin distributions; OpenCV, Torch, FAISS, and related runtimes remain extras.

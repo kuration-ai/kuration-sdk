@@ -19,7 +19,11 @@ class TypedResult(dict):
 
 
 class DatasetWriteResult(TypedResult):
-    pass
+    def stats(self, **kwargs):
+        """Summarize the written artifact identified by this result."""
+        from .stats import stats
+
+        return stats(self, **kwargs)
 
 
 class ExperimentResult(TypedResult):
@@ -28,6 +32,86 @@ class ExperimentResult(TypedResult):
 
 class DatasetReport(TypedResult):
     pass
+
+
+class StatsReport(TypedResult):
+    """Unified statistics over an input pipeline, selection, or written artifact."""
+
+    def render(self) -> str:
+        lines = [f"stats: {self['stage']}"]
+        sections = self.get("sections") or {}
+        input_summary = sections.get("input") or {}
+        if input_summary:
+            sources = input_summary.get("sources") or {}
+            records = input_summary.get("records") or {}
+            lines.append(
+                f"input: {sources.get('sampled', 0)}/{sources.get('total', 0)} sources; "
+                f"{records.get('ticks', 0)} ticks; "
+                f"{records.get('entity_records', 0)} entity records"
+            )
+            for name, field in (input_summary.get("fields") or {}).items():
+                detail = f"missing={field.get('missing_fraction', 0.0):.1%}"
+                if field.get("kind") == "categorical":
+                    detail += f"; unique={field.get('unique', 0)}"
+                elif "min" in field:
+                    detail += f"; range=[{field['min']:.3g}, {field['max']:.3g}]"
+                lines.append(f"field {name} ({field.get('kind', 'unknown')}): {detail}")
+        candidates = sections.get("candidates") or {}
+        if candidates:
+            lines.append(
+                f"candidates: {candidates.get('n_segments', 0)} segments; "
+                f"{candidates.get('n_sources', 0)} sources; "
+                f"{len(candidates.get('metrics') or {})} metrics"
+            )
+        selection = sections.get("selection") or {}
+        if selection:
+            lines.append(
+                f"selection: {selection.get('selected', 0)}/"
+                f"{selection.get('candidates', 0)} "
+                f"({selection.get('selection_rate', 0.0):.1%})"
+            )
+        artifact = sections.get("artifact") or {}
+        if artifact:
+            lines.append(
+                f"artifact: {artifact.get('shards', 0)} shards; "
+                f"{artifact.get('sources', 0)} sources; "
+                f"container={artifact.get('container', 'unknown')}"
+            )
+        contents = sections.get("contents") or {}
+        if contents:
+            lines.append(
+                f"contents: {contents.get('shards_scanned', 0)} shards; "
+                f"{len(contents.get('modalities') or {})} modalities"
+            )
+        hours = sections.get("hours_selection") or {}
+        if hours:
+            lines.append(
+                f"hours selection: {hours.get('admitted_items', 0)}/"
+                f"{hours.get('candidate_items', 0)} items admitted"
+            )
+        for warning in self.get("warnings") or ():
+            lines.append(
+                f"warning [{warning.get('code', 'general')}]: {warning['message']}"
+            )
+        return "\n".join(lines)
+
+    def plot(self, metric: str | None = None, *, kind: str | None = None, ax=None):
+        """Return a Matplotlib figure for this report without calling ``show()``."""
+        from .stats import plot_stats
+
+        return plot_stats(self, metric=metric, kind=kind, ax=ax)
+
+    def save(self, path, *, title: str = "kuration stats") -> str:
+        """Write a dependency-free HTML report and return its path."""
+        from .stats import write_stats_html
+
+        return write_stats_html(path, self, title=title)
+
+    def _repr_html_(self) -> str:
+        """Side-effect-free rich representation for Jupyter and IPython frontends."""
+        from .stats import render_stats_html
+
+        return render_stats_html(self, full_document=False)
 
 
 class DatasetInspection(TypedResult):

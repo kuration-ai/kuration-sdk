@@ -98,7 +98,7 @@ jobs:
           from importlib.util import find_spec
 
           for package in ("torch", "datasets", "zarr", "av", "ray", "s3fs", "gcsfs",
-                          "adlfs", "cv2"):
+                          "adlfs", "cv2", "matplotlib"):
               assert find_spec(package) is None, f"{package} leaked into the core installation"
 
           from kuration import default_registry
@@ -141,7 +141,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extra: [zarr, torch, hf, video, ray, pixel-shift, action-state, slam, slam-viz]
+        extra: [zarr, torch, hf, video, ray, stats, pixel-shift, action-state, slam, slam-viz]
         dependency_set: [current, minimum]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -182,6 +182,10 @@ jobs:
               python -c 'import ray'
               python -m pytest tests/test_execution_backpressure.py \
                 tests/test_determinism_conformance.py -k ray -q
+              ;;
+            stats)
+              python -c 'import matplotlib'
+              python -m pytest tests/test_stats.py -q
               ;;
             pixel-shift)
               python -c 'import cv2; from kuration.gameplay import pixel_shift'

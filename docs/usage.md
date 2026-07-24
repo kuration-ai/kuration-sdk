@@ -355,7 +355,49 @@ provenance).
 
 ---
 
-## 17 · Review input, selection, and artifact changes
+## 17 · Generate stats before selection, after selection, and from output
+
+`stats()` is a terminal over the current immutable pipeline stage. Branch a pipeline to compare
+the uncurated corpus with a count-selected set, then inspect the actual emitted artifact:
+
+```python
+from kuration import input, stats
+
+source = (
+    input("logs/*.parquet", time="t", entity="agent")
+    .window(64)
+    .measure("speed", "mean", of="position", map="speed")
+)
+
+uncurated = source.stats()
+selected = source.sample("top-k", n=5000, weights={"speed": 1.0})
+curated = selected.stats()
+
+written = selected.output("out/curated")
+emitted = written.stats()
+
+print(uncurated.render())
+curated.plot("speed")                # pip install 'kuration-sdk[stats]'
+emitted.save("out/curated-stats.html")
+
+# Inspect an existing artifact without its original input pipeline:
+reopened = stats("out/curated")
+```
+
+The input section is a bounded field preview; candidate/selection metrics use the complete
+scored segment pool. Output statistics scan the emitted, padding-trimmed modalities with exact
+count/mean/std/min/max aggregates. Histograms and percentiles retain at most
+`max_values=100000` evenly sampled values per modality so tensor outputs stay bounded.
+`content=False` limits an artifact report to manifest/config metadata, and `verify=True` checks
+recorded shard integrity while scanning.
+
+Count-selection results also support `pipeline.collect().stats()` without rescoring. Hours
+admission is decided over output tracks, so `.sample(hours=...).stats()` is explicitly marked
+as planned; call `.output(path).stats()` for admitted and emitted statistics.
+
+---
+
+## 18 · Review input, selection, and artifact changes
 
 ```python
 from kuration import compare_datasets, render_html_report, write_html_report
@@ -438,7 +480,7 @@ kur-check out/candidate --policy quality.json --html quality.html
 
 ---
 
-## 18 · Troubleshooting — common loud failures
+## 19 · Troubleshooting — common loud failures
 
 The SDK fails loudly by design: a raised error at load or preflight beats a silently wrong
 dataset. The ones you're most likely to meet, and what they mean:
