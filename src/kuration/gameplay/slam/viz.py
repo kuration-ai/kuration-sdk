@@ -69,6 +69,21 @@ def _clip_color(index: int, count: int) -> list[int]:
     return [int(r * 255), int(g * 255), int(b * 255), 255]
 
 
+def _path_from_segments(trimesh: Any, segments: np.ndarray, color: list[int]) -> Any:
+    """Build a path directly, without trimesh's optional graph backends."""
+    vertices = np.asarray(segments).reshape((-1, 3))
+    entities = [
+        trimesh.path.entities.Line([index, index + 1])
+        for index in range(0, len(vertices), 2)
+    ]
+    return trimesh.path.Path3D(
+        entities=entities,
+        vertices=vertices,
+        colors=np.tile(color, (len(entities), 1)),
+        process=False,
+    )
+
+
 def build_pointcloud_scene(output: Any, *, max_display_points: int = int(3e6)) -> Any:
     """Build a `trimesh.Scene` of `output`'s point cloud plus each clip's
     camera trajectory and per-frame frustums, flipped into glTF (Y-up) axes
@@ -107,8 +122,7 @@ def build_pointcloud_scene(output: Any, *, max_display_points: int = int(3e6)) -
         centers_g = _flip_cv_to_gltf(output.trajectories[name])
         if len(centers_g) > 1:
             segments = centers_g[np.array([[i, i + 1] for i in range(len(centers_g) - 1)])]
-            trajectory = trimesh.load_path(segments)
-            trajectory.colors = np.tile(color, (len(trajectory.entities), 1))
+            trajectory = _path_from_segments(trimesh, segments, color)
             combined.add_geometry(trajectory, node_name=f"{name}_trajectory")
 
         for pose_index, pose in enumerate(output.poses[name]):
@@ -120,8 +134,7 @@ def build_pointcloud_scene(output: Any, *, max_display_points: int = int(3e6)) -
                 [top_left, top_right], [top_right, bottom_right],
                 [bottom_right, bottom_left], [bottom_left, top_left],
             ])
-            frustum = trimesh.load_path(segments)
-            frustum.colors = np.tile(color, (len(frustum.entities), 1))
+            frustum = _path_from_segments(trimesh, segments, color)
             combined.add_geometry(frustum, node_name=f"{name}_frustum_{pose_index}")
 
     return combined

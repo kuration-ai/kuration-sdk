@@ -108,8 +108,15 @@ def test_export_and_adapter_round_trip(tmp_path):
         assert cloud["confidence"].tolist() == [0.25, 0.9]
 
 
-def test_build_pointcloud_scene_covers_exported_geometry():
+def test_build_pointcloud_scene_covers_exported_geometry(monkeypatch):
     trimesh = pytest.importorskip("trimesh")
+    monkeypatch.setattr(
+        trimesh,
+        "load_path",
+        lambda *_args, **_kwargs: pytest.fail(
+            "ordered line segments should not require trimesh's graph backends"
+        ),
+    )
 
     scene = build_pointcloud_scene(_output(), max_display_points=1)
 
