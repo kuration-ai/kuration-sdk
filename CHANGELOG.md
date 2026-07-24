@@ -8,7 +8,13 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 - Added unified lifecycle stats for pipelines, curated selections, write results, and existing
   dataset artifacts. Reports render directly in notebooks, can be saved as standalone HTML, and
   offer optional Matplotlib plots through the `stats` extra; artifact stats inspect the actual
-  emitted, padding-trimmed arrays.
+  emitted, padding-trimmed arrays. Importing the gameplay domain now enriches the same report
+  with video, action, and SLAM signals and a gameplay plot; synchronized video comparison,
+  automatic Jupyter/terminal progress selection, and a model-free JupyterLab example complete
+  the end-user workflow. Reports discover their available plots and evidence modes, choose an
+  applicable domain plot automatically, and expose bounded selected/rejected/strongest/weakest
+  examples; live gameplay reports add frame strips, actions, and SLAM diagnostics without
+  placing media in serialized report data.
 - Added `kuration.core` and `kuration.gameplay` domain surfaces. Pixel shift, action-state
   consistency, and SLAM now ship together in the SDK wheel instead of separate first-party
   plugin distributions; OpenCV, Torch, FAISS, and related runtimes remain extras.

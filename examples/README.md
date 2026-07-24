@@ -24,6 +24,8 @@ python examples/06_gameplay_operator_methods.py
 | **04_operator_pipeline** | the fluent primary path: infer rows, compose measures/filters/bins, preflight, write count- and hours-based datasets, and inspect provenance. |
 | **05_custom_operators** | reusable extension path: register, discover, and run compositional and transform-backed operators through short and namespace-qualified fluent methods. |
 | **06_gameplay_operator_methods** | maintained domain path: import gameplay, call SLAM trajectory operators directly on the core `Pipeline`, and use the qualified spelling without a model or GPU. |
+| **notebooks/gameplay_stats** | JupyterLab lifecycle: automatic notebook progress, uncurated/curated/emitted stats, gameplay plots, and optional synchronized before/after video review. |
+| **notebooks/slam_kurious** | output-free SLAM reconstruction, trajectory curation, and notebook point-cloud exploration. |
 | **public_data/teapearce_csgo** | a bounded public-data workflow: adapt TeaPearce's frame-keyed HDF5, balance action diversity, preserve rare combat events, and optionally emit raw frame tensors. |
 | **public_data/open_p2p** | parse Open P2P protobuf annotations, balance cross-game actions, retain system corrections and instruction spans, and join selected indices back to video. |
 

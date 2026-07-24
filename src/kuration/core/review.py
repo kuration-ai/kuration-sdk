@@ -126,13 +126,131 @@ def preview_dataset(*, schema, adapter, sources, max_sources: int = 3,
                   "truncated": truncated or len(sampled) < len(sources)})
 
 
-def _segment_example(segment, priority) -> dict:
-    return {"source": segment.source_id, "start_idx": segment.start_idx,
-            "end_idx": segment.end_idx, "time_range": _json_value(segment.time_range),
-            "features": _json_value(segment.features), "bin": _json_value(segment.bin),
-            "tags": sorted(map(str, segment.tags)), "group": _json_value(segment.group),
-            "priority": (float(priority) if priority is not None and math.isfinite(priority)
-                         else None)}
+def _segment_example(segment, priority, *, selected: bool | None = None) -> dict:
+    value = {
+        "source": segment.source_id,
+        "start_idx": segment.start_idx,
+        "end_idx": segment.end_idx,
+        "time_range": _json_value(segment.time_range),
+        "features": _json_value(segment.features),
+        "bin": _json_value(segment.bin),
+        "tags": sorted(map(str, segment.tags)),
+        "group": _json_value(segment.group),
+        "priority": (
+            float(priority)
+            if priority is not None and math.isfinite(priority)
+            else None
+        ),
+    }
+    if selected is not None:
+        value["selected"] = selected
+    return value
+
+
+def _selection_pool(result, seed: int):
+    input_candidates = list(result.all_segments)
+    review_pool = input_candidates
+    if result.strategy.filters:
+        from .methods import apply_filters
+
+        review_pool = apply_filters(input_candidates, result.strategy, seed=seed)
+    priorities_by_id = {}
+    if review_pool:
+        from .strategy import segment_priorities
+
+        priorities = segment_priorities(review_pool, result.strategy, seed=seed)
+        priorities_by_id = {
+            id(segment): priority
+            for segment, priority in zip(review_pool, priorities, strict=True)
+        }
+        candidates = [
+            segment
+            for segment, priority in zip(review_pool, priorities, strict=True)
+            if math.isfinite(priority)
+        ]
+    else:
+        candidates = []
+    return input_candidates, candidates, priorities_by_id
+
+
+def selection_examples(
+    result,
+    *,
+    mode: str = "selected",
+    metric: str | None = None,
+    n: int = 10,
+    seed: int = 0,
+    _pool=None,
+) -> list[dict]:
+    """Return bounded evidence from a scored count selection without rescoring."""
+    if mode not in {"selected", "rejected", "strongest", "weakest"}:
+        raise ValueError(
+            "selection example mode must be selected, rejected, strongest, or weakest"
+        )
+    if not isinstance(n, int) or isinstance(n, bool) or not 1 <= n <= 100:
+        raise ValueError("selection example n must be an integer in [1, 100]")
+    if metric is not None and (not isinstance(metric, str) or not metric):
+        raise ValueError("selection example metric must be a non-empty string or None")
+    _, candidates, priorities_by_id = _pool or _selection_pool(result, seed)
+    selected_keys = {
+        (segment.source_id, segment.start_idx, segment.end_idx)
+        for segment in result.selected
+    }
+
+    def is_selected(segment) -> bool:
+        return (segment.source_id, segment.start_idx, segment.end_idx) in selected_keys
+
+    if mode == "selected":
+        pool = [segment for segment in candidates if is_selected(segment)]
+    elif mode == "rejected":
+        pool = [segment for segment in candidates if not is_selected(segment)]
+    else:
+        pool = list(candidates)
+    if metric is not None:
+        missing = [segment for segment in pool if metric not in segment.features]
+        if missing:
+            available = sorted(
+                {name for segment in pool for name in segment.features}
+            )
+            raise ValueError(
+                f"unknown evidence metric {metric!r}; available: {available}"
+            )
+
+    def rank(segment):
+        value = (
+            segment.features[metric]
+            if metric is not None
+            else priorities_by_id.get(id(segment))
+        )
+        numeric = float(value) if value is not None and math.isfinite(value) else float("-inf")
+        return (
+            numeric,
+            str(segment.source_id),
+            int(segment.start_idx),
+            int(segment.end_idx),
+        )
+
+    reverse = mode != "weakest"
+    ordered = sorted(pool, key=rank, reverse=reverse)[:n]
+    return [
+        {
+            **_segment_example(
+                segment,
+                priorities_by_id.get(id(segment)),
+                selected=is_selected(segment),
+            ),
+            "rank_by": metric or "priority",
+            "rank_value": (
+                float(segment.features[metric])
+                if metric is not None
+                else float(priorities_by_id[id(segment)])
+                if priorities_by_id.get(id(segment)) is not None
+                and math.isfinite(priorities_by_id[id(segment)])
+                else None
+            ),
+        }
+        for segment in ordered
+    ]
 
 
 def selection_review(result, *, seed: int = 0, examples: int = 10,
@@ -140,22 +258,8 @@ def selection_review(result, *, seed: int = 0, examples: int = 10,
     """Compare a ``CurateResult`` candidate pool with its selected segments."""
     if not isinstance(examples, int) or isinstance(examples, bool) or examples < 1:
         raise ValueError("examples must be a positive integer")
-    input_candidates = list(result.all_segments)
+    input_candidates, candidates, priorities_by_id = _selection_pool(result, seed)
     selected = list(result.selected)
-    review_pool = input_candidates
-    if result.strategy.filters:
-        from .methods import apply_filters
-        review_pool = apply_filters(input_candidates, result.strategy, seed=seed)
-    priorities_by_id = {}
-    if review_pool:
-        from .strategy import segment_priorities
-        priorities = segment_priorities(review_pool, result.strategy, seed=seed)
-        priorities_by_id = {id(segment): priority for segment, priority
-                            in zip(review_pool, priorities)}
-        candidates = [segment for segment, priority in zip(review_pool, priorities)
-                      if math.isfinite(priority)]
-    else:
-        candidates = []
     candidate_report = dataset_report(candidates, hist_bins=hist_bins)
     selected_report = dataset_report(selected, hist_bins=hist_bins)
     metrics = {}
@@ -188,8 +292,24 @@ def selection_review(result, *, seed: int = 0, examples: int = 10,
                                 "bins": selected_report.get("bins"),
                                 "source_contribution": dict(sorted(source_counts.items())),
                                 "splits": dict(sorted(split_counts.items()))}},
-        examples=[_segment_example(segment, priorities_by_id.get(id(segment)))
-                  for segment in selected[:examples]],
+        examples=[
+            _segment_example(
+                segment,
+                priorities_by_id.get(id(segment)),
+                selected=True,
+            )
+            for segment in selected[:examples]
+        ],
+        evidence={
+            mode: selection_examples(
+                result,
+                mode=mode,
+                n=examples,
+                seed=seed,
+                _pool=(input_candidates, candidates, priorities_by_id),
+            )
+            for mode in ("selected", "rejected", "strongest", "weakest")
+        },
         errors=list(result.errors),
         warnings=([{"code": "source-errors", "message":
                     f"{len(result.errors)} source(s) were skipped"}] if result.errors else []))

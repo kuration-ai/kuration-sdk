@@ -37,6 +37,8 @@ class DatasetReport(TypedResult):
 class StatsReport(TypedResult):
     """Unified statistics over an input pipeline, selection, or written artifact."""
 
+    _stats_context: dict[str, Any]
+
     def render(self) -> str:
         lines = [f"stats: {self['stage']}"]
         sections = self.get("sections") or {}
@@ -89,6 +91,22 @@ class StatsReport(TypedResult):
                 f"hours selection: {hours.get('admitted_items', 0)}/"
                 f"{hours.get('candidate_items', 0)} items admitted"
             )
+        standard_sections = {
+            "input", "candidates", "selection", "budget_plan", "artifact", "contents",
+            "hours_selection",
+        }
+        for section_name, section in sections.items():
+            if section_name in standard_sections or not isinstance(section, dict):
+                continue
+            for item in section.get("summary") or ():
+                if isinstance(item, dict):
+                    detail = (
+                        f" ({item['detail']})" if item.get("detail") is not None else ""
+                    )
+                    lines.append(
+                        f"{section_name} {item.get('label', 'summary')}: "
+                        f"{item.get('value', '—')}{detail}"
+                    )
         for warning in self.get("warnings") or ():
             lines.append(
                 f"warning [{warning.get('code', 'general')}]: {warning['message']}"
@@ -101,6 +119,33 @@ class StatsReport(TypedResult):
 
         return plot_stats(self, metric=metric, kind=kind, ax=ax)
 
+    def available(self) -> dict:
+        """Describe plot and evidence choices available for this report."""
+        from .stats import stats_capabilities
+
+        return stats_capabilities(self)
+
+    def examples(
+        self,
+        *,
+        mode: str = "auto",
+        metric: str | None = None,
+        compare: str | None = None,
+        n: int = 6,
+        frames: int = 3,
+    ):
+        """Select bounded evidence and retain live media access when available."""
+        from .stats import stats_examples
+
+        return stats_examples(
+            self,
+            mode=mode,
+            metric=metric,
+            compare=compare,
+            n=n,
+            frames=frames,
+        )
+
     def save(self, path, *, title: str = "kuration stats") -> str:
         """Write a dependency-free HTML report and return its path."""
         from .stats import write_stats_html
@@ -112,6 +157,34 @@ class StatsReport(TypedResult):
         from .stats import render_stats_html
 
         return render_stats_html(self, full_document=False)
+
+
+class StatsExamples(TypedResult):
+    """Bounded examples selected from a stats report for human review."""
+
+    _stats_context: dict[str, Any]
+
+    def render(self) -> str:
+        lines = [
+            f"examples: {sum(len(items) for items in self['groups'].values())} "
+            f"across {len(self['groups'])} group(s)"
+        ]
+        for group, items in self["groups"].items():
+            lines.append(f"{group}: {len(items)}")
+            for item in items:
+                metric = item.get("rank_by")
+                value = item.get("rank_value")
+                rank = f"; {metric}={value:.4g}" if metric and value is not None else ""
+                lines.append(
+                    f"  {item.get('source')} [{item.get('start_idx')},"
+                    f"{item.get('end_idx')}){rank}"
+                )
+        return "\n".join(lines)
+
+    def _repr_html_(self) -> str:
+        from .stats import render_stats_examples_html
+
+        return render_stats_examples_html(self)
 
 
 class DatasetInspection(TypedResult):

@@ -6,7 +6,7 @@ from html import escape
 import json
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -18,8 +18,71 @@ from .results import (
     DatasetWriteResult,
     HoursSelectionReview,
     SelectionReview,
+    StatsExamples,
     StatsReport,
 )
+
+_STATS_ENRICHERS: dict[str, Callable[[Any, StatsReport], dict | None]] = {}
+_STATS_PLOTTERS: dict[str, Callable[..., Any]] = {}
+_STATS_EXAMPLE_RENDERERS: dict[str, Callable[[StatsExamples], str | None]] = {}
+
+
+def register_stats_enricher(
+    name: str,
+    enricher: Callable[[Any, StatsReport], dict | None],
+    *,
+    plotter: Callable[..., Any] | None = None,
+    example_renderer: Callable[[StatsExamples], str | None] | None = None,
+) -> None:
+    """Register an advanced domain section for the ordinary :func:`stats` result.
+
+    Domain packages use this hook so importing a domain unlocks relevant analysis while the
+    baseline core remains domain-agnostic. Most users should call ``stats()`` rather than
+    registering enrichers directly.
+    """
+    if not isinstance(name, str) or not name or not name.replace("_", "").isalnum():
+        raise ValueError("stats enricher name must be a non-empty identifier")
+    if not callable(enricher):
+        raise ValueError("stats enricher must be callable")
+    existing = _STATS_ENRICHERS.get(name)
+    if existing is not None and existing is not enricher:
+        raise ValueError(f"stats enricher {name!r} is already registered")
+    if plotter is not None and not callable(plotter):
+        raise ValueError("stats plotter must be callable")
+    if example_renderer is not None and not callable(example_renderer):
+        raise ValueError("stats example renderer must be callable")
+    existing_plotter = _STATS_PLOTTERS.get(name)
+    if existing_plotter is not None and existing_plotter is not plotter:
+        raise ValueError(f"stats plotter {name!r} is already registered")
+    existing_renderer = _STATS_EXAMPLE_RENDERERS.get(name)
+    if existing_renderer is not None and existing_renderer is not example_renderer:
+        raise ValueError(f"stats example renderer {name!r} is already registered")
+    _STATS_ENRICHERS[name] = enricher
+    if plotter is not None:
+        _STATS_PLOTTERS[name] = plotter
+    if example_renderer is not None:
+        _STATS_EXAMPLE_RENDERERS[name] = example_renderer
+
+
+def _apply_enrichers(subject: Any, report: StatsReport) -> StatsReport:
+    if not _STATS_ENRICHERS:
+        return report
+    sections = dict(report.get("sections") or {})
+    changed = False
+    for name, enricher in _STATS_ENRICHERS.items():
+        value = enricher(subject, report)
+        if value is not None:
+            sections[name] = value
+            changed = True
+    if not changed:
+        return report
+    document = report.to_dict()
+    document["sections"] = sections
+    enriched = StatsReport(document)
+    context = report.__dict__.get("_stats_context")
+    if context is not None:
+        enriched._stats_context = context
+    return enriched
 
 
 def _positive_int(name: str, value: int) -> int:
@@ -42,14 +105,30 @@ def _pipeline_stats(
         examples=examples,
     )
     if pipeline._n is not None:
-        review = pipeline.review(examples=examples, hist_bins=hist_bins)
-        return StatsReport(
+        from .review import selection_review
+
+        result = pipeline.collect()
+        review = selection_review(
+            result,
+            seed=pipeline._options["seed"],
+            examples=examples,
+            hist_bins=hist_bins,
+        )
+        if pipeline._expectations:
+            from .quality import check_quality
+
+            review["quality"] = check_quality(
+                review, pipeline._expectations
+            ).to_dict()
+        report = StatsReport(
             stage="curated",
             subject="pipeline",
             sections={"input": preview.to_dict(), "selection": review.to_dict()},
             warnings=list(preview.get("warnings") or ())
             + list(review.get("warnings") or ()),
         )
+        report._stats_context = {"pipeline": pipeline, "selection": result}
+        return report
 
     report = pipeline.report(hist_bins=hist_bins)
     warnings = list(preview.get("warnings") or ())
@@ -87,12 +166,14 @@ def _curate_result_stats(result, *, hist_bins: int, examples: int) -> StatsRepor
     review = selection_review(
         result, seed=result.seed, examples=examples, hist_bins=hist_bins
     )
-    return StatsReport(
+    report = StatsReport(
         stage="curated",
         subject="selection",
         sections={"selection": review.to_dict()},
         warnings=list(review.get("warnings") or ()),
     )
+    report._stats_context = {"selection": result}
+    return report
 
 
 def _sample_flat(array: np.ndarray, limit: int) -> np.ndarray:
@@ -305,7 +386,7 @@ def _artifact_stats(
     )
 
 
-def stats(
+def _base_stats(
     subject,
     *,
     hist_bins: int = 10,
@@ -425,6 +506,219 @@ def stats(
     )
 
 
+def stats(
+    subject,
+    *,
+    hist_bins: int = 10,
+    max_sources: int = 3,
+    max_ticks_per_source: int = 10_000,
+    examples: int = 5,
+    max_values: int = 100_000,
+    content: bool = True,
+    verify: bool = False,
+    progress=None,
+    registry=None,
+) -> StatsReport:
+    """Return extensible lifecycle statistics for a pipeline, selection, or artifact."""
+    if progress is not None:
+        from .progress import progress_callback
+
+        progress = progress_callback(progress)
+    report = _base_stats(
+        subject,
+        hist_bins=hist_bins,
+        max_sources=max_sources,
+        max_ticks_per_source=max_ticks_per_source,
+        examples=examples,
+        max_values=max_values,
+        content=content,
+        verify=verify,
+        progress=progress,
+        registry=registry,
+    )
+    if "pipeline" not in report.__dict__.get("_stats_context", {}) and hasattr(
+        subject, "adapter"
+    ) and hasattr(subject, "schema"):
+        context = dict(report.__dict__.get("_stats_context") or {})
+        context["pipeline"] = subject
+        report._stats_context = context
+    return _apply_enrichers(subject, report)
+
+
+def stats_capabilities(report: StatsReport) -> dict:
+    """Return discoverable actions supported by one concrete stats report."""
+    sections = report.get("sections") or {}
+    plots = []
+    if _histogram_metric(report, None) is not None:
+        plots.append("distribution")
+    if (sections.get("input") or {}).get("fields"):
+        plots.append("missingness")
+    if (sections.get("artifact") or {}).get("splits"):
+        plots.append("splits")
+    for name in _STATS_PLOTTERS:
+        section = sections.get(name) or {}
+        if name in (section.get("plots") or ()):
+            plots.insert(0, name)
+
+    modes: list[str] = []
+    selection = sections.get("selection") or {}
+    if selection:
+        evidence = selection.get("evidence") or {}
+        modes.extend(
+            mode
+            for mode in ("selected", "rejected", "strongest", "weakest")
+            if mode in evidence
+        )
+    hours = sections.get("hours_selection") or {}
+    if hours.get("examples"):
+        modes.extend(
+            mode
+            for mode in ("admitted", "rejected")
+            if mode in hours["examples"]
+        )
+    if (sections.get("input") or {}).get("examples"):
+        modes.append("input")
+    modes = list(dict.fromkeys(modes))
+    context = report.__dict__.get("_stats_context") or {}
+    pipeline = context.get("pipeline")
+    media = bool(
+        _STATS_EXAMPLE_RENDERERS
+        and pipeline is not None
+        and getattr(pipeline.schema, "media", None)
+    )
+    return {
+        "plots": plots,
+        "default_plot": plots[0] if plots else None,
+        "example_modes": modes,
+        "comparisons": [
+            comparison
+            for comparison, required in (
+                ("selected-vs-rejected", {"selected", "rejected"}),
+                ("strongest-vs-weakest", {"strongest", "weakest"}),
+            )
+            if required <= set(modes)
+        ],
+        "media_examples": media,
+        "html": True,
+        "save": True,
+    }
+
+
+def _embedded_examples(
+    report: StatsReport,
+    mode: str,
+    *,
+    metric: str | None,
+    n: int,
+) -> tuple[list[dict], bool]:
+    sections = report.get("sections") or {}
+    selection = sections.get("selection") or {}
+    evidence = selection.get("evidence") or {}
+    if mode in evidence:
+        items = [dict(item) for item in evidence[mode]]
+        if metric is not None:
+            available = {name for item in items for name in (item.get("features") or {})}
+            if metric not in available:
+                raise ValueError(
+                    f"unknown evidence metric {metric!r}; available: {sorted(available)}"
+                )
+            items.sort(
+                key=lambda item: float((item.get("features") or {})[metric]),
+                reverse=mode != "weakest",
+            )
+            for item in items:
+                item["rank_by"] = metric
+                item["rank_value"] = float((item.get("features") or {})[metric])
+        return items[:n], True
+    hours = sections.get("hours_selection") or {}
+    if mode in (hours.get("examples") or {}):
+        if metric is not None:
+            raise ValueError("hours evidence does not support metric ranking")
+        return [dict(item) for item in hours["examples"][mode]][:n], True
+    if mode == "input" and (sections.get("input") or {}).get("examples"):
+        if metric is not None:
+            raise ValueError("input examples do not support metric ranking")
+        return [
+            dict(item) for item in (sections["input"].get("examples") or ())
+        ][:n], True
+    raise ValueError(
+        f"example mode {mode!r} is unavailable; "
+        f"available: {stats_capabilities(report)['example_modes']}"
+    )
+
+
+def stats_examples(
+    report: StatsReport,
+    *,
+    mode: str = "auto",
+    metric: str | None = None,
+    compare: str | None = None,
+    n: int = 6,
+    frames: int = 3,
+) -> StatsExamples:
+    """Select bounded human-review evidence from a lifecycle report."""
+    if not isinstance(n, int) or isinstance(n, bool) or not 1 <= n <= 100:
+        raise ValueError("examples n must be an integer in [1, 100]")
+    if not isinstance(frames, int) or isinstance(frames, bool) or not 1 <= frames <= 12:
+        raise ValueError("examples frames must be an integer in [1, 12]")
+    capabilities = stats_capabilities(report)
+    modes: tuple[str, ...]
+    if compare is not None:
+        comparison_modes = {
+            "selected-vs-rejected": ("selected", "rejected"),
+            "strongest-vs-weakest": ("strongest", "weakest"),
+        }
+        if compare not in comparison_modes:
+            raise ValueError(
+                "compare must be selected-vs-rejected or strongest-vs-weakest"
+            )
+        modes = comparison_modes[compare]
+    else:
+        if mode == "auto":
+            modes = (
+                (capabilities["example_modes"][0],)
+                if capabilities["example_modes"]
+                else ()
+            )
+        else:
+            modes = (mode,)
+    if not modes:
+        raise ValueError("stats report has no examples")
+
+    context = report.__dict__.get("_stats_context") or {}
+    result = context.get("selection")
+    groups = {}
+    bounded = False
+    for group in modes:
+        if result is not None and group in {
+            "selected", "rejected", "strongest", "weakest"
+        }:
+            from .review import selection_examples
+
+            groups[group] = selection_examples(
+                result,
+                mode=group,
+                metric=metric,
+                n=n,
+                seed=result.seed,
+            )
+        else:
+            groups[group], embedded_bounded = _embedded_examples(
+                report, group, metric=metric, n=n
+            )
+            bounded = bounded or embedded_bounded
+    examples = StatsExamples(
+        stage=report.get("stage"),
+        metric=metric,
+        compare=compare,
+        groups=groups,
+        bounded=bounded,
+        frames_per_example=frames,
+    )
+    examples._stats_context = context
+    return examples
+
+
 def _histogram_metric(report: StatsReport, metric: str | None):
     selection = (report.get("sections") or {}).get("selection") or {}
     selection_metrics = selection.get("metrics") or {}
@@ -484,10 +778,18 @@ def plot_stats(
         raise ImportError(
             "stats plotting needs Matplotlib: pip install 'kuration-sdk[stats]'"
         ) from error
-    if kind not in {None, "distribution", "missingness", "splits"}:
+    if kind is None and metric is None:
+        default = stats_capabilities(report).get("default_plot")
+        if default in _STATS_PLOTTERS:
+            return _STATS_PLOTTERS[default](report, metric=None, ax=ax)
+    core_kinds = {None, "distribution", "missingness", "splits"}
+    if kind not in core_kinds and kind not in _STATS_PLOTTERS:
         raise ValueError(
-            "stats plot kind must be 'distribution', 'missingness', or 'splits'"
+            "unknown stats plot kind; available: "
+            f"{sorted({'distribution', 'missingness', 'splits'} | set(_STATS_PLOTTERS))}"
         )
+    if kind in _STATS_PLOTTERS:
+        return _STATS_PLOTTERS[kind](report, metric=metric, ax=ax)
 
     if ax is None:
         figure, ax = plt.subplots(figsize=(8, 4.5), constrained_layout=True)
@@ -548,6 +850,67 @@ def plot_stats(
     ax.set_ylabel("Count")
     ax.set_title(f"{name} distribution")
     return figure
+
+
+def render_stats_examples_html(examples: StatsExamples) -> str:
+    """Render bounded evidence with optional domain-owned media additions."""
+    groups = examples.get("groups") or {}
+    group_html = []
+    for group, items in groups.items():
+        cards = []
+        for item in items:
+            features = item.get("features") or {}
+            metric = item.get("rank_by")
+            rank_value = item.get("rank_value")
+            feature_rows = "".join(
+                f"<span><strong>{escape(str(name))}</strong> "
+                f"{escape(f'{value:.4g}' if isinstance(value, (int, float)) else str(value))}"
+                "</span>"
+                for name, value in list(features.items())[:6]
+            )
+            location = escape(str(item.get("source", "input")))
+            if item.get("start_idx") is not None:
+                location += (
+                    f" [{int(item['start_idx'])}, {int(item['end_idx'])})"
+                )
+            rank = (
+                f"<span class=\"kur-evidence-rank\">{escape(str(metric))}: "
+                f"{escape(f'{rank_value:.4g}' if isinstance(rank_value, (int, float)) else str(rank_value))}"
+                "</span>"
+                if metric and rank_value is not None
+                else ""
+            )
+            cards.append(
+                "<article class=\"kur-evidence-card\">"
+                f"<header><strong>{location}</strong>{rank}</header>"
+                f"<div class=\"kur-evidence-features\">{feature_rows}</div>"
+                "</article>"
+            )
+        group_html.append(
+            f"<section><h3>{escape(str(group).replace('_', ' ').title())}</h3>"
+            f"<div class=\"kur-evidence-grid\">{''.join(cards)}</div></section>"
+        )
+    domain_html = []
+    for renderer in _STATS_EXAMPLE_RENDERERS.values():
+        rendered = renderer(examples)
+        if rendered:
+            domain_html.append(rendered)
+    note = (
+        "<p class=\"kur-evidence-note\">This detached report contains only the bounded "
+        "examples captured when stats were generated.</p>"
+        if examples.get("bounded")
+        else ""
+    )
+    return (
+        "<style>.kur-evidence-grid{display:grid;grid-template-columns:"
+        "repeat(auto-fit,minmax(18rem,1fr));gap:.7rem}.kur-evidence-card{border:1px solid #8885;"
+        "border-radius:.55rem;padding:.7rem}.kur-evidence-card header{display:flex;"
+        "justify-content:space-between;gap:.7rem}.kur-evidence-rank{font-variant-numeric:"
+        "tabular-nums}.kur-evidence-features{display:flex;flex-wrap:wrap;gap:.35rem .8rem;"
+        "font-size:.88em;margin-top:.5rem}.kur-evidence-note{opacity:.75}</style>"
+        "<section class=\"kur-evidence\"><h2>Stats evidence</h2>"
+        f"{note}{''.join(group_html)}{''.join(domain_html)}</section>"
+    )
 
 
 def _summary_cards(report: StatsReport) -> str:
@@ -617,9 +980,48 @@ def render_stats_html(
         f"{escape(item['message'])}</li>"
         for item in report.get("warnings") or ()
     )
+    standard_sections = {
+        "input", "candidates", "selection", "budget_plan", "artifact", "contents",
+        "hours_selection",
+    }
+    domain_rows = []
+    for section_name, section in sections.items():
+        if section_name in standard_sections or not isinstance(section, dict):
+            continue
+        for item in section.get("summary") or ():
+            if not isinstance(item, dict):
+                continue
+            domain_rows.append(
+                "<tr>"
+                f"<td>{escape(section_name)}</td>"
+                f"<td>{escape(str(item.get('label', 'summary')))}</td>"
+                f"<td>{escape(str(item.get('value', '—')))}</td>"
+                f"<td>{escape(str(item.get('detail', '')))}</td>"
+                "</tr>"
+            )
     raw = escape(json.dumps(report.to_dict(), indent=2, ensure_ascii=False, default=str))
+    capabilities = stats_capabilities(report)
+    capability_items = []
+    if capabilities["plots"]:
+        capability_items.append(
+            "plots: " + ", ".join(capabilities["plots"])
+        )
+    if capabilities["example_modes"]:
+        capability_items.append(
+            "examples: " + ", ".join(capabilities["example_modes"])
+        )
+    if capabilities["media_examples"]:
+        capability_items.append("media evidence")
+    capability_html = (
+        "<p class=\"kur-capabilities\"><strong>Available:</strong> "
+        + escape(" · ".join(capability_items))
+        + "</p>"
+        if capability_items
+        else ""
+    )
     body = (
         f"<section class=\"kur-stats\"><h2>{escape(title)}</h2>"
+        f"{capability_html}"
         f"<div class=\"kur-cards\">{_summary_cards(report)}</div>"
         + (
             "<h3>Input fields</h3><table><thead><tr><th>Field</th><th>Kind</th>"
@@ -640,6 +1042,13 @@ def render_stats_html(
             "<th>Dtype</th><th>Shape</th><th>Rows</th><th>Mean</th></tr></thead>"
             f"<tbody>{modality_rows}</tbody></table>"
             if modality_rows
+            else ""
+        )
+        + (
+            "<h3>Domain insights</h3><table><thead><tr><th>Domain</th>"
+            "<th>Signal</th><th>Value</th><th>Detail</th></tr></thead>"
+            f"<tbody>{''.join(domain_rows)}</tbody></table>"
+            if domain_rows
             else ""
         )
         + (f"<h3>Warnings</h3><ul>{warnings}</ul>" if warnings else "")

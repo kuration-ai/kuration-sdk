@@ -4,6 +4,8 @@ from __future__ import annotations
 import io
 import sys
 
+import pytest
+
 from kuration import (
     SchemaSpec,
     Segmenter,
@@ -15,7 +17,11 @@ from kuration import (
 )
 from kuration.core.dsl.registry import METRICS
 from kuration.core.output import OutputSpec
-from kuration.core.progress import cli_progress
+from kuration.core.progress import (
+    _notebook_progress_html,
+    cli_progress,
+    progress_callback,
+)
 from kuration.core.scoring import score_sources
 
 
@@ -220,3 +226,29 @@ def test_cli_progress_is_throttled_and_human_readable():
     assert lines[0] == "[scoring] starting (100 total)"
     assert lines[-1] == "[scoring] complete (200 segments)"
     assert len(lines) <= 23
+
+
+def test_progress_modes_are_selectable_without_an_extra_import():
+    callback = lambda event: None
+    assert progress_callback(callback) is callback
+    assert progress_callback("off") is None
+    quiet = input([{"x": 1.0}]).options(progress="off")
+    assert quiet._options["progress"] is None
+    assert quiet.describe()["options"]["progress"] == "off"
+    with pytest.raises(ValueError, match="progress must be"):
+        progress_callback("sparkles")
+
+
+def test_notebook_progress_markup_is_bounded_and_safe():
+    html = _notebook_progress_html(
+        {
+            "phase": "<scoring>",
+            "event": "advance",
+            "current": 25,
+            "total": 100,
+            "source": "<clip>",
+        }
+    )
+    assert "&lt;scoring&gt;" in html and "&lt;clip&gt;" in html
+    assert "25/100" in html
+    assert "width:25.000%" in html

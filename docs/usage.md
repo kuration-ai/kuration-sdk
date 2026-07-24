@@ -221,8 +221,10 @@ entry point. Set `"include_plugin_entry_points": false` when a reproducible job 
 only built-ins and its explicit plugin modules—even if ambient plugins were discovered earlier
 in the process. For programmatic progress, pass `progress=events.append` (or any callback) to
 `curate`, `run_experiment`, or `write_dataset`; fluent pipelines use
-`.options(progress=callback)`. Run CLIs render the same events on interactive stderr and accept
-`--quiet`.
+`.options(progress=callback)`. For end-user display, use
+`.options(progress="auto")`: it updates compact rows in JupyterLab and renders throttled terminal
+output in scripts. `"notebook"`, `"terminal"`, and `"off"` make the selection explicit. Run CLIs
+render the same events on interactive stderr and accept `--quiet`.
 
 ## 12 · Sub-track spans (keep the best *parts* of long sources)
 
@@ -378,6 +380,8 @@ emitted = written.stats()
 
 print(uncurated.render())
 curated.plot("speed")                # pip install 'kuration-sdk[stats]'
+curated.available()                  # plots, evidence modes, comparisons, media
+curated.examples(metric="speed", compare="selected-vs-rejected")
 emitted.save("out/curated-stats.html")
 
 # Inspect an existing artifact without its original input pipeline:
@@ -394,6 +398,38 @@ recorded shard integrity while scanning.
 Count-selection results also support `pipeline.collect().stats()` without rescoring. Hours
 admission is decided over output tracks, so `.sample(hours=...).stats()` is explicitly marked
 as planned; call `.output(path).stats()` for admitted and emitted statistics.
+
+Importing a maintained domain unlocks relevant sections and plots without changing the call:
+
+```python
+import kuration.gameplay as gameplay
+
+report = gameplay.slam_pipeline("slam-export/manifest.json").window(32).slam_quality().stats()
+report.plot()                         # gameplay is the automatic default
+evidence = report.examples(
+    metric="slam_quality_score",
+    compare="selected-vs-rejected",
+    n=6,
+    frames=3,
+)
+
+comparison = gameplay.compare_videos("raw.mp4", "curated.mp4",
+                                     labels=("Before", "After"))
+comparison.save("video-review.html", embed=False)
+```
+
+The rich video result displays synchronized players in Jupyter. Small local videos embed
+automatically; larger files remain referenced to avoid unexpectedly inflating notebook output.
+Use `comparison.plot(frames=4)` for a matched contact sheet (`[stats]`) and
+`comparison.probe()` for codec, rate, duration, and frame metadata (`[video]`).
+Live pipeline evidence reads only the requested segment ranges and decodes at most `frames`
+evenly spaced images per example. `selected`, `rejected`, `strongest`, and `weakest` modes reuse
+the scored count-selection pool; serialized reports retain bounded copies, while live reports
+can rank any available metric exactly. Whole videos and large frame tensors are never embedded
+in the JSON report.
+The runnable
+[gameplay stats notebook](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb)
+uses synthetic trajectories and needs no model or GPU.
 
 ---
 

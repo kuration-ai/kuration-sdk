@@ -165,6 +165,9 @@ For custom runtimes, use `--runtime-factory module:callable` instead of `--depth
 factory returns `run_slam_reconstruction()` options and should honor `preflight=True` without allocating
 models. The preparation APIs emit structured `slam-preflight`, `slam-decode`,
 `slam-reconstruction`, `slam-export`, `slam-cache`, and `slam-prepare` progress events.
+Pass `progress="auto"` through `gameplay.slam_pipeline(...)` to get compact updating rows in
+JupyterLab and terminal progress in scripts; direct lower-level APIs continue to accept the
+structured callback returned by `progress_callback("auto")`.
 
 For a model-free end-to-end smoke test:
 
@@ -205,7 +208,10 @@ highest-confidence rows when a scalar confidence attribute was exported.
 ## Notebook and leakage boundary
 
 The checked-in [SLAM notebook](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) is output-free and uses
-parameterized paths; it is a walkthrough, not a bundled gameplay dataset.
+parameterized paths; it is a walkthrough, not a bundled gameplay dataset. The separate
+[gameplay stats notebook](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb)
+is model-free and demonstrates lifecycle stats, notebook progress, domain plots, and optional
+video comparison.
 
 Place recognition can connect multiple clips to one physical scene. Assign scene-connected clips
 to a split before reconstruction, or treat the connected scene as one atomic group. Do not

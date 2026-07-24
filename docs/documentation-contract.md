@@ -87,6 +87,7 @@ are grouped below by user task.
 - Entry and results: `input`, `Pipeline`, `infer_schema`, `curate`, `CurateResult`,
   `write_dataset`, `DatasetWriteResult`, `run_experiment`, `Arm`, `union_define`,
   `ExperimentResult`, `dataset_report`, `DatasetReport`, `stats`, `StatsReport`,
+  `StatsExamples`,
   `preview_dataset`, `DatasetPreview`,
   `selection_review`, `SelectionReview`, `inspect_dataset`, `DatasetInspection`,
   `compare_datasets`, `DatasetComparison`, `render_html_report`, `write_html_report`,
@@ -115,6 +116,7 @@ are grouped below by user task.
 - Registries, plugins, and progress: `Registry`, `default_registry`, `ComponentDescriptor`,
   `list_components`, `describe_component`, `load_plugins`, `loaded_plugin_modules`,
   `plugin_failures`, `plugin_provenance`, `check_plugins`, `PluginCheckResult`, `ProgressCallback`,
+  `ProgressSpec`, `progress_callback`, `notebook_progress`, `cli_progress`,
   `register_operator`, `Analyzer`, `SplitLeakageAnalyzer`, `register_analyzer`, `get_analyzer`.
 - Manifests and I/O: `build_config`, `dump_segment_manifest`, `write_config`, `read_text`,
   `write_text`, `write_bytes`, `exists`, `local_copy`.
@@ -144,8 +146,9 @@ even though they are not individual members of `kuration.__all__`.
 ### Framework integration
 
 `kuration.core.torch.ShardDataset` is public and supported. The built-in
-`kuration.gameplay.pixel_shift`, `kuration.gameplay.action_state_consistency`, and
-`kuration.gameplay.slam` modules are also
+`kuration.gameplay.pixel_shift`, `kuration.gameplay.action_state_consistency`,
+`kuration.gameplay.slam`, `kuration.gameplay.compare_videos`, and
+`kuration.gameplay.VideoComparison` are also
 public. Their direct APIs are documented in `docs/api.md` and their focused guides. Importing
 `kuration.gameplay` registers these capabilities but must not import OpenCV, PyTorch, FAISS,
 or another optional runtime. Importing the core `kuration` package does not import gameplay.

@@ -80,11 +80,24 @@ pipeline = (
     .window(32, stride=16)
     .slam_motion_diversity()
     .slam_quality(min_score=0.6)
+    .options(progress="auto")
+)
+
+report = pipeline.stats()                 # rich HTML in Jupyter
+report.plot()                             # automatically chooses the gameplay plot
+evidence = report.examples(
+    metric="slam_quality_score",
+    compare="selected-vs-rejected",
 )
 ```
 
 `kuration.gameplay` is an operator domain, not a second pipeline implementation. Importing it
-registers gameplay methods on the ordinary `kuration.Pipeline`.
+registers gameplay methods and relevant stats on the ordinary `kuration.Pipeline`; the core
+stats call remains unchanged. `report.available()` discovers the plots, evidence modes, and
+media support present on that concrete report. On a video-backed live pipeline, evidence renders
+bounded frame strips and action context automatically. For whole-video review,
+`gameplay.compare_videos(before, after)` renders synchronized players and can save a standalone
+HTML comparison.
 
 ## Try it in five minutes
 
@@ -154,6 +167,7 @@ started, guides, extensions, operations, and reference.
 | [`02_robotics_action_aware.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Action-aware scoring composed with geometric and phase coverage |
 | [`05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py) | Custom compositional and transform-backed operators called through generated fluent methods |
 | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py) | Built-in gameplay operators on the core `Pipeline`, including namespace-qualified syntax |
+| [`gameplay_stats.ipynb`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb) | JupyterLab progress, lifecycle stats, gameplay plots, output inspection, and synchronized video review |
 | [TeaPearce Counter-Strike](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | HDF5 adaptation, rare-event coverage, and optional image output |
 | [Open P2P](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Protobuf annotations, cross-game action coverage, corrections, instructions, and video joins |
 

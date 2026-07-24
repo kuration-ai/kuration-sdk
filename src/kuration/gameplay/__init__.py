@@ -23,6 +23,7 @@ from .slam import (
     input_slam,
     preflight_slam,
 )
+from .video import VideoComparison, compare_videos
 
 
 def register() -> None:
@@ -30,6 +31,19 @@ def register() -> None:
     pixel_shift.register()
     action_state_consistency.register()
     slam.register()
+    from ..core.stats import register_stats_enricher
+    from ._stats import (
+        gameplay_stats,
+        plot_gameplay_stats,
+        render_gameplay_examples,
+    )
+
+    register_stats_enricher(
+        "gameplay",
+        gameplay_stats,
+        plotter=plot_gameplay_stats,
+        example_renderer=render_gameplay_examples,
+    )
 
 
 # Direct gameplay imports are immediately usable without a separate discovery call.
@@ -42,10 +56,12 @@ __all__ = [
     "PixelShiftReport",
     "SLAMReconstructor",
     "SLAMReconstruction",
+    "VideoComparison",
     "action_state_checker",
     "action_state_consistency",
     "curate_point_cloud",
     "curate_slam_gameplay",
+    "compare_videos",
     "input_slam",
     "load_baselines_from_reference",
     "pixel_shift",

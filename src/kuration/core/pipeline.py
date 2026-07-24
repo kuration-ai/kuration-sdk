@@ -451,6 +451,7 @@ class Pipeline:
             "resume": False, "sample_hz": None, "progress": None, "executor": "local",
             "memory_budget": None, "batch_size": 1024, "checkpoint_dir": None,
             "spill_dir": None, "approximation": "exact", "max_in_flight": 2}
+        self._progress_spec: Any = None
         self._mode: Optional[str] = None
         self._explicit_options: set[str] = set()
         self._expectations: dict = {}
@@ -542,6 +543,7 @@ class Pipeline:
             setattr(p, attr, copy.deepcopy(getattr(self, attr)))
         p._callables = dict(self._callables)
         p._options = dict(self._options)  # callbacks/providers are deliberately shared values
+        p._progress_spec = self._progress_spec
         p._explicit_options = set(self._explicit_options)
         return p
 
@@ -930,7 +932,7 @@ class Pipeline:
 
     def options(self, **kw) -> "Pipeline":
         """Execution options: workers, executor ('local'|'ray'), on_error, seed, streaming,
-        resume, sample_hz, and progress callback. Unknown options are loud."""
+        resume, sample_hz, and progress callback or display mode. Unknown options are loud."""
         unknown = set(kw) - _OPTION_KEYS
         if unknown:
             raise ValueError(f"unknown option(s) {sorted(unknown)}; "
@@ -953,8 +955,11 @@ class Pipeline:
             if (not isinstance(hz, (int, float)) or isinstance(hz, bool)
                     or not math.isfinite(hz) or hz <= 0):
                 raise ValueError("sample_hz must be a finite positive number")
-        if "progress" in kw and kw["progress"] is not None and not callable(kw["progress"]):
-            raise ValueError("progress must be callable or None")
+        resolved_progress = None
+        if "progress" in kw:
+            from .progress import progress_callback
+
+            resolved_progress = progress_callback(kw["progress"])
         if "executor" in kw and kw["executor"] not in {"local", "ray"}:
             raise ValueError("executor must be 'local' or 'ray'")
         for key in ("memory_budget", "batch_size", "max_in_flight"):
@@ -975,6 +980,9 @@ class Pipeline:
                 if key not in self._explicit_options and key not in kw:
                     p._options[key] = value
         p._options.update(kw)
+        if "progress" in kw:
+            p._options["progress"] = resolved_progress
+            p._progress_spec = kw["progress"]
         p._explicit_options.update(kw)
         return p
 
@@ -1231,11 +1239,15 @@ class Pipeline:
 
     def describe(self) -> dict:
         """The pipeline's resolved state — no data is touched."""
+        described_options = {
+            k: _jsonable(self._progress_spec if k == "progress" else v)
+            for k, v in self._options.items()
+        }
         return {"schema": self.schema.to_dict(),
                 "strategy": self._raw_strategy(require_method=False),
                 "output": None,
                 "segmenter": dict(self._window_desc),
-                "options": {**{k: _jsonable(v) for k, v in self._options.items()},
+                "options": {**described_options,
                             "mode": self._mode,
                             "overrides": sorted(self._explicit_options)},
                 "sources": [str(s) for s in self.sources],

@@ -56,7 +56,8 @@ from .methods import apply_filters, method_priorities, register_filter
 from .pipeline import Pipeline, input
 from .plugins import load_plugins, loaded_plugin_modules, plugin_failures, plugin_provenance
 from .plugin_validation import PluginCheckResult, check_plugins
-from .progress import ProgressCallback
+from .progress import (ProgressCallback, ProgressSpec, cli_progress, notebook_progress,
+                       progress_callback)
 from .report import dataset_report
 from .stats import stats
 from .review import hours_selection_review, preview_dataset, selection_review
@@ -98,7 +99,7 @@ from .registry import (ComponentDescriptor, Registry, default_registry, describe
 from .results import (DatasetComparison, DatasetInspection, DatasetPreview, DatasetReport,
                       DatasetWriteResult, ExecutionPlan, ExperimentResult,
                       HoursSelectionReview, QualityGateResult, SelectionReview,
-                      StatsReport, ValidationResult)
+                      StatsExamples, StatsReport, ValidationResult)
 from .versioning import (ARTIFACT_FORMAT_VERSION, JOB_SCHEMA_VERSION, migrate,
                          migrate_config, migrate_job)
 
@@ -153,10 +154,12 @@ __all__ = [
     "infer_schema", "Pipeline", "input",
     "load_plugins", "loaded_plugin_modules", "plugin_failures", "plugin_provenance",
     "check_plugins",
-    "PluginCheckResult", "ProgressCallback",
+    "PluginCheckResult", "ProgressCallback", "ProgressSpec", "progress_callback",
+    "notebook_progress", "cli_progress",
     "Registry", "default_registry", "ComponentDescriptor", "list_components",
     "describe_component", "ExecutionPlan", "ARTIFACT_FORMAT_VERSION",
     "DatasetWriteResult", "ExperimentResult", "DatasetReport", "StatsReport",
+    "StatsExamples",
     "ValidationResult",
     "JOB_SCHEMA_VERSION", "migrate", "migrate_job", "migrate_config",
 ]

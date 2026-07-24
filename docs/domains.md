@@ -35,6 +35,7 @@ vendored snapshot require the focused SLAM regression suite and preserved licens
 | `kuration.gameplay.pixel_shift` | action-aligned optical-flow measurements | `[pixel-shift]` |
 | `kuration.gameplay.action_state_consistency` | cross-segment baseline analysis | `[action-state]` when measuring frames |
 | `kuration.gameplay.slam` | reconstruction, trajectory quality/diversity, point clouds | `[slam]`, `[slam-viz]` |
+| `kuration.gameplay` stats/video review | automatic action, media, and SLAM summaries; synchronized comparisons | `[stats]` for plots, `[video]` for probing |
 
 The concise package-level core API remains supported through exports from `kuration.core`:
 
@@ -58,6 +59,9 @@ pipeline = (
 )
 
 assert type(pipeline) is Pipeline
+report = pipeline.stats()
+report.plot()
+report.examples(metric="slam_quality_score", compare="selected-vs-rejected")
 ```
 
 The lowercase `gameplay.slam_pipeline(...)` is a convenience function, not a class. It performs
@@ -79,8 +83,22 @@ For a custom name such as `acme/signal-diversity`, use
 `pipeline.acme__signal_diversity(...)` spelling disambiguates collisions.
 
 Importing `kuration` does not import gameplay. Importing `kuration.gameplay` registers the
-maintained gameplay components but still does not import OpenCV, PyTorch, FAISS, PyAV, or Trimesh.
-Those frameworks load only when their execution paths are reached.
+maintained gameplay components and a gameplay section for the ordinary `StatsReport`, but still
+does not import OpenCV, PyTorch, FAISS, PyAV, Matplotlib, or Trimesh. Those libraries load only
+when their execution or visualization paths are reached.
+
+Video review follows the same domain boundary:
+
+```python
+review = gameplay.compare_videos("capture.mp4", "selected.mp4")
+review                         # synchronized rich display in Jupyter
+review.plot(frames=4)          # matched contact sheet
+review.save("review.html")     # standalone synchronized players
+```
+
+For a live video-backed pipeline, start with `pipeline.stats().examples(...)`: gameplay adds
+bounded frame strips, action summaries, and named SLAM diagnostics directly to the ordinary
+evidence result. `compare_videos()` remains the explicit whole-video tool.
 
 ## Installation
 

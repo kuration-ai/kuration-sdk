@@ -61,6 +61,10 @@ def slam_pipeline(
     :class:`SLAMReconstructor` directly when they need the intermediate reconstruction object.
     """
     from .slam import SLAMReconstructor
+    from ..core.progress import progress_callback
+
+    if progress is not None:
+        progress = progress_callback(progress)
 
     decode = dict(decoder_options or {})
     if provider is not None:

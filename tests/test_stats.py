@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from kuration import StatsReport, input, stats
+from kuration import StatsExamples, StatsReport, input, stats
 
 
 def _pipeline(*, selected: int | None = None):
@@ -63,6 +63,33 @@ def test_pipeline_and_curate_result_stats_compare_selection_without_registry_vie
         direct.sections["selection"]["examples"][0]["priority"]
         == fluent.sections["selection"]["examples"][0]["priority"]
     )
+
+
+def test_stats_discovers_actions_and_selects_bounded_evidence():
+    report = _pipeline(selected=2).stats(examples=2)
+
+    available = report.available()
+    assert available["default_plot"] == "distribution"
+    assert available["example_modes"] == [
+        "selected", "rejected", "strongest", "weakest", "input"
+    ]
+    assert available["comparisons"] == [
+        "selected-vs-rejected", "strongest-vs-weakest"
+    ]
+
+    evidence = report.examples(
+        metric="level", compare="selected-vs-rejected", n=2
+    )
+    assert isinstance(evidence, StatsExamples)
+    assert len(evidence.groups["selected"]) == 2
+    assert len(evidence.groups["rejected"]) == 2
+    assert evidence.groups["selected"][0]["rank_value"] >= \
+        evidence.groups["selected"][1]["rank_value"]
+    assert "Stats evidence" in evidence._repr_html_()
+
+    detached = StatsReport(report.to_dict()).examples(mode="weakest", n=1)
+    assert detached.bounded is True
+    assert len(detached.groups["weakest"]) == 1
 
 
 def test_output_result_and_path_stats_scan_actual_emitted_modalities(tmp_path):

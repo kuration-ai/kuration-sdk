@@ -27,9 +27,11 @@ objects as noted below.
 | `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local") -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
 | `dataset_report` | `(segments, *, metrics=None, hist_bins=10) -> dict` | per-metric distribution profile (+ tag/group counts) of a scored pool |
 | `stats` | `(subject, *, hist_bins=10, max_sources=3, max_ticks_per_source=10000, examples=5, max_values=100000, content=True, verify=False, progress=None, registry=None) -> StatsReport` | unified statistics for a pipeline, count selection, write result, typed report, or existing artifact path |
+| `progress_callback` | `(progress="auto") -> ProgressCallback \| None` | resolve `"auto"`, `"notebook"`, `"terminal"`, `"cli"`, `"off"`, a boolean, or an existing callback; pipeline users normally select this through `.options(progress=...)` |
 | `kuration.core` | module | explicit import facade for the domain-agnostic top-level API |
 | `kuration.gameplay.slam_pipeline` | `(source, output=None, *, depth_model=None, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, runtime_factory=None, join_video=False, tolerance=None, mismatch="error", provider=None, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False, **runtime_options) -> Pipeline` | convenience function—not a class—that reconstructs raw input when needed or opens an existing SLAM manifest, then returns the sole curation pipeline type |
 | `kuration.gameplay.action_state_checker` | `(*, baselines, anomaly_type="action_state") -> Analyzer` | construct the action-state consistency analyzer without a component-name string |
+| `kuration.gameplay.compare_videos` | `(left, right, *, labels=None, provider=None) -> VideoComparison` | create a synchronized notebook/HTML gameplay review without eagerly importing PyAV or Matplotlib |
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
 cap and stratified splits); `tags_of(segment) -> iterable` overrides declarative tags;
@@ -75,7 +77,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.tag` | `(*sources, min_frac=None) -> Pipeline` | declarative tag sources (+ optional tag-coverage floor) |
 | `Pipeline.split` | `(test=0.2) -> Pipeline` | source-level test split |
 | `Pipeline.group` | `(fn) -> Pipeline` | `group_of(source_id) -> key` |
-| `Pipeline.options` | `(**kw) -> Pipeline` | `mode, executor, workers, on_error, seed, streaming, resume, sample_hz, progress` |
+| `Pipeline.options` | `(**kw) -> Pipeline` | `mode, executor, workers, on_error, seed, streaming, resume, sample_hz, progress`; progress accepts a callback or `"auto"`, `"notebook"`, `"terminal"`, `"cli"`, `"off"` |
 | `Pipeline.expect` | `(**expectations) -> Pipeline` | attach closed-grammar quality gates evaluated by `preview()` or `review()` |
 | `Pipeline.sample` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | configure selection; exactly one of `n=`/`hours=` (`curate` remains as a compatibility alias) |
 | `Pipeline.curate` | `(method=None, **selection_options) -> Pipeline` | compatibility alias for `Pipeline.sample` |
@@ -102,7 +104,8 @@ See [pipeline.md](pipeline.md) for accepted operator forms and validation behavi
 | `DatasetWriteResult` | dict-compatible; `dataset` path, `.stats()`, `.to_dict()`, and attribute access | dataset write result returned by output paths |
 | `ExperimentResult` | dict-compatible; `.to_dict()` and attribute access | multi-arm experiment result |
 | `DatasetReport` | dict-compatible; `.to_dict()` and attribute access | distribution report result |
-| `StatsReport` | dict-compatible; `.render()`, `.plot(metric=None, kind=None, ax=None)`, `.save(path)`, rich HTML display, and attribute access | unified input, selection, or output statistics; plotting requires `[stats]` |
+| `StatsReport` | dict-compatible; `.render()`, `.available()`, `.plot(metric=None, kind=None, ax=None)`, `.examples(mode="auto", metric=None, compare=None, n=6, frames=3)`, `.save(path)`, rich HTML display, and attribute access | unified input, selection, or output statistics; `plot()` automatically prefers a registered applicable domain plot, and plotting requires `[stats]` |
+| `StatsExamples` | dict-compatible; stable `groups`, `metric`, `compare`, `bounded`, and `frames_per_example`; `.render()` and rich HTML display | bounded human-review evidence; live reports retain transient pipeline access for domain media rendering while `.to_dict()` remains portable |
 | `DatasetInspection` | dict-compatible; `.to_dict()` and attribute access | artifact summary and optional shard-integrity result |
 | `DatasetPreview` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | bounded source/field-quality preview |
 | `SelectionReview` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | candidate-versus-selected metrics, coverage, rationale, and examples |
@@ -207,6 +210,10 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `check_plugins` | `(target=None) -> list[PluginCheckResult]` | transactionally validate all installed plugin entry points, one entry-point name, or an explicit registration module |
 | `PluginCheckResult` | immutable result with `.passed`, `.to_dict()`, and `.render()` | plugin load, descriptor, package, namespace, parameter-schema, and transform-contract diagnostics |
 | `ProgressCallback` | `Callable[[dict], None]` | receives structured `{phase, event, ...}` execution events |
+| `ProgressSpec` | `ProgressCallback \| str \| bool` | user selection accepted by `progress_callback` and fluent pipeline options |
+| `notebook_progress` / `cli_progress` | `() -> ProgressCallback` | explicit rich notebook or throttled terminal renderer |
+| `progress_callback` | `(progress="auto") -> ProgressCallback \| None` | environment-aware renderer selection; callbacks pass through unchanged |
+| `register_stats_enricher` | `(name, enricher, *, plotter=None, example_renderer=None) -> None` | advanced domain hook in `kuration.core.stats`; adds a section, optional plot, and optional rich evidence renderer without changing the ordinary stats API |
 
 ## Component registries and discovery
 
@@ -329,6 +336,13 @@ measurement runtimes remain optional.
 | `kuration.gameplay.action_state_consistency.action_state_consistency` | `(*, anomaly_type, baselines) -> ActionStateConsistencyChecker` | factory registered as analyzer `aintropy/action-state-consistency` |
 | `ActionStateConsistencyChecker` | `(config)`; `.add_segment(...)`, `.clip_verdict(source_id)`, `.summary()`, `.print_report()` | classify clips against pixel-shift baselines (`[action-state]` for frame measurement) |
 | `AnomalyChecker` | `(validated_config)` | measurement-agnostic tuple aggregation used by the action-state adapter |
+| `VideoComparison` | `(left, right, *, labels=None, provider=None)`; `.render()`, `.save()`, `.probe()`, `.plot(frames=4)`, rich HTML display | synchronized side-by-side video review; `[video]` for default metadata/frame decoding and `[stats]` for contact sheets |
+| `kuration.gameplay.compare_videos` | `(left, right, *, labels=None, provider=None) -> VideoComparison` | ergonomic constructor for `VideoComparison` |
+
+`StatsReport.available()` returns `plots`, `default_plot`, `example_modes`, `comparisons`,
+`media_examples`, `html`, and `save`. Count-selection evidence modes are `selected`, `rejected`,
+`strongest`, and `weakest`; comparisons are `selected-vs-rejected` and
+`strongest-vs-weakest`. `n` is bounded to 1–100 and gameplay `frames` to 1–12.
 
 The associated validation and decoding helpers are documented in
 [pixel-shift.md](pixel-shift.md) and
