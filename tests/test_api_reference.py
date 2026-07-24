@@ -111,9 +111,10 @@ def test_api_reference_covers_optional_torch_surface():
 
 
 def test_public_objects_have_source_docstrings():
-    # A typing alias has no independent runtime ``__doc__`` slot; its contract is documented
-    # explicitly in the API reference. Every ordinary exported object must explain itself.
-    exemptions = {"ProgressCallback"}
+    # Typing aliases have no independent runtime ``__doc__`` slot; their contracts are
+    # documented explicitly in the API reference. Every ordinary exported object must
+    # explain itself.
+    exemptions = {"ProgressCallback", "ProgressSpec"}
     missing = [
         name for name in kuration.__all__
         if name not in exemptions and not inspect.getdoc(getattr(kuration, name))
