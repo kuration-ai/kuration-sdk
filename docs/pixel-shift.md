@@ -59,9 +59,10 @@ composable with `.bin()`/`.filter()`/`.sample()` like any other kuration feature
 
 ```python
 import kuration.gameplay as gameplay
+from kuration import input
 
 pipeline = (
-    gameplay.input(telemetry, fields={"action": action_columns}, time="t")
+    input(telemetry, fields={"action": action_columns}, time="t")
     .join_video({"my_source": "clip.mp4"}, on="frame_index")
     .window(32, stride=32)
     .pixel_shift(controls=["W", "S", "A", "D"], boundary="exclude")

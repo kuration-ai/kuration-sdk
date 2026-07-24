@@ -51,14 +51,14 @@ pipeline = gameplay.slam_pipeline(
 result = (
     pipeline
     .window(32, stride=16)
-    .slam_motion(axis="slam_path_length", bins=8)
+    .slam_motion_diversity(axis="slam_path_length", bins=8)
     .slam_quality(min_score=0.6)
     .sample("uniform-bins", n=2_000)
     .collect()
 )
 ```
 
-`slam_pipeline()` returns an immutable `GameplayPipeline`. Its gameplay methods delegate to the
+`slam_pipeline()` returns the immutable core `Pipeline`. Its gameplay methods resolve through the
 same registered operators used by declarative jobs, so provenance retains stable component names.
 Raw input requires the `slam` extra and an output directory. Passing an existing manifest does
 not load the model runtime.
@@ -67,19 +67,18 @@ not load the model runtime.
 
 The names describe different layers:
 
-- `gameplay.slam_pipeline(...)` is a convenience function returning `GameplayPipeline`, a
-  subclass of the ordinary `Pipeline`.
-- `gameplay.SLAMPipeline` is a separate reconstruction coordinator, not a `Pipeline` subclass.
+- `gameplay.slam_pipeline(...)` is a convenience function returning the ordinary `Pipeline`.
+- `gameplay.SLAMReconstructor` is the separate global reconstruction coordinator.
   Reconstruction compares whole clips and writes a reusable artifact, so it does not satisfy the
   immutable, bounded curation-operator contract.
 
-`gameplay.SLAMPipeline` exposes the intermediate reconstruction when an application needs to
+`gameplay.SLAMReconstructor` exposes the intermediate reconstruction when an application needs to
 inspect or reuse it before constructing a curation pipeline:
 
 ```python
 import kuration.gameplay as gameplay
 
-slam = gameplay.SLAMPipeline(
+slam = gameplay.SLAMReconstructor(
     depth_model="da3-base",
     depth_model_id="depth-anything/da3-base@MODEL_REVISION",
 )
@@ -93,19 +92,19 @@ pipeline options are recorded in the manifest. `resume=True` derives its cache i
 provenance plus the input clips/frame content and decoder/export settings; a caller can override
 it with `cache_key=`.
 
-`SLAMPipeline(data)` or `SLAMPipeline.run(data)` preserves the notebook-style in-memory path and
-returns `SLAMOutput`. `SLAMPipeline.reconstruct(...)` is the artifact-producing SDK boundary and
+`SLAMReconstructor(data)` or `SLAMReconstructor.run(data)` preserves the notebook-style in-memory
+path and returns `SLAMOutput`. `SLAMReconstructor.reconstruct(...)` is the artifact-producing SDK boundary and
 returns `SLAMReconstruction`, whose `manifest` field is the path to the portable export.
 
 Custom depth or place-recognition runtimes can be injected without changing the artifact format:
 
 ```python
-slam = SLAMPipeline(
+slam = SLAMReconstructor(
     depth_model=my_depth_model,
     depth_model_id="my-depth-model@2026-07-15",
     embedding_model=my_place_model,
     embedding_model_id="my-place-model@v2",
-    pipeline_factory="my_game.slam:SLAMOperator",
+    runtime_factory="my_game.slam:SLAMOperator",
 )
 ```
 
@@ -120,7 +119,7 @@ import kuration.gameplay as gameplay
 pipeline = (
     gameplay.slam_pipeline("slam-export/manifest.json")
     .window(32, stride=16)
-    .slam_motion(axis="slam_path_length", bins=8)
+    .slam_motion_diversity(axis="slam_path_length", bins=8)
     .slam_quality(min_score=0.6)
 )
 ```
@@ -163,7 +162,7 @@ kur-slam run \
 ```
 
 For custom runtimes, use `--runtime-factory module:callable` instead of `--depth-model`. The
-factory returns `run_slam_pipeline()` options and should honor `preflight=True` without allocating
+factory returns `run_slam_reconstruction()` options and should honor `preflight=True` without allocating
 models. The preparation APIs emit structured `slam-preflight`, `slam-decode`,
 `slam-reconstruction`, `slam-export`, `slam-cache`, and `slam-prepare` progress events.
 
@@ -183,7 +182,7 @@ kur-slam demo --out slam-demo
 | `aintropy/slam-quality` | transform / operator | Score tracking gaps, jumps, and scale instability; optionally filter windows |
 
 Live reconstruction is intentionally not a registered compositional operator: it is a global,
-artifact-producing `SLAMPipeline` operation. The registered components remain bounded and work
+artifact-producing `SLAMReconstructor` operation. The registered components remain bounded and work
 with direct fluent methods, planning, provenance, and curation.
 
 ## Point clouds

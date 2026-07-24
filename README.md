@@ -77,10 +77,13 @@ import kuration.gameplay as gameplay
 pipeline = (
     gameplay.slam_pipeline("slam-export/manifest.json")
     .window(32, stride=16)
-    .slam_motion()
+    .slam_motion_diversity()
     .slam_quality(min_score=0.6)
 )
 ```
+
+`kuration.gameplay` is an operator domain, not a second pipeline implementation. Importing it
+registers gameplay methods on the ordinary `kuration.Pipeline`.
 
 ## Try it in five minutes
 

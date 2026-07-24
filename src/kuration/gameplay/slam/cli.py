@@ -50,7 +50,7 @@ def _runtime_options(
     else:
         options = factory(preflight=preflight)
     if not isinstance(options, Mapping):
-        raise TypeError("runtime factory must return a mapping of run_slam_pipeline options")
+        raise TypeError("runtime factory must return a mapping of reconstruction options")
     return dict(options)
 
 

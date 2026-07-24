@@ -526,9 +526,7 @@ class Pipeline:
 
     # ---- immutability plumbing -------------------------------------------------------
     def _clone(self) -> "Pipeline":
-        # Preserve domain-specific Pipeline subclasses across immutable fluent calls.
-        # Extensions can add typed convenience methods without teaching the generic core
-        # about domain component names.
+        # Copy pipeline state without rerunning eager input construction.
         p = object.__new__(type(self))
         p.__dict__.update(self.__dict__)
         p.sources = list(self.sources)

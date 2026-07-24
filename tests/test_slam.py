@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from kuration import default_registry, describe_component
+from kuration import Pipeline, default_registry, describe_component
 from kuration import gameplay
 from kuration.gameplay.slam import (
     ADAPTER_NAME,
@@ -29,7 +29,7 @@ from kuration.gameplay.slam import (
     prepare_slam_input,
     preflight_slam,
     register,
-    run_slam_pipeline,
+    run_slam_reconstruction,
     slam_schema,
 )
 from kuration.gameplay.slam.cli import main as cli_main
@@ -109,10 +109,13 @@ def test_export_and_adapter_round_trip(tmp_path):
 def test_top_level_slam_pipeline_returns_the_normal_fluent_pipeline(tmp_path):
     manifest = export_slam_output(_output(), tmp_path / "export", sample_hz=2.0)
 
+    pipeline = gameplay.slam_pipeline(manifest)
+    assert type(pipeline) is Pipeline
+
     pipeline = (
-        gameplay.slam_pipeline(manifest)
+        pipeline
         .window(2, stride=1)
-        .slam_motion(axis="slam_turn_degrees", bins=2)
+        .slam_motion_diversity(axis="slam_turn_degrees", bins=2)
         .slam_quality(min_score=0.0)
     )
     result = pipeline.collect(n=10)
@@ -251,7 +254,7 @@ def test_prepare_reuses_existing_manifest_without_running_slam(tmp_path):
 
     prepared = prepare_slam_input(
         manifest,
-        runner_options={"depth_model": object(), "pipeline_factory": must_not_run},
+        runner_options={"depth_model": object(), "runtime_factory": must_not_run},
     )
     assert prepared == manifest
 
@@ -267,10 +270,10 @@ def test_prepare_exports_completed_output_without_running_slam(tmp_path):
     assert set(document["clips"]) == {"clip one"}
 
 
-def test_prepare_raw_frames_runs_injected_pipeline_once(tmp_path):
+def test_prepare_raw_frames_runs_injected_runtime_once(tmp_path):
     calls = {"constructed": 0, "run": 0}
 
-    class FakePipeline:
+    class FakeRuntime:
         def __init__(self, *, depth_model, output_pointcloud):
             assert depth_model == "depth"
             assert output_pointcloud is True
@@ -287,7 +290,7 @@ def test_prepare_raw_frames_runs_injected_pipeline_once(tmp_path):
         tmp_path / "prepared",
         runner_options={
             "depth_model": "depth",
-            "pipeline_factory": FakePipeline,
+            "runtime_factory": FakeRuntime,
             "output_pointcloud": True,
         },
         export_options={"sample_hz": 2.0},
@@ -299,7 +302,7 @@ def test_prepare_raw_frames_runs_injected_pipeline_once(tmp_path):
 def test_prepare_resume_reuses_matching_cache_and_reports_progress(tmp_path):
     calls = {"run": 0}
 
-    class FakePipeline:
+    class FakeRuntime:
         def __init__(self, *, depth_model):
             assert depth_model == "depth"
 
@@ -309,7 +312,7 @@ def test_prepare_resume_reuses_matching_cache_and_reports_progress(tmp_path):
 
     frames = {"clip one": np.zeros((3, 2, 2, 3), dtype=np.uint8)}
     events = []
-    options = {"depth_model": "depth", "pipeline_factory": FakePipeline}
+    options = {"depth_model": "depth", "runtime_factory": FakeRuntime}
     first = prepare_slam_input(
         frames,
         tmp_path / "cached",
@@ -350,7 +353,7 @@ def test_preflight_is_actionable_for_manifest_and_missing_raw_runtime(tmp_path):
     unavailable = preflight_slam(
         frames,
         tmp_path / "unavailable-runtime",
-        runner_options={"pipeline_factory": "missing_slam_runtime:SLAMOperator"},
+        runner_options={"runtime_factory": "missing_slam_runtime:SLAMOperator"},
     )
     assert any(
         check["name"] == "slam-runtime" and check["status"] == "fail"
@@ -377,12 +380,12 @@ def test_prepare_can_forbid_slam_execution(tmp_path):
 def test_runner_rejects_conflicting_embedding_sources():
     frames = {"clip": np.zeros((1, 2, 2, 3), dtype=np.uint8)}
     with pytest.raises(ValueError, match="not both"):
-        run_slam_pipeline(
+        run_slam_reconstruction(
             frames,
             depth_model=object(),
             embedding_model=object(),
             embeddings={"clip": np.zeros((1, 2))},
-            pipeline_factory=lambda **kwargs: None,
+            runtime_factory=lambda **kwargs: None,
         )
 
 
@@ -466,7 +469,7 @@ def test_prepare_video_mapping_decodes_runs_and_exports_alignment(tmp_path):
         def decode_batch(self, refs):
             return np.zeros((len(refs), 2, 2, 3), dtype=np.uint8)
 
-    class FakePipeline:
+    class FakeRuntime:
         def __init__(self, *, depth_model):
             assert depth_model == "depth"
 
@@ -477,7 +480,7 @@ def test_prepare_video_mapping_decodes_runs_and_exports_alignment(tmp_path):
     manifest = prepare_slam_input(
         {"clip one": "gameplay.mp4"},
         tmp_path / "prepared-video",
-        runner_options={"depth_model": "depth", "pipeline_factory": FakePipeline},
+        runner_options={"depth_model": "depth", "runtime_factory": FakeRuntime},
         decoder_options={"provider": Provider()},
     )
     document = json.loads(manifest.read_text())

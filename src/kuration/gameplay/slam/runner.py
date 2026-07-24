@@ -53,8 +53,8 @@ def _stable_options(options: Mapping[str, object]) -> dict[str, object]:
 def slam_provenance(options: Mapping[str, object]) -> dict[str, object]:
     """Return stable, JSON-safe reconstruction identity without object reprs."""
     factory = (
-        options.get("pipeline_factory")
-        or "kuration.gameplay.slam.slam_pipeline:SLAMOperator"
+        options.get("runtime_factory")
+        or "kuration.gameplay.slam._runtime:SLAMOperator"
     )
     depth_id = options.get("depth_model_id")
     embedding_id = options.get("embedding_model_id")
@@ -76,7 +76,7 @@ def slam_provenance(options: Mapping[str, object]) -> dict[str, object]:
         "embedding_model",
         "embedding_model_id",
         "embeddings",
-        "pipeline_factory",
+        "runtime_factory",
         "progress",
     }
     document: dict[str, object] = {
@@ -189,8 +189,8 @@ class SLAMReconstruction:
         return str(self.manifest)
 
 
-class SLAMPipeline:
-    """First-class video/frame-to-reconstruction workflow for the Kuration SDK.
+class SLAMReconstructor:
+    """Video/frame-to-reconstruction workflow that feeds Kuration's curation pipeline.
 
     Model construction remains lazy when ``depth_model`` is a string. Use :meth:`run` for the
     notebook-style in-memory output, or :meth:`reconstruct` for a portable manifest that opens
@@ -205,8 +205,8 @@ class SLAMPipeline:
         embeddings=None,
         depth_model_id: str | None = None,
         embedding_model_id: str | None = None,
-        pipeline_factory: Callable | str | None = None,
-        **pipeline_options,
+        runtime_factory: Callable | str | None = None,
+        **runtime_options,
     ) -> None:
         if embedding_model is not None and embeddings is not None:
             raise ValueError("pass embedding_model or embeddings, not both")
@@ -216,15 +216,15 @@ class SLAMPipeline:
             "embeddings": embeddings,
             "depth_model_id": depth_model_id,
             "embedding_model_id": embedding_model_id,
-            "pipeline_factory": pipeline_factory,
-            **pipeline_options,
+            "runtime_factory": runtime_factory,
+            **runtime_options,
         }
         self.provenance = slam_provenance(self.runner_options)
 
     def run(self, data: Mapping[str, object], *, progress=None):
         options = dict(self.runner_options)
         options["progress"] = progress
-        output = run_slam_pipeline(data, **options)
+        output = run_slam_reconstruction(data, **options)
         try:
             output.provenance = self.provenance
         except (AttributeError, TypeError):
@@ -276,23 +276,23 @@ def _emit(progress, phase: str, event: str, **fields) -> None:
         progress({"phase": phase, "event": event, **fields})
 
 
-def _pipeline_factory(factory: Callable | str | None) -> Callable:
+def _runtime_factory(factory: Callable | str | None) -> Callable:
     if factory is None:
-        factory = "kuration.gameplay.slam.slam_pipeline:SLAMOperator"
+        factory = "kuration.gameplay.slam._runtime:SLAMOperator"
     if isinstance(factory, str):
         module_name, separator, attribute = factory.partition(":")
         if not separator or not module_name or not attribute:
-            raise ValueError("pipeline_factory strings must use 'module:attribute' syntax")
+            raise ValueError("runtime_factory strings must use 'module:attribute' syntax")
         try:
             module = importlib.import_module(module_name)
             factory = getattr(module, attribute)
         except (ImportError, AttributeError) as error:
             raise ImportError(
-                f"cannot load SLAM pipeline factory {module_name}:{attribute}; install or "
-                "provide the SLAMOperator implementation, or pass pipeline_factory= explicitly"
+                f"cannot load SLAM runtime factory {module_name}:{attribute}; install or "
+                "provide the SLAMOperator implementation, or pass runtime_factory= explicitly"
             ) from error
     if not callable(factory):
-        raise TypeError("pipeline_factory must be callable or an import string")
+        raise TypeError("runtime_factory must be callable or an import string")
     return factory
 
 
@@ -386,7 +386,7 @@ def decode_video_clips(
     return frames_by_clip, timestamps
 
 
-def run_slam_pipeline(
+def run_slam_reconstruction(
     data: Mapping[str, object],
     *,
     depth_model=None,
@@ -394,15 +394,15 @@ def run_slam_pipeline(
     embeddings=None,
     depth_model_id: str | None = None,
     embedding_model_id: str | None = None,
-    pipeline_factory: Callable | str | None = None,
+    runtime_factory: Callable | str | None = None,
     progress=None,
-    **pipeline_options,
+    **runtime_options,
 ):
     """Run the notebook-style ``SLAMOperator`` over raw in-memory clip frames.
 
     Models are injected by the caller so this module has no mandatory Torch, Depth Anything,
     SALAD, or FAISS dependency. With no explicit factory, the function lazily imports the
-    vendored ``kuration.gameplay.slam.slam_pipeline.SLAMOperator``.
+    private ``kuration.gameplay.slam._runtime.SLAMOperator``.
     """
     frames = _validated_frames(data)
     if depth_model is None:
@@ -411,24 +411,24 @@ def run_slam_pipeline(
         raise ValueError("pass embedding_model or embeddings, not both")
     _model_identity(depth_model, depth_model_id, name="depth_model")
     _model_identity(embedding_model, embedding_model_id, name="embedding_model")
-    options = dict(pipeline_options)
+    options = dict(runtime_options)
     options["depth_model"] = depth_model
     if embedding_model is not None:
         options["embedding_model"] = embedding_model
     if embeddings is not None:
         options["embeddings"] = embeddings
-    pipeline = _pipeline_factory(pipeline_factory)(**options)
-    if not callable(pipeline):
-        raise TypeError("pipeline_factory must construct a callable SLAM pipeline")
+    runtime = _runtime_factory(runtime_factory)(**options)
+    if not callable(runtime):
+        raise TypeError("runtime_factory must construct a callable SLAM runtime")
     _emit(progress, "slam-reconstruction", "start", total=len(frames))
     try:
-        output = pipeline(frames)
+        output = runtime(frames)
     except Exception:
         _emit(progress, "slam-reconstruction", "error", total=len(frames))
         raise
     if not isinstance(getattr(output, "trajectories", None), Mapping) \
             or not isinstance(getattr(output, "poses", None), Mapping):
-        raise ValueError("SLAM pipeline output must expose trajectory and pose mappings")
+        raise ValueError("SLAM runtime output must expose trajectory and pose mappings")
     _emit(
         progress,
         "slam-reconstruction",
@@ -438,13 +438,13 @@ def run_slam_pipeline(
         detail=f"{len(output.trajectories)} reconstructed clips",
     )
     provenance_options = {
-        **pipeline_options,
+        **runtime_options,
         "depth_model": depth_model,
         "embedding_model": embedding_model,
         "embeddings": embeddings,
         "depth_model_id": depth_model_id,
         "embedding_model_id": embedding_model_id,
-        "pipeline_factory": pipeline_factory,
+        "runtime_factory": runtime_factory,
     }
     try:
         output.provenance = slam_provenance(provenance_options)
@@ -517,7 +517,7 @@ def prepare_slam_input(
     """Normalize existing manifests, completed outputs, or raw frames into one manifest.
 
     - A manifest path is returned unchanged.
-    - A completed SLAM output object is exported without constructing a pipeline.
+    - A completed SLAM output object is exported without constructing a runtime.
     - A raw ``{clip_name: frames}`` mapping runs SLAM only when ``run_if_needed`` is true.
     """
     if not isinstance(resume, bool) or not isinstance(preflight, bool):
@@ -584,7 +584,7 @@ def prepare_slam_input(
             frames = dict(source)
         run_kwargs: dict[str, Any] = dict(runner_options or {})
         run_kwargs.setdefault("progress", progress)
-        output = run_slam_pipeline(frames, **run_kwargs)
+        output = run_slam_reconstruction(frames, **run_kwargs)
         export_kwargs.setdefault("provenance", getattr(output, "provenance", None))
         _emit(progress, "slam-export", "start", total=1)
         prepared = export_slam_output(output, out_dir, **export_kwargs)

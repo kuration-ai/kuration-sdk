@@ -1,7 +1,7 @@
-"""Unified facade for Kuration's built-in gameplay capabilities.
+"""Built-in gameplay operator domain and reconstruction helpers.
 
-The implementations remain separated by responsibility, while this module gives callers one
-place to discover pixel-shift measurement, action-state analysis, and SLAM reconstruction.
+Importing this module registers pixel-shift and SLAM operators on the ordinary
+``kuration.Pipeline`` while grouping action-state analysis and reconstruction helpers.
 Heavy runtime frameworks stay lazy; install ``kuration-sdk[gameplay]`` before executing the
 frame- or model-backed paths.
 """
@@ -14,10 +14,9 @@ from .action_state_consistency import (
     load_baselines_from_reference,
 )
 from .convenience import action_state_checker, slam_pipeline
-from .pipeline import GameplayPipeline, as_gameplay, input
 from .pixel_shift import PixelShift, PixelShiftReport
 from .slam import (
-    SLAMPipeline,
+    SLAMReconstructor,
     SLAMReconstruction,
     curate_point_cloud,
     curate_slam_gameplay,
@@ -41,16 +40,13 @@ __all__ = [
     "AnomalyChecker",
     "PixelShift",
     "PixelShiftReport",
-    "GameplayPipeline",
-    "SLAMPipeline",
+    "SLAMReconstructor",
     "SLAMReconstruction",
     "action_state_checker",
-    "as_gameplay",
     "action_state_consistency",
     "curate_point_cloud",
     "curate_slam_gameplay",
     "input_slam",
-    "input",
     "load_baselines_from_reference",
     "pixel_shift",
     "preflight_slam",

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..core.analyzers import Analyzer
-    from .pipeline import GameplayPipeline
+    from ..core.pipeline import Pipeline
 
 
 def action_state_checker(
@@ -38,7 +38,7 @@ def slam_pipeline(
     embeddings: Any = None,
     depth_model_id: str | None = None,
     embedding_model_id: str | None = None,
-    pipeline_factory: Any = None,
+    runtime_factory: Any = None,
     join_video: bool = False,
     tolerance: float | None = None,
     mismatch: str = "error",
@@ -51,28 +51,28 @@ def slam_pipeline(
     progress: Any = None,
     preflight: bool = True,
     require_gpu: bool = False,
-    **pipeline_options: Any,
-) -> "GameplayPipeline":
+    **runtime_options: Any,
+) -> "Pipeline":
     """Prepare SLAM input and return a gameplay fluent pipeline.
 
     ``source`` may be an existing manifest, completed reconstruction, raw frame mapping,
     or ``{clip: video}`` mapping. Raw input requires ``output`` and the ``slam`` extra.
     Existing manifests remain NumPy-only. Advanced callers can still construct
-    :class:`SLAMPipeline` directly when they need the intermediate reconstruction object.
+    :class:`SLAMReconstructor` directly when they need the intermediate reconstruction object.
     """
-    from .slam import SLAMPipeline
+    from .slam import SLAMReconstructor
 
     decode = dict(decoder_options or {})
     if provider is not None:
         decode.setdefault("provider", provider)
-    runner = SLAMPipeline(
+    runner = SLAMReconstructor(
         depth_model,
         embedding_model=embedding_model,
         embeddings=embeddings,
         depth_model_id=depth_model_id,
         embedding_model_id=embedding_model_id,
-        pipeline_factory=pipeline_factory,
-        **pipeline_options,
+        runtime_factory=runtime_factory,
+        **runtime_options,
     )
     reconstruction = runner.reconstruct(
         source,

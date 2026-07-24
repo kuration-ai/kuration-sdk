@@ -43,25 +43,27 @@ from kuration import input
 from kuration.core import Pipeline, SchemaSpec
 ```
 
-Gameplay starts from its own facade and returns a `GameplayPipeline`, which preserves its
-domain methods across every immutable core operation:
+Gameplay is an operator domain over the same `Pipeline`. Importing it registers its maintained
+operators; manifest helpers and every immutable fluent operation return the core pipeline type:
 
 ```python
 import kuration.gameplay as gameplay
+from kuration import Pipeline
 
 pipeline = (
     gameplay.slam_pipeline("slam-export/manifest.json")
     .window(32, stride=16)
-    .slam_motion()
+    .slam_motion_diversity()
     .slam_quality(min_score=0.6)
 )
+
+assert type(pipeline) is Pipeline
 ```
 
 The lowercase `gameplay.slam_pipeline(...)` is a convenience function, not a class. It performs
-or reuses reconstruction and returns `GameplayPipeline`, which is a `Pipeline` subclass.
-The uppercase `gameplay.SLAMPipeline` is intentionally separate from `Pipeline`: it coordinates
-the global, artifact-producing video-to-reconstruction workflow, then hands its manifest to
-`GameplayPipeline` for bounded curation.
+or reuses reconstruction and returns the ordinary `Pipeline`.
+`gameplay.SLAMReconstructor` coordinates the global, artifact-producing
+video-to-reconstruction workflow, then hands its manifest to `Pipeline` for bounded curation.
 
 The methods call the same registered descriptors used by custom modules, plugins, JSON jobs,
 discovery, and provenance. The generic core therefore contains no gameplay component names.

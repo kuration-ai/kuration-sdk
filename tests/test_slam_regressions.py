@@ -9,7 +9,7 @@ import pytest
 
 from kuration.gameplay.slam import (
     PointCloudArtifact,
-    SLAMPipeline,
+    SLAMReconstructor,
     export_slam_output,
     load_point_cloud,
 )
@@ -43,7 +43,7 @@ def _output(name="clip"):
     )
 
 
-def test_native_pipeline_reconstructs_to_sdk_input_with_stable_provenance(tmp_path):
+def test_native_reconstructor_creates_sdk_input_with_stable_provenance(tmp_path):
     calls = []
 
     class FakeRuntime:
@@ -56,10 +56,10 @@ def test_native_pipeline_reconstructs_to_sdk_input_with_stable_provenance(tmp_pa
             return _output()
 
     depth = object()
-    slam = SLAMPipeline(
+    slam = SLAMReconstructor(
         depth_model=depth,
         depth_model_id="test-depth@abc123",
-        pipeline_factory=FakeRuntime,
+        runtime_factory=FakeRuntime,
         output_pointcloud=True,
     )
     frames = {"clip": np.zeros((2, 2, 2, 3), dtype=np.uint8)}

@@ -16,11 +16,11 @@ from .pointcloud import (
 from .preflight import SLAMPreflightResult, preflight_slam
 from .quality import QUALITY_FEATURES, SLAMQuality, slam_quality
 from .runner import (
-    SLAMPipeline,
+    SLAMReconstructor,
     SLAMReconstruction,
     decode_video_clips,
     prepare_slam_input,
-    run_slam_pipeline,
+    run_slam_reconstruction,
     slam_provenance,
 )
 from .schema import (
@@ -93,9 +93,9 @@ def __getattr__(name: str):
     `kuration.gameplay.slam` keeps a zero-Torch import graph -- only code
     that actually touches `SLAMOperator` pulls in `torch`."""
     if name in {"SLAMOperator", "CameraPose", "SLAMOutput"}:
-        from . import slam_pipeline
+        from . import _runtime
 
-        return getattr(slam_pipeline, name)
+        return getattr(_runtime, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -188,7 +188,7 @@ __all__ = [
     "SELECTION_FORMAT",
     "SELECTION_VERSION",
     "SLAMCurationResult",
-    "SLAMPipeline",
+    "SLAMReconstructor",
     "SLAMReconstruction",
     "CameraPose",
     "PointCloudArtifact",
@@ -211,7 +211,7 @@ __all__ = [
     "prepare_slam_input",
     "preflight_slam",
     "register",
-    "run_slam_pipeline",
+    "run_slam_reconstruction",
     "slam_motion_diversity",
     "slam_quality",
     "slam_provenance",

@@ -1,4 +1,4 @@
-"""SDK for the intersection-anchored chunked SLAM pipeline prototyped in
+"""Private runtime for the intersection-anchored chunked SLAM reconstruction prototyped in
 `intersection.ipynb`: SALAD-embed frames -> find
 cross-clip intersection points -> chunk each clip's timeline around those
 intersections (or into equal-size windows if there's nothing to anchor to)
@@ -9,7 +9,7 @@ per-boundary affine alignment on a shared camera frustum.
 ``depth_model`` may be passed as an already-constructed model object, or as
 the string name of a Depth Anything 3 preset (e.g. ``"da3-base"``), in which
 case the vendored ``depth_anything_3`` package loads and moves the pretrained
-model onto this pipeline's home device internally -- the caller never needs
+model onto this runtime's home device internally -- the caller never needs
 to import ``depth_anything_3`` directly.
 """
 import collections
@@ -160,7 +160,7 @@ class SLAMOutput:
     index, de-duplicated across overlapping chunks (first reconstruction of
     a shared frame wins). `poses[name]` is a list of `CameraPose`, one per
     frame in `trajectories[name]`. `points`/`colors` are `None` unless the
-    pipeline was built with `output_pointcloud=True`."""
+    runtime was built with `output_pointcloud=True`."""
     trajectories: Dict[str, np.ndarray]
     poses: Dict[str, List[CameraPose]]
     points: Optional[np.ndarray] = None
@@ -170,7 +170,7 @@ class SLAMOutput:
 
 class SLAMOperator:
     """One object driving the full intersection-anchored reconstruction
-    pipeline. Call it directly (`pipeline(data)`) to run every step in
+    runtime. Call it directly (`runtime(data)`) to run every step in
     order, or call `find_intersections`/`build_chunks`/`process_chunks`/
     `stitch_chunks` individually.
 
@@ -182,7 +182,7 @@ class SLAMOperator:
             device -- or the string name of a Depth Anything 3 preset (e.g.
             `"da3-base"`, `"da3-large"`, or a full `org/repo` Hub id), in
             which case the pretrained model is downloaded, constructed, and
-            moved onto this pipeline's home device internally.
+            moved onto this runtime's home device internally.
         embedding_model: Optional. Any object exposing `.encode(frames)` or
             `__call__(frames)` that takes a list of `(H, W, 3)` uint8 frames
             and returns an `(N, D)` array of global descriptors (e.g. a
@@ -381,7 +381,7 @@ class SLAMOperator:
         if data is not None:
             return self._ingest_data(data)
         if self._clips is None:
-            raise RuntimeError("No data ingested yet -- pass `data` or call the pipeline with data first.")
+            raise RuntimeError("No data ingested yet -- pass `data` or call the runtime with data first.")
         return self._clips
 
     # ------------------------------------------------------------------
@@ -431,7 +431,7 @@ class SLAMOperator:
         frames apart in time (otherwise every match would trivially be a
         frame against its own near-identical neighbors). Only the single
         best match is kept per (clip, clip) key -- same simplification the
-        pipeline already makes for cross-clip pairs, now also covering the
+        runtime already makes for cross-clip pairs, now also covering the
         same clip paired with itself."""
         import faiss
 

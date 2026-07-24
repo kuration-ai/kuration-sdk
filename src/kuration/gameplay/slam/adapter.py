@@ -9,7 +9,6 @@ import numpy as np
 
 from ...core.adapters.base import iter_arrays_to_ticks
 from ...core.buffer import Tick
-from ..pipeline import as_gameplay
 
 from .export import EXPORT_FORMAT, EXPORT_VERSION
 from .schema import FIELD_TO_ARRAY, TRACKING_CONFIDENCE, slam_schema
@@ -128,7 +127,7 @@ def input_slam(
     adapter = SLAMTrajectoryAdapter(manifest=manifest)
     from ...core.pipeline import input
 
-    pipeline = as_gameplay(input(adapter=adapter, schema=adapter.schema))
+    pipeline = input(adapter=adapter, schema=adapter.schema)
     if not join_video:
         return pipeline
     missing = sorted(set(adapter.sources()) - set(adapter.video_mapping))

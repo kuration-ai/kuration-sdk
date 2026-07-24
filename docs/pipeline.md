@@ -88,15 +88,14 @@ concepts: [schema.md](schema.md)):
 ## Operator reference
 
 Each operator returns a new `Pipeline`; the pipeline being extended is never mutated.
-The first three methods below belong to `kuration.gameplay.GameplayPipeline`, returned by
-`kuration.gameplay.input()` and `kuration.gameplay.slam_pipeline()`. All remaining methods
-belong to the domain-agnostic core `Pipeline`.
+Importing `kuration.gameplay` registers the gameplay methods below on this same core type;
+custom domains and plugins follow the same registered-operator mechanism.
 
 | operator | signature | compiles to |
 |---|---|---|
 | `.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None)` | a `JoinedMediaAdapter` with a resolved source→video mapping and lazy media column |
 | `.pixel_shift` | `(*, controls=None, boundary="exclude")` | the built-in `aintropy/pixel-shift` operator |
-| `.slam_motion` | `(*, axis="slam_path_length", bins=8)` | the built-in `aintropy/slam-motion-diversity` operator |
+| `.slam_motion_diversity` | `(*, axis="slam_path_length", bins=8)` | the built-in `aintropy/slam-motion-diversity` operator |
 | `.slam_quality` | `(*, min_score=None, **quality_options)` | the built-in `aintropy/slam-quality` operator |
 | `.window` | `(window, stride=None, unit="steps")` | the `Segmenter` (stride defaults to `window`) |
 | `.measure` | `(name, spec=None, *, of=None, map=None, filter=None, scope=None)` | a `strategy.define[name]` entry — 4 forms below |

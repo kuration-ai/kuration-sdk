@@ -1,4 +1,4 @@
-"""Packaging and import contracts for the grouped gameplay facade."""
+"""Packaging and import contracts for the gameplay operator domain."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,41 +6,45 @@ import subprocess
 import sys
 import tomllib
 
-from kuration import core, gameplay
+from kuration import core, gameplay, input
 from kuration.core.pipeline import Pipeline
 
 
 ROOT = Path(__file__).parents[1]
 
 
-def test_gameplay_facade_groups_the_public_capabilities():
+def test_gameplay_domain_groups_the_public_capabilities():
     assert gameplay.PixelShiftReport is gameplay.pixel_shift.PixelShiftReport
     assert (
         gameplay.ActionStateConsistencyChecker
         is gameplay.action_state_consistency.ActionStateConsistencyChecker
     )
-    assert gameplay.SLAMPipeline is gameplay.slam.SLAMPipeline
+    assert gameplay.SLAMReconstructor is gameplay.slam.SLAMReconstructor
     assert gameplay.input_slam is gameplay.slam.input_slam
     assert core.Pipeline is Pipeline
 
 
-def test_gameplay_pipeline_preserves_domain_methods_across_core_operations():
-    pipeline = gameplay.input(
+def test_gameplay_operators_extend_the_plain_core_pipeline():
+    pipeline = input(
         [{"timestamp": 0.0, "signal": 1.0}, {"timestamp": 1.0, "signal": 2.0}],
         time="timestamp",
     )
     derived = pipeline.window(1).measure("signal")
 
-    assert isinstance(derived, gameplay.GameplayPipeline)
+    assert type(derived) is Pipeline
     assert callable(derived.pixel_shift)
-    assert callable(derived.slam_motion)
+    assert callable(derived.slam_motion_diversity)
+    assert callable(derived.slam_quality)
+    assert not hasattr(gameplay, "GameplayPipeline")
+    assert not hasattr(gameplay, "as_gameplay")
+    assert not hasattr(gameplay, "input")
 
 
 def test_gameplay_import_does_not_load_heavy_runtimes():
     code = """
 import sys
 from kuration import gameplay
-assert gameplay.SLAMPipeline
+assert gameplay.SLAMReconstructor
 assert gameplay.PixelShiftReport
 assert gameplay.ActionStateConsistencyChecker
 assert "torch" not in sys.modules

@@ -21,6 +21,7 @@ from kuration import (
     VideoMetadata,
     default_registry,
     describe_component,
+    input,
     list_components,
 )
 
@@ -710,7 +711,7 @@ def test_full_pipeline_with_fake_video_provider():
         }
     )
     pipeline = (
-        gameplay.input(rows, schema=schema, fields={"action": action_cols}, time="t")
+        input(rows, schema=schema, fields={"action": action_cols}, time="t")
         .join_video({"mem": "fake.mp4"}, provider=provider, on="frame_index")
         .window(n_frames, stride=n_frames)
         .pixel_shift(controls=["W"])
@@ -752,7 +753,7 @@ def test_pipeline_halo_counts_boundary_press_once(
         "name": "pixel_shift_boundary_test",
         "fields": {"action": {"kind": "vector", "dims": action_cols}},
     })
-    result = (gameplay.input(rows, schema=schema, fields={"action": action_cols}, time="t")
+    result = (input(rows, schema=schema, fields={"action": action_cols}, time="t")
               .join_video({"mem": "fake.mp4"}, provider=provider, on="frame_index")
               .window(window, stride=stride)
               .pixel_shift(controls=["W"])

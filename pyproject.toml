@@ -199,7 +199,7 @@ testpaths = ["tests"]
 # validation layers rather than treating vendored upstream implementation lines as SDK debt.
 [tool.coverage.run]
 omit = [
-    "src/kuration/gameplay/slam/slam_pipeline.py",
+    "src/kuration/gameplay/slam/_runtime.py",
     "src/kuration/gameplay/slam/_vendor/**",
 ]
 

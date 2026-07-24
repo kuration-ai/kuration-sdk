@@ -56,8 +56,10 @@ def test_domain_resources_resolve_from_their_own_package() -> None:
 
 
 def test_slam_reconstruction_and_curation_pipeline_boundaries_are_explicit() -> None:
-    assert issubclass(kuration.gameplay.GameplayPipeline, kuration.Pipeline)
-    assert not issubclass(kuration.gameplay.SLAMPipeline, kuration.Pipeline)
+    assert not hasattr(kuration.gameplay, "GameplayPipeline")
+    assert not hasattr(kuration.gameplay, "as_gameplay")
+    assert not hasattr(kuration.gameplay, "input")
+    assert not issubclass(kuration.gameplay.SLAMReconstructor, kuration.Pipeline)
     assert callable(kuration.gameplay.slam_pipeline)
     assert not isinstance(kuration.gameplay.slam_pipeline, type)
 
@@ -68,4 +70,6 @@ def test_vendored_slam_runtime_is_outside_first_party_coverage() -> None:
 
     omitted = configuration["tool"]["coverage"]["run"]["omit"]
     assert "src/kuration/gameplay/slam/_vendor/**" in omitted
+    assert "src/kuration/gameplay/slam/_runtime.py" in omitted
+    assert "src/kuration/gameplay/slam/slam_pipeline.py" not in omitted
     assert all(not path.startswith("src/kuration/core/") for path in omitted)

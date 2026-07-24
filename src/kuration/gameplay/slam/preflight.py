@@ -11,7 +11,7 @@ from typing import cast
 from urllib.parse import urlparse
 
 from .export import EXPORT_FORMAT, EXPORT_VERSION
-from .runner import _pipeline_factory, _validated_frames
+from .runner import _runtime_factory, _validated_frames
 
 
 @dataclass(frozen=True)
@@ -237,14 +237,14 @@ def preflight_slam(
         else:
             checks.append(_check("embeddings", "pass", "embedding inputs are unambiguous"))
         try:
-            factory_option = options.get("pipeline_factory")
+            factory_option = options.get("runtime_factory")
             if factory_option is not None and not (
                 isinstance(factory_option, str) or callable(factory_option)
             ):
-                raise TypeError("pipeline_factory must be callable or an import string")
-            factory = _pipeline_factory(cast(Callable | str | None, factory_option))
+                raise TypeError("runtime_factory must be callable or an import string")
+            factory = _runtime_factory(cast(Callable | str | None, factory_option))
             checks.append(_check(
-                "slam-runtime", "pass", f"loaded pipeline factory {factory.__module__}."
+                "slam-runtime", "pass", f"loaded runtime factory {factory.__module__}."
                 f"{getattr(factory, '__qualname__', type(factory).__name__)}"
             ))
         except (ImportError, TypeError, ValueError) as error:
