@@ -227,6 +227,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `register_method` | `(name, fn, **metadata) -> None` | register a selection-priority method |
 | `register_filter` | `(name, fn, **metadata) -> None` | register a pre-pass filter |
 | `register_operator` | `(name, fn=None, **metadata)` | register a `(pipeline, **params) -> Pipeline` composition directly or as a decorator |
+| `detect_adapter` | `(source_uri, *, registry=None) -> str` | select the uniquely highest-confidence registered adapter whose optional `detect_source()` hook recognizes a source |
 | `Analyzer` | protocol requiring `summary()` | user-owned stateful direct-API analysis result |
 | `DatasetAnalyzer` | protocol requiring `summary()` and `check_dataset(dataset, **options)` | optional analyzer contract for artifact-level `kur-check` execution |
 | `SplitLeakageAnalyzer` | `(*, check_groups=True)` | built-in source/group split auditor; `check_groups=False` suppresses group leakage and conflict checks, but never source checks |
@@ -236,7 +237,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `register_analyzer` | `(name, factory=None, **metadata)` | register a discoverable analyzer factory directly or as a decorator |
 | `get_analyzer` | `(name, *, registry=None, **params) -> Analyzer` | validate parameters and construct a user-owned analyzer instance |
 | `run_dataset_analyzer` | `(name, dataset, *, parameters=None, options=None, registry=None) -> dict` | construct a dataset-capable analyzer, run its hook, and validate the boolean `passed` result |
-| `import_dataset` | `(sources, out, *, source_id=None, split="train", shard_length=None, container="npz", force=False) -> dict` | losslessly import one or more NPZ files (or directories of them) into a committed Kuration artifact |
+| `import_dataset` | `(sources, out, *, adapter=None, schema=None, fields=None, time=None, entity=None, hz=None, kinds=None, adapter_options=None, source_id=None, split="train", shard_length=None, container="npz", force=False, registry=None) -> dict` | detect/construct a registered adapter and import its complete array or canonical-tick dataset into a committed Kuration artifact |
 
 `SplitLeakageAnalyzer` requires `source_id`, `split`, and each supplied `group` to be non-empty
 strings; `group=None` means that no group is known. Split names are not limited to train/test, so

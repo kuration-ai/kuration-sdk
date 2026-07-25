@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+import numpy as np
+
 from ..buffer import Tick
 from ..schema import SchemaSpec
 from .base import check_mapped_arrays, iter_arrays_to_ticks, register_adapter
@@ -32,6 +34,34 @@ class HDF5Adapter:
                 raise ValueError(f"global map references undeclared schema global {g!r}")
         self.available_fields = frozenset(fields)
         self.available_globals = frozenset(self.globals)
+
+    @staticmethod
+    def detect_source(source_uri: str) -> int:
+        return 100 if str(source_uri).lower().endswith((".h5", ".hdf5")) else 0
+
+    @staticmethod
+    def import_arrays(source_uri: str) -> dict[str, np.ndarray]:
+        """Return top-level datasets for lossless artifact import."""
+        try:
+            import h5py
+        except ImportError as error:
+            raise ImportError(
+                "importing HDF5 needs h5py: pip install 'kuration-sdk[array]'"
+            ) from error
+        from ..io import local_copy
+
+        with local_copy(source_uri) as path, h5py.File(path, "r") as handle:
+            arrays = {
+                name: np.asarray(value)
+                for name, value in handle.items()
+                if isinstance(value, h5py.Dataset)
+            }
+        if not arrays:
+            raise ValueError(
+                f"HDF5 source {source_uri!r} contains no top-level datasets; "
+                "use an explicit configured adapter for nested dataset paths"
+            )
+        return arrays
 
     def ticks(self, source_uri: str) -> list[Tick]:
         return list(self.iter_ticks(source_uri))

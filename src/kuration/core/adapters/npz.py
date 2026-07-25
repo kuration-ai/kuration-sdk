@@ -37,6 +37,19 @@ class NpzAdapter:
 
     supports_streaming = False
 
+    @staticmethod
+    def detect_source(source_uri: str) -> int:
+        return 100 if str(source_uri).lower().endswith(".npz") else 0
+
+    @staticmethod
+    def import_arrays(source_uri: str) -> dict[str, np.ndarray]:
+        """Return every archive array for lossless artifact import."""
+        from ..io import local_copy
+
+        with local_copy(source_uri) as path:
+            with np.load(path, allow_pickle=False) as archive:
+                return {name: np.asarray(archive[name]) for name in archive.files}
+
     def ticks(self, source_uri: str) -> list[Tick]:
         from ..io import local_copy
         with local_copy(source_uri) as p:

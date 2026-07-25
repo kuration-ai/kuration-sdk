@@ -135,10 +135,12 @@ kur-diff out/training-v0 out/training-v1
 kur-check out/training-v1 --policy quality.json
 ```
 
-Already have tensor arrays in NPZ files? Import them losslessly without a strategy or selection:
+Already have a supported dataset? Detect its adapter and import it without a strategy or
+selection:
 
 ```bash
 kur-import gameplay.npz --out out/gameplay
+kur-import telemetry.csv --out out/telemetry
 kur-inspect out/gameplay --verify
 ```
 

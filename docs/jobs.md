@@ -14,7 +14,7 @@ kur-report     job.json [--out rep.json]   # report job -> metric distribution p
 kur-inspect    DATASET [--verify] [--json] [--html PATH] # artifact summary/integrity check
 kur-diff       LEFT RIGHT [--verify] [--json] [--html PATH] # compare two artifacts
 kur-check      DATASET [--policy POLICY] [--analyzer NAME] [--json] # gates/analyzers
-kur-import     SOURCE... --out DATASET [--shard-length N] [--json] # lossless NPZ import
+kur-import     SOURCE... --out DATASET [--adapter NAME] [--json] # detected adapter import
 kur-list       KIND [--json]                  # list one plural component kind
 kur-plugin-check [ENTRY-POINT|MODULE] [--json] # validate plugin loading and descriptors
 kur-describe   KIND NAME [--json]             # inspect one component contract
@@ -55,27 +55,56 @@ analyzer are supplied, the JSON result contains `quality` and `analyzer` members
 failure produces exit code 2. `--html` currently renders quality-policy results and therefore
 requires `--policy`.
 
-## Lossless NPZ import
+## Smart dataset import
 
-`kur-import` wraps existing NumPy tensor datasets as Kuration artifacts without scoring,
-selection, resampling, or row loss:
+`kur-import` detects a registered input adapter and wraps the complete input as a Kuration
+artifact without scoring, selection, resampling, or row loss:
 
 ```bash
 kur-import gameplay.npz --out out/gameplay
+kur-import telemetry.csv --out out/telemetry
+kur-import logs/ --out out/logs                         # partitioned Parquet
 kur-import episodes/ --out out/gameplay --shard-length 4096
 ```
 
-Each input `.npz` file becomes one logical source, named from its filename. A directory is
-searched recursively for `.npz` files. Every array becomes a modality and must share the same
-leading row dimension; multiple files must have identical modality names, per-row shapes, and
-dtypes. By default each file remains one shard, which avoids introducing artificial boundaries
-for sequence analyzers. Use `--shard-length` when bounded shard sizes matter more.
+Built-in detection covers CSV, JSONL, single-file Parquet, partitioned-Parquet directories,
+NPZ, HDF5, and Zarr. NPZ/HDF5/Zarr adapters expose a lossless array-import hook: every top-level
+array becomes a modality and retains its per-row shape and dtype. A directory containing NPZ
+episodes is searched recursively and each file becomes one logical source. Array files must
+share a leading row dimension and multiple files must have the same modality contract.
+
+Tabular adapters use the same conservative sampling, schema inference, time/entity detection,
+and canonical `Tick` conversion as `kuration.input()`. Numeric output is stored as float64 and
+categorical columns receive a deterministic integer vocabulary recorded in `config.json`.
+Ambiguous columns fail with the ordinary inference remedy instead of being guessed.
+
+Registered plugin adapters participate by implementing
+`detect_source(uri) -> bool | confidence`. An adapter can additionally implement
+`import_arrays(uri) -> {modality: ndarray}` for lossless tensor import. Otherwise pass an
+explicit schema and adapter options so `kur-import` can construct it through the normal adapter
+registry:
+
+```bash
+kur-import capture.custom --out out/capture \
+  --adapter acme/capture \
+  --schema capture-schema.json \
+  --fields capture-fields.json \
+  --adapter-options capture-options.json
+```
+
+Use `--adapter NAME` whenever detection is ambiguous, or `--schema`, `--fields`, `--time`,
+`--entity`, `--hz`, and `--kinds` to override safe inference. Detection must agree across every
+supplied source. By default each logical source/track remains one shard, which avoids introducing
+artificial boundaries for sequence analyzers; use `--shard-length` when bounded shard sizes
+matter more.
 
 Use `--source-id ID` to override the ID for a single file, `--split NAME` to select the manifest
 split, and `--container` to choose `npz`, `json`, `hdf5`, or `parquet`. Existing Kuration output
-is protected unless `--force` is explicit. Object/pickled arrays, structured dtypes, scalar
-arrays, empty inputs, and cross-file contract drift fail before publication. The generated
-artifact works with `kur-inspect`, `kur-check`, `iter_shards()`, and curated-dataset adapters.
+is protected unless `--force` is explicit. An already-curated Kuration source is detected and
+reported as ready to use rather than redundantly imported. Unsafe arrays, empty inputs, mixed
+adapter kinds, ambiguous detectors, and cross-file contract drift fail before publication.
+The generated artifact works with `kur-inspect`, `kur-check`, `iter_shards()`, and
+curated-dataset adapters.
 
 The job **kind** is inferred: `arms` present → experiment; `output`/`train_hours` present →
 curate; otherwise → report.

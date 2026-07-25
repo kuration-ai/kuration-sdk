@@ -25,6 +25,13 @@ _GLOB_CHARS = set("*?[")
 
 
 class ParquetDatasetAdapter(TimeseriesAdapter):
+    @staticmethod
+    def detect_source(source_uri: str) -> int:
+        from pathlib import Path
+
+        path = Path(str(source_uri))
+        return 100 if path.is_dir() and any(path.rglob("*.parquet")) else 0
+
     def __init__(self, schema: SchemaSpec, *, fields: dict, path: str,
                  source_per: str = "part", time_column: Optional[str] = None,
                  entity_column: Optional[str] = None, globals: Optional[dict] = None):

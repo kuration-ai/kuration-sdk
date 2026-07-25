@@ -19,6 +19,12 @@ from .timeseries import TimeseriesAdapter
 
 
 class HuggingFaceAdapter(TimeseriesAdapter):
+    @staticmethod
+    def detect_source(source_uri: str) -> int:
+        # Hub identifiers and local dataset scripts are not safely distinguishable from
+        # ordinary paths. Require an explicit adapter instead of inheriting CSV detection.
+        return 0
+
     def __init__(self, schema: SchemaSpec, *, fields: dict, dataset: str, split: str = "train",
                  config: Optional[str] = None, time_column: Optional[str] = None,
                  entity_column: Optional[str] = None, globals: Optional[dict] = None,

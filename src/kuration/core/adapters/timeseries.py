@@ -47,6 +47,10 @@ class TimeseriesAdapter:
     Rows must be ordered by time (timesteps are formed from runs of equal time values).
     """
 
+    @staticmethod
+    def detect_source(source_uri: str) -> int:
+        return 80 if str(source_uri).lower().endswith((".csv", ".parquet")) else 0
+
     def __init__(self, schema: SchemaSpec, *, fields: dict,
                  time_column: Optional[str] = None, entity_column: Optional[str] = None,
                  globals: Optional[dict] = None):

@@ -5,10 +5,11 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
-- Added `kur-import` and `import_dataset()` for lossless NPZ-to-Kuration conversion. Files and
-  recursively discovered directories retain every row, modality shape, and dtype, default to
-  source-aligned shards, and publish the same checksummed transactional artifacts consumed by
-  inspection, analyzers, and loaders.
+- Added `kur-import` and `import_dataset()` with confidence-based registered-adapter detection.
+  NPZ, HDF5, and Zarr use lossless tensor hooks; CSV, JSONL, and single/partitioned Parquet use
+  ordinary schema inference and canonical ticks. Plugin adapters can advertise detection and
+  raw-array import hooks. Imports default to source-aligned shards and publish the same
+  checksummed transactional artifacts consumed by inspection, analyzers, and loaders.
 - Added artifact-level analyzer execution to `kur-check`, with separate JSON construction
   parameters and dataset options, composable quality-gate output, and exit-code-2 verdicts.
   Action-state consistency can now read configurable frame/action modalities from curated

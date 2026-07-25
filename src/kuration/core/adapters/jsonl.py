@@ -12,6 +12,10 @@ from .timeseries import TimeseriesAdapter
 
 
 class JsonlAdapter(TimeseriesAdapter):
+    @staticmethod
+    def detect_source(source_uri: str) -> int:
+        return 100 if str(source_uri).lower().endswith(".jsonl") else 0
+
     def ticks(self, source_uri: str) -> list[Tick]:
         return list(self.iter_ticks(source_uri))
 

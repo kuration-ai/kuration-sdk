@@ -1,29 +1,66 @@
-"""Import NPZ tensor datasets into a lossless Kuration artifact."""
+"""Detect an input adapter and import its complete dataset into Kuration."""
 from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from ..importing import import_dataset
 from ._common import cli_run
 
 
+def _read_object(path: str | None, *, label: str):
+    if path is None:
+        return None
+    value = json.loads(Path(path).read_text())
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must contain a JSON object")
+    return value
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Import .npz files into a Kuration dataset without selecting rows."
+        description="Auto-detect an input adapter and import without selecting rows."
     )
     parser.add_argument(
         "sources",
         nargs="+",
-        help="One or more .npz files or directories (directories are searched recursively).",
+        help="One or more input files, or a supported dataset directory.",
     )
     parser.add_argument("--out", required=True, help="Destination Kuration dataset directory.")
+    parser.add_argument(
+        "--adapter",
+        help="Registered adapter override (default: detect from every source).",
+    )
+    parser.add_argument(
+        "--schema",
+        metavar="PATH",
+        help="Schema JSON override; required for custom adapters without array import hooks.",
+    )
+    parser.add_argument(
+        "--fields",
+        metavar="PATH",
+        help="JSON field mapping override.",
+    )
+    parser.add_argument("--time", help="Time-column override for tabular adapters.")
+    parser.add_argument("--entity", help="Entity-column override for tabular adapters.")
+    parser.add_argument("--hz", type=float, help="Sample-rate override.")
+    parser.add_argument(
+        "--kinds",
+        metavar="PATH",
+        help="JSON scalar/categorical inference overrides for tabular columns.",
+    )
+    parser.add_argument(
+        "--adapter-options",
+        metavar="PATH",
+        help="JSON object of adapter-specific construction options.",
+    )
     parser.add_argument("--source-id", help="Source ID override; only valid for one input file.")
     parser.add_argument("--split", default="train", help="Manifest split (default: train).")
     parser.add_argument(
         "--shard-length",
         type=int,
-        help="Rows per output shard; by default each input file remains one shard.",
+        help="Rows per output shard; by default each logical source/track remains one shard.",
     )
     parser.add_argument(
         "--container",
@@ -44,6 +81,14 @@ def main() -> None:
         result = import_dataset(
             args.sources,
             args.out,
+            adapter=args.adapter,
+            schema=args.schema,
+            fields=_read_object(args.fields, label="fields"),
+            time=args.time,
+            entity=args.entity,
+            hz=args.hz,
+            kinds=_read_object(args.kinds, label="kinds"),
+            adapter_options=_read_object(args.adapter_options, label="adapter options"),
             source_id=args.source_id,
             split=args.split,
             shard_length=args.shard_length,
@@ -54,7 +99,8 @@ def main() -> None:
             print(json.dumps(result, indent=2))
         else:
             print(
-                f"imported {result['sources']} source(s), {result['steps']} rows, "
+                f"imported with {result['adapter']}: {result['sources']} source(s), "
+                f"{result['steps']} rows, "
                 f"{result['shards']} shard(s) with modalities "
                 f"{', '.join(result['modalities'])} → {result['dataset']}"
             )

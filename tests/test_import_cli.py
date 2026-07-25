@@ -1,14 +1,35 @@
-"""Lossless NPZ-to-Kuration import API and CLI."""
+"""Smart registered-adapter import API and CLI."""
 from __future__ import annotations
 
 import json
 import subprocess
 import sys
+import csv
 
 import numpy as np
 import pytest
 
-from kuration import import_dataset, inspect_dataset, iter_shards
+from kuration import (
+    detect_adapter,
+    import_dataset,
+    inspect_dataset,
+    iter_shards,
+    register_adapter,
+)
+
+
+class _SmartArrayAdapter:
+    @staticmethod
+    def detect_source(source_uri):
+        return 250 if str(source_uri).endswith(".smart") else 0
+
+    @staticmethod
+    def import_arrays(source_uri):
+        with np.load(source_uri, allow_pickle=False) as archive:
+            return {name: np.asarray(archive[name]) for name in archive.files}
+
+
+register_adapter("test/smart-array-import", _SmartArrayAdapter)
 
 
 def _source(path, *, offset=0, rows=5):
@@ -27,6 +48,7 @@ def test_import_dataset_preserves_npz_arrays_and_artifact_contract(tmp_path):
 
     assert result == {
         "dataset": str(destination),
+        "adapter": "npz",
         "shards": 1,
         "sources": 1,
         "steps": 5,
@@ -98,6 +120,7 @@ def test_kur_import_cli_creates_analyzable_artifact(tmp_path):
     completed = subprocess.run(command, check=True, capture_output=True, text=True)
 
     result = json.loads(completed.stdout)
+    assert result["adapter"] == "npz"
     assert result["sources"] == 1
     assert result["modalities"] == ["actions", "frames"]
     assert inspect_dataset(destination, verify=True).verification["valid"] is True
@@ -123,3 +146,60 @@ def test_kur_import_cli_failure_is_one_line(tmp_path):
     assert completed.returncode == 1
     assert completed.stderr.startswith("error: FileNotFoundError:")
     assert "Traceback" not in completed.stderr
+
+
+def test_import_auto_detects_timeseries_adapter_and_infers_csv_schema(tmp_path):
+    source = tmp_path / "telemetry.csv"
+    with source.open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=["t", "id", "signal", "state"])
+        writer.writeheader()
+        writer.writerows([
+            {"t": 0, "id": "device-1", "signal": 1.25, "state": "idle"},
+            {"t": 1, "id": "device-1", "signal": 2.5, "state": "active"},
+            {"t": 2, "id": "device-1", "signal": 3.75, "state": "idle"},
+        ])
+
+    result = import_dataset(source, tmp_path / "dataset")
+
+    assert detect_adapter(str(source)) == "timeseries"
+    assert result["adapter"] == "timeseries"
+    arrays = next(iter_shards(tmp_path / "dataset"))
+    np.testing.assert_allclose(arrays["signal"], [1.25, 2.5, 3.75])
+    assert arrays["state"].tolist() == [1, 0, 1]
+    config = json.loads((tmp_path / "dataset" / "config.json").read_text())
+    assert config["output"]["vocabs"]["state"] == {"active": 0, "idle": 1}
+    assert inspect_dataset(tmp_path / "dataset", verify=True).verification["valid"] is True
+
+
+def test_import_uses_registered_plugin_detector_and_array_hook(tmp_path):
+    source = tmp_path / "episode.smart"
+    with source.open("wb") as stream:
+        np.savez(
+            stream,
+            frames=np.zeros((3, 2, 2, 3), dtype=np.uint8),
+            actions=np.ones((3, 4), dtype=np.float32),
+        )
+
+    result = import_dataset(source, tmp_path / "dataset")
+
+    assert detect_adapter(str(source)) == "test/smart-array-import"
+    assert result["adapter"] == "test/smart-array-import"
+    arrays = next(iter_shards(tmp_path / "dataset"))
+    assert arrays["frames"].shape == (3, 2, 2, 3)
+    assert arrays["actions"].shape == (3, 4)
+
+
+def test_import_auto_detects_hdf5_and_preserves_tensor_shapes(tmp_path):
+    h5py = pytest.importorskip("h5py")
+    source = tmp_path / "episode.h5"
+    with h5py.File(source, "w") as handle:
+        handle["frames"] = np.zeros((3, 2, 2, 3), dtype=np.uint8)
+        handle["actions"] = np.ones((3, 4), dtype=np.float32)
+
+    result = import_dataset(source, tmp_path / "dataset")
+
+    assert detect_adapter(str(source)) == "hdf5"
+    assert result["adapter"] == "hdf5"
+    arrays = next(iter_shards(tmp_path / "dataset"))
+    assert arrays["frames"].shape == (3, 2, 2, 3)
+    assert arrays["actions"].shape == (3, 4)

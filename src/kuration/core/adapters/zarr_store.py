@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+import numpy as np
+
 from ..buffer import Tick
 from ..schema import SchemaSpec
 from .base import check_mapped_arrays, iter_arrays_to_ticks, register_adapter
@@ -33,6 +35,42 @@ class ZarrAdapter:
                 raise ValueError(f"global map references undeclared schema global {g!r}")
         self.available_fields = frozenset(fields)
         self.available_globals = frozenset(self.globals)
+
+    @staticmethod
+    def detect_source(source_uri: str) -> int:
+        return 100 if str(source_uri).rstrip("/").lower().endswith(".zarr") else 0
+
+    @staticmethod
+    def import_arrays(source_uri: str) -> dict[str, np.ndarray]:
+        """Return every top-level array for lossless artifact import."""
+        try:
+            import zarr
+        except ImportError as error:
+            raise ImportError(
+                "importing Zarr needs zarr: pip install 'kuration-sdk[zarr]'"
+            ) from error
+        from ..io import is_remote
+
+        if is_remote(source_uri):
+            try:
+                import fsspec
+            except ImportError as error:
+                raise ImportError(
+                    f"remote zarr store {source_uri!r} needs fsspec and its backend"
+                ) from error
+            store = fsspec.get_mapper(str(source_uri))
+        else:
+            store = str(source_uri)
+        group = zarr.open(store, mode="r")
+        arrays = {
+            name: np.asarray(group[name])
+            for name in group.array_keys()
+        }
+        if not arrays:
+            raise ValueError(
+                f"Zarr source {source_uri!r} contains no top-level arrays"
+            )
+        return arrays
 
     def _open_group(self, source_uri: str):
         try:

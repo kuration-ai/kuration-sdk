@@ -23,6 +23,7 @@ from .schema import SchemaSpec
 _EXT_KINDS = {
     ".csv": "timeseries", ".parquet": "timeseries", ".jsonl": "jsonl",
     ".npz": "npz", ".h5": "hdf5", ".hdf5": "hdf5", ".json": "json-rows",
+    ".zarr": "zarr",
     ".mp4": "video", ".m4v": "video", ".mov": "video",
 }
 _TIME_CANDIDATES = ("t", "time", "timestamp", "ts", "step", "frame", "tick")
@@ -47,7 +48,7 @@ def sniff(source) -> str:
             f"pass an explicit adapter= for other layouts")
     raise ValueError(
         f"cannot infer an adapter for {p!r}: supported extensions are .csv/.parquet "
-        f"(timeseries), .jsonl, .npz, .h5/.hdf5 (hdf5), .json (rows), or a directory of "
+        f"(timeseries), .jsonl, .npz, .h5/.hdf5 (hdf5), .zarr, .json (rows), or a directory of "
         f".parquet parts, or .mp4/.m4v/.mov video — pass an explicit adapter= for anything else")
 
 
@@ -146,6 +147,16 @@ def sample_source(source, *, n: int = 200) -> tuple[str, object]:
         with local_copy(p) as lp, h5py.File(lp, "r") as f:
             sample = {k: np.asarray(f[k][:n]) for k in f.keys()
                       if isinstance(f[k], h5py.Dataset)}
+        return kind, sample
+    if kind == "zarr":
+        try:
+            import zarr
+        except ImportError as e:
+            raise ImportError(
+                "sampling Zarr needs zarr: pip install 'kuration-sdk[zarr]'"
+            ) from e
+        group = zarr.open(p, mode="r")
+        sample = {key: np.asarray(group[key][:n]) for key in group.array_keys()}
         return kind, sample
     if kind == "video":
         raise ValueError(

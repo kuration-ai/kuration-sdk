@@ -30,6 +30,7 @@ from .adapters.jsonl import JsonlAdapter
 from .adapters.npz import NpzAdapter
 from .adapters.parquet_dataset import ParquetDatasetAdapter
 from .adapters.timeseries import TimeseriesAdapter
+from .adapters.zarr_store import ZarrAdapter
 from .buffer import Tick
 from .dsl.grammar import compile_metric
 from .schema import SchemaSpec
@@ -372,6 +373,8 @@ def _input_files(src, op, *, schema, fields, time, entity, hz, kinds, sample, gl
         ad = NpzAdapter(schema, fields=fmap, globals=globals, **adapter_kw)
     elif kind == "hdf5":
         ad = HDF5Adapter(schema, fields=fmap, globals=globals, **adapter_kw)
+    elif kind == "zarr":
+        ad = ZarrAdapter(schema, fields=fmap, globals=globals, **adapter_kw)
     elif kind == "parquet-dataset":
         ad = ParquetDatasetAdapter(schema, fields=fmap, path=paths[0], time_column=tc,
                                    entity_column=ec, globals=globals, **adapter_kw)

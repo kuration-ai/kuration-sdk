@@ -52,6 +52,15 @@ def _load_shard(path: str, container: str, *, registry=None):
 class CuratedDatasetAdapter:
     """Wrap one or more kuration dataset directories as a re-curatable source."""
 
+    @staticmethod
+    def detect_source(source_uri: str) -> int:
+        from ..io import exists
+
+        root = str(source_uri).rstrip("/")
+        return 200 if (
+            exists(f"{root}/dataset_manifest.json") and exists(f"{root}/config.json")
+        ) else 0
+
     def __init__(self, dataset_dir: Union[str, list], schema: Optional[SchemaSpec] = None,
                  registry=None):
         dirs = [dataset_dir] if isinstance(dataset_dir, str) else list(dataset_dir)

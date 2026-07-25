@@ -1,14 +1,15 @@
-"""Lossless import of array datasets into Kuration's artifact format."""
+"""Smart registered-adapter import into Kuration's artifact format."""
 from __future__ import annotations
 
 import hashlib
 import json
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any, Sequence
 
 import numpy as np
 
-from .io import exists, file_integrity, is_remote, local_copy, write_text
+from .io import exists, file_integrity, is_remote, write_text
 from .manifest import (
     begin_dataset,
     commit_dataset,
@@ -50,22 +51,23 @@ def _source_name(path: str) -> str:
     return clean[:-4] if clean.lower().endswith(".npz") else clean
 
 
-def _load_npz(path: str) -> tuple[dict[str, np.ndarray], int]:
-    with local_copy(path) as local:
-        try:
-            with np.load(local, allow_pickle=False) as archive:
-                arrays = {
-                    name: np.asarray(archive[name])
-                    for name in archive.files
-                    if name != "_n_steps"
-                }
-                raw_n_steps = (
-                    np.asarray(archive["_n_steps"]) if "_n_steps" in archive.files else None
-                )
-        except ValueError as error:
+def _load_adapter_arrays(factory, path: str) -> tuple[dict[str, np.ndarray], int]:
+    loader = getattr(factory, "import_arrays", None)
+    if not callable(loader):
+        raise ValueError(f"adapter {factory!r} does not expose import_arrays()")
+    try:
+        loaded = loader(path)
+    except ValueError as error:
+        if "object arrays" in str(error).lower() or "allow_pickle" in str(error).lower():
             raise ValueError(
                 f"cannot safely import {path!r}; object arrays and pickled values are unsupported"
             ) from error
+        raise
+    if not isinstance(loaded, Mapping):
+        raise ValueError("adapter import_arrays() must return a mapping of modality arrays")
+    raw = dict(loaded)
+    raw_n_steps = np.asarray(raw.pop("_n_steps")) if "_n_steps" in raw else None
+    arrays = {str(name): np.asarray(value) for name, value in raw.items()}
     if not arrays:
         raise ValueError(f"import source {path!r} contains no arrays")
     for name, array in arrays.items():
@@ -105,26 +107,19 @@ def _contract(arrays: dict[str, np.ndarray]) -> dict[str, dict[str, Any]]:
     }
 
 
-def import_dataset(
-    sources: Sequence[str | Path] | str | Path,
+def _import_array_dataset(
+    paths: list[str],
     out: str | Path,
     *,
+    adapter_name: str,
+    factory,
     source_id: str | None = None,
     split: str = "train",
     shard_length: int | None = None,
     container: str = "npz",
     force: bool = False,
 ) -> dict:
-    """Import one or more NPZ sources without selection or row loss.
-
-    A directory source is searched recursively for ``*.npz`` files. Every file becomes one
-    logical Kuration source and every NPZ array becomes a modality. Arrays must share a leading
-    row dimension and all source files must share one modality/shape/dtype contract.
-    """
-    raw_sources = [sources] if isinstance(sources, (str, Path)) else list(sources)
-    if not raw_sources:
-        raise ValueError("import_dataset needs at least one source")
-    paths = _discover_npz_sources(raw_sources)
+    """Import through an adapter's lossless ``import_arrays`` hook."""
     if source_id is not None:
         if len(paths) != 1:
             raise ValueError("source_id can only be used when importing one .npz file")
@@ -165,7 +160,7 @@ def import_dataset(
     max_source_steps = 0
     for path, current_source_id in zip(paths, source_ids):
         source_before = source_descriptor(path, object())
-        arrays, n_steps = _load_npz(path)
+        arrays, n_steps = _load_adapter_arrays(factory, path)
         source_after = source_descriptor(path, object())
         if source_after != source_before:
             raise ValueError(
@@ -243,7 +238,8 @@ def import_dataset(
     }
     fingerprint_payload = json.dumps(
         {
-            "kind": "npz-import",
+            "kind": "adapter-array-import",
+            "adapter": adapter_name,
             "sources": source_records,
             "container": container,
             "split": split,
@@ -263,7 +259,7 @@ def import_dataset(
             "modalities": modalities,
         },
         "results": results,
-        "import": {"format": "npz", "sources": source_records},
+        "import": {"adapter": adapter_name, "mode": "arrays", "sources": source_records},
         "provenance": {
             "kind": "import",
             "fingerprint": hashlib.sha256(fingerprint_payload).hexdigest(),
@@ -282,4 +278,350 @@ def import_dataset(
     )
     write_text(f"{out}/config.json", json.dumps(config, indent=2))
     commit_dataset(out)
-    return {"dataset": out, **results, "modalities": sorted(expected_contract)}
+    return {
+        "dataset": out,
+        "adapter": adapter_name,
+        **results,
+        "modalities": sorted(expected_contract),
+    }
+
+
+def _load_schema(schema):
+    if schema is None:
+        return None
+    from .schema import SchemaSpec
+
+    if isinstance(schema, SchemaSpec):
+        return schema
+    if isinstance(schema, (str, Path)):
+        schema = json.loads(Path(schema).read_text())
+    if not isinstance(schema, dict):
+        raise ValueError("schema must be a SchemaSpec, JSON object, path, or None")
+    return SchemaSpec.from_dict(schema)
+
+
+def _source_ids(paths: list[str], source_id: str | None) -> list[str]:
+    if source_id is not None:
+        if len(paths) != 1:
+            raise ValueError("source_id can only be used when the adapter resolves one source")
+        if not isinstance(source_id, str) or not source_id:
+            raise ValueError("source_id must be a non-empty string")
+        return [source_id]
+    ids = [_source_name(path) for path in paths]
+    duplicates = sorted({name for name in ids if ids.count(name) > 1})
+    if duplicates:
+        raise ValueError(
+            f"adapter sources produce duplicate source IDs {duplicates}; rename the inputs "
+            "or import them separately with source_id="
+        )
+    return ids
+
+
+def _import_tick_dataset(
+    pipeline,
+    out: str | Path,
+    *,
+    adapter_name: str,
+    source_id: str | None,
+    split: str,
+    shard_length: int | None,
+    container: str,
+    force: bool,
+) -> dict:
+    """Materialize every canonical tick from a configured input adapter."""
+    from .output.shardwriter import write_track
+    from .output.track import tracks_from_ticks
+
+    schema = pipeline.schema
+    adapter = pipeline.adapter
+    paths = list(pipeline.sources)
+    ids = _source_ids(paths, source_id)
+    tracks = []
+    source_records = []
+    tick_count = 0
+    for path, current_source_id in zip(paths, ids):
+        before = source_descriptor(path, adapter)
+        iterator = (
+            adapter.iter_ticks(path)
+            if callable(getattr(adapter, "iter_ticks", None))
+            else adapter.ticks(path)
+        )
+        ticks = list(iterator)
+        if not ticks:
+            raise ValueError(f"adapter {adapter_name!r} produced no ticks for {path!r}")
+        after = source_descriptor(path, adapter)
+        if after != before:
+            raise ValueError(
+                f"import source {path!r} changed while it was being read; rerun against "
+                "an immutable snapshot"
+            )
+        current_tracks = tracks_from_ticks(schema, ticks, current_source_id)
+        if not current_tracks:
+            raise ValueError(
+                f"adapter {adapter_name!r} produced no entities for {path!r}"
+            )
+        tracks.extend(current_tracks)
+        source_records.append(after)
+        tick_count += len(ticks)
+
+    categorical_vocabs: dict[str, dict[str, int]] = {}
+    for name, field in schema.fields.items():
+        if field.kind != "categorical":
+            continue
+        labels = sorted({
+            str(record[name])
+            for track in tracks
+            for record in track.records
+            if record.get(name) is not None
+        })
+        if not labels:
+            raise ValueError(f"categorical field {name!r} contains no values")
+        categorical_vocabs[name] = {label: index for index, label in enumerate(labels)}
+
+    resolved_shard_length = shard_length or max(track.n_steps for track in tracks)
+    modalities = {}
+    for name, field in {**schema.fields, **schema.globals}.items():
+        if field.kind == "categorical":
+            modalities[name] = {
+                "dtype": "int64",
+                "shape": [],
+                "source": f"vocab:{name}",
+            }
+        else:
+            modalities[name] = {
+                "dtype": "float64",
+                "shape": [field.width] if field.kind == "vector" else [],
+                "source": f"field:{name}",
+            }
+    for name, media in schema.media.items():
+        modalities[name] = {
+            "dtype": media.dtype,
+            "shape": list(media.shape),
+            "source": f"media:{name}",
+        }
+    spec = OutputSpec.from_dict({
+        "container": container,
+        "shard_length": resolved_shard_length,
+        "short_policy": "keep",
+        "presence_mask": True,
+        "modalities": modalities,
+        "vocabs": categorical_vocabs,
+    })
+    out = str(out).rstrip("/")
+    if not out:
+        raise ValueError("out must be a non-empty path")
+    if exists(f"{out}/dataset_manifest.json") and not force:
+        raise FileExistsError(
+            f"output {out!r} already contains a Kuration dataset; pass force=True to replace it"
+        )
+    begin_dataset(out)
+    entries = []
+    for track in tracks:
+        entries.extend(write_track(
+            out,
+            track,
+            spec,
+            schema=schema,
+            split=split,
+            media_provider=getattr(adapter, "provider", None),
+            registry=getattr(pipeline, "_registry", None),
+        ))
+
+    results = {
+        "shards": len(entries),
+        "sources": len(paths),
+        "tracks": len(tracks),
+        "steps": sum(track.n_steps for track in tracks),
+        "ticks": tick_count,
+        "sources_skipped": 0,
+    }
+    signature_payload = {
+        "kind": "adapter-tick-import",
+        "adapter": adapter_name,
+        "sources": source_records,
+        "schema": schema.to_dict(),
+        "output": spec.to_dict(),
+        "split": split,
+    }
+    fingerprint = hashlib.sha256(json.dumps(
+        signature_payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()).hexdigest()
+    config = {
+        "artifact_format_version": ARTIFACT_FORMAT_VERSION,
+        "schema": schema.to_dict(),
+        "output": spec.to_dict(),
+        "results": results,
+        "import": {
+            "adapter": adapter_name,
+            "mode": "ticks",
+            "sources": source_records,
+        },
+        "provenance": {"kind": "import", "fingerprint": fingerprint},
+        "errors": [],
+    }
+    write_text(
+        f"{out}/dataset_manifest.json",
+        json.dumps({
+            "artifact_format_version": ARTIFACT_FORMAT_VERSION,
+            "commit_protocol": "sidecar-v1",
+            "count": len(entries),
+            "shards": portable_shard_entries(out, entries),
+        }, indent=2),
+    )
+    write_text(f"{out}/config.json", json.dumps(config, indent=2))
+    commit_dataset(out)
+    return {
+        "dataset": out,
+        "adapter": adapter_name,
+        **results,
+        "modalities": sorted([*modalities, "_present"]),
+    }
+
+
+def import_dataset(
+    sources: Sequence[str | Path] | str | Path,
+    out: str | Path,
+    *,
+    adapter: str | None = None,
+    schema=None,
+    fields: Mapping[str, Any] | None = None,
+    time: str | None = None,
+    entity: str | None = None,
+    hz: float | None = None,
+    kinds: Mapping[str, str] | None = None,
+    adapter_options: Mapping[str, Any] | None = None,
+    source_id: str | None = None,
+    split: str = "train",
+    shard_length: int | None = None,
+    container: str = "npz",
+    force: bool = False,
+    registry=None,
+) -> dict:
+    """Detect a registered adapter and import all of its data into Kuration.
+
+    Array adapters can expose ``import_arrays(source)`` for shape/dtype-preserving tensor
+    import. Other adapters are constructed through the ordinary :func:`kuration.input` path,
+    including its conservative schema and field-mapping inference.
+    """
+    raw_sources = [sources] if isinstance(sources, (str, Path)) else list(sources)
+    if not raw_sources:
+        raise ValueError("import_dataset needs at least one source")
+    if adapter is not None and (not isinstance(adapter, str) or not adapter):
+        raise ValueError("adapter must be a non-empty registered name or None")
+    if fields is not None and not isinstance(fields, Mapping):
+        raise ValueError("fields must be a mapping or None")
+    if kinds is not None and not isinstance(kinds, Mapping):
+        raise ValueError("kinds must be a mapping or None")
+    if adapter_options is not None and not isinstance(adapter_options, Mapping):
+        raise ValueError("adapter_options must be a mapping or None")
+    if shard_length is not None and (
+        not isinstance(shard_length, int)
+        or isinstance(shard_length, bool)
+        or shard_length < 1
+    ):
+        raise ValueError("shard_length must be a positive integer or None")
+    if not isinstance(force, bool):
+        raise ValueError("force must be true or false")
+    split = _safe_split(split)
+    schema = _load_schema(schema)
+
+    from .adapters.base import detect_adapter
+    from .plugins import load_plugins
+    from .registry import default_registry
+
+    active_registry = registry or default_registry
+    if active_registry is default_registry:
+        load_plugins()
+
+    # A directory of episode NPZ files is a convenient multi-source input even though an NPZ
+    # adapter itself recognizes files rather than directories.
+    directory_npz = (
+        adapter in {None, "npz"}
+        and all(not is_remote(str(item)) and Path(item).is_dir() for item in raw_sources)
+        and all(list(Path(item).rglob("*.npz")) for item in raw_sources)
+    )
+    paths = (
+        _discover_npz_sources(raw_sources)
+        if directory_npz
+        else [str(item) for item in raw_sources]
+    )
+    if adapter is None:
+        detected = {path: detect_adapter(path, registry=active_registry) for path in paths}
+        if len(set(detected.values())) != 1:
+            raise ValueError(
+                f"import sources resolve to different adapters {detected}; import each format "
+                "separately or pass adapter= explicitly"
+            )
+        adapter_name = next(iter(detected.values()))
+    else:
+        adapter_name = adapter
+        if adapter_name not in active_registry.names("adapter"):
+            raise ValueError(
+                f"unknown adapter {adapter_name!r}; registered: "
+                f"{active_registry.names('adapter')}"
+            )
+    if adapter_name == "curated":
+        raise ValueError(
+            "source is already a Kuration dataset; use it directly with kur-inspect/kur-check"
+        )
+
+    factory = active_registry.get("adapter", adapter_name)
+    array_loader = getattr(factory, "import_arrays", None)
+    if callable(array_loader) and schema is None and not fields and not adapter_options:
+        return _import_array_dataset(
+            paths,
+            out,
+            adapter_name=adapter_name,
+            factory=factory,
+            source_id=source_id,
+            split=split,
+            shard_length=shard_length,
+            container=container,
+            force=force,
+        )
+
+    from .pipeline import input as open_input
+
+    options = dict(adapter_options or {})
+    auto_pipeline_adapters = {
+        "timeseries", "jsonl", "npz", "hdf5", "parquet-dataset", "zarr"
+    }
+    if adapter is None and adapter_name in auto_pipeline_adapters:
+        source_arg: Any = paths[0] if len(paths) == 1 else paths
+        pipeline = open_input(
+            source_arg,
+            schema=schema,
+            fields=dict(fields) if fields is not None else None,
+            time=time,
+            entity=entity,
+            hz=hz,
+            kinds=dict(kinds) if kinds is not None else None,
+            registry=active_registry,
+            **options,
+        )
+    else:
+        if schema is None:
+            raise ValueError(
+                f"explicit or plugin adapter {adapter_name!r} needs schema= because its "
+                "construction parameters cannot be inferred generically"
+            )
+        pipeline = open_input(
+            adapter=adapter_name,
+            sources=paths,
+            schema=schema,
+            fields=dict(fields) if fields is not None else None,
+            registry=active_registry,
+            **options,
+        )
+    return _import_tick_dataset(
+        pipeline,
+        out,
+        adapter_name=adapter_name,
+        source_id=source_id,
+        split=split,
+        shard_length=shard_length,
+        container=container,
+        force=force,
+    )

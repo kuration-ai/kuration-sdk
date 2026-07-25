@@ -325,7 +325,7 @@ with a modality whose source is `media:frame`; no custom encoder is required.
 kur-curate     job.json                  # sources -> hours-budget shards
 kur-experiment job.json --out cmp.json   # add "arms": [...] + "target_size" to compare strategies
 kur-report     job.json --out rep.json   # profile metric distributions (no selection)
-kur-import     tensors.npz --out out/raw # lossless conversion, with no selection
+kur-import     SOURCE --out out/raw       # detected-adapter conversion, with no selection
 ```
 
 ## 16 · Curate a CSV/JSON in one chain (fluent pipeline, no explicit schema)

@@ -195,3 +195,54 @@ def get_adapter(name: str, *, registry=None, **kwargs) -> InputAdapter:
         from ..plugins import load_plugins
         load_plugins()
     return active_registry.get("adapter", name)(**kwargs)
+
+
+def detect_adapter(source_uri: str, *, registry=None) -> str:
+    """Return the uniquely highest-confidence registered adapter for a source.
+
+    Adapter factories may expose ``detect_source(uri) -> bool | number``. A numeric result is
+    a confidence score; ``True`` is score 1 and falsey values mean no match. Detection is
+    intentionally separate from construction because many adapters need inferred schema and
+    mapping parameters before they can be instantiated.
+    """
+    from ..registry import default_registry
+
+    active_registry = registry or default_registry
+    if active_registry is default_registry:
+        from ..plugins import load_plugins
+
+        load_plugins()
+    matches: list[tuple[float, str]] = []
+    for name in active_registry.names("adapter"):
+        factory = active_registry.get("adapter", name)
+        detector = getattr(factory, "detect_source", None)
+        if not callable(detector):
+            continue
+        confidence = detector(str(source_uri))
+        if isinstance(confidence, bool):
+            score = 1.0 if confidence else 0.0
+        elif isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+            score = float(confidence)
+        else:
+            raise ValueError(
+                f"adapter {name!r} detect_source() must return a boolean or number"
+            )
+        if not np.isfinite(score) or score < 0:
+            raise ValueError(
+                f"adapter {name!r} detect_source() returned invalid confidence {score!r}"
+            )
+        if score > 0:
+            matches.append((score, name))
+    if not matches:
+        raise ValueError(
+            f"no registered input adapter recognized {source_uri!r}; "
+            "pass adapter= explicitly or install/register a matching adapter"
+        )
+    best = max(score for score, _name in matches)
+    winners = sorted(name for score, name in matches if score == best)
+    if len(winners) > 1:
+        raise ValueError(
+            f"input adapter detection for {source_uri!r} is ambiguous at confidence "
+            f"{best:g}: {winners}; pass adapter= explicitly"
+        )
+    return winners[0]
