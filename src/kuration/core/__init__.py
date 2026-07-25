@@ -85,7 +85,14 @@ from .media import FrameRef, MediaProvider, PyAVMediaProvider, VideoMetadata
 from .transforms import (BatchTransform, TransformContext, apply_transforms,
                          apply_transforms_to_windows, get_transform,
                          register_batch_transform, register_transform)
-from .analyzers import Analyzer, SplitLeakageAnalyzer, get_analyzer, register_analyzer
+from .analyzers import (
+    Analyzer,
+    DatasetAnalyzer,
+    SplitLeakageAnalyzer,
+    get_analyzer,
+    register_analyzer,
+    run_dataset_analyzer,
+)
 from .execution import (ExecutionBackend, LocalExecutionBackend, RayExecutionBackend,
                         ResourceSpec, get_execution_backend)
 from .planning import (OperatorResources, OperatorTraits, PhysicalOperator, PhysicalPlan,
@@ -125,7 +132,8 @@ __all__ = [
     "BatchTransform", "TransformContext", "register_batch_transform", "register_transform",
     "get_transform",
     "apply_transforms", "apply_transforms_to_windows",
-    "Analyzer", "SplitLeakageAnalyzer", "register_analyzer", "get_analyzer",
+    "Analyzer", "DatasetAnalyzer", "SplitLeakageAnalyzer", "register_analyzer",
+    "get_analyzer", "run_dataset_analyzer",
     "ExecutionBackend", "LocalExecutionBackend", "RayExecutionBackend", "ResourceSpec",
     "get_execution_backend",
     "OperatorResources", "OperatorTraits", "PhysicalOperator", "PhysicalStage",

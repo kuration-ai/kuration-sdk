@@ -19,6 +19,13 @@ class Analyzer(Protocol):
     def summary(self) -> Any: ...
 
 
+@runtime_checkable
+class DatasetAnalyzer(Analyzer, Protocol):
+    """Optional contract for analyzers that can be driven by ``kur-check``."""
+
+    def check_dataset(self, dataset: Any, **options: Any) -> Mapping[str, Any]: ...
+
+
 def register_analyzer(name: str, factory: Callable | None = None, **metadata):
     """Register a discoverable analyzer factory, directly or as a decorator."""
 
@@ -56,6 +63,43 @@ def get_analyzer(name: str, *, registry=None, **params) -> Analyzer:
             f"analyzer {name!r} factory must return an object with a callable summary()"
         )
     return analyzer
+
+
+def run_dataset_analyzer(
+    name: str,
+    dataset: Any,
+    *,
+    parameters: Mapping[str, Any] | None = None,
+    options: Mapping[str, Any] | None = None,
+    registry=None,
+) -> dict:
+    """Construct and run a CLI-compatible analyzer against a written dataset.
+
+    Analyzer construction parameters and dataset-driving options are deliberately separate:
+    the former are validated against the registered descriptor, while the latter belong to
+    the analyzer's ``check_dataset`` hook (for example, action-state modality names).
+    """
+    if parameters is not None and not isinstance(parameters, Mapping):
+        raise ValueError("analyzer parameters must be a JSON object")
+    if options is not None and not isinstance(options, Mapping):
+        raise ValueError("analyzer options must be a JSON object")
+    analyzer = get_analyzer(name, registry=registry, **dict(parameters or {}))
+    if not isinstance(analyzer, DatasetAnalyzer):
+        raise ValueError(
+            f"analyzer {name!r} cannot run on kur-check because it has no callable "
+            "check_dataset(dataset, **options) hook"
+        )
+    raw = analyzer.check_dataset(dataset, **dict(options or {}))
+    if not isinstance(raw, Mapping):
+        raise ValueError(f"analyzer {name!r} check_dataset() must return a mapping")
+    result = dict(raw)
+    if not isinstance(result.get("passed"), bool):
+        raise ValueError(
+            f"analyzer {name!r} check_dataset() must return a boolean 'passed' field"
+        )
+    result.setdefault("summary", analyzer.summary())
+    result["name"] = name
+    return result
 
 
 SPLIT_LEAKAGE_PARAMETERS = {
@@ -167,6 +211,31 @@ class SplitLeakageAnalyzer:
             "group_leaks": group_leaks,
             "source_group_conflicts": source_group_conflicts,
         }
+
+    def check_dataset(self, dataset, **options) -> dict:
+        """Audit the source/split assignments recorded in a curated manifest."""
+        if options:
+            raise ValueError(
+                f"kuration/split-leakage does not accept dataset options: {sorted(options)}"
+            )
+        from .loaders import shard_entries
+
+        entries, _container = shard_entries(dataset)
+        for entry in entries:
+            source_id = entry.get("source_id")
+            split = entry.get("split")
+            if source_id is None or split is None:
+                raise ValueError(
+                    "split-leakage needs every manifest shard to contain source_id and split"
+                )
+            group = entry.get("group")
+            self.add_assignment(
+                str(source_id),
+                str(split),
+                group=None if group is None else str(group),
+            )
+        summary = self.summary()
+        return {"passed": summary["passed"], "summary": summary}
 
 
 @register_analyzer(

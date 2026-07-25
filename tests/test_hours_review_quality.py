@@ -89,6 +89,34 @@ def test_kur_check_artifact_policy_pass_and_fail(tmp_path):
     assert inspect_dataset(destination).sources == 1
 
 
+def test_kur_check_can_run_dataset_analyzer_without_quality_policy(tmp_path):
+    destination = tmp_path / "dataset"
+    destination.mkdir()
+    (destination / "config.json").write_text(json.dumps({"output": {"container": "npz"}}))
+    (destination / "dataset_manifest.json").write_text(json.dumps({
+        "shards": [
+            {"path": "train/a.npz", "source_id": "clip-1", "split": "train"},
+            {"path": "test/b.npz", "source_id": "clip-1", "split": "test"},
+        ]
+    }))
+
+    command = [
+        sys.executable,
+        "-m",
+        "kuration.core.cli.check",
+        str(destination),
+        "--analyzer",
+        "kuration/split-leakage",
+        "--json",
+    ]
+    failed = subprocess.run(command, check=False, capture_output=True, text=True)
+
+    assert failed.returncode == 2
+    result = json.loads(failed.stdout)
+    assert result["name"] == "kuration/split-leakage"
+    assert result["passed"] is False
+
+
 def test_quality_policy_rejects_unknown_or_invalid_expectations():
     with pytest.raises(ValueError, match="unknown quality"):
         _pipeline().expect(perfect=True)

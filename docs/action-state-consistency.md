@@ -137,6 +137,25 @@ print(checker.summary())        # {"consistent": [...], "inconsistent": [...], "
 print(checker.clip_verdict("clip_042"))  # "consistent" | "inconsistent" | "inconclusive"
 ```
 
+### Running on a curated dataset from the CLI
+
+If a written dataset contains frame and DIAMOND-action modalities, the same analyzer can be
+driven by `kur-check`. Put the analyzer parameters shown above in `action-state.json`:
+
+```bash
+kur-check out/gameplay \
+  --analyzer aintropy/action-state-consistency \
+  --analyzer-config action-state.json \
+  --json
+```
+
+The default modality names are `frames` and `actions`. For different names, create an input
+options file such as `{"frames": "video", "actions": "input", "controls": ["W", "S"]}` and pass
+it with `--analyzer-options`. Each shard is measured independently so selected spans are not
+silently joined; verdicts are still aggregated by the manifest's `source_id`. An inconsistent
+clip makes the analyzer check fail with exit code 2, while inconclusive clips remain visible in
+the result without being treated as inconsistent.
+
 `action_state_checker()` delegates to the registered
 `aintropy/action-state-consistency` analyzer, preserving discovery and parameter validation.
 `kuration.get_analyzer("aintropy/action-state-consistency", **config)` remains available for

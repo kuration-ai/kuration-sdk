@@ -5,6 +5,10 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+- Added artifact-level analyzer execution to `kur-check`, with separate JSON construction
+  parameters and dataset options, composable quality-gate output, and exit-code-2 verdicts.
+  Action-state consistency can now read configurable frame/action modalities from curated
+  shards, while split leakage can audit assignments directly from a dataset manifest.
 - Added unified lifecycle stats for pipelines, curated selections, write results, and existing
   dataset artifacts. Reports render directly in notebooks, can be saved as standalone HTML, and
   offer optional Matplotlib plots through the `stats` extra; artifact stats inspect the actual

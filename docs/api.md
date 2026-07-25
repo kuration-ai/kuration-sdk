@@ -228,12 +228,14 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `register_filter` | `(name, fn, **metadata) -> None` | register a pre-pass filter |
 | `register_operator` | `(name, fn=None, **metadata)` | register a `(pipeline, **params) -> Pipeline` composition directly or as a decorator |
 | `Analyzer` | protocol requiring `summary()` | user-owned stateful direct-API analysis result |
+| `DatasetAnalyzer` | protocol requiring `summary()` and `check_dataset(dataset, **options)` | optional analyzer contract for artifact-level `kur-check` execution |
 | `SplitLeakageAnalyzer` | `(*, check_groups=True)` | built-in source/group split auditor; `check_groups=False` suppresses group leakage and conflict checks, but never source checks |
 | `SplitLeakageAnalyzer.add_assignment` | `(source_id, split, *, group=None) -> None` | record one observation; repeating the same assignment is allowed |
 | `SplitLeakageAnalyzer.add_assignments` | `(source_splits, *, source_groups=None) -> None` | record a `{source_id: split}` mapping and optional `{source_id: group}` mapping |
 | `SplitLeakageAnalyzer.summary` | `() -> dict` | return the deterministic, JSON-safe leakage report described below |
 | `register_analyzer` | `(name, factory=None, **metadata)` | register a discoverable analyzer factory directly or as a decorator |
 | `get_analyzer` | `(name, *, registry=None, **params) -> Analyzer` | validate parameters and construct a user-owned analyzer instance |
+| `run_dataset_analyzer` | `(name, dataset, *, parameters=None, options=None, registry=None) -> dict` | construct a dataset-capable analyzer, run its hook, and validate the boolean `passed` result |
 
 `SplitLeakageAnalyzer` requires `source_id`, `split`, and each supplied `group` to be non-empty
 strings; `group=None` means that no group is known. Split names are not limited to train/test, so

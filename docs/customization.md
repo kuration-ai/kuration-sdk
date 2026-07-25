@@ -72,7 +72,10 @@ result = checker.summary()
 
 Analyzers are discoverable with `kur-list analyzers` and `kur-describe analyzer ...`, but are
 not implicit pipeline stages. Keeping lifecycle ownership explicit prevents worker-local state
-from being mistaken for a dataset-wide result.
+from being mistaken for a dataset-wide result. An analyzer may optionally implement
+`check_dataset(dataset, **options)` and return a mapping with a boolean `passed` field; that
+explicit artifact-level hook makes it runnable through
+`kur-check DATASET --analyzer NAME [--analyzer-config PATH] [--analyzer-options PATH]`.
 
 The SDK includes `kuration/split-leakage` for auditing existing or imported split assignments.
 It accepts repeated observations (for example, many segments from one clip), detects a source

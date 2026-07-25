@@ -7,12 +7,14 @@ import sys
 import pytest
 
 from kuration import (
+    DatasetAnalyzer,
     Registry,
     SplitLeakageAnalyzer,
     describe_component,
     get_analyzer,
     list_components,
     register_analyzer,
+    run_dataset_analyzer,
 )
 
 
@@ -177,6 +179,28 @@ def test_split_leakage_accepts_sdk_style_assignment_mappings():
         analyzer.add_assignments(
             {"clip-1": "train"}, source_groups={"unknown": "session-3"}
         )
+
+
+def test_dataset_analyzer_contract_runs_split_leakage_manifest(tmp_path):
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    (dataset / "config.json").write_text(json.dumps({"output": {"container": "npz"}}))
+    (dataset / "dataset_manifest.json").write_text(json.dumps({
+        "shards": [
+            {"path": "train/a.npz", "source_id": "clip-1", "split": "train"},
+            {"path": "test/b.npz", "source_id": "clip-1", "split": "test"},
+        ]
+    }))
+
+    analyzer = SplitLeakageAnalyzer()
+    assert isinstance(analyzer, DatasetAnalyzer)
+    result = run_dataset_analyzer("kuration/split-leakage", dataset)
+
+    assert result["passed"] is False
+    assert result["name"] == "kuration/split-leakage"
+    assert result["summary"]["source_leaks"] == [
+        {"source_id": "clip-1", "splits": ["test", "train"]},
+    ]
 
 
 @pytest.mark.parametrize(

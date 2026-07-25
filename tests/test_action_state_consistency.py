@@ -4,12 +4,14 @@ aggregation. OpenCV remains an optional SDK extra for optical-flow execution.
 """
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
 pytest.importorskip("cv2")
 
-from kuration import get_analyzer
+from kuration import ARTIFACT_FORMAT_VERSION, get_analyzer, run_dataset_analyzer
 from kuration.gameplay import action_state_consistency as asc
 from kuration.gameplay.action_state_consistency import (
     ActionStateConsistencyChecker,
@@ -312,3 +314,50 @@ def test_print_report_includes_violation_detail_for_inconsistent_clips(capsys):
     assert "1 violation(s)" in out
     assert "W/1@frame1" in out  # control/cell_key@frame from the one recorded instance
     assert "shift=" in out
+
+
+def test_action_state_analyzer_runs_on_curated_dataset_modalities(tmp_path):
+    from kuration.core.output.containers import write_shard
+
+    dataset = tmp_path / "dataset"
+    (dataset / "train").mkdir(parents=True)
+    frames, actions = _w_tap_frames_and_actions()
+    shard = write_shard(
+        str(dataset / "train" / "clip"),
+        "npz",
+        {"video": frames, "input": actions},
+        len(actions),
+    )
+    (dataset / "config.json").write_text(json.dumps({
+        "artifact_format_version": ARTIFACT_FORMAT_VERSION,
+        "output": {"container": "npz"},
+    }))
+    (dataset / "dataset_manifest.json").write_text(json.dumps({
+        "artifact_format_version": ARTIFACT_FORMAT_VERSION,
+        "shards": [{
+            "path": "train/clip.npz",
+            "source_id": "clip1",
+            "entity_id": "0",
+            "split": "train",
+            "n_steps": len(actions),
+            "shape": {"video": list(frames.shape[1:]), "input": [actions.shape[1]]},
+            "dtype": {"video": str(frames.dtype), "input": str(actions.dtype)},
+        }],
+    }))
+    assert shard.endswith("clip.npz")
+
+    result = run_dataset_analyzer(
+        asc.ANALYZER_NAME,
+        dataset,
+        parameters={
+            "anomaly_type": "action_state",
+            "baselines": {
+                "W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1e9}},
+            },
+        },
+        options={"frames": "video", "actions": "input", "controls": ["W"]},
+    )
+
+    assert result["passed"] is True
+    assert result["shards_checked"] == 1
+    assert result["summary"]["consistent"] == ["clip1"]

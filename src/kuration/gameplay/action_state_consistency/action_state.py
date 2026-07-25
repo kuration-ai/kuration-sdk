@@ -165,6 +165,70 @@ class ActionStateConsistencyChecker(AnomalyChecker):
             ):
                 self.record_instance(source_id, control, cell_key, start_idx + local_start, shift)
 
+    def check_dataset(
+        self,
+        dataset,
+        *,
+        frames: str = "frames",
+        actions: str = "actions",
+        controls: Sequence[str] | None = None,
+        color_space: str = "BGR",
+        boundary: str = "exclude",
+        verify: bool = True,
+    ) -> dict:
+        """Run the analyzer over frame/action modalities in a curated dataset.
+
+        Each shard remains a separate measurement segment so unrelated selected spans are
+        never joined. Monotonic synthetic offsets keep evidence from different shards unique,
+        while the manifest ``source_id`` still supplies the clip-level aggregation key.
+        """
+        if not isinstance(frames, str) or not frames:
+            raise ValueError("frames must name a non-empty dataset modality")
+        if not isinstance(actions, str) or not actions:
+            raise ValueError("actions must name a non-empty dataset modality")
+        if not isinstance(verify, bool):
+            raise ValueError("verify must be true or false")
+        from kuration.core.loaders import iter_shards
+
+        offsets: dict[str, int] = {}
+        shards = 0
+        for arrays, entry in iter_shards(
+            dataset,
+            modalities=[frames, actions],
+            with_meta=True,
+            verify=verify,
+        ):
+            source_id = str(entry.get("source_id") or "")
+            if not source_id:
+                raise ValueError(
+                    f"manifest shard {entry.get('path')!r} has no non-empty source_id"
+                )
+            frame_values = arrays[frames]
+            action_values = arrays[actions]
+            if len(frame_values) != len(action_values):
+                raise ValueError(
+                    f"shard {entry.get('path')!r} has {len(frame_values)} {frames!r} rows "
+                    f"but {len(action_values)} {actions!r} rows"
+                )
+            start = offsets.get(source_id, 0)
+            end = start + len(action_values)
+            self.add_segment(
+                frame_values,
+                action_values,
+                (source_id, start, end),
+                controls=controls,
+                color_space=color_space,
+                boundary=boundary,
+            )
+            offsets[source_id] = end
+            shards += 1
+        summary = self.summary()
+        return {
+            "passed": not summary["inconsistent"],
+            "shards_checked": shards,
+            "summary": summary,
+        }
+
 
 def action_state_consistency(*, anomaly_type: str, baselines: dict):
     """Construct the discoverable, user-owned action-state analyzer."""

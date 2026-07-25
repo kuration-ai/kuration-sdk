@@ -13,7 +13,7 @@ kur-experiment job.json [--out cmp.json]   # experiment job -> per-arm JS-vs-bas
 kur-report     job.json [--out rep.json]   # report job -> metric distribution profile
 kur-inspect    DATASET [--verify] [--json] [--html PATH] # artifact summary/integrity check
 kur-diff       LEFT RIGHT [--verify] [--json] [--html PATH] # compare two artifacts
-kur-check      DATASET --policy POLICY [--verify] [--json] [--html PATH] # quality gates
+kur-check      DATASET [--policy POLICY] [--analyzer NAME] [--json] # gates/analyzers
 kur-list       KIND [--json]                  # list one plural component kind
 kur-plugin-check [ENTRY-POINT|MODULE] [--json] # validate plugin loading and descriptors
 kur-describe   KIND NAME [--json]             # inspect one component contract
@@ -24,7 +24,8 @@ kur-migrate    JOB_OR_CONFIG [--out PATH]     # migrate a versioned JSON documen
 `metrics`, `operators`, `presets`, `scorers`, and `transforms`. `kur-describe` accepts the
 corresponding singular or plural kind. Analyzers are discoverable here, but they are user-owned
 direct APIs rather than job-spec or implicit pipeline stages; construct one with
-`get_analyzer()` and drive its documented update methods in Python.
+`get_analyzer()` and drive its documented update methods in Python. An analyzer that also
+implements the dataset-check hook can run directly on a written artifact with `kur-check`.
 
 Every CLI accepts `--debug`: failures normally print a one-line `error: ...` and exit 1;
 `--debug` re-raises for the full traceback.
@@ -34,6 +35,24 @@ model: they take artifact paths or plugin names directly. The artifact commands 
 original jobs nor input sources. `kur-inspect` exits 2 when `--verify` finds a missing or corrupt
 shard; `kur-check` and `kur-plugin-check` exit 2 when a policy or plugin contract fails. A quality
 policy is a JSON object using the expectations listed in [usage.md](usage.md).
+
+`kur-check` accepts `--policy`, `--analyzer`, or both. Analyzer construction parameters and
+dataset-driving options are separate JSON objects:
+
+```bash
+kur-check out/candidate \
+  --analyzer aintropy/action-state-consistency \
+  --analyzer-config action-state.json \
+  --analyzer-options action-state-input.json \
+  --json
+```
+
+Here `action-state.json` contains the ordinary `anomaly_type` and `baselines` parameters.
+`action-state-input.json` may select `frames`, `actions`, `controls`, `color_space`, `boundary`,
+and `verify`. The default modality names are `frames` and `actions`. When both a policy and an
+analyzer are supplied, the JSON result contains `quality` and `analyzer` members and either
+failure produces exit code 2. `--html` currently renders quality-policy results and therefore
+requires `--policy`.
 
 The job **kind** is inferred: `arms` present → experiment; `output`/`train_hours` present →
 curate; otherwise → report.
