@@ -274,7 +274,7 @@ def _field_window(ticks, field, schema):
         # Numeric entity fields always use (T,E,D), including a one-entity scalar field.
         return build_window(schema, list(ticks)).numeric_field(field)
 
-    roster = {}
+    roster: dict[Any, int] = {}
     for tick in ticks:
         for entity in tick.entities:
             roster.setdefault(entity, len(roster))
