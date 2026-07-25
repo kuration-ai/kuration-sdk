@@ -120,7 +120,7 @@ are grouped below by user task.
   `register_operator`, `Analyzer`, `DatasetAnalyzer`, `SplitLeakageAnalyzer`,
   `register_analyzer`, `get_analyzer`, `run_dataset_analyzer`.
 - Manifests and I/O: `build_config`, `dump_segment_manifest`, `write_config`, `read_text`,
-  `write_text`, `write_bytes`, `exists`, `local_copy`.
+  `write_text`, `write_bytes`, `exists`, `local_copy`, `import_dataset`.
 - Versioning and migration: `__version__`, `ARTIFACT_FORMAT_VERSION`, `JOB_SCHEMA_VERSION`, `migrate`,
   `migrate_job`, `migrate_config`.
 
@@ -164,6 +164,7 @@ The installed commands are public end-user interfaces:
 
 - Run and analyze: `kur-curate`, `kur-experiment`, `kur-report`.
 - Validate and inspect: `kur-validate`, `kur-explain`, `kur-inspect`, `kur-diff`, `kur-check`.
+- Import existing tensor data: `kur-import`.
 - Discover extensions: `kur-list`, `kur-describe`, `kur-plugin-check`.
 - Reconstruct and curate SLAM data: `kur-slam`.
 - Upgrade documents: `kur-migrate`.

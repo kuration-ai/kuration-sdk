@@ -50,6 +50,7 @@ from .infer import infer_schema
 from .io import exists, local_copy, read_text, write_bytes, write_text
 from .loaders import iter_shards, read_shard_arrays, shard_entries
 from .inspection import compare_datasets, inspect_dataset
+from .importing import import_dataset
 from .html_report import render_html_report, write_html_report
 from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities, register_filter
@@ -154,6 +155,7 @@ __all__ = [
     "Container", "register_container", "output_preset", "register_preset",
     "iter_shards", "read_shard_arrays", "shard_entries",
     "inspect_dataset", "DatasetInspection", "compare_datasets", "DatasetComparison",
+    "import_dataset",
     "preview_dataset", "DatasetPreview", "selection_review", "SelectionReview",
     "hours_selection_review", "HoursSelectionReview",
     "evaluate_quality", "check_quality", "validate_expectations",

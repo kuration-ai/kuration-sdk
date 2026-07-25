@@ -236,6 +236,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `register_analyzer` | `(name, factory=None, **metadata)` | register a discoverable analyzer factory directly or as a decorator |
 | `get_analyzer` | `(name, *, registry=None, **params) -> Analyzer` | validate parameters and construct a user-owned analyzer instance |
 | `run_dataset_analyzer` | `(name, dataset, *, parameters=None, options=None, registry=None) -> dict` | construct a dataset-capable analyzer, run its hook, and validate the boolean `passed` result |
+| `import_dataset` | `(sources, out, *, source_id=None, split="train", shard_length=None, container="npz", force=False) -> dict` | losslessly import one or more NPZ files (or directories of them) into a committed Kuration artifact |
 
 `SplitLeakageAnalyzer` requires `source_id`, `split`, and each supplied `group` to be non-empty
 strings; `group=None` means that no group is known. Split names are not limited to train/test, so

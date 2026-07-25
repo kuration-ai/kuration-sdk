@@ -1,0 +1,285 @@
+"""Lossless import of array datasets into Kuration's artifact format."""
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+from typing import Any, Sequence
+
+import numpy as np
+
+from .io import exists, file_integrity, is_remote, local_copy, write_text
+from .manifest import (
+    begin_dataset,
+    commit_dataset,
+    portable_shard_entries,
+)
+from .output.containers import write_shard
+from .output.shardwriter import _safe_split, entity_id_token, track_name
+from .output.spec import OutputSpec
+from .provenance import source_descriptor
+from .versioning import ARTIFACT_FORMAT_VERSION
+
+
+def _discover_npz_sources(sources: Sequence[str | Path]) -> list[str]:
+    discovered: list[str] = []
+    for raw in sources:
+        source = str(raw)
+        if is_remote(source):
+            if not source.lower().endswith(".npz"):
+                raise ValueError(f"remote import source must be an .npz file, got {source!r}")
+            discovered.append(source)
+            continue
+        path = Path(source)
+        if path.is_dir():
+            discovered.extend(str(candidate) for candidate in sorted(path.rglob("*.npz")))
+        elif path.is_file() and path.suffix.lower() == ".npz":
+            discovered.append(str(path))
+        elif not path.exists():
+            raise FileNotFoundError(f"import source not found: {source}")
+        else:
+            raise ValueError(f"import source must be an .npz file or directory, got {source!r}")
+    unique = list(dict.fromkeys(discovered))
+    if not unique:
+        raise ValueError("no .npz files found in the import sources")
+    return unique
+
+
+def _source_name(path: str) -> str:
+    clean = path.rstrip("/").rsplit("/", 1)[-1]
+    return clean[:-4] if clean.lower().endswith(".npz") else clean
+
+
+def _load_npz(path: str) -> tuple[dict[str, np.ndarray], int]:
+    with local_copy(path) as local:
+        try:
+            with np.load(local, allow_pickle=False) as archive:
+                arrays = {
+                    name: np.asarray(archive[name])
+                    for name in archive.files
+                    if name != "_n_steps"
+                }
+                raw_n_steps = (
+                    np.asarray(archive["_n_steps"]) if "_n_steps" in archive.files else None
+                )
+        except ValueError as error:
+            raise ValueError(
+                f"cannot safely import {path!r}; object arrays and pickled values are unsupported"
+            ) from error
+    if not arrays:
+        raise ValueError(f"import source {path!r} contains no arrays")
+    for name, array in arrays.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"import source {path!r} has an invalid empty array name")
+        if array.ndim < 1:
+            raise ValueError(
+                f"import source {path!r} array {name!r} needs a leading row dimension"
+            )
+        if array.dtype.hasobject or array.dtype.fields is not None:
+            raise ValueError(
+                f"import source {path!r} array {name!r} uses unsupported dtype {array.dtype}"
+            )
+    lengths = {name: int(array.shape[0]) for name, array in arrays.items()}
+    if len(set(lengths.values())) != 1:
+        raise ValueError(f"import source {path!r} arrays disagree on row count: {lengths}")
+    stored_rows = next(iter(lengths.values()))
+    if raw_n_steps is None:
+        n_steps = stored_rows
+    else:
+        if raw_n_steps.ndim != 0 or raw_n_steps.dtype.kind not in "iu":
+            raise ValueError(f"import source {path!r} _n_steps must be an integer scalar")
+        n_steps = int(raw_n_steps)
+        if not 0 <= n_steps <= stored_rows:
+            raise ValueError(
+                f"import source {path!r} _n_steps={n_steps} is outside [0, {stored_rows}]"
+            )
+    if n_steps == 0:
+        raise ValueError(f"import source {path!r} has no rows")
+    return {name: array[:n_steps] for name, array in arrays.items()}, n_steps
+
+
+def _contract(arrays: dict[str, np.ndarray]) -> dict[str, dict[str, Any]]:
+    return {
+        name: {"shape": list(array.shape[1:]), "dtype": str(array.dtype)}
+        for name, array in sorted(arrays.items())
+    }
+
+
+def import_dataset(
+    sources: Sequence[str | Path] | str | Path,
+    out: str | Path,
+    *,
+    source_id: str | None = None,
+    split: str = "train",
+    shard_length: int | None = None,
+    container: str = "npz",
+    force: bool = False,
+) -> dict:
+    """Import one or more NPZ sources without selection or row loss.
+
+    A directory source is searched recursively for ``*.npz`` files. Every file becomes one
+    logical Kuration source and every NPZ array becomes a modality. Arrays must share a leading
+    row dimension and all source files must share one modality/shape/dtype contract.
+    """
+    raw_sources = [sources] if isinstance(sources, (str, Path)) else list(sources)
+    if not raw_sources:
+        raise ValueError("import_dataset needs at least one source")
+    paths = _discover_npz_sources(raw_sources)
+    if source_id is not None:
+        if len(paths) != 1:
+            raise ValueError("source_id can only be used when importing one .npz file")
+        if not isinstance(source_id, str) or not source_id:
+            raise ValueError("source_id must be a non-empty string")
+    if shard_length is not None and (
+        not isinstance(shard_length, int)
+        or isinstance(shard_length, bool)
+        or shard_length < 1
+    ):
+        raise ValueError("shard_length must be a positive integer or None")
+    if not isinstance(force, bool):
+        raise ValueError("force must be true or false")
+    split = _safe_split(split)
+    out = str(out).rstrip("/")
+    if not out:
+        raise ValueError("out must be a non-empty path")
+    if exists(f"{out}/dataset_manifest.json") and not force:
+        raise FileExistsError(
+            f"output {out!r} already contains a Kuration dataset; pass force=True to replace it"
+        )
+
+    source_ids = [source_id or _source_name(path) for path in paths]
+    if any(not name for name in source_ids):
+        raise ValueError("every import source must produce a non-empty source ID")
+    duplicates = sorted({name for name in source_ids if source_ids.count(name) > 1})
+    if duplicates:
+        raise ValueError(
+            f"import sources produce duplicate source IDs {duplicates}; rename the files "
+            "or import them separately with source_id="
+        )
+
+    begin_dataset(out)
+    entries: list[dict] = []
+    expected_contract = None
+    source_records = []
+    total_steps = 0
+    max_source_steps = 0
+    for path, current_source_id in zip(paths, source_ids):
+        source_before = source_descriptor(path, object())
+        arrays, n_steps = _load_npz(path)
+        source_after = source_descriptor(path, object())
+        if source_after != source_before:
+            raise ValueError(
+                f"import source {path!r} changed while it was being read; rerun against "
+                "an immutable snapshot"
+            )
+        current_contract = _contract(arrays)
+        if expected_contract is None:
+            expected_contract = current_contract
+        elif current_contract != expected_contract:
+            raise ValueError(
+                f"import source {path!r} has a different modality contract: "
+                f"expected {expected_contract}, got {current_contract}"
+            )
+        if "_present" in arrays:
+            present = arrays["_present"]
+            if present.shape != (n_steps,) or present.dtype != np.dtype("bool"):
+                raise ValueError(
+                    f"import source {path!r} _present must have shape ({n_steps},) and dtype bool"
+                )
+        candidate_modalities = {
+            name: {**values, "source": f"encoder:import_{name}"}
+            for name, values in current_contract.items()
+            if name != "_present"
+        }
+        if not candidate_modalities:
+            raise ValueError(f"import source {path!r} contains no data modalities")
+        OutputSpec.from_dict({
+            "container": container,
+            "shard_length": shard_length or n_steps,
+            "short_policy": "keep",
+            "presence_mask": "_present" in arrays,
+            "modalities": candidate_modalities,
+        })
+
+        width = shard_length or n_steps
+        basename = track_name(current_source_id, 0)
+        for shard_index, start in enumerate(range(0, n_steps, width)):
+            end = min(start + width, n_steps)
+            piece = {name: array[start:end] for name, array in arrays.items()}
+            base = f"{out}/{split}/{basename}_shard{shard_index:04d}"
+            written = write_shard(base, container, piece, end - start)
+            entries.append({
+                "path": written,
+                "source_id": current_source_id,
+                "entity_id": entity_id_token(0),
+                "split": split,
+                "shard_index": shard_index,
+                "n_steps": end - start,
+                "padded": False,
+                "shape": {
+                    name: values["shape"] for name, values in current_contract.items()
+                },
+                "dtype": {
+                    name: values["dtype"] for name, values in current_contract.items()
+                },
+                **file_integrity(written),
+            })
+        source_records.append(source_after)
+        total_steps += n_steps
+        max_source_steps = max(max_source_steps, n_steps)
+
+    expected_contract = expected_contract or {}
+    presence_mask = "_present" in expected_contract
+    modalities = {
+        name: {**values, "source": f"encoder:import_{name}"}
+        for name, values in expected_contract.items()
+        if name != "_present"
+    }
+    results = {
+        "shards": len(entries),
+        "sources": len(paths),
+        "steps": total_steps,
+        "sources_skipped": 0,
+    }
+    fingerprint_payload = json.dumps(
+        {
+            "kind": "npz-import",
+            "sources": source_records,
+            "container": container,
+            "split": split,
+            "shard_length": shard_length,
+            "modalities": modalities,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    config = {
+        "artifact_format_version": ARTIFACT_FORMAT_VERSION,
+        "output": {
+            "container": container,
+            "shard_length": shard_length or max_source_steps,
+            "short_policy": "keep",
+            "presence_mask": presence_mask,
+            "modalities": modalities,
+        },
+        "results": results,
+        "import": {"format": "npz", "sources": source_records},
+        "provenance": {
+            "kind": "import",
+            "fingerprint": hashlib.sha256(fingerprint_payload).hexdigest(),
+        },
+        "errors": [],
+    }
+    portable = portable_shard_entries(out, entries)
+    write_text(
+        f"{out}/dataset_manifest.json",
+        json.dumps({
+            "artifact_format_version": ARTIFACT_FORMAT_VERSION,
+            "commit_protocol": "sidecar-v1",
+            "count": len(entries),
+            "shards": portable,
+        }, indent=2),
+    )
+    write_text(f"{out}/config.json", json.dumps(config, indent=2))
+    commit_dataset(out)
+    return {"dataset": out, **results, "modalities": sorted(expected_contract)}

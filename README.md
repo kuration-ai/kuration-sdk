@@ -135,6 +135,13 @@ kur-diff out/training-v0 out/training-v1
 kur-check out/training-v1 --policy quality.json
 ```
 
+Already have tensor arrays in NPZ files? Import them losslessly without a strategy or selection:
+
+```bash
+kur-import gameplay.npz --out out/gameplay
+kur-inspect out/gameplay --verify
+```
+
 - Selection is deterministic across supported worker counts and executors.
 - `resume=True` reuses a shard only when its prior byte size and SHA-256 still match.
 - Jobs, artifact formats, and installed components are versioned and fail loudly when

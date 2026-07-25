@@ -14,6 +14,7 @@ kur-report     job.json [--out rep.json]   # report job -> metric distribution p
 kur-inspect    DATASET [--verify] [--json] [--html PATH] # artifact summary/integrity check
 kur-diff       LEFT RIGHT [--verify] [--json] [--html PATH] # compare two artifacts
 kur-check      DATASET [--policy POLICY] [--analyzer NAME] [--json] # gates/analyzers
+kur-import     SOURCE... --out DATASET [--shard-length N] [--json] # lossless NPZ import
 kur-list       KIND [--json]                  # list one plural component kind
 kur-plugin-check [ENTRY-POINT|MODULE] [--json] # validate plugin loading and descriptors
 kur-describe   KIND NAME [--json]             # inspect one component contract
@@ -53,6 +54,28 @@ and `verify`. The default modality names are `frames` and `actions`. When both a
 analyzer are supplied, the JSON result contains `quality` and `analyzer` members and either
 failure produces exit code 2. `--html` currently renders quality-policy results and therefore
 requires `--policy`.
+
+## Lossless NPZ import
+
+`kur-import` wraps existing NumPy tensor datasets as Kuration artifacts without scoring,
+selection, resampling, or row loss:
+
+```bash
+kur-import gameplay.npz --out out/gameplay
+kur-import episodes/ --out out/gameplay --shard-length 4096
+```
+
+Each input `.npz` file becomes one logical source, named from its filename. A directory is
+searched recursively for `.npz` files. Every array becomes a modality and must share the same
+leading row dimension; multiple files must have identical modality names, per-row shapes, and
+dtypes. By default each file remains one shard, which avoids introducing artificial boundaries
+for sequence analyzers. Use `--shard-length` when bounded shard sizes matter more.
+
+Use `--source-id ID` to override the ID for a single file, `--split NAME` to select the manifest
+split, and `--container` to choose `npz`, `json`, `hdf5`, or `parquet`. Existing Kuration output
+is protected unless `--force` is explicit. Object/pickled arrays, structured dtypes, scalar
+arrays, empty inputs, and cross-file contract drift fail before publication. The generated
+artifact works with `kur-inspect`, `kur-check`, `iter_shards()`, and curated-dataset adapters.
 
 The job **kind** is inferred: `arms` present → experiment; `output`/`train_hours` present →
 curate; otherwise → report.

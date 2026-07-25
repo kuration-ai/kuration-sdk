@@ -152,6 +152,7 @@ kur-explain = "kuration.core.cli.explain:main"
 kur-inspect = "kuration.core.cli.inspect:main"
 kur-diff = "kuration.core.cli.diff:main"
 kur-check = "kuration.core.cli.check:main"
+kur-import = "kuration.core.cli.import_dataset:main"
 kur-plugin-check = "kuration.core.cli.plugin_check:main"
 kur-slam = "kuration.gameplay.slam.cli:main"
 
