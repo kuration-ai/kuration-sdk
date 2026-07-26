@@ -73,6 +73,7 @@ def main() -> None:
             from ..html_report import write_html_report
             write_html_report(args.html, report, gates, title="kuration quality check")
         if args.json:
+            rendered: object
             if gates is not None and analyzer_result is not None:
                 rendered = {"quality": gates.to_dict(), "analyzer": analyzer_result}
             elif gates is not None:
