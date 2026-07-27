@@ -73,7 +73,7 @@ def migration_notes(value: Any, *, kind: str = "artifact") -> list[str]:
     table = ARTIFACT_SEMANTIC_CHANGES if kind == "artifact" else JOB_SEMANTIC_CHANGES
     current = ARTIFACT_FORMAT_VERSION if kind == "artifact" else JOB_SCHEMA_VERSION
     declared = _version_key(LEGACY_VERSION if value is None else str(value))
-    notes = []
+    notes: list[str] = []
     for version in sorted(table, key=_version_key):
         if declared < _version_key(version) <= _version_key(current):
             notes.extend(f"{version}: {note}" for note in table[version])

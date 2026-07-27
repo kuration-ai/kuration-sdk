@@ -14,6 +14,8 @@ pixel-shift dependency installed.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from .action_state import (
     ACTION_STATE_ANALYZER_PARAMETERS,
     ANOMALY_TYPES,
@@ -36,7 +38,7 @@ def register() -> None:
     """Idempotently register the real stateful action-state analyzer."""
     from kuration import default_registry, register_analyzer
 
-    common = {
+    common: dict[str, Any] = {
         "version": "1",
         "package": "kuration-sdk",
         "stability": "experimental",

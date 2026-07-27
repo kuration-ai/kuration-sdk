@@ -148,7 +148,8 @@ def _validated_boundary(label: str, value, roles, *, prefix: str):
 
 def register_batch_transform(name: str, factory: Callable | None = None, *, outputs=(),
                              inputs=(), media_requirements=None, resources=None,
-                             lookbehind: int = 0, lookahead: int = 0,
+                             lookbehind: int | Mapping[str, int] = 0,
+                             lookahead: int | Mapping[str, int] = 0,
                              ownership: str | None = None, **metadata):
     """Register a transform factory, directly or as a decorator.
 

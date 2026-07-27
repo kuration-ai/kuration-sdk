@@ -64,8 +64,10 @@ _ANALYZER_META: dict[str, dict] = {}
 
 
 def register_analyzer(name: str, factory: Callable | None = None, *, inputs=(),
-                      media_requirements=None, resources=None, lookbehind: int = 0,
-                      lookahead: int = 0, ownership: str | None = None, **metadata):
+                      media_requirements=None, resources=None,
+                      lookbehind: int | Mapping[str, int] = 0,
+                      lookahead: int | Mapping[str, int] = 0,
+                      ownership: str | None = None, **metadata):
     """Register a discoverable analyzer factory, directly or as a decorator.
 
     ``inputs`` is optional: an analyzer that only implements ``check_dataset`` needs none.
