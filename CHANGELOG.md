@@ -5,6 +5,25 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+- Added a `kur` dispatcher so every command is reachable as `kur <command>` alongside its own
+  `kur-<command>` script, with `kur --help`/`--list` and `kur completion bash|zsh|fish`.
+  Subcommands contributed by installed plugin packages are discovered through their console
+  script entry points, so no domain is named in the core dispatcher.
+- Added `kur-infer`, `kur-init`, and `kur-preview`, closing the gap before a job spec exists.
+  `kur-infer` emits the inferred schema (referenceable from a job by path); `kur-init`
+  scaffolds a whole job and resolves it before writing, so what it emits is a job
+  `kur-validate` accepts; `kur-preview` decodes a bounded prefix of the sources and reports
+  field ranges, missingness, and example ticks.
+- Added `kur-stats` and `kur-export` on the artifact side. `kur-stats` exposes the existing
+  unified `stats()` report — including plugin-contributed sections — to the shell, and
+  `kur-export` writes shards as npz/npy/parquet with an `export_index.json` preserving the
+  manifest metadata that bare arrays lose.
+- Added `kur-checkpoint list|verify|clear` for stage checkpoint directories. Verification reads
+  committed metadata instead of reconstructing the run's `CheckpointIdentity`, so a damaged
+  commit is detectable from the checkpoint tree alone; `clear` requires `--yes` and supports
+  `--attempts-only`.
+- Added `--review`, `--review-json`, and `--review-html` to `kur-curate`, surfacing the
+  hours-budget admission review from the run's recorded decisions without a second scoring pass.
 - Added `kur-import` and `import_dataset()` with confidence-based registered-adapter detection.
   NPZ, HDF5, and Zarr use lossless tensor hooks; CSV, JSONL, and single/partitioned Parquet use
   ordinary schema inference and canonical ticks. Plugin adapters can advertise detection and

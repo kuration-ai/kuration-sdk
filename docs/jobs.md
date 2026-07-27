@@ -6,19 +6,33 @@ recognized key per job kind. The same information ships machine-readably as a JS
 and `kur-validate job.json` preflights any job in milliseconds — no data read.
 
 ```bash
+kur-infer      SOURCE [--out schema.json] [--time C] [--entity C] [--hz N] [--json]
+kur-init       SOURCE... --out job.json [--window N] [--dataset-out DIR] [--force]
+kur-preview    job.json | --infer SOURCE... [--max-sources N] [--json] [--html PATH]
 kur-validate   job.json [--check-sources] [--json-schema] [--print-schema]
 kur-explain    job.json [--json]           # budget, execution, extras, warnings + fixes
-kur-curate     job.json                    # curate job -> hours-budget shards
+kur-curate     job.json [--review] [--review-json PATH] [--review-html PATH]
 kur-experiment job.json [--out cmp.json]   # experiment job -> per-arm JS-vs-baseline
 kur-report     job.json [--out rep.json]   # report job -> metric distribution profile
 kur-inspect    DATASET [--verify] [--json] [--html PATH] # artifact summary/integrity check
+kur-stats      DATASET [--verify] [--json] [--html PATH] # artifact distribution profile
 kur-diff       LEFT RIGHT [--verify] [--json] [--html PATH] # compare two artifacts
 kur-check      DATASET [--policy POLICY] [--analyzer NAME] [--json] # gates/analyzers
+kur-export     DATASET --out DIR [--format npz|npy|parquet] [--split S] [--modalities A,B]
 kur-import     SOURCE... --out DATASET [--adapter NAME] [--json] # detected adapter import
 kur-list       KIND [--json]                  # list one plural component kind
 kur-plugin-check [ENTRY-POINT|MODULE] [--json] # validate plugin loading and descriptors
 kur-describe   KIND NAME [--json]             # inspect one component contract
+kur-checkpoint list|verify|clear ROOT [--stage S] [--json] # stage checkpoint maintenance
 kur-migrate    JOB_OR_CONFIG [--out PATH]     # migrate a versioned JSON document
+```
+
+Every command is also reachable through the `kur` dispatcher — `kur curate job.json` is
+`kur-curate job.json`. `kur --help` lists what is installed, including CLIs contributed by
+plugin packages, and `kur completion bash|zsh|fish` prints a completion script:
+
+```bash
+eval "$(kur completion zsh)"     # add to ~/.zshrc
 ```
 
 `kur-list` accepts `adapters`, `analyzers`, `containers`, `encoders`, `filters`, `methods`,
@@ -31,11 +45,63 @@ implements the dataset-check hook can run directly on a written artifact with `k
 Every CLI accepts `--debug`: failures normally print a one-line `error: ...` and exit 1;
 `--debug` re-raises for the full traceback.
 
-`kur-inspect`, `kur-diff`, `kur-check`, and `kur-plugin-check` are exceptions to the job-file
-model: they take artifact paths or plugin names directly. The artifact commands need neither the
-original jobs nor input sources. `kur-inspect` exits 2 when `--verify` finds a missing or corrupt
-shard; `kur-check` and `kur-plugin-check` exit 2 when a policy or plugin contract fails. A quality
-policy is a JSON object using the expectations listed in [usage.md](usage.md).
+`kur-inspect`, `kur-stats`, `kur-diff`, `kur-check`, `kur-export`, `kur-checkpoint`, and
+`kur-plugin-check` are exceptions to the job-file model: they take artifact paths, checkpoint
+roots, or plugin names directly. The artifact commands need neither the original jobs nor input
+sources. `kur-inspect` exits 2 when `--verify` finds a missing or corrupt shard;
+`kur-checkpoint verify` exits 2 when a committed partition fails its checksum; `kur-check` and
+`kur-plugin-check` exit 2 when a policy or plugin contract fails. A quality policy is a JSON
+object using the expectations listed in [usage.md](usage.md).
+
+## Starting without a job (`kur-infer`, `kur-init`, `kur-preview`)
+
+These three cover the gap before a job spec exists. `kur-infer` samples one source and prints
+the schema it deduces; `--out` writes a schema document a job can reference by path
+(`"schema": "schema.json"`). `kur-init` goes further and writes a whole job — inferred schema
+and adapter mapping, a binning axis over the first scalar field, and an output preset — then
+resolves it before writing, so a scaffold that lands on disk is one `kur-validate` accepts.
+`kur-preview` decodes a bounded prefix of the sources and reports field ranges, missingness,
+and example ticks; unlike `kur-explain` (which reads no rows) it shows what the data contains.
+
+```bash
+kur-infer   telemetry.csv --out schema.json     # inspect the inferred schema first
+kur-init    telemetry.csv --out job.json --window 128 --dataset-out out/curated
+kur-preview job.json                            # what is actually in the corpus
+kur-validate job.json && kur-explain job.json   # preflight, no rows read
+kur-curate  job.json --review                   # run, then explain the hours budget
+```
+
+The scaffold is a starting point, not a recommendation: it picks the first scalar field as a
+binning axis because it cannot know which metric matters. Edit `strategy` before trusting a
+run. When a schema has no scalar field, `kur-init` refuses to guess and names the block to
+write by hand.
+
+## Artifact statistics and export (`kur-stats`, `kur-export`)
+
+`kur-inspect` answers "is this artifact intact"; `kur-stats` answers "what is in it" —
+per-modality distributions, split composition, and any section a domain package contributes
+through a registered stats enricher. `--capabilities` lists the plots and evidence a given
+report supports.
+
+`kur-export` walks the manifest and writes shards as plain array files for consumers outside
+Python, alongside an `export_index.json` carrying the manifest metadata (source, entity,
+split, `n_steps`) that bare arrays would lose. `--format npy` writes one file per shard and
+modality; `npz` and `parquet` write one file per shard. Pad rows are trimmed unless
+`--no-trim` is given.
+
+```bash
+kur-stats  out/curated --html stats.html
+kur-export out/curated --out arrays/ --format parquet --split train
+```
+
+## Checkpoint maintenance (`kur-checkpoint`)
+
+A job's `checkpoint_dir` accumulates per-stage partition commits. `kur-checkpoint list`
+summarizes the stages, their partition and row counts, whether each stage was finalized, and
+whether stale attempt files remain. `verify` re-checksums every committed data file and exits
+2 on a mismatch — it reads the committed metadata rather than reconstructing the run's
+`CheckpointIdentity`, so it works from the checkpoint tree alone. `clear` deletes state and
+requires `--yes`; `--attempts-only` removes leftover attempts while keeping valid commits.
 
 `kur-check` accepts `--policy`, `--analyzer`, or both. Analyzer construction parameters and
 dataset-driving options are separate JSON objects:

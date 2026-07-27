@@ -131,9 +131,24 @@ out/training-v1/
 
 ```bash
 kur-inspect out/training-v1 --verify
+kur-stats out/training-v1 --html stats.html
 kur-diff out/training-v0 out/training-v1
 kur-check out/training-v1 --policy quality.json
+kur-export out/training-v1 --out arrays/ --format parquet
 ```
+
+Starting from raw files with no job spec yet? Infer the schema, scaffold a job, and look at
+the data before running anything:
+
+```bash
+kur-infer   telemetry.csv --out schema.json
+kur-init    telemetry.csv --out job.json --dataset-out out/training-v1
+kur-preview job.json
+kur-curate  job.json --review
+```
+
+Every command is also a `kur` subcommand (`kur curate job.json`); `kur --help` lists them and
+`kur completion zsh` prints a completion script.
 
 Already have a supported dataset? Detect its adapter and import it without a strategy or
 selection:

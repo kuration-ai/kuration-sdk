@@ -141,6 +141,7 @@ dev = [
 docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5"]
 
 [project.scripts]
+kur = "kuration.core.cli.main:main"
 kur-curate = "kuration.core.cli.curate:main"
 kur-experiment = "kuration.core.cli.experiment:main"
 kur-report = "kuration.core.cli.report:main"
@@ -154,6 +155,12 @@ kur-diff = "kuration.core.cli.diff:main"
 kur-check = "kuration.core.cli.check:main"
 kur-import = "kuration.core.cli.import_dataset:main"
 kur-plugin-check = "kuration.core.cli.plugin_check:main"
+kur-infer = "kuration.core.cli.infer_schema_cli:main"
+kur-init = "kuration.core.cli.init_job:main"
+kur-preview = "kuration.core.cli.preview:main"
+kur-stats = "kuration.core.cli.stats:main"
+kur-export = "kuration.core.cli.export:main"
+kur-checkpoint = "kuration.core.cli.checkpoint:main"
 kur-slam = "kuration.gameplay.slam.cli:main"
 
 [project.entry-points."kuration.plugins"]

@@ -8,6 +8,7 @@ strategy(inline/path/name), output(OutputSpec), train_hours, test_hours?, out, s
 from __future__ import annotations
 
 import argparse
+import json
 
 from ..output import write_dataset
 from ._common import cli_progress_for, cli_run, read_job
@@ -19,6 +20,12 @@ def main() -> None:
     ap.add_argument("job", help="Path to the job JSON.")
     ap.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
     ap.add_argument("--quiet", action="store_true", help="Suppress interactive progress output.")
+    ap.add_argument("--review", action="store_true",
+                    help="Explain the hours-budget admission after writing (no rescoring).")
+    ap.add_argument("--review-html", metavar="PATH",
+                    help="Write the admission review as a self-contained HTML report.")
+    ap.add_argument("--review-json", metavar="PATH",
+                    help="Write the admission review as JSON.")
     args = ap.parse_args()
     cli_run(lambda: _run(args), debug=args.debug)
 
@@ -58,6 +65,21 @@ def _run(args) -> None:
           f"{r['sources_skipped']} skipped; emitted "
           f"{emitted['train'] / 3600:.3f}/{requested['train'] / 3600:.3f} train h, "
           f"{emitted['test'] / 3600:.3f}/{requested['test'] / 3600:.3f} test h) → {job['out']}")
+
+    if args.review or args.review_html or args.review_json:
+        # The hours path already recorded its admission decisions, so this reuses them
+        # rather than scoring the pool a second time.
+        from ..review import hours_selection_review
+        review = hours_selection_review(res)
+        if args.review_html:
+            from ..html_report import write_html_report
+            write_html_report(args.review_html, review,
+                              title="kuration hours selection review")
+        if args.review_json:
+            from ..io import write_text
+            write_text(args.review_json, json.dumps(review.to_dict(), indent=2) + "\n")
+        if args.review:
+            print(review.render())
 
 
 if __name__ == "__main__":

@@ -162,11 +162,16 @@ are always internal.
 
 The installed commands are public end-user interfaces:
 
+- Dispatch and discover commands: `kur` (`kur <command>` == `kur-<command>`, plus
+  `kur completion`).
+- Author a job: `kur-infer`, `kur-init`, `kur-preview`.
 - Run and analyze: `kur-curate`, `kur-experiment`, `kur-report`.
-- Validate and inspect: `kur-validate`, `kur-explain`, `kur-inspect`, `kur-diff`, `kur-check`.
-- Import existing tensor data: `kur-import`.
+- Validate and inspect: `kur-validate`, `kur-explain`, `kur-inspect`, `kur-stats`, `kur-diff`,
+  `kur-check`.
+- Import and export tensor data: `kur-import`, `kur-export`.
 - Discover extensions: `kur-list`, `kur-describe`, `kur-plugin-check`.
 - Reconstruct and curate SLAM data: `kur-slam`.
+- Maintain execution state: `kur-checkpoint`.
 - Upgrade documents: `kur-migrate`.
 
 Their command options and exit behavior belong in `docs/jobs.md` or a linked CLI reference. The
