@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import run_cli
 
 
 def _make_csv(tmp_path, name="d.csv"):
@@ -27,7 +28,11 @@ def _make_csv(tmp_path, name="d.csv"):
     return path
 
 
-def _run(module, *args, expect=0):
+_run = run_cli          # in-process, so the executed CLI lines are visible to coverage
+
+
+def _run_subprocess(module, *args, expect=0):
+    """Run a CLI the way a shell does, for the contracts only a real process can show."""
     proc = subprocess.run([sys.executable, "-m", module, *args],
                           capture_output=True, text=True, timeout=120)
     if expect is not None:
@@ -357,3 +362,50 @@ def test_completion_scripts_name_every_command(shell):
 def test_completion_requires_a_known_shell():
     proc = _run("kuration.core.cli.main", "completion", "tcsh", expect=1)
     assert "bash, zsh, fish" in proc.stderr
+
+
+def test_init_scaffolds_a_span_so_the_hours_budget_can_bite(tmp_path):
+    """Without span_steps the budget admits whole tracks, emitting the entire source."""
+    job, out = _scaffold(tmp_path, "--train-hours", "0.002")
+    spec = json.loads(job.read_text())
+    assert spec["span_steps"] == spec["segmenter"]["window"]
+
+    review = tmp_path / "review.json"
+    _run("kuration.core.cli.curate", str(job), "--quiet", "--review-json", str(review))
+    budget = json.loads(review.read_text())
+    # Admission is per window, so most candidates are refused once the budget fills.
+    assert budget["candidate_items"] > budget["admitted_items"] > 0
+    emitted = budget["budget"]["train"]["emitted_seconds"]
+    requested = budget["budget"]["train"]["requested_seconds"]
+    assert emitted <= requested * 2, f"emitted {emitted}s against a {requested}s budget"
+    assert json.loads((out / "dataset_manifest.json").read_text())["count"] > 0
+
+
+# ---- installed console-script contract ---------------------------------------
+# The tests above call entry points in-process. These few spawn a real interpreter, so the
+# behavior a shell actually sees — exit codes, one-line stderr, --debug — stays pinned.
+def test_console_scripts_report_failures_as_one_line(tmp_path):
+    missing = tmp_path / "nope.json"
+    proc = _run_subprocess("kuration.core.cli.preview", str(missing), expect=1)
+    assert "Traceback" not in proc.stderr
+    assert proc.stderr.startswith("error:") and "not found" in proc.stderr
+
+
+def test_console_script_debug_flag_reraises(tmp_path):
+    proc = _run_subprocess("kuration.core.cli.stats", str(tmp_path / "nope"),
+                           "--debug", expect=None)
+    assert proc.returncode != 0 and "Traceback" in proc.stderr
+
+
+def test_console_script_runs_the_authoring_chain(tmp_path):
+    source = _make_csv(tmp_path)
+    job, out = tmp_path / "job.json", tmp_path / "curated"
+    _run_subprocess("kuration.core.cli.init_job", str(source), "--out", str(job),
+                    "--window", "4", "--dataset-out", str(out))
+    _run_subprocess("kuration.core.cli.curate", str(job), "--quiet")
+    assert json.loads((out / "dataset_manifest.json").read_text())["count"] > 0
+
+
+def test_dispatcher_console_script_forwards_argv(tmp_path):
+    proc = _run_subprocess("kuration.core.cli.main", "--list")
+    assert "checkpoint" in proc.stdout and "export" in proc.stdout

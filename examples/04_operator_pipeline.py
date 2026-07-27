@@ -1,14 +1,14 @@
-"""Fluent operator pipeline: input() -> chained operators -> terminals (src/kuration/core/pipeline.py).
+"""The fluent path in depth: one chain, both budgets, and the provenance it leaves behind.
 
-Synthesizes plain .json sources (array-of-row-objects — a numeric "t" time column, an
-"agent" entity column, a scalar "hp", and a categorical "action"), then runs the
-motivating one-chain shape end to end:
+This is the chain documented in docs/pipeline.md, run end to end:
 
-    input(...).measure("hp").filter("hp", "<=", 50).measure("action_entropy", "entropy", of="action")
-              .bin("action_entropy", bins=4).sample("equal", n=...).output(out_dir, container=...)
+    input(...).window(16).measure("hp").filter("hp", "<=", 50)
+              .measure("action_entropy", "entropy", of="action")
+              .bin("action_entropy", bins=4).sample("equal", n=12).output(...)
 
-No schema, no adapter, no strategy dict — `input()` infers the schema from a sample and
-every operator validates itself loudly against it.
+It shows three things the shorter examples do not: selecting by **count** versus by **hours**,
+`.describe()` as the resolved-but-unrun plan, and the operator chain recorded inside
+`config.json` so a run can be reconstructed from its artifact.
 
     python examples/04_operator_pipeline.py
 """
@@ -22,87 +22,63 @@ from kuration import input, iter_shards
 rng = random.Random(0)
 work = Path(tempfile.mkdtemp(prefix="kuration_ex04_"))
 
-# 1. Synthesize plain-JSON device logs: source d{i} has hp centered at 20*i (+ ripple), so
-#    filter("hp", "<=", 50) keeps d0/d1/d2 and drops d3/d4. "action" is drawn per-step with a
-#    per-source skew (source i favors "attack" more as i grows) -> action_entropy varies both
-#    across sources and across windows within a source, giving `bin` useful ranges to spread.
+# Five device logs as plain JSON rows. Source i has hp centred on 20*i, so the predicate below
+# keeps d0-d2 and drops d3/d4; "action" is skewed more towards "attack" as i grows, giving
+# action_entropy a real range to bin across.
 ACTIONS = ["idle", "move", "attack"]
-N_SOURCES, N_STEPS = 5, 128
-paths = []
-for i in range(N_SOURCES):
+sources = []
+for i in range(5):
     weights = [1.0, 1.0, 1.0 + 2.0 * i]
     rows = [{"t": float(t), "agent": f"a{i}", "hp": 20.0 * i + float(t % 7),
              "action": rng.choices(ACTIONS, weights=weights)[0]}
-            for t in range(N_STEPS)]
-    p = work / f"device_{i}.json"
-    p.write_text(json.dumps(rows))
-    paths.append(str(p))
+            for t in range(128)]
+    path = work / f"device_{i}.json"
+    path.write_text(json.dumps(rows))
+    sources.append(str(path))
 
-# 2. The motivating chain: measure -> predicate filter -> a second measure (entropy of a
-#    categorical) -> a bin axis over it -> count-based curation -> write shards.
+
+def chain(pipeline):
+    """The shared middle of both runs: measure, drop, measure again, bin."""
+    return (pipeline
+            .window(16)
+            .measure("hp")                                    # defaults to mean of "hp"
+            .filter("hp", "<=", 50)                           # a universal pre-filter
+            .measure("action_entropy", "entropy", of="action")
+            .bin("action_entropy", bins=4))
+
+
+# ---- count path: "give me exactly 12 windows" --------------------------------
+count_pipe = chain(input(sources, time="t")).sample("equal", n=12).options(on_error="raise")
+
+plan = count_pipe.describe()
+print("resolved plan (nothing has run yet):")
+print(f"  method  = {plan['strategy']['selection']['method']}")
+print(f"  axes    = {plan['strategy']['binning']['axes']}")
+print(f"  filters = {plan['strategy']['selection']['predicates']}")
+
 out_count = work / "out_count"
-pipe = (
-    input(paths, time="t")
-    .window(16)
-    .measure("hp")
-    .filter("hp", "<=", 50)
-    .measure("action_entropy", "entropy", of="action")
-    .bin("action_entropy", bins=4)
-    .sample("equal", n=12)
-    .options(on_error="raise")
-)
-
-print(pipe.describe()["schema"]["fields"].keys())
-print("head (first 3 ticks of source 0):",
-      [(tk.time, tk.entities) for tk in pipe.head(3)])
-
 try:
-    result = pipe.output(str(out_count), container="hdf5")
+    result = count_pipe.output(out_count, container="hdf5")
     container = "hdf5"
-except ImportError as e:
-    print(f"  [hdf5 unavailable ({e}); falling back to parquet]")
-    result = pipe.output(str(out_count), container="parquet")
+except ImportError:
+    result = count_pipe.output(out_count, container="parquet")   # [array] extra absent
     container = "parquet"
+print(f"\ncount path: selected {result['selected']} windows -> "
+      f"{len(result['shards'])} {container} shards")
 
-assert result["selected"] == 12
-assert result["shards"]
-print(f"count path: wrote {len(result['shards'])} shards ({container}) selected="
-      f"{result['selected']} to {out_count}")
+# Each selected window is written as its own sub-track, so shards are window-sized.
+shards = list(iter_shards(out_count, split="train"))
+print(f"read back {len(shards)} shards; hp shape = {shards[0]['hp'].shape}")
 
-# 3. Hours-budget variant of the same chain, writing npz.
-out_hours = work / "out_hours"
-pipe_hours = (
-    input(paths, time="t")
-    .window(16)
-    .measure("hp")
-    .filter("hp", "<=", 50)
-    .measure("action_entropy", "entropy", of="action")
-    .bin("action_entropy", bins=4)
-    .sample("equal", hours=0.05)
-    .options(on_error="raise")
-)
-res_hours = pipe_hours.output(str(out_hours), container="npz")
-assert res_hours["results"]["shards"] > 0
-print(f"hours path: wrote {res_hours['results']['shards']} shards (npz) to {out_hours}")
+# ---- hours path: "give me 0.05 hours of data" --------------------------------
+hours_pipe = chain(input(sources, time="t")).sample("equal", hours=0.05).options(
+    on_error="raise")
+hours_result = hours_pipe.output(work / "out_hours", container="npz")
+print(f"hours path: wrote {hours_result['results']['shards']} npz shards "
+      f"for a {0.05:.2f}h budget")
 
-# 4. .describe() — the resolved, un-run state of the pipeline.
-desc = pipe.describe()
-print("describe(): method =", desc["strategy"]["selection"]["method"],
-      "| axes =", desc["strategy"]["binning"]["axes"],
-      "| predicates =", desc["strategy"]["selection"]["predicates"])
-
-# 5. Read shards back via kuration.iter_shards and check shapes.
-shards = list(iter_shards(str(out_count), split="train"))
-assert len(shards) == len(result["shards"])
-for arrays in shards:
-    assert arrays["hp"].shape == (16,)          # window-sized sub-track, scalar modality
-print(f"read back {len(shards)} train shards; hp shape = {shards[0]['hp'].shape}")
-
-# 6. Peek at config.json's embedded 'pipeline' provenance — the operator chain, as data.
-cfg = json.loads((out_count / "config.json").read_text())
-ops = [o["op"] for o in cfg["pipeline"]]
-print("config.json 'pipeline' provenance:", ops)
-assert ops == ["input", "window", "measure", "filter", "measure", "bin", "sample",
-               "options"]
-
-print("\nall assertions passed.")
+# ---- provenance --------------------------------------------------------------
+config = json.loads((out_count / "config.json").read_text())
+print("\nconfig.json records the chain as data:",
+      " -> ".join(step["op"] for step in config["pipeline"]))
+print(f"output dir: {work}")

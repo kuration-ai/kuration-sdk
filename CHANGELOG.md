@@ -5,6 +5,22 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+- Added two fluent-only public-data walkthroughs. `examples/public_data/ett_fluent.py` curates
+  real hourly electricity-transformer telemetry, and `person_activity_fluent.py` curates 25 real
+  wearable-sensor recordings with four tags as the entity axis, a tag-coverage floor that keeps
+  rare activities, and source-level splits stratified by person. Both take a local path, fetch
+  the data with `--download`, or run offline against synthetic stand-ins with `--demo`; each
+  ships a provenance/licensing note and the equivalent command-line session.
+- Simplified the numbered examples. `01` is now the genuine five-minute start — `input()` over a
+  folder of CSVs with everything inferred — and `02`/`03` drop their hand-rolled adapter classes
+  in favour of passing `{source_id: ticks}` straight to `input()`.
+- Fixed `dataset_report` crashing on a metric whose values differ only at float-noise scale.
+  NumPy widens the histogram range for exactly-constant data but raises "Too many bins for data
+  range" just below that, which took down `.review()` and `kur-report` for a near-flat field;
+  such a metric now reports as the flat distribution it is.
+- `kur-init` now scaffolds `span_steps` alongside its hours budget. Without a span the budget
+  admits whole tracks, so a single long recording was emitted in full regardless of
+  `--train-hours`.
 - Added a `kur` dispatcher so every command is reachable as `kur <command>` alongside its own
   `kur-<command>` script, with `kur --help`/`--list` and `kur completion bash|zsh|fish`.
   Subcommands contributed by installed plugin packages are discovered through their console

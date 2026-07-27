@@ -127,6 +127,25 @@ def _group_counts(segments: list[Segment]) -> dict[str, int]:
     return out
 
 
+def _histogram(values: np.ndarray, hist_bins: int) -> tuple[np.ndarray, np.ndarray]:
+    """Histogram one metric, tolerating a degenerate spread.
+
+    NumPy widens the range for exactly-constant data but raises "Too many bins for data
+    range" when values differ only at float-noise scale — so a metric that barely varies
+    (a near-flat field, a saturated score) would crash the whole report instead of showing
+    up as the flat distribution it is. Widen such a range the same way NumPy already does
+    for the constant case, and ignore non-finite values rather than propagating them.
+    """
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return np.zeros(hist_bins, dtype=int), np.linspace(0.0, 1.0, hist_bins + 1)
+    low, high = float(finite.min()), float(finite.max())
+    resolution = max(abs(low), abs(high)) * np.finfo(np.float64).eps * hist_bins
+    if high - low <= resolution:
+        low, high = low - 0.5, high + 0.5
+    return np.histogram(finite, bins=hist_bins, range=(low, high))
+
+
 def dataset_report(segments: list[Segment], *, metrics: Optional[Sequence[str]] = None,
                    hist_bins: int = 10) -> dict:
     """Distribution summary over `segments`. `metrics` defaults to every feature present."""
@@ -140,7 +159,7 @@ def dataset_report(segments: list[Segment], *, metrics: Optional[Sequence[str]] 
     metric_rep: dict = {}
     for m in names:
         v = np.array([_feature_value(s, m) for s in segments], dtype=np.float64)
-        counts, edges = np.histogram(v, bins=hist_bins)
+        counts, edges = _histogram(v, hist_bins)
         metric_rep[m] = {
             "mean": float(v.mean()), "std": float(v.std()),
             "min": float(v.min()), "max": float(v.max()),

@@ -764,3 +764,30 @@ def test_hours_output_aggregates_segment_features_into_span_meta(tmp_path):
     assert out["shards"]
     for entry in out["shards"]:
         assert np.load(entry["path"])["score"].tolist() == [1.0] * entry["n_steps"]
+
+
+def test_dataset_report_survives_a_near_constant_metric():
+    """A metric varying only at float-noise scale must report as flat, not crash.
+
+    NumPy widens the histogram range for exactly-constant data but raises for a spread too
+    narrow to split, which took down `.review()` and `kur-report` for a near-flat field.
+    """
+    from kuration import Segment, dataset_report
+
+    for values in ([6.0] * 20,                                    # exactly constant
+                   [6.0, np.nextafter(6.0, 7.0)] * 10,            # adjacent floats
+                   [6.0, 6.0 + 1e-15] * 10):                      # sub-epsilon spread
+        segments = [Segment("s", i, i + 4, (i, i + 3), {"m": value})
+                    for i, value in enumerate(values)]
+        histogram = dataset_report(segments)["metrics"]["m"]["histogram"]
+        assert sum(histogram["counts"]) == len(values)
+        assert histogram["edges"][0] < histogram["edges"][-1]
+
+
+def test_dataset_report_ignores_non_finite_metric_values():
+    from kuration import Segment, dataset_report
+
+    segments = [Segment("s", i, i + 4, (i, i + 3), {"m": float("nan")}) for i in range(8)]
+    histogram = dataset_report(segments)["metrics"]["m"]["histogram"]
+    assert sum(histogram["counts"]) == 0
+    assert len(histogram["edges"]) == 11

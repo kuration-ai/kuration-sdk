@@ -68,6 +68,10 @@ def build_job(sources, *, out: str, window: int, stride: int, train_hours: float
            "output_preset": preset_params,
            "train_hours": train_hours,
            "test_hours": test_hours,
+           # Without a span, the hours budget admits whole tracks: one long single-entity
+           # recording is one indivisible item, so the budget cannot bite and the run emits
+           # the entire source. Admitting a window at a time is what a budget implies.
+           "span_steps": window,
            "out": out,
            "seed": seed}
     return job
