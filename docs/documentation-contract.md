@@ -117,8 +117,9 @@ are grouped below by user task.
   `list_components`, `describe_component`, `load_plugins`, `loaded_plugin_modules`,
   `plugin_failures`, `plugin_provenance`, `check_plugins`, `PluginCheckResult`, `ProgressCallback`,
   `ProgressSpec`, `progress_callback`, `notebook_progress`, `cli_progress`,
-  `register_operator`, `detect_adapter`, `Analyzer`, `DatasetAnalyzer`, `SplitLeakageAnalyzer`,
-  `register_analyzer`, `get_analyzer`, `run_dataset_analyzer`.
+  `register_operator`, `detect_adapter`, `Analyzer`, `DatasetAnalyzer`, `StreamAnalyzer`,
+  `SplitLeakageAnalyzer`, `register_analyzer`, `get_analyzer`, `run_dataset_analyzer`,
+  `run_stream_analyzer`.
 - Manifests and I/O: `build_config`, `dump_segment_manifest`, `write_config`, `read_text`,
   `write_text`, `write_bytes`, `exists`, `local_copy`, `import_dataset`.
 - Versioning and migration: `__version__`, `ARTIFACT_FORMAT_VERSION`, `JOB_SCHEMA_VERSION`, `migrate`,

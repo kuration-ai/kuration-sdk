@@ -255,7 +255,63 @@ retain the compatible reference implementation and appear as materialization war
 | `.review` | `(n=None, *, path=None, examples=10, hist_bins=10, **output_options)` | count selection review; hours selection writes to `path=` and reviews admission/budget decisions without rescoring |
 | `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, dry_run=False, inspect_sources=False)` | validate/estimate with `dry_run=True`, otherwise write through the ordinary `OutputSpec` path |
 | `.report` | `(**kw)` | feature pass only (no selection) → `dataset_report` |
+| `.stats` | `(**kwargs)` | `kuration.stats(pipeline, **kwargs)` — lifecycle statistics for the pipeline's current stage |
+| `.analyze` | `(name, parameters=None, *, mode=None, inputs=None, batch_size=None, analyzer=None, **options)` | a registered stateful analyzer: `run_stream_analyzer` over the tick stream, or `run_dataset_analyzer`'s `check_dataset` hook for an artifact-backed pipeline |
+| `.check` | `(policy=None, *, verify=False, **expectations)` | `evaluate_quality` over the cheapest evidence this pipeline can produce — the fluent `kur-check --policy` |
 | `.experiment` | `(arms, n, baseline=None)` | `run_experiment`; `arms` maps name → `Pipeline` (its compiled strategy) or a raw strategy dict |
+
+### `.analyze()` — stateful analyzers without a job spec
+
+An analyzer accumulates evidence across segments, so it cannot honestly be a per-segment
+selection stage — but it is still an ordinary pipeline terminal. `.analyze()` drives one, and
+picks its mode from the pipeline's own shape (override with `mode=`):
+
+```python
+result = (input({"clip1": rows})
+          .join_video({"clip1": "clip1.mp4"})
+          .window(64, stride=32)
+          .options(streaming=True)
+          .analyze("aintropy/action-state-consistency",
+                   {"anomaly_type": "action_state", "baselines": baselines},
+                   controls=["W"]))
+print(result["passed"], result["summary"])
+```
+
+- **Tick-stream mode** (default for a raw pipeline) drives the analyzer's `add_batch` hook over
+  this pipeline's segmented tick stream, using the same bounded batch/decode machinery as
+  `.transform(...)`: declared `field:`/`media:` inputs, per-input lookbehind/lookahead context,
+  lazy media decoded once per batch. It is a single pass with one batch of windows resident, so
+  it works under `.options(streaming=True)`. `segment_ids` are real
+  `(source_id, start_idx, end_idx)` source coordinates.
+- **Dataset mode** (default when the source *is* a written kuration dataset, i.e. the adapter
+  names its artifacts) drives `check_dataset` and returns exactly what `run_dataset_analyzer()`
+  and `kur-check --analyzer` return.
+- `parameters` are the analyzer's construction parameters, validated against its registered
+  descriptor; `**options` belong to the hook being driven; `inputs=`/`batch_size=` remap and size
+  the stream path; `analyzer=` drives an instance you already own, so its accumulated evidence
+  (per-instance ledgers, printed reports) stays yours after the call.
+- Loud, never silent: an unknown analyzer raises the registry error, an analyzer missing the hook
+  for the resolved mode raises a `ValueError` naming the hook it needs *and* the mode it does
+  support, and an analyzer that measured zero segments raises instead of reporting a vacuous pass.
+
+See [customization.md](customization.md#stateful-analyzers) for the registration contract and
+[action-state-consistency.md](action-state-consistency.md) for the bundled gameplay analyzer.
+
+### `.check()` — quality policies in Python
+
+`.expect(...)` declares gates; `.check()` evaluates them and returns a `QualityGateResult`
+without raising (`check_quality()` is the raising spelling). An artifact-backed pipeline is
+inspected and gated exactly as `kur-check --policy` gates it; any other pipeline is gated on a
+bounded input preview. Expectations merge from `.expect(...)`, a `policy` mapping (the
+`{"expectations": {...}}` policy-file shape is accepted), then keywords.
+
+```python
+gates = input("logs/*.parquet").expect(max_missing={"hp": 0.01}).check(min_sources=8)
+print(gates.render())
+```
+
+Selection, budget, and shard gates need selection or artifact evidence: run those through
+`.review()` (which raises on failure) or gate the written dataset.
 
 `.output` details:
 - `dry_run=True` resolves and validates the actual output declaration without creating the

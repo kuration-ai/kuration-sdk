@@ -5,6 +5,31 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+- **Analyzers are fluent pipeline operations.** New `Pipeline.analyze(name, parameters=None, *,
+  mode=None, inputs=None, batch_size=None, analyzer=None, **options)` terminal drives a
+  registered stateful analyzer with no job spec and no CLI. On any `input(...)` pipeline it
+  drives a new optional `add_batch(batch, ctx)` hook (`StreamAnalyzer`) over the segmented tick
+  stream through the *same* bounded batch/media-decode machinery batch transforms use
+  (`transforms.build_batch`, one decode path, per-input lookbehind/lookahead, `ctx.input_token`,
+  `ctx.valid_steps`) — a single pass with one batch resident, so it works under
+  `streaming=True`. On an artifact-backed pipeline it drives `check_dataset` and returns exactly
+  what `run_dataset_analyzer()` returns. Analyzers declare `field:`/`media:` inputs (plus
+  optional per-input boundary counts) at registration, validated there and by
+  `kur-plugin-check`; unknown analyzers, a missing hook for the resolved mode, and a pool that
+  measured zero segments all raise. `run_stream_analyzer()` and `StreamAnalyzer` are exported for
+  callers driving an analyzer outside the fluent API.
+- The built-in `aintropy/action-state-consistency` analyzer now runs on both modes. Its
+  tick-stream path declares the same input contract as `aintropy/pixel-shift` and measures in
+  **real source frames**, so the documented `(source_id, control, cell_key, frame)`
+  de-duplication of one press seen by overlapping windows holds (`cross_window_dedup: true`) —
+  the guarantee dataset mode has to give up (`frame_space: "shard-concatenation"`).
+- New `Pipeline.check(policy=None, *, verify=False, **expectations)` — the fluent
+  `kur-check --policy`: it merges `.expect(...)`, a policy mapping, and keywords, then evaluates
+  them without raising against an artifact inspection (artifact-backed pipelines) or a bounded
+  input preview. `CuratedDatasetAdapter.datasets()` is the new adapter seam that lets a pipeline
+  reach artifact-level hooks at all.
+- `Pipeline.stats(**kwargs)` now forwards every keyword `kuration.stats()` accepts (including
+  `progress`) instead of re-declaring a narrower subset that could drift.
 - Batch-transform inputs are now roles rather than fixed batch keys. `TransformContext` carries
   `inputs` (declared role → resolved token, in declaration order) and `input_token(role)`, so a
   transform used with a per-use `inputs=` remapping addresses the batch it was actually given

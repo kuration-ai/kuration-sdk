@@ -1469,24 +1469,141 @@ class Pipeline:
                           registry=self._registry)
         return dataset_report(segments, **kw)
 
-    def stats(self, *, hist_bins: int = 10, max_sources: int = 3,
-              max_ticks_per_source: int = 10_000, examples: int = 5):
+    def stats(self, **kwargs):
         """Summarize this pipeline at its current uncurated or count-selected stage.
 
         With no count selection this profiles the input and complete candidate pool. After
         ``sample(n=...)`` it compares candidates with the selected set. Hours admission is
         finalized by the output layer, so an hours-configured pipeline reports candidates and
         directs callers to ``output(path).stats()`` for admitted/emitted statistics.
+
+        Thin sugar for ``kuration.stats(pipeline, **kwargs)``: every keyword that function
+        accepts (``hist_bins``, ``max_sources``, ``max_ticks_per_source``, ``examples``,
+        ``progress``, ...) is forwarded and validated there, so the two spellings can never
+        drift.
         """
         from .stats import stats
 
-        return stats(
-            self,
-            hist_bins=hist_bins,
-            max_sources=max_sources,
-            max_ticks_per_source=max_ticks_per_source,
-            examples=examples,
-        )
+        return stats(self, **kwargs)
+
+    def _artifact_datasets(self) -> list[str]:
+        """Written dataset directories this pipeline reads, if its adapter names any.
+
+        The seam is one optional adapter method, ``datasets()`` (implemented by
+        ``CuratedDatasetAdapter``): an adapter that reads kuration's own artifacts can say so,
+        which is what lets ``analyze()``/``check()`` reach the artifact-level hooks instead of
+        only the tick stream.
+        """
+        for current in _adapter_chain(self.adapter):
+            names = getattr(current, "datasets", None)
+            if callable(names):
+                return [str(dataset) for dataset in names()]
+        return []
+
+    def _single_artifact(self, caller: str) -> str:
+        datasets = self._artifact_datasets()
+        if not datasets:
+            raise ValueError(
+                f"{caller} needs an artifact-backed pipeline — an adapter that names written "
+                f"datasets, such as input(adapter='curated', dataset_dir=...); this pipeline "
+                f"reads {type(self.adapter).__name__}")
+        if len(datasets) > 1:
+            raise ValueError(
+                f"{caller} needs exactly one written dataset; this pipeline reads "
+                f"{len(datasets)}: {datasets} — analyze them one at a time")
+        return datasets[0]
+
+    def analyze(self, name: str, parameters: Optional[dict] = None, *,
+                mode: Optional[str] = None, inputs=None, batch_size: Optional[int] = None,
+                analyzer=None, **options):
+        """Run a registered stateful analyzer over this pipeline. Terminal.
+
+        Two modes, resolved from the pipeline's own shape and overridable with ``mode=``:
+
+        * ``"stream"`` (default for a raw pipeline) drives the analyzer's ``add_batch`` hook
+          over this pipeline's segmented tick stream, with the window from ``.window(...)``,
+          the analyzer's declared lookbehind/lookahead context, and lazily decoded media —
+          one bounded pass, safe under ``.options(streaming=True)``. Segment ids are real
+          ``(source_id, start_idx, end_idx)`` source coordinates.
+        * ``"dataset"`` (default when the source *is* a written kuration dataset) drives the
+          analyzer's ``check_dataset`` hook and returns exactly what
+          ``run_dataset_analyzer()`` and ``kur-check --analyzer`` return.
+
+        ``parameters`` are analyzer construction parameters, validated against the registered
+        descriptor; ``**options`` belong to the hook being driven (``check_dataset`` options,
+        or ``add_batch`` keywords). ``inputs=``/``batch_size=`` remap and size the stream
+        path's declared inputs. ``analyzer=`` drives an instance you already own — its
+        accumulated evidence stays yours after the call.
+        """
+        if not isinstance(name, str) or not name:
+            raise ValueError("analyze() needs a registered analyzer name")
+        if mode not in {None, "dataset", "stream"}:
+            raise ValueError("analyze(mode=...) must be 'dataset', 'stream', or None")
+        if inputs is not None and (not isinstance(inputs, (list, tuple)) or not inputs):
+            raise ValueError("analyze(inputs=...) must be a non-empty sequence of tokens")
+        resolved = mode or ("dataset" if self._artifact_datasets() else "stream")
+        from .analyzers import drive_dataset_analyzer, get_analyzer, run_stream_analyzer
+        if resolved == "dataset":
+            dataset = self._single_artifact("analyze(mode='dataset')")
+            if inputs is not None or batch_size is not None:
+                raise ValueError("analyze(inputs=/batch_size=) apply to the tick-stream path; "
+                                 "dataset analysis reads written modalities")
+            if analyzer is None:
+                analyzer = get_analyzer(name, registry=self._registry,
+                                        **dict(parameters or {}))
+            elif parameters:
+                raise ValueError("pass analyzer= or parameters=, not both")
+            return drive_dataset_analyzer(analyzer, name, dataset, options=options)
+        self._check_exec()
+        return run_stream_analyzer(
+            name, schema=self.schema, adapter=self.adapter, sources=self.sources,
+            segmenter=self._segmenter_or_default(), parameters=parameters, options=options,
+            inputs=inputs, batch_size=batch_size, on_error=self._options["on_error"],
+            progress=self._options["progress"], registry=self._registry, analyzer=analyzer)
+
+    def check(self, policy: Optional[dict] = None, *, verify: bool = False, **expectations):
+        """Evaluate quality gates over the cheapest evidence this pipeline can produce.
+
+        The fluent counterpart of ``kur-check --policy``: an artifact-backed pipeline is
+        inspected and gated exactly as the CLI gates it, and any other pipeline is gated on a
+        bounded input preview. Expectations come from ``.expect(...)``, a ``policy`` mapping
+        (the ``{"expectations": {...}}`` policy-file shape is accepted), and keywords, in that
+        precedence order. Nothing raises on failure — the returned ``QualityGateResult``
+        reports every check; use ``check_quality()`` when a failure should raise. Selection,
+        budget, and shard gates need selection evidence: run them through ``.review()`` or
+        gate the written artifact.
+        """
+        from .quality import evaluate_quality, validate_expectations
+        if not isinstance(verify, bool):
+            raise ValueError("check(verify=...) must be true or false")
+        merged = dict(self._expectations)
+        if policy is not None:
+            if not isinstance(policy, dict):
+                raise ValueError("check(policy=...) must be a quality-policy dict")
+            declared = policy.get("expectations", policy)
+            if not isinstance(declared, dict):
+                raise ValueError("quality policy expectations must be a JSON object")
+            merged.update(declared)
+        merged.update(expectations)
+        if not merged:
+            raise ValueError("check() needs quality expectations: declare .expect(...), pass "
+                             "policy=, or pass expectation keywords")
+        validate_expectations(merged)          # eager, loud, before touching data
+        datasets = self._artifact_datasets()
+        if datasets:
+            from .inspection import inspect_dataset
+            report: Any = inspect_dataset(
+                self._single_artifact("check()"),
+                verify=verify or bool(merged.get("require_verified")),
+                registry=self._registry)
+        else:
+            if verify:
+                raise ValueError("check(verify=True) applies to an artifact-backed pipeline; "
+                                 "an input preview has no written shards to decode")
+            from .review import preview_dataset
+            report = preview_dataset(schema=self.schema, adapter=self.adapter,
+                                     sources=self.sources)
+        return evaluate_quality(report, merged)
 
     def experiment(self, arms: dict, n: int, baseline: Optional[str] = None) -> dict:
         """Multi-arm comparison over THIS pipeline's sources. `arms` maps name ->

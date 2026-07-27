@@ -44,7 +44,8 @@ def register() -> None:
         "install_hint": 'pip install "kuration-sdk[action-state]"',
         "documentation": "https://aintropy-ai.github.io/kuration-sdk/"
                          "action-state-consistency/",
-        "capabilities": {"stateful": True, "cross_segment": True},
+        "capabilities": {"stateful": True, "cross_segment": True,
+                         "tick_stream": True, "dataset": True},
     }
     if ANALYZER_NAME not in default_registry.names("analyzer"):
         register_analyzer(
@@ -53,6 +54,15 @@ def register() -> None:
             description="Classify clips from cross-segment pixel-shift evidence against "
                         "user-supplied action baselines",
             parameters=ACTION_STATE_ANALYZER_PARAMETERS,
+            # The tick-stream contract: the same input roles, media requirements, and boundary
+            # context pixel-shift's transform declares, because instances are discovered through
+            # the same measurement API. Only the action stream needs a lookbehind row (to prove a
+            # press did not begin before the window), so declaring the count per input avoids
+            # decoding one extra video frame per segment.
+            inputs=("media:frame", "field:action"),
+            media_requirements={"kind": "video-frame", "layout": "HWC"},
+            lookbehind={"field:action": 1},
+            lookahead=3,
             **common,
         )
 

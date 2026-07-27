@@ -91,9 +91,11 @@ from .analyzers import (
     Analyzer,
     DatasetAnalyzer,
     SplitLeakageAnalyzer,
+    StreamAnalyzer,
     get_analyzer,
     register_analyzer,
     run_dataset_analyzer,
+    run_stream_analyzer,
 )
 from .execution import (ExecutionBackend, LocalExecutionBackend, RayExecutionBackend,
                         ResourceSpec, get_execution_backend)
@@ -134,8 +136,8 @@ __all__ = [
     "BatchTransform", "TransformContext", "register_batch_transform", "register_transform",
     "get_transform",
     "apply_transforms", "apply_transforms_to_windows",
-    "Analyzer", "DatasetAnalyzer", "SplitLeakageAnalyzer", "register_analyzer",
-    "get_analyzer", "run_dataset_analyzer",
+    "Analyzer", "DatasetAnalyzer", "StreamAnalyzer", "SplitLeakageAnalyzer",
+    "register_analyzer", "get_analyzer", "run_dataset_analyzer", "run_stream_analyzer",
     "ExecutionBackend", "LocalExecutionBackend", "RayExecutionBackend", "ResourceSpec",
     "get_execution_backend",
     "OperatorResources", "OperatorTraits", "PhysicalOperator", "PhysicalStage",

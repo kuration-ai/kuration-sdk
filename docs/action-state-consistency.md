@@ -34,6 +34,10 @@ The SDK registers this capability as the built-in analyzer
 object: unlike a batch transform, it may accumulate evidence across multiple segments
 before `summary()` can return a result. Kuration validates and constructs it through
 `get_analyzer()` but does not pretend it is an independently schedulable per-segment stage.
+It is drivable three ways over the same accumulator: `Pipeline.analyze()` on a tick stream
+(`add_batch`), `Pipeline.analyze()`/`run_dataset_analyzer()`/`kur-check` on a written artifact
+(`check_dataset`), or your own loop over `add_segment()`. The descriptor advertises both driven
+modes (`capabilities: {"stateful", "cross_segment", "tick_stream", "dataset"}`).
 
 Discover it without reading a dataset:
 
@@ -136,6 +140,50 @@ checker.print_report()          # counts + exact clip IDs per verdict, printed t
 print(checker.summary())        # {"consistent": [...], "inconsistent": [...], "inconclusive": [...]}
 print(checker.clip_verdict("clip_042"))  # "consistent" | "inconsistent" | "inconclusive"
 ```
+
+### Running it as a fluent pipeline operation
+
+The analyzer is also an ordinary pipeline terminal — no job spec, no CLI, and no hand-written
+segment loop. `.analyze()` drives it over the pipeline's segmented tick stream, with frames
+decoded lazily by the SDK's one bounded media path:
+
+```python
+from kuration import input
+
+result = (input({"clip1": rows}, schema=schema, fields={"action": action_columns}, time="t")
+          .join_video({"clip1": "clip1.mp4"})            # lazy frames
+          .window(64, stride=32)
+          .options(streaming=True)
+          .analyze("aintropy/action-state-consistency",
+                   {"anomaly_type": "action_state", "baselines": baselines},
+                   controls=["W"]))
+
+result["passed"]         # False if any clip is inconsistent
+result["summary"]        # {"consistent": [...], "inconsistent": [...], "inconclusive": [...]}
+result["frame_space"]    # "source" -- real source frames (see below)
+```
+
+The analyzer declares the same input contract as the pixel-shift transform
+(`inputs=("media:frame", "field:action")`, one lookbehind action row, three lookahead rows,
+`media_requirements={"kind": "video-frame", "layout": "HWC"}`), because instances are discovered
+through the same measurement API. Consequences worth knowing:
+
+- **Positions are real source frames.** `segment_ids` carry `(source_id, start_idx, end_idx)` of
+  the source window, so the documented `(source_id, control, cell_key, frame)` de-duplication
+  holds: one physical press seen by two overlapping windows is recorded once
+  (`cross_window_dedup: true`). This is exactly the guarantee dataset mode has to give up.
+- **One bounded pass.** Only a batch of windows and its halo are resident, so `streaming=True`
+  and long clips are fine. `batch_size=` sizes the batch; `inputs=` remaps the tokens if your
+  schema names its frames/actions differently.
+- **Options are the `add_segment` options.** `controls` and `boundary` pass through per batch;
+  `color_space` is read from the declared media column instead of assuming BGR.
+- Pass `analyzer=checker` to drive a checker you constructed yourself
+  (`gameplay.action_state_checker(**config)`), then call `checker.print_report()` afterwards —
+  the accumulated per-instance ledger stays yours.
+
+An artifact-backed pipeline (`input(adapter="curated", ...)`) instead resolves to dataset mode
+and returns exactly what `run_dataset_analyzer()` returns; pass `mode="stream"`/`mode="dataset"`
+to choose explicitly.
 
 ### Running on a curated dataset from the CLI
 

@@ -84,7 +84,9 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.collect` | `(n=None) -> CurateResult` | terminal — count-path selection |
 | `Pipeline.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, preset_params=None, dry_run=False, inspect_sources=False) -> DatasetWriteResult \| ExecutionPlan` | terminal — write shards + manifests + `config.json`; with `dry_run=True`, validate and estimate without writing |
 | `Pipeline.report` | `(**kw) -> dict` | terminal — feature pass only → `dataset_report` |
-| `Pipeline.stats` | `(*, hist_bins=10, max_sources=3, max_ticks_per_source=10000, examples=5) -> StatsReport` | terminal — input/candidate statistics before selection, candidate-versus-selected statistics after `sample(n=...)`, or a planned-hours report before output |
+| `Pipeline.stats` | `(**kwargs) -> StatsReport` | terminal — thin sugar for `stats(pipeline, **kwargs)`: input/candidate statistics before selection, candidate-versus-selected statistics after `sample(n=...)`, or a planned-hours report before output |
+| `Pipeline.analyze` | `(name, parameters=None, *, mode=None, inputs=None, batch_size=None, analyzer=None, **options) -> dict` | terminal — run a registered stateful analyzer; `mode="stream"` (default) drives `add_batch` over the segmented tick stream with lazy media, `mode="dataset"` (default for an artifact-backed pipeline) drives `check_dataset` and returns what `run_dataset_analyzer` returns |
+| `Pipeline.check` | `(policy=None, *, verify=False, **expectations) -> QualityGateResult` | terminal — evaluate quality gates without raising; artifact-backed pipelines are gated exactly as `kur-check --policy` gates them, others on a bounded input preview |
 | `Pipeline.experiment` | `(arms: dict, n: int, baseline=None) -> dict` | terminal — multi-arm comparison (`arms` maps name → `Pipeline` or raw strategy dict) |
 | `Pipeline.head` | `(k=5) -> list[Tick]` | inspector — first `k` ticks of the first source |
 | `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources, expectations}`, no data touched |
@@ -230,6 +232,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `detect_adapter` | `(source_uri, *, registry=None) -> str` | select the uniquely highest-confidence registered adapter whose optional `detect_source()` hook recognizes a source |
 | `Analyzer` | protocol requiring `summary()` | user-owned stateful direct-API analysis result |
 | `DatasetAnalyzer` | protocol requiring `summary()` and `check_dataset(dataset, **options)` | optional analyzer contract for artifact-level `kur-check` execution |
+| `StreamAnalyzer` | protocol requiring `summary()` and `add_batch(batch, ctx)` | optional analyzer contract for tick-stream execution; `add_batch` receives the same batch/`TransformContext` a batch transform receives, accumulates state, and returns `None` |
 | `SplitLeakageAnalyzer` | `(*, check_groups=True)` | built-in source/group split auditor; `check_groups=False` suppresses group leakage and conflict checks, but never source checks |
 | `SplitLeakageAnalyzer.add_assignment` | `(source_id, split, *, group=None) -> None` | record one observation; repeating the same assignment is allowed |
 | `SplitLeakageAnalyzer.add_assignments` | `(source_splits, *, source_groups=None) -> None` | record a `{source_id: split}` mapping and optional `{source_id: group}` mapping |
@@ -237,6 +240,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `register_analyzer` | `(name, factory=None, **metadata)` | register a discoverable analyzer factory directly or as a decorator |
 | `get_analyzer` | `(name, *, registry=None, **params) -> Analyzer` | validate parameters and construct a user-owned analyzer instance |
 | `run_dataset_analyzer` | `(name, dataset, *, parameters=None, options=None, registry=None) -> dict` | construct a dataset-capable analyzer, run its hook, and validate the boolean `passed` result |
+| `run_stream_analyzer` | `(name, *, schema, adapter, sources, segmenter, parameters=None, options=None, inputs=None, batch_size=None, device="cpu", on_error="raise", progress=None, registry=None, analyzer=None) -> dict` | drive a stream-capable analyzer's `add_batch` hook over a segmented tick stream in one bounded pass (what `Pipeline.analyze()` calls) |
 | `import_dataset` | `(sources, out, *, adapter=None, schema=None, fields=None, time=None, entity=None, hz=None, kinds=None, adapter_options=None, source_id=None, split="train", shard_length=None, container="npz", force=False, registry=None) -> dict` | detect/construct a registered adapter and import its complete array or canonical-tick dataset into a committed Kuration artifact |
 
 `SplitLeakageAnalyzer` requires `source_id`, `split`, and each supplied `group` to be non-empty

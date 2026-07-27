@@ -35,6 +35,7 @@ def _plugin_state_snapshot() -> dict[str, Any]:
     from .output.base import _ENCODERS
     from .scorers import _SCORERS
     from .transforms import _TRANSFORM_META
+    from .analyzers import _ANALYZER_META
 
     return {
         "registry": {kind: dict(entries) for kind, entries in default_registry._entries.items()},
@@ -44,6 +45,7 @@ def _plugin_state_snapshot() -> dict[str, Any]:
             (_ENCODERS, dict(_ENCODERS)),
             (_SCORERS, dict(_SCORERS)),
             (_TRANSFORM_META, dict(_TRANSFORM_META)),
+            (_ANALYZER_META, dict(_ANALYZER_META)),
         ],
         "loaded_modules": set(_LOADED_MODULES),
         "loaded_entry_points": set(_LOADED_ENTRY_POINTS),

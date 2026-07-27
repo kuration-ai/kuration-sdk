@@ -107,6 +107,21 @@ def _descriptor_errors(descriptor, *, expected_package: str | None) -> list[str]
         elif any(not token.startswith(("field:", "feature:", "media:"))
                  for token in metadata["inputs"]):
             errors.append(f"{prefix} declares an invalid transform input token")
+    if descriptor.kind == "analyzer":
+        # Registration rejects these too; checking the descriptor keeps `kur-plugin-check` able
+        # to name the problem for entries that reached a registry by any other route. Inputs are
+        # optional for an analyzer (a dataset-only analyzer declares none), but a declared input
+        # must be drivable by the tick-stream driver.
+        from .analyzers import analyzer_metadata
+
+        from .registry import default_registry
+        metadata = analyzer_metadata(descriptor.name,
+                                     default_registry.get("analyzer", descriptor.name))
+        if any(not token.startswith(("field:", "media:")) for token in metadata["inputs"]):
+            errors.append(f"{prefix} declares an invalid analyzer input token "
+                          f"(field:/media: only)")
+        if metadata["ownership"] not in {None, "rightmost-start"}:
+            errors.append(f"{prefix} declares an unsupported ownership policy")
     return errors
 
 

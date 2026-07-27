@@ -82,10 +82,11 @@ def register_analyzer(name: str, factory: Callable | None = None, *, inputs=(),
         declared = tuple(inputs)
         if any(not isinstance(token, str) or not token for token in declared):
             raise ValueError("analyzer input tokens must be non-empty strings")
-        bad = [token for token in declared
-               if not token.startswith(("field:", "feature:", "media:"))]
+        bad = [token for token in declared if not token.startswith(("field:", "media:"))]
         if bad:
-            raise ValueError(f"analyzer input(s) {bad} must use field:/feature:/media:")
+            # No ``feature:``: the tick-stream driver is a single bounded pass over raw ticks
+            # with no feature stage that could produce one.
+            raise ValueError(f"analyzer input(s) {bad} must use field:/media:")
         if len(set(declared)) != len(declared):
             raise ValueError(f"analyzer registration has duplicate inputs {list(declared)!r}")
         for label, value in (("lookbehind", lookbehind), ("lookahead", lookahead)):
@@ -206,17 +207,21 @@ def run_dataset_analyzer(
     the former are validated against the registered descriptor, while the latter belong to
     the analyzer's ``check_dataset`` hook (for example, action-state modality names).
     """
-    if parameters is not None and not isinstance(parameters, Mapping):
-        raise ValueError("analyzer parameters must be a JSON object")
-    if options is not None and not isinstance(options, Mapping):
-        raise ValueError("analyzer options must be a JSON object")
-    analyzer = get_analyzer(name, registry=registry, **dict(parameters or {}))
+    params, hook_options = _hook_arguments(parameters, options)
+    analyzer = get_analyzer(name, registry=registry, **params)
+    return drive_dataset_analyzer(analyzer, name, dataset, options=hook_options)
+
+
+def drive_dataset_analyzer(analyzer: Any, name: str, dataset: Any, *,
+                           options: Mapping[str, Any] | None = None) -> dict:
+    """Run an already-constructed analyzer's ``check_dataset`` hook and validate its result."""
+    _, hook_options = _hook_arguments(None, options)
     if not isinstance(analyzer, DatasetAnalyzer):
         raise ValueError(
-            f"analyzer {name!r} cannot run on kur-check because it has no callable "
+            f"analyzer {name!r} cannot run on a written dataset because it has no callable "
             "check_dataset(dataset, **options) hook"
         )
-    raw = analyzer.check_dataset(dataset, **dict(options or {}))
+    raw = analyzer.check_dataset(dataset, **hook_options)
     if not isinstance(raw, Mapping):
         raise ValueError(f"analyzer {name!r} check_dataset() must return a mapping")
     result = dict(raw)
@@ -227,6 +232,159 @@ def run_dataset_analyzer(
     result.setdefault("summary", analyzer.summary())
     result["name"] = name
     return result
+
+
+def run_stream_analyzer(
+    name: str,
+    *,
+    schema,
+    adapter,
+    sources: Sequence[str],
+    segmenter,
+    parameters: Mapping[str, Any] | None = None,
+    options: Mapping[str, Any] | None = None,
+    inputs=None,
+    batch_size: int | None = None,
+    device: str = "cpu",
+    on_error: str = "raise",
+    progress=None,
+    registry=None,
+    analyzer: Any = None,
+) -> dict:
+    """Drive a stream-capable analyzer over a segmented tick stream in one bounded pass.
+
+    Every window of every source is measured in ``(source_id, start_idx)`` order, with the
+    analyzer's declared lookbehind/lookahead context and lazily decoded media supplied by the
+    same bounded batch machinery the transform runner uses. Residency is one batch of windows
+    plus their halo, never the pool, so this is safe under ``streaming=True``.
+
+    ``analyzer=`` drives an instance the caller already owns (and keeps its accumulated
+    evidence afterwards); otherwise the named analyzer is constructed from ``parameters``.
+    """
+    if on_error not in {"skip", "raise"}:
+        raise ValueError("on_error must be 'skip' or 'raise'")
+    params, hook_options = _hook_arguments(parameters, options)
+    if analyzer is not None and params:
+        raise ValueError("pass analyzer= or parameters=, not both: an already constructed "
+                         "analyzer cannot be re-parameterized")
+    if analyzer is None:
+        analyzer = get_analyzer(name, registry=registry, **params)
+    if not isinstance(analyzer, StreamAnalyzer):
+        hint = (" it does implement check_dataset, so run it on a written dataset "
+                "(Pipeline.output(path) then analyze the artifact, or kur-check)"
+                if isinstance(analyzer, DatasetAnalyzer) else "")
+        raise ValueError(
+            f"analyzer {name!r} cannot run on a tick stream because it has no callable "
+            f"add_batch(batch, ctx) hook;{hint or ' see docs/customization.md'}")
+    call = resolve_analyzer(name, analyzer, schema=schema, inputs=inputs,
+                            batch_size=batch_size, device=device)
+    from .media import media_provider_for
+    from .progress import emit
+
+    provider = media_provider_for(adapter)
+    ordered_sources = sorted((str(source) for source in sources), key=str)
+    errors: list[dict] = []
+    segments_analyzed = 0
+    sources_analyzed = 0
+    emit(progress, "analyze", "start", total=len(ordered_sources))
+    for index, source in enumerate(ordered_sources, 1):
+        try:
+            segments_analyzed += _drive_stream_source(
+                analyzer, call, source, schema=schema, adapter=adapter, provider=provider,
+                segmenter=segmenter, options=hook_options)
+        except Exception as error:  # skip-and-log, exactly like the feature pass
+            if on_error != "skip":
+                raise
+            import sys
+
+            from .scoring import _redact_diagnostic
+
+            print(f"  [skip] source {source!r}: {error!r}", file=sys.stderr)
+            errors.append({"source": _redact_diagnostic(source),
+                           "error": _redact_diagnostic(repr(error)),
+                           "error_type": type(error).__name__,
+                           "message": _redact_diagnostic(str(error)),
+                           "phase": "analyze"})
+            emit(progress, "analyze", "advance", current=index,
+                 total=len(ordered_sources), source=source, status="skipped")
+            continue
+        sources_analyzed += 1
+        emit(progress, "analyze", "advance", current=index, total=len(ordered_sources),
+             source=source, status="ok")
+    emit(progress, "analyze", "complete", current=len(ordered_sources),
+         total=len(ordered_sources), detail=f"{segments_analyzed} segment(s)")
+    if ordered_sources and not segments_analyzed:
+        # An analyzer that saw nothing "passes" vacuously, which is the exact failure mode a
+        # runnable example once caught in the feature pass. Refuse to report it as a verdict.
+        raise ValueError(
+            f"analyzer {name!r} measured NO segments: {len(ordered_sources)} source(s) "
+            "yielded no windows"
+            + (f" ({len(errors)} skipped; first error: {errors[0]['error']})" if errors
+               else " (is every source shorter than the segment window?)"))
+
+    result: dict = {"name": name, "mode": "tick-stream",
+                    "sources_analyzed": sources_analyzed,
+                    "segments_analyzed": segments_analyzed,
+                    "inputs": list(call["inputs"]), "errors": errors,
+                    "summary": analyzer.summary()}
+    extra = getattr(analyzer, "stream_result", None)
+    if callable(extra):
+        raw = extra()
+        if not isinstance(raw, Mapping):
+            raise ValueError(f"analyzer {name!r} stream_result() must return a mapping")
+        if not isinstance(raw.get("passed"), bool):
+            raise ValueError(
+                f"analyzer {name!r} stream_result() must return a boolean 'passed' field")
+        result.update(dict(raw))
+        result["name"], result["mode"] = name, "tick-stream"
+    return result
+
+
+def _drive_stream_source(analyzer, call, source, *, schema, adapter, provider, segmenter,
+                         options) -> int:
+    """Feed one source's windows to an analyzer in batches, holding at most one batch."""
+    from .transforms import build_batch, source_tick_stream
+
+    size = call["batch_size"]
+    pending: list[tuple] = []
+    analyzed = 0
+
+    def flush() -> int:
+        if not pending:
+            return 0
+        segments = [item[0] for item in pending]
+        windows = [item[1] for item in pending]
+        contexts = [item[2] for item in pending]
+        batch, ctx = build_batch(call, segments, windows, contexts, adapter=adapter,
+                                 provider=provider)
+        returned = analyzer.add_batch(batch, ctx, **options)
+        if returned is not None:
+            raise ValueError(
+                f"analyzer {call['name']!r} add_batch() must accumulate state and return None, "
+                f"got {type(returned).__name__}")
+        count = len(segments)
+        pending.clear()
+        return count
+
+    previous: tuple | None = None
+    for segment, window, before, after in segmenter.stream_with_context(
+            source, source_tick_stream(adapter, source),
+            lookbehind=call["lookbehind"], lookahead=call["lookahead"]):
+        if previous is not None:
+            # Ownership is resolved exactly as the transform runner resolves it: a window owns
+            # the steps before the next window starts. The last window of a source owns all of
+            # its own steps, which is why finalizing lags one segment behind.
+            previous[2]["owned_length"] = (
+                min(previous[0].end_idx, segment.start_idx) - previous[0].start_idx)
+            pending.append(previous)
+            if len(pending) == size:
+                analyzed += flush()
+        previous = (segment, window, {"lookbehind": before, "lookahead": after,
+                                      "owned_length": segment.end_idx - segment.start_idx})
+    if previous is not None:
+        pending.append(previous)
+    analyzed += flush()
+    return analyzed
 
 
 SPLIT_LEAKAGE_PARAMETERS = {

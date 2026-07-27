@@ -82,10 +82,44 @@ result = checker.summary()
 
 Analyzers are discoverable with `kur-list analyzers` and `kur-describe analyzer ...`, but are
 not implicit pipeline stages. Keeping lifecycle ownership explicit prevents worker-local state
-from being mistaken for a dataset-wide result. An analyzer may optionally implement
-`check_dataset(dataset, **options)` and return a mapping with a boolean `passed` field; that
-explicit artifact-level hook makes it runnable through
-`kur-check DATASET --analyzer NAME [--analyzer-config PATH] [--analyzer-options PATH]`.
+from being mistaken for a dataset-wide result. Two optional hooks make an analyzer drivable, and
+declaring one is what `Pipeline.analyze()` dispatches on:
+
+| hook | driven by | evidence it sees |
+|---|---|---|
+| `check_dataset(dataset, **options)` → mapping with a boolean `passed` | `run_dataset_analyzer()`, `Pipeline.analyze()` on an artifact-backed pipeline, `kur-check DATASET --analyzer NAME [--analyzer-config PATH] [--analyzer-options PATH]` | written shards and their manifest |
+| `add_batch(batch, ctx)` → `None` | `run_stream_analyzer()`, `Pipeline.analyze()` on any `input(...)` pipeline | segmented raw ticks with lazy media, in one bounded pass |
+
+`add_batch` receives exactly what a batch transform's `transform_batch` receives, because it is
+fed by the same bounded machinery: a batch keyed by the analyzer's declared input tokens plus
+`segment_ids` and `valid_steps`, and a `TransformContext` whose `input_token(role)`,
+`before(token)`, and `after(token)` resolve declared roles and boundary context. It accumulates
+instead of returning scalars, so it must return `None`. Declare the inputs at registration —
+`field:`/`media:` tokens only, since a single raw pass has no feature stage to produce a
+`feature:` input:
+
+```python
+register_analyzer("acme/clip-check", build_clip_checker,
+                  description="Accumulate evidence across every segment in a clip",
+                  parameters=PARAMETERS,
+                  inputs=("media:frame", "field:action"),
+                  media_requirements={"kind": "video-frame", "layout": "HWC"},
+                  lookbehind={"field:action": 1}, lookahead=3)
+
+result = pipeline.analyze("acme/clip-check", config, controls=["W"])
+```
+
+Declarations are validated at registration (and by `kur-plugin-check`), so a malformed one fails
+at import rather than inside a long run. `**options` passed to `analyze()` reach the hook being
+driven; `inputs=`/`batch_size=` remap and size the stream path. A `stream_result()` method may
+return a mapping with a boolean `passed` (mirroring `check_dataset`) that is merged into the
+driver's result — the place to state a verdict and, if the analyzer records positions, which
+coordinate space they live in.
+
+Segment ids on the stream path are the real `(source_id, start_idx, end_idx)` of the source
+window, so an analyzer's own cross-window de-duplication works in true source coordinates. The
+artifact path cannot offer that (a manifest records no source start offset); an analyzer that
+measures positions should say so rather than imply source frames.
 
 The SDK includes `kuration/split-leakage` for auditing existing or imported split assignments.
 It accepts repeated observations (for example, many segments from one clip), detects a source

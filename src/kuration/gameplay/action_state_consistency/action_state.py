@@ -46,6 +46,25 @@ def _require_pixel_shift():
     return pixel_shift
 
 
+def _single_entity_actions(value):
+    """Drop the schema-driven entity axis from one ``(T,E,D)`` action window.
+
+    Core batch inputs are entity-shaped; this single-agent anomaly type consumes ``E == 1``.
+    ``None`` (a source-edge boundary row with no context) passes straight through.
+    """
+    if value is None:
+        return None
+    import numpy as np
+
+    actions = np.asarray(value)
+    if actions.ndim == 3:
+        if actions.shape[1] != 1:
+            raise ValueError(
+                "action-state consistency requires exactly one action entity per timestep")
+        actions = actions[:, 0, :]
+    return actions
+
+
 def validate_action_state_baselines(baselines) -> dict:
     """Same shape validation as anomaly_checker.validate_baselines, plus checking every
     control name against ``kuration.gameplay.pixel_shift.ALL_CONTROLS`` -- this is the one place that
@@ -165,6 +184,77 @@ class ActionStateConsistencyChecker(AnomalyChecker):
                 validated=True,
             ):
                 self.record_instance(source_id, control, cell_key, start_idx + local_start, shift)
+
+    #: Declared bounded-batch input roles, in registration order — the same tokens (and the
+    #: same meaning) ``PixelShift`` declares, because instances are discovered through the same
+    #: measurement API. A per-use ``inputs=`` remapping replaces the tokens but not the roles,
+    #: so every batch lookup resolves through ``ctx.input_token``.
+    FRAMES_ROLE = "media:frame"
+    ACTIONS_ROLE = "field:action"
+
+    def add_batch(
+        self,
+        batch,
+        ctx,
+        *,
+        controls: Sequence[str] | None = None,
+        boundary: str = "exclude",
+    ) -> None:
+        """Accumulate one bounded batch of segmented tick-stream windows.
+
+        This is the tick-stream twin of :meth:`check_dataset`, and the reason it is worth
+        having: ``segment_ids`` here are real ``(source_id, start_idx, end_idx)`` source
+        windows, so the documented ``(source_id, control, cell_key, frame)`` de-duplication
+        works in true source frames — the guarantee dataset mode has to give up. Frames,
+        actions, and the declared lookbehind/lookahead context arrive already decoded from the
+        SDK's one bounded media path; ``color_space`` comes from the declared media column
+        rather than the direct-call BGR default.
+        """
+        import numpy as np
+
+        frames_token = ctx.input_token(self.FRAMES_ROLE)
+        actions_token = ctx.input_token(self.ACTIONS_ROLE)
+        frames_batch = batch[frames_token]                      # (N, T, H, W, 3)
+        actions_batch = np.asarray(batch[actions_token])
+        if actions_batch.ndim == 4:
+            # Schema-driven core inputs are (N,T,E,D); this single-agent analyzer consumes E=1.
+            if actions_batch.shape[2] != 1:
+                raise ValueError(
+                    "action-state consistency requires exactly one action entity per timestep")
+            actions_batch = actions_batch[:, :, 0, :]
+        color_space = ctx["schema"].media[frames_token.split(":", 1)[1]].color_space
+        segment_ids = list(batch["segment_ids"])
+        valid_steps = ctx.valid_steps
+        before_batch = ctx.before(actions_token)
+        after_actions_batch = ctx.after(actions_token)
+        after_frames_batch = ctx.after(frames_token)
+        for index, segment_id in enumerate(segment_ids):
+            # Ragged batches are padded to the widest window, so measure only the real steps.
+            steps = int(valid_steps[index]) if valid_steps is not None else len(
+                actions_batch[index])
+            after_actions = after_actions_batch[index]
+            after_frames = after_frames_batch[index]
+            self.add_segment(
+                frames_batch[index][:steps],
+                _single_entity_actions(actions_batch[index][:steps]),
+                segment_id,
+                controls=controls,
+                color_space=color_space,
+                lookbehind_actions=_single_entity_actions(before_batch[index]),
+                lookahead_actions=_single_entity_actions(after_actions),
+                lookahead_frames=None if after_actions is None else after_frames,
+                boundary=boundary,
+            )
+
+    def stream_result(self) -> dict:
+        """Report the tick-stream verdict and the frame space its positions live in."""
+        summary = self.summary()
+        return {
+            "passed": not summary["inconsistent"],
+            "frame_space": self.frame_space,
+            "frame_space_note": self.frame_space_note,
+            "cross_window_dedup": True,
+        }
 
     def check_dataset(
         self,

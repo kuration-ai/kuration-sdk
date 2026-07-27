@@ -216,7 +216,10 @@ def test_register_adds_the_real_builtin_analyzer():
     asc.register()  # idempotent -- must not raise even if already registered
     assert asc.ANALYZER_NAME in default_registry.names("analyzer")
     descriptor = default_registry.descriptor("analyzer", asc.ANALYZER_NAME)
-    assert descriptor.capabilities == {"stateful": True, "cross_segment": True}
+    # Both drivable modes are advertised: cross-segment tick-stream accumulation and the
+    # artifact-level check_dataset hook.
+    assert descriptor.capabilities == {"stateful": True, "cross_segment": True,
+                                       "tick_stream": True, "dataset": True}
     assert descriptor.package == "kuration-sdk"
     assert descriptor.extra == "action-state"
     assert "aintropy/consistency-check" not in default_registry.names("transform")

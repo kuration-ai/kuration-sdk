@@ -113,9 +113,19 @@ class CuratedDatasetAdapter:
                 self._config[e["path"]] = cfg
                 self._entries[e["path"]] = e
                 self.dataset_of[e["path"]] = d
+        self._datasets = [str(d) for d in dirs]
 
     def sources(self) -> list:
         return list(self._shards)
+
+    def datasets(self) -> list:
+        """The written dataset directories behind this adapter's shard sources.
+
+        Sources are shards, so an artifact-level consumer (a quality policy, an analyzer's
+        ``check_dataset`` hook) cannot recover the dataset from them. Declaring the artifacts
+        here is the seam ``Pipeline.analyze()``/``Pipeline.check()`` use to reach those hooks.
+        """
+        return list(self._datasets)
 
     def check_source(self, shard_path: str) -> None:
         """Preflight one shard: it must come from this adapter's manifests and still exist on
