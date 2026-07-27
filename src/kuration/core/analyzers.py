@@ -1,14 +1,28 @@
-"""Discovery and construction for stateful, direct-API analyzers.
+"""Discovery, construction, and driving for stateful, direct-API analyzers.
 
 Unlike a batch transform, an analyzer may accumulate evidence across segments before it
-can return a result. The SDK therefore discovers and validates analyzer factories but does
-not schedule them as implicit pipeline stages: callers own the analyzer instance and drive
-its capability-specific update methods explicitly.
+can return a result, so the SDK never schedules one as an implicit selection stage: the
+caller owns the instance and its update lifecycle. Two drivers make that lifecycle
+reachable without writing the loop by hand, and both are what ``Pipeline.analyze()`` calls:
+
+* :func:`run_dataset_analyzer` — the artifact path, driving an analyzer's ``check_dataset``
+  hook over a written dataset (also what ``kur-check --analyzer`` uses).
+* :func:`run_stream_analyzer` — the tick-stream path, driving an analyzer's ``add_batch``
+  hook over segmented raw sources with lazy media, in one bounded pass. It declares its
+  inputs with the same ``field:``/``media:`` tokens a batch transform declares and reuses
+  the *same* bounded batch/decode machinery (``transforms.build_batch``), so there is one
+  media decode path in the SDK, not two.
+
+On the tick-stream path a segment id is the real ``(source_id, start_idx, end_idx)`` of the
+source window, so an analyzer's documented cross-window de-duplication works in true source
+coordinates. The artifact path cannot offer that (a manifest records no source offset); an
+analyzer that measures positions is expected to say so — see
+``ActionStateConsistencyChecker.check_dataset``'s frame-space declaration.
 """
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, Callable, Protocol, runtime_checkable
 
 
@@ -26,18 +40,131 @@ class DatasetAnalyzer(Analyzer, Protocol):
     def check_dataset(self, dataset: Any, **options: Any) -> Mapping[str, Any]: ...
 
 
-def register_analyzer(name: str, factory: Callable | None = None, **metadata):
-    """Register a discoverable analyzer factory, directly or as a decorator."""
+@runtime_checkable
+class StreamAnalyzer(Analyzer, Protocol):
+    """Optional contract for analyzers that can be driven over a raw tick stream.
+
+    ``add_batch`` receives exactly what a batch transform's ``transform_batch`` receives — a
+    batch mapping keyed by the analyzer's declared input tokens plus ``segment_ids`` and
+    ``valid_steps``, and a :class:`~kuration.core.transforms.TransformContext` whose
+    ``input_token(role)``/``before``/``after`` resolve the declared roles — but it accumulates
+    state instead of returning per-segment scalars, so it must return ``None``.
+
+    An analyzer may additionally implement ``stream_result()`` returning a mapping (with a
+    boolean ``passed``) merged into the driver's result, mirroring ``check_dataset``.
+    """
+
+    def add_batch(self, batch: Mapping[str, Any], ctx: Any) -> None: ...
+
+
+#: Execution metadata for analyzers that declare bounded batch inputs, kept beside the
+#: registry exactly as ``transforms._TRANSFORM_META`` is: the registry stores discoverable
+#: descriptors, this stores how to *feed* the component.
+_ANALYZER_META: dict[str, dict] = {}
+
+
+def register_analyzer(name: str, factory: Callable | None = None, *, inputs=(),
+                      media_requirements=None, resources=None, lookbehind: int = 0,
+                      lookahead: int = 0, ownership: str | None = None, **metadata):
+    """Register a discoverable analyzer factory, directly or as a decorator.
+
+    ``inputs`` is optional: an analyzer that only implements ``check_dataset`` needs none.
+    Declaring ``field:``/``media:`` tokens (plus optional ``lookbehind``/``lookahead`` counts,
+    shared or per input) is what makes the analyzer drivable over a tick stream by
+    :func:`run_stream_analyzer` and ``Pipeline.analyze()``. Declarations are validated here so
+    a malformed one fails at import, not inside a long run.
+    """
 
     def decorate(component: Callable):
         from .registry import default_registry
+        from .transforms import _validated_boundary
 
+        declared = tuple(inputs)
+        if any(not isinstance(token, str) or not token for token in declared):
+            raise ValueError("analyzer input tokens must be non-empty strings")
+        bad = [token for token in declared
+               if not token.startswith(("field:", "feature:", "media:"))]
+        if bad:
+            raise ValueError(f"analyzer input(s) {bad} must use field:/feature:/media:")
+        if len(set(declared)) != len(declared):
+            raise ValueError(f"analyzer registration has duplicate inputs {list(declared)!r}")
+        for label, value in (("lookbehind", lookbehind), ("lookahead", lookahead)):
+            _validated_boundary(label, value, declared, prefix="analyzer")
+        if ownership not in {None, "rightmost-start"}:
+            raise ValueError("analyzer ownership must be None or 'rightmost-start'")
+        if (lookbehind or lookahead or ownership or media_requirements) and not declared:
+            raise ValueError("analyzer boundary/media declarations need declared inputs")
+        # Registry registration can fail (most commonly on a duplicate name). Publish the
+        # companion execution metadata only after that succeeds, so discovery and execution
+        # cannot observe two different components under the same name.
         default_registry.register_analyzer(name, component, **metadata)
+        _ANALYZER_META[name] = {
+            "inputs": declared, "media_requirements": dict(media_requirements or {}),
+            "resources": dict(resources or {}), "lookbehind": lookbehind,
+            "lookahead": lookahead, "ownership": ownership}
         return component
 
     if factory is None:
         return decorate
     return decorate(factory)
+
+
+def analyzer_metadata(name: str, analyzer: Any = None) -> dict:
+    """Return one analyzer's declared bounded-batch execution metadata.
+
+    Registration metadata wins; an analyzer instance may instead declare the same names as
+    attributes (``inputs``, ``lookbehind``, ``lookahead``, ``ownership``,
+    ``media_requirements``, ``resources``), which is how a directly constructed analyzer stays
+    drivable.
+    """
+    meta = dict(_ANALYZER_META.get(name) or {})
+    meta.setdefault("inputs", tuple(getattr(analyzer, "inputs", ()) or ()))
+    meta.setdefault("media_requirements",
+                    dict(getattr(analyzer, "media_requirements", {}) or {}))
+    meta.setdefault("resources", dict(getattr(analyzer, "resources", {}) or {}))
+    for label in ("lookbehind", "lookahead"):
+        declared = getattr(analyzer, label, 0)
+        meta.setdefault(label, declared if isinstance(declared, Mapping) else int(declared))
+    meta.setdefault("ownership", getattr(analyzer, "ownership", None))
+    return meta
+
+
+def resolve_analyzer(name: str, analyzer: Any, *, schema, inputs=None, batch_size=None,
+                     device: str = "cpu") -> dict:
+    """Validate one analyzer's declared inputs against a schema and return its call plan.
+
+    The plan has the same shape a resolved transform call has, because the analyzer stream
+    driver feeds it to the same batch builder.
+    """
+    meta = analyzer_metadata(name, analyzer)
+    label = f"analyzer {name!r}"
+    if not meta["inputs"] and not inputs:
+        raise ValueError(
+            f"{label} declares no field:/media: inputs, so it cannot be driven over a tick "
+            "stream; register it with inputs=(...) (see docs/customization.md) or pass "
+            "inputs=(...) at the call site")
+    from .transforms import resolve_stream_inputs
+
+    resolved = resolve_stream_inputs(
+        meta, inputs=inputs, batch_size=batch_size, device=device, schema=schema,
+        label=label, kind="analyzer")
+    feature_inputs = [token for token in resolved["inputs"] if token.startswith("feature:")]
+    if feature_inputs:
+        # The stream driver deliberately runs no feature pass: it is a single bounded pass over
+        # raw ticks, so there is no earlier producer for a segment feature.
+        raise ValueError(
+            f"{label} declares feature input(s) {feature_inputs}; the tick-stream analyzer "
+            "path has no feature pass to produce them — measure from field:/media: inputs")
+    return {"name": name, "label": label, "params": {}, **resolved}
+
+
+def _hook_arguments(parameters, options) -> tuple[dict, dict]:
+    """Validate the two JSON-object argument groups every analyzer driver accepts."""
+    if parameters is not None and not isinstance(parameters, Mapping):
+        raise ValueError("analyzer parameters must be a JSON object")
+    if options is not None and not isinstance(options, Mapping):
+        raise ValueError("analyzer options must be a JSON object")
+    return dict(parameters or {}), dict(options or {})
 
 
 def get_analyzer(name: str, *, registry=None, **params) -> Analyzer:
