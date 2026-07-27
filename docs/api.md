@@ -296,7 +296,7 @@ remain the Python convenience boundary.
 | `iter_external_weighted_priorities` | `(partitions, *, weights, normalize="quantile", seed=0, spill_dir=None)` | stream exact canonical Gumbel priorities from one disk-backed score index and one partition-at-a-time materialization pass |
 | `external_weighted` | `(partitions, *, weights, target_size, normalize="quantile", seed=0, spill_dir=None) -> list[Segment]` | select exact hours-path Gumbel priorities while retaining only the selected heap; count-weighted sampling has a distinct NumPy contract |
 | `iter_external_hash_dedup` | `(partitions, *, feature_names=None, per_group=False, spill_dir=None)` | exact disk-backed feature-vector dedup with full-payload collision resolution and canonical retention |
-| `TransformContext` | mapping-compatible typed context; `.before(token)`, `.after(token)`, `.owned_lengths` | typed per-batch execution metadata and boundary access; ordinary `ctx["schema"]` access remains compatible and owned lengths are read-only |
+| `TransformContext` | mapping-compatible typed context; `.before(token)`, `.after(token)`, `.owned_lengths`, `.inputs`, `.input_token(role)`, `.valid_steps` | typed per-batch execution metadata, boundary access, declared-role→resolved-token inputs, and per-row valid timestep counts; ordinary `ctx["schema"]` access remains compatible and owned lengths/valid steps are read-only |
 | `apply_transforms_to_windows` | `(calls, segments, windows, *, adapter, registry, contexts=None, progress=None)` | bounded transform execution over extracted windows; optional contexts carry lookbehind/lookahead ticks and owned lengths |
 
 ## Output

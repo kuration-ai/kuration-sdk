@@ -119,6 +119,10 @@ def _usage() -> str:
 
 def main() -> None:
     argv = sys.argv[1:]
+    if argv and argv[0] == "help" and len(argv) > 1:
+        # `kur help <command>` reads as `kur <command> --help`, including the unknown-command
+        # suggestion path below; a bare `kur help` still prints the dispatcher's own usage.
+        argv = argv[1:] + ["--help"]
     if not argv or argv[0] in {"-h", "--help", "help"}:
         print(_usage())
         return
@@ -149,6 +153,17 @@ def main() -> None:
         print(f"error: unknown command {name!r}.{hint} Run 'kur --help' for the list.",
               file=sys.stderr)
         raise SystemExit(2)
+    except ImportError as e:
+        # A discovered `kur-*` console script can name a module that fails to import (most
+        # often a missing optional dependency for that plugin). The dispatcher has no
+        # subcommand parser of its own here, so it cannot read the delegate's --debug; look
+        # for it directly in the remaining argv, same convention every kur-* CLI uses.
+        if "--debug" in argv[1:]:
+            raise
+        print(f"error: command {name!r} failed to load: {type(e).__name__}: {e} | "
+              f"hint: install the optional extra the plugin depends on, or pass --debug for "
+              f"the full traceback.", file=sys.stderr)
+        raise SystemExit(1)
     # The delegate parses argv itself; make its usage line read as the dispatched form.
     sys.argv = [f"kur {name}"] + argv[1:]
     # Under `python -m`, argparse prefers __main__.__spec__ over argv[0] when deriving prog,

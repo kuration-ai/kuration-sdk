@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from ._common import cli_run
+from ._common import cli_run, parse_mapping_option
 
 _ADAPTER_FOR_KIND = {
     "timeseries": "timeseries", "jsonl": "jsonl", "json-rows": "timeseries",
@@ -81,8 +81,9 @@ def main() -> None:
     ap.add_argument("--time", help="Time-column override.")
     ap.add_argument("--entity", help="Entity-column override.")
     ap.add_argument("--hz", type=float, help="Sample-rate override.")
-    ap.add_argument("--kinds", metavar="JSON",
-                    help="JSON object of per-column kind overrides for ambiguous columns.")
+    ap.add_argument("--kinds", metavar="JSON|PATH",
+                    help="Per-column kind overrides for ambiguous columns, as inline JSON or "
+                         "path to JSON file.")
     ap.add_argument("--sample", type=int, default=200,
                     help="Rows/timesteps to sample (default: 200).")
     ap.add_argument("--json", action="store_true",
@@ -93,9 +94,7 @@ def main() -> None:
     def body():
         if args.sample < 1:
             raise ValueError("--sample must be a positive integer")
-        kinds = json.loads(args.kinds) if args.kinds else None
-        if kinds is not None and not isinstance(kinds, dict):
-            raise ValueError("--kinds must be a JSON object of column -> kind")
+        kinds = parse_mapping_option(args.kinds, label="--kinds")
         result = infer_source(args.source, name=args.name, time=args.time,
                               entity=args.entity, hz=args.hz, kinds=kinds,
                               sample=args.sample)

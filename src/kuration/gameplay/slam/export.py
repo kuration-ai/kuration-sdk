@@ -8,9 +8,11 @@ from pathlib import Path
 import re
 import tempfile
 from typing import Mapping
+from urllib.parse import urlparse
 
 import numpy as np
 
+from ._paths import local_path
 from .pointcloud import POINTCLOUD_FORMAT, POINTCLOUD_VERSION, PointCloudArtifact
 
 
@@ -102,6 +104,29 @@ def _atomic_write_text(target: Path, value: str) -> None:
         os.replace(temporary, target)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _video_reference(value: str | Path, root: Path, *, name: str) -> str:
+    """Record a video path the SLAM adapter can resolve back from the manifest.
+
+    `SLAMTrajectoryAdapter` resolves relative references against the *manifest directory*, so a
+    CWD-relative path (what `prepare_slam_input` forwards for `--video clip=videos/a.mp4`)
+    recorded verbatim would silently resolve to the wrong place on re-ingestion. A video that
+    lives inside the export tree stays relative, so the artifact keeps travelling as one unit;
+    anything else is absolutized against the current directory. Remote URIs are kept verbatim
+    because they are opened by a media provider, not by pathlib.
+    """
+    text = str(value)
+    if not text:
+        raise ValueError(f"{name} must be a non-empty path or URI")
+    parsed = urlparse(text)
+    if parsed.scheme and len(parsed.scheme) > 1:
+        return text
+    absolute = Path(os.path.abspath(text))
+    try:
+        return str(absolute.relative_to(Path(os.path.abspath(root))))
+    except ValueError:
+        return str(absolute)
 
 
 def _times_for_clip(
@@ -275,6 +300,8 @@ def export_slam_output(
                 "timestamps must cover exactly the exported clips; "
                 f"missing={missing}, unknown={sorted(extra, key=str)}")
 
+    root = local_path(out_dir, name="SLAM export out_dir")
+
     recorded_provenance = provenance
     if recorded_provenance is None:
         recorded_provenance = getattr(output, "provenance", None)
@@ -301,10 +328,7 @@ def export_slam_output(
         relative = str(Path("clips") / filename)
         entry = {"trajectory": relative}
         if videos is not None and name in videos:
-            video = str(videos[name])
-            if not video:
-                raise ValueError(f"videos[{name!r}] must be a non-empty path or URI")
-            entry["video"] = video
+            entry["video"] = _video_reference(videos[name], root, name=f"videos[{name!r}]")
         manifest_clips[name] = entry
         prepared_clips[name] = (filename, arrays, entry)
 
@@ -323,7 +347,6 @@ def export_slam_output(
     if point_cloud is not None:
         manifest["scene"] = point_cloud[0]
 
-    root = Path(out_dir)
     clips_dir = root / "clips"
     for filename, arrays, _entry in prepared_clips.values():
         _atomic_savez(clips_dir / filename, arrays)

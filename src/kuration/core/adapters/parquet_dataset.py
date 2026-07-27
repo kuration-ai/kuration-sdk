@@ -22,15 +22,34 @@ from .base import register_adapter
 from .timeseries import TimeseriesAdapter
 
 _GLOB_CHARS = set("*?[")
+_DETECT_DIR_LIMIT = 512          # directories a detection walk may examine before giving up
 
 
 class ParquetDatasetAdapter(TimeseriesAdapter):
     @staticmethod
     def detect_source(source_uri: str) -> int:
+        """Recognize a *local* directory that contains Parquet parts.
+
+        Detection is deliberately cheap: a remote prefix (`gs://`, `s3://`, …) would need a
+        recursive listing per candidate source, so remote datasets are not auto-detected —
+        pass ``adapter="parquet-dataset"`` (plus ``schema=``) for those. The local walk stops
+        after ``_DETECT_DIR_LIMIT`` directories so a large Parquet-free tree cannot make
+        detection arbitrarily slow; a deeper layout also needs the explicit adapter.
+        """
+        import os
         from pathlib import Path
 
-        path = Path(str(source_uri))
-        return 100 if path.is_dir() and any(path.rglob("*.parquet")) else 0
+        from ..io import is_remote
+
+        source = str(source_uri)
+        if is_remote(source) or not Path(source).is_dir():
+            return 0
+        for scanned, (_root, _dirs, files) in enumerate(os.walk(source), start=1):
+            if any(name.endswith(".parquet") for name in files):
+                return 100
+            if scanned >= _DETECT_DIR_LIMIT:
+                return 0
+        return 0
 
     def __init__(self, schema: SchemaSpec, *, fields: dict, path: str,
                  source_per: str = "part", time_column: Optional[str] = None,

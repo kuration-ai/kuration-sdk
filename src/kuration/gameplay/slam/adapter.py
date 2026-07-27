@@ -10,6 +10,7 @@ import numpy as np
 from ...core.adapters.base import iter_arrays_to_ticks
 from ...core.buffer import Tick
 
+from ._paths import local_path
 from .export import EXPORT_FORMAT, EXPORT_VERSION
 from .schema import FIELD_TO_ARRAY, TRACKING_CONFIDENCE, slam_schema
 
@@ -29,7 +30,7 @@ class SLAMTrajectoryAdapter:
     sources_are_paths = False
 
     def __init__(self, schema=None, *, manifest: str | Path):
-        self.manifest_path = Path(manifest)
+        self.manifest_path = local_path(manifest, name="SLAM manifest")
         try:
             document = json.loads(self.manifest_path.read_text())
         except (OSError, json.JSONDecodeError) as error:

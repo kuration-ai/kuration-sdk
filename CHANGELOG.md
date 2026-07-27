@@ -5,6 +5,54 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+- Batch-transform inputs are now roles rather than fixed batch keys. `TransformContext` carries
+  `inputs` (declared role → resolved token, in declaration order) and `input_token(role)`, so a
+  transform used with a per-use `inputs=` remapping addresses the batch it was actually given
+  instead of failing mid-run on a hardcoded registration token. A remapping must supply exactly
+  one token per role, of the same kind, and per-input `media_requirements` are matched by role;
+  all three are validated while the pipeline is built. The bundled `aintropy/pixel-shift`
+  transform now resolves its frames/actions inputs (and its media `color_space`) this way.
+- `lookbehind`/`lookahead` may be declared per input (`lookbehind={"field:action": 1}`) instead
+  of as one count shared by every input, so a transform no longer pays to extract — or, for
+  media, decode — boundary context it never reads. `aintropy/pixel-shift` declares its single
+  lookbehind row on the action input only, removing one video-frame decode per segment.
+- Every batch transform now receives per-row valid timestep counts (`ctx.valid_steps` and the
+  `valid_steps` batch entry). `field:` inputs are `(B,T,E,D)` arrays NaN-padded to the widest
+  extent in the batch — a contract change from the earlier `(B,T)` stacking, which raised on a
+  ragged batch instead of padding it — and the counts make that padding observable, so a
+  transform cannot silently average pad cells; previously only `ownership="rightmost-start"`
+  transforms received any length information.
+- `pixel_shift` gained a `{control}_shift_measured` (0/1) feature. The transform contract admits
+  only finite scalars, so an untested control's `shift_min`/`max`/`mean` must report some number;
+  the flag makes "no instance was measured" filterable
+  (`.filter("w_shift_measured", ">=", 1)`) instead of indistinguishable from a real zero-shift
+  measurement. `pixel_shift.iter_instances()` now validates its own arrays (pass
+  `validated=True` for arrays already returned by `validate_segment_inputs`).
+- The action-state analyzer accepts NumPy integer segment indexes (normalizing them to `int`),
+  and its `check_dataset` no longer presents synthetic offsets as source frames: results report
+  `frame_space: "shard-concatenation"`, per-shard `shard_ranges`, and `cross_shard_dedup: false`,
+  with the same caveat printed in the report. Manifest entries carry no source start offset, so
+  cross-shard de-duplication of overlapping curated spans is documented as unavailable in
+  dataset mode instead of silently lost.
+- Gameplay video contact sheets label a frame index as `frame N` instead of formatting it as
+  `"{:.2f}s"` when a source exposes neither a duration nor an average frame rate.
+- Bumped `ARTIFACT_FORMAT_VERSION` to `1.1` for two DSL semantic changes and recorded them in a
+  compat table (`ARTIFACT_SEMANTIC_CHANGES` in `kuration.core.versioning`): `dispersion` and
+  `min_pair_dist` now use every declared position dimension (`1.0` used only the first two), and
+  `scope: per_entity_mean` is now honored on categorical fields (`1.0` silently pooled them).
+  Both change *which segments get selected* on 3D-position or per-entity-categorical data, so
+  `kur-migrate` now prints the notes for the versions a document has not seen while it migrates
+  it. `migration_notes()`/`document_migration_notes()` expose the same table programmatically.
+- Registering a compositional operator whose fluent method name is already a real `Pipeline`
+  attribute (`report`, `window`, `filter`, `schema`, ...) now fails loudly at registration and in
+  `kur-plugin-check`, naming the collision and asking for a rename. Python resolves the attribute
+  before `__getattr__`, so such an operator was silently shadowed and unreachable. The reserved
+  set is derived from the `Pipeline` class itself.
+- An un-namespaced operator now keeps its own fluent spelling when a plugin registers the same
+  local name: a spelling that is a component's complete name outranks the same spelling used as a
+  namespaced component's shorthand (`smooth` vs `acme/smooth`, still `acme__smooth()`). An
+  ambiguity error now only suggests spellings that actually resolve, falling back to
+  `apply("<name>")` when a component has no unique method spelling left.
 - Added two fluent-only public-data walkthroughs. `examples/public_data/ett_fluent.py` curates
   real hourly electricity-transformer telemetry, and `person_activity_fluent.py` curates 25 real
   wearable-sensor recordings with four tags as the entity axis, a tag-coverage floor that keeps

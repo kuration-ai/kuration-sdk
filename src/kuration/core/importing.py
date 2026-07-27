@@ -3,16 +3,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import warnings
 from pathlib import Path
 from collections.abc import Mapping
 from typing import Any, Sequence
 
 import numpy as np
 
-from .io import exists, file_integrity, is_remote, write_text
+from .io import file_integrity, is_remote, write_text
 from .manifest import (
     begin_dataset,
+    clear_dataset_shards,
     commit_dataset,
+    dataset_state,
     portable_shard_entries,
 )
 from .output.containers import write_shard
@@ -100,6 +103,41 @@ def _load_adapter_arrays(factory, path: str) -> tuple[dict[str, np.ndarray], int
     return {name: array[:n_steps] for name, array in arrays.items()}, n_steps
 
 
+def _prepare_destination(out: str, *, force: bool) -> list[str]:
+    """Guard the destination and, under ``force``, delete a prior attempt's shard files.
+
+    A committed dataset and a half-written one need different messages: the second is not
+    readable at all, so "already contains a dataset" misleads a user who is simply retrying a
+    failed import. Returns the removed shard paths so callers can report them.
+    """
+    state = dataset_state(out)
+    if state == "committed" and not force:
+        raise FileExistsError(
+            f"output {out!r} already contains a committed Kuration dataset; pass force=True "
+            "to replace it"
+        )
+    if state == "writing" and not force:
+        raise FileExistsError(
+            f"output {out!r} holds a partially written Kuration dataset: a previous import "
+            "failed part-way and never committed, so the artifact cannot be read; pass "
+            "force=True to discard the leftovers and re-import"
+        )
+    if state == "absent":
+        return []
+    removed = clear_dataset_shards(out)
+    if removed:
+        shown = ", ".join(path.rsplit("/", 1)[-1] for path in removed[:5])
+        if len(removed) > 5:
+            shown += f", … (+{len(removed) - 5} more)"
+        warnings.warn(
+            f"force=True removed {len(removed)} shard file(s) from the previous "
+            f"{state} attempt in {out!r}: {shown}",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+    return removed
+
+
 def _contract(arrays: dict[str, np.ndarray]) -> dict[str, dict[str, Any]]:
     return {
         name: {"shape": list(array.shape[1:]), "dtype": str(array.dtype)}
@@ -137,10 +175,7 @@ def _import_array_dataset(
     out = str(out).rstrip("/")
     if not out:
         raise ValueError("out must be a non-empty path")
-    if exists(f"{out}/dataset_manifest.json") and not force:
-        raise FileExistsError(
-            f"output {out!r} already contains a Kuration dataset; pass force=True to replace it"
-        )
+    removed_shards = _prepare_destination(out, force=force)
 
     source_ids = [source_id or _source_name(path) for path in paths]
     if any(not name for name in source_ids):
@@ -241,9 +276,11 @@ def _import_array_dataset(
             "kind": "adapter-array-import",
             "adapter": adapter_name,
             "sources": source_records,
+            "source_id": source_id,
             "container": container,
             "split": split,
             "shard_length": shard_length,
+            "presence_mask": presence_mask,
             "modalities": modalities,
         },
         sort_keys=True,
@@ -283,7 +320,16 @@ def _import_array_dataset(
         "adapter": adapter_name,
         **results,
         "modalities": sorted(expected_contract),
+        **({"replaced_shards": len(removed_shards)} if removed_shards else {}),
     }
+
+
+def _given_options(**options) -> list[str]:
+    """Names of the options the caller actually set (an empty mapping counts as unset)."""
+    return sorted(
+        name for name, value in options.items()
+        if value is not None and not (isinstance(value, Mapping) and not value)
+    )
 
 
 def _load_schema(schema):
@@ -334,6 +380,16 @@ def _import_tick_dataset(
 
     schema = pipeline.schema
     adapter = pipeline.adapter
+    if schema.event_streams:
+        # `tracks_from_ticks` carries fields, globals and media into records; there is no
+        # event kind in the output-modality grammar, so an event stream would vanish from the
+        # shards without a trace. Refuse instead of writing a lossy artifact.
+        raise ValueError(
+            f"import cannot materialize event streams to shards yet; schema "
+            f"{schema.name!r} declares event stream(s) "
+            f"{sorted(schema.event_streams)}. Import the per-timestep fields only (drop the "
+            "event_streams block from schema=), or curate the source instead of importing it."
+        )
     paths = list(pipeline.sources)
     ids = _source_ids(paths, source_id)
     tracks = []
@@ -410,10 +466,7 @@ def _import_tick_dataset(
     out = str(out).rstrip("/")
     if not out:
         raise ValueError("out must be a non-empty path")
-    if exists(f"{out}/dataset_manifest.json") and not force:
-        raise FileExistsError(
-            f"output {out!r} already contains a Kuration dataset; pass force=True to replace it"
-        )
+    removed_shards = _prepare_destination(out, force=force)
     begin_dataset(out)
     entries = []
     for track in tracks:
@@ -439,6 +492,7 @@ def _import_tick_dataset(
         "kind": "adapter-tick-import",
         "adapter": adapter_name,
         "sources": source_records,
+        "source_id": source_id,
         "schema": schema.to_dict(),
         "output": spec.to_dict(),
         "split": split,
@@ -477,6 +531,7 @@ def _import_tick_dataset(
         "adapter": adapter_name,
         **results,
         "modalities": sorted([*modalities, "_present"]),
+        **({"replaced_shards": len(removed_shards)} if removed_shards else {}),
     }
 
 
@@ -548,7 +603,20 @@ def import_dataset(
         else [str(item) for item in raw_sources]
     )
     if adapter is None:
-        detected = {path: detect_adapter(path, registry=active_registry) for path in paths}
+        try:
+            detected = {path: detect_adapter(path, registry=active_registry) for path in paths}
+        except ValueError as error:
+            # Directory-shaped adapters (partitioned Parquet, Zarr) only detect locally: a
+            # remote prefix would cost a recursive listing per candidate adapter.
+            remote_dirs = [path for path in paths
+                           if is_remote(path) and not Path(path).suffix]
+            if not remote_dirs:
+                raise
+            raise ValueError(
+                f"{error} Remote directories/prefixes {remote_dirs} are not auto-detected "
+                "(detection never lists a remote tree); pass adapter= explicitly, e.g. "
+                "adapter='parquet-dataset' with schema=."
+            ) from error
         if len(set(detected.values())) != 1:
             raise ValueError(
                 f"import sources resolve to different adapters {detected}; import each format "
@@ -569,7 +637,14 @@ def import_dataset(
 
     factory = active_registry.get("adapter", adapter_name)
     array_loader = getattr(factory, "import_arrays", None)
-    if callable(array_loader) and schema is None and not fields and not adapter_options:
+    # The lossless array hook copies stored tensors verbatim: it has no schema, so it cannot
+    # honor any schema-shaping option. Any of them sends the import down the tick path (where
+    # `input()` applies them) instead of dropping them.
+    shaping = _given_options(
+        schema=schema, fields=fields, time=time, entity=entity, hz=hz, kinds=kinds,
+        adapter_options=adapter_options,
+    )
+    if callable(array_loader) and not shaping:
         return _import_array_dataset(
             paths,
             out,
@@ -588,7 +663,18 @@ def import_dataset(
     auto_pipeline_adapters = {
         "timeseries", "jsonl", "npz", "hdf5", "parquet-dataset", "zarr"
     }
+    # These read named arrays: there are no table columns to nominate as the time/entity role
+    # and no per-column kind inference to override. `hz=` still applies (schema sample rate).
+    array_pipeline_adapters = {"npz", "hdf5", "zarr"}
     if adapter is None and adapter_name in auto_pipeline_adapters:
+        if adapter_name in array_pipeline_adapters:
+            columnless = _given_options(time=time, entity=entity, kinds=kinds)
+            if columnless:
+                raise ValueError(
+                    f"adapter {adapter_name!r} reads named arrays rather than table columns, "
+                    f"so {columnless} cannot be applied. Declare the entity axis and field "
+                    "kinds in schema= instead (hz= is supported)."
+                )
         source_arg: Any = paths[0] if len(paths) == 1 else paths
         pipeline = open_input(
             source_arg,
@@ -602,6 +688,16 @@ def import_dataset(
             **options,
         )
     else:
+        # `input(adapter=...)` is the no-inference escape hatch: it builds the adapter from
+        # schema= plus adapter_options and has nowhere to put the inference overrides.
+        unusable = _given_options(time=time, entity=entity, hz=hz, kinds=kinds)
+        if unusable:
+            raise ValueError(
+                f"adapter {adapter_name!r} is constructed explicitly, so {unusable} cannot be "
+                "applied — there is no schema inference on that path. Put the sample rate and "
+                "column roles in schema=, or pass adapter-specific keywords through "
+                "adapter_options=."
+            )
         if schema is None:
             raise ValueError(
                 f"explicit or plugin adapter {adapter_name!r} needs schema= because its "

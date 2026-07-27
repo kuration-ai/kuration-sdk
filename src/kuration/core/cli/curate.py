@@ -60,7 +60,14 @@ def _run(args) -> None:
     b = r["budget"]
     emitted = b["emitted_seconds"]
     requested = b["requested_seconds"]
-    print(f"wrote {r['shards']} shards from {r['tracks_admitted']}/{r['tracks_total']} tracks "
+    # `tracks_admitted` counts admitted (source, entity, span) items, not whole tracks: with
+    # span_steps/span_seconds (kur-init's default) one track can contribute many items, so
+    # "admitted/total tracks" is only truthful when every item is a whole, unspanned track.
+    n_items = r["tracks_admitted"]
+    n_admitted_tracks = len({(src, eid) for (src, eid, _k) in res["admitted"]})
+    tracks_desc = (f"{n_items}/{r['tracks_total']} tracks" if n_items == n_admitted_tracks
+                   else f"{n_items} span items from {n_admitted_tracks}/{r['tracks_total']} tracks")
+    print(f"wrote {r['shards']} shards from {tracks_desc} "
           f"({r['n_train']} train / {r['n_test']} test sources, "
           f"{r['sources_skipped']} skipped; emitted "
           f"{emitted['train'] / 3600:.3f}/{requested['train'] / 3600:.3f} train h, "

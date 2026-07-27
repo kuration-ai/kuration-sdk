@@ -16,6 +16,14 @@ from ..schema import SchemaSpec
 from .base import check_mapped_arrays, iter_arrays_to_ticks, register_adapter
 
 
+def _walk_arrays(group, prefix: str = ""):
+    """Yield ``(path, array)`` for every array under ``group``, depth-first."""
+    for name, arr in group.arrays():
+        yield f"{prefix}{name}", arr
+    for name, sub in group.groups():
+        yield from _walk_arrays(sub, prefix=f"{prefix}{name}/")
+
+
 class ZarrAdapter:
     """Map arrays in one local or remote Zarr store to a canonical tick stream.
 
@@ -62,10 +70,19 @@ class ZarrAdapter:
         else:
             store = str(source_uri)
         group = zarr.open(store, mode="r")
-        arrays = {
-            name: np.asarray(group[name])
-            for name in group.array_keys()
-        }
+        top_level = list(group.array_keys())
+        nested = [
+            path for path, _ in _walk_arrays(group)
+            if "/" in path
+        ]
+        if nested:
+            shown = ", ".join(repr(p) for p in sorted(nested)[:8])
+            raise ValueError(
+                f"Zarr source {source_uri!r} has arrays inside nested groups ({shown}); "
+                "a lossless top-level import would silently drop them — use an explicit "
+                "configured adapter (adapter='zarr' with array paths) instead"
+            )
+        arrays = {name: np.asarray(group[name]) for name in top_level}
         if not arrays:
             raise ValueError(
                 f"Zarr source {source_uri!r} contains no top-level arrays"

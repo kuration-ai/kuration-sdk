@@ -41,7 +41,11 @@ class HDF5Adapter:
 
     @staticmethod
     def import_arrays(source_uri: str) -> dict[str, np.ndarray]:
-        """Return top-level datasets for lossless artifact import."""
+        """Return top-level datasets for lossless artifact import.
+
+        A flat array import has no unambiguous modality name for a grouped dataset path, so a
+        file holding any nested dataset raises rather than importing a silent subset of it.
+        """
         try:
             import h5py
         except ImportError as error:
@@ -51,6 +55,23 @@ class HDF5Adapter:
         from ..io import local_copy
 
         with local_copy(source_uri) as path, h5py.File(path, "r") as handle:
+            nested: list[str] = []
+
+            def _note_nested(name, value):
+                if isinstance(value, h5py.Dataset) and "/" in name:
+                    nested.append(name)
+
+            handle.visititems(_note_nested)
+            if nested:
+                listed = ", ".join(sorted(nested)[:8])
+                if len(nested) > 8:
+                    listed += f", … (+{len(nested) - 8} more)"
+                raise ValueError(
+                    f"HDF5 source {source_uri!r} holds {len(nested)} nested dataset(s) that a "
+                    f"flat array import cannot name: {listed}. Import it with an explicit "
+                    "configured adapter (adapter='hdf5' with schema= and a fields map of "
+                    "dataset paths), or write the arrays as top-level datasets."
+                )
             arrays = {
                 name: np.asarray(value)
                 for name, value in handle.items()

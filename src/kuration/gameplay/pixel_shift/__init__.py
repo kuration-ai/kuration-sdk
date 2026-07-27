@@ -47,7 +47,10 @@ def register() -> None:
             inputs=("media:frame", "field:action"),
             media_requirements={"kind": "video-frame", "layout": "HWC"},
             resources={"num_gpus": 0},
-            lookbehind=1,
+            # Only the action stream needs a lookbehind row (to prove a press did not begin
+            # before the window); transform_batch never reads a lookbehind frame, so declaring
+            # the count per input avoids decoding one extra video frame per segment.
+            lookbehind={"field:action": 1},
             lookahead=3,
             ownership="rightmost-start",
             parameters=CONTROL_PARAMETERS,

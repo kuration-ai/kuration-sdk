@@ -87,6 +87,13 @@ def _descriptor_errors(descriptor, *, expected_package: str | None) -> list[str]
             or any(not isinstance(name, str) for name in required)
             or not set(required).issubset(schema.get("properties", {}))):
         errors.append(f"{prefix} parameters contain an invalid required list")
+    if descriptor.kind == "operator":
+        # Registration rejects this too; checking the descriptor keeps `kur-plugin-check` able to
+        # name the collision for entries that reached a registry by any other route.
+        from .pipeline import operator_name_conflict
+        conflict = operator_name_conflict(descriptor.name)
+        if conflict is not None:
+            errors.append(conflict)
     if descriptor.kind == "transform":
         from .transforms import _metadata
 

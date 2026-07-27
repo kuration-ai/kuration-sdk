@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 from typing import Mapping
 
+from ._paths import local_path
 from .adapter import input_slam
+from .export import _atomic_write_text
 
 
 SELECTION_FORMAT = "kuration-slam-selection"
@@ -61,8 +63,8 @@ def curate_slam_gameplay(
     from . import QUALITY_TRANSFORM_NAME, TRANSFORM_NAME, register
 
     register()
-    path = Path(manifest)
-    destination = Path(output)
+    path = local_path(manifest, name="SLAM manifest")
+    destination = local_path(output, name="SLAM selection output")
     features = feature_space or [
         "slam_path_length",
         "slam_turn_degrees",
@@ -110,10 +112,9 @@ def curate_slam_gameplay(
         "segments": [_selection_row(segment) for segment in result.selected],
         "errors": list(result.errors),
     }
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_name(destination.name + ".tmp")
-    temporary.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
-    temporary.replace(destination)
+    # Same atomic writer the export path uses: a fixed-name `.tmp` sibling collides between two
+    # concurrent runs writing the same selection.
+    _atomic_write_text(destination, json.dumps(document, indent=2, sort_keys=True) + "\n")
     return SLAMCurationResult(
         path,
         destination,

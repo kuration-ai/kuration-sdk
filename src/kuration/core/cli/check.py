@@ -46,6 +46,12 @@ def main() -> None:
             raise ValueError("provide --policy and/or --analyzer")
         if (args.analyzer_config or args.analyzer_options) and not args.analyzer:
             raise ValueError("--analyzer-config/--analyzer-options require --analyzer")
+        if args.verify and not args.policy:
+            # --verify decodes every shard before the *policy* is evaluated; an analyzer
+            # reads the manifest only (see analyzers.check_dataset), so a bare --verify in
+            # analyzer-only mode would silently do nothing. Say so instead of ignoring it.
+            raise ValueError("--verify requires --policy (analyzer-only checks read the "
+                              "manifest, not decoded shard contents)")
         gates = None
         analyzer_result = None
         report = None

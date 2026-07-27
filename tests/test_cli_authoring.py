@@ -101,6 +101,69 @@ def test_infer_rejects_an_unsupported_source_in_one_line(tmp_path):
     assert "Traceback" not in proc.stderr and "error:" in proc.stderr
 
 
+# ---- --kinds/--fields/--adapter-options: inline JSON or a JSON file ---------
+def test_kinds_option_accepts_inline_json_and_a_json_file(tmp_path):
+    """`act` is numeric and infers as scalar by default; forcing it to categorical via
+    --kinds proves the override took effect, in both its inline-JSON and file forms."""
+    source = _make_csv(tmp_path)
+    override = {"act": "categorical"}
+    inline = json.dumps(override)
+    kinds_file = tmp_path / "kinds.json"
+    kinds_file.write_text(inline)
+
+    for label, kinds_arg in (("inline", inline), ("file", str(kinds_file))):
+        proc = _run("kuration.core.cli.infer_schema_cli", str(source),
+                    "--kinds", kinds_arg, "--json")
+        result = json.loads(proc.stdout)
+        assert result["schema"]["fields"]["act"]["kind"] == "categorical", label
+
+        job = tmp_path / f"job_{label}.json"
+        _run("kuration.core.cli.init_job", str(source), "--out", str(job),
+             "--window", "4", "--kinds", kinds_arg)
+        assert json.loads(job.read_text())["schema"]["fields"]["act"]["kind"] == "categorical"
+
+        proc = _run("kuration.core.cli.preview", "--infer", str(source),
+                    "--kinds", kinds_arg, "--json")
+        assert json.loads(proc.stdout)["fields"]["act"]["kind"] == "categorical", label
+
+
+def test_kinds_option_rejects_a_value_that_is_neither_json_nor_an_existing_path(tmp_path):
+    source = _make_csv(tmp_path)
+    proc = _run("kuration.core.cli.infer_schema_cli", str(source),
+                "--kinds", "not json and not a path", expect=1)
+    assert "Traceback" not in proc.stderr
+    assert "inline JSON or a path to a JSON file" in proc.stderr
+
+
+def test_import_fields_and_kinds_and_adapter_options_accept_both_forms(tmp_path):
+    """kur-import previously read --fields/--kinds/--adapter-options as PATH only; the shared
+    _common.parse_mapping_option helper now accepts inline JSON here too."""
+    import csv as csv_module
+
+    source = tmp_path / "telemetry.csv"
+    with source.open("w", newline="") as file:
+        writer = csv_module.DictWriter(file, fieldnames=["t", "id", "signal"])
+        writer.writeheader()
+        writer.writerow({"t": 0, "id": "d1", "signal": 1.5})
+        writer.writerow({"t": 1, "id": "d1", "signal": 2.5})
+
+    fields = {"signal": "signal"}
+    fields_file = tmp_path / "fields.json"
+    fields_file.write_text(json.dumps(fields))
+    kinds_file = tmp_path / "kinds.json"
+    kinds_file.write_text(json.dumps({"signal": "scalar"}))
+
+    for label, fields_arg, kinds_arg in (
+        ("inline", json.dumps(fields), json.dumps({"signal": "scalar"})),
+        ("file", str(fields_file), str(kinds_file)),
+    ):
+        dest = tmp_path / f"dataset_{label}"
+        _run("kuration.core.cli.import_dataset", str(source), "--out", str(dest),
+             "--time", "t", "--entity", "id", "--fields", fields_arg,
+             "--kinds", kinds_arg, "--adapter-options", "{}")
+        assert (dest / "dataset_manifest.json").exists(), label
+
+
 # ---- kur-init ---------------------------------------------------------------
 def test_init_scaffold_validates_explains_and_curates(tmp_path):
     """The scaffold's contract: what it writes is a job the rest of the CLI family accepts."""
@@ -200,6 +263,41 @@ def test_curate_review_explains_the_hours_budget(tmp_path):
     assert review["budget"]["train"]["requested_seconds"] == pytest.approx(3600.0)
     # The tiny corpus cannot fill an hour, and the review must say so rather than imply success.
     assert any(warning["code"] == "budget-underfill" for warning in review["warnings"])
+
+
+def test_curate_summary_distinguishes_span_items_from_source_tracks(tmp_path):
+    """kur-init's default span_steps chunks each track into several admitted items; the old
+    "N/M tracks" wording conflated item count with track count (e.g. "9/3 tracks" read as
+    9-out-of-3, which is nonsensical). With a generous budget every item of all 3 entity
+    tracks is admitted, so the summary must name both quantities truthfully."""
+    _job, _out, proc = _curate(tmp_path)
+    assert "wrote 9 shards from 9 span items from 3/3 tracks (" in proc.stdout
+
+
+def test_curate_summary_keeps_plain_tracks_wording_without_spans(tmp_path):
+    """Without span_steps, one admitted item is one whole track, so item count and track
+    count agree and the plain "N/M tracks" phrasing (no earlier fix needed) stays truthful."""
+    source = _make_csv(tmp_path)
+    job_spec = {
+        "schema": {"name": "j", "entity_axis": "id", "sample_hz": 1.0,
+                   "fields": {"x": {"kind": "scalar"}, "y": {"kind": "scalar"},
+                              "act": {"kind": "scalar"}, "team": {"kind": "categorical"}}},
+        "adapter": {"type": "timeseries",
+                    "fields": {"x": "x", "y": "y", "act": "act", "team": "team"},
+                    "time_column": "t", "entity_column": "id"},
+        "sources": [str(source)],
+        "segmenter": {"window": 4, "stride": 4},
+        "strategy": {"name": "s", "define": {"am": {"source": "id.act", "reduce": "mean"}},
+                     "selection": {"method": "top-k", "weights": {"am": 1.0}}},
+        "output": {"shard_length": 4, "container": "npz",
+                   "modalities": {"obs": {"dtype": "float32", "shape": [], "source": "field:x"}}},
+        "train_hours": 100, "test_hours": 0, "out": str(tmp_path / "curated_nospan"),
+    }
+    job = tmp_path / "job.json"
+    job.write_text(json.dumps(job_spec))
+    proc = _run("kuration.core.cli.curate", str(job), "--quiet")
+    assert "wrote 9 shards from 3/3 tracks (" in proc.stdout
+    assert "span items" not in proc.stdout
 
 
 # ---- kur-export -------------------------------------------------------------
@@ -338,9 +436,49 @@ def test_dispatcher_help_reads_as_the_dispatched_form():
     assert proc.stdout.startswith("usage: kur stats")
 
 
+def test_dispatcher_help_command_is_equivalent_to_the_help_flag():
+    """`kur help <command>` previously discarded <command> and printed global usage."""
+    via_help = _run("kuration.core.cli.main", "help", "stats")
+    via_flag = _run("kuration.core.cli.main", "stats", "--help")
+    assert via_help.stdout == via_flag.stdout
+    assert via_help.stdout.startswith("usage: kur stats")
+
+    # A bare `kur help` (no command) still prints the dispatcher's own usage.
+    bare = _run("kuration.core.cli.main", "help")
+    assert bare.stdout.startswith("usage: kur <command>")
+
+
+def test_dispatcher_help_unknown_command_still_suggests():
+    proc = _run("kuration.core.cli.main", "help", "curat", expect=2)
+    assert "kur curate" in proc.stderr
+
+
 def test_dispatcher_suggests_a_near_miss():
     proc = _run("kuration.core.cli.main", "curat", expect=2)
     assert "kur curate" in proc.stderr
+
+
+def test_dispatcher_plugin_import_error_is_a_one_line_error(monkeypatch):
+    """An ImportError while loading a discovered plugin's module (e.g. a plugin's own
+    missing optional dependency) previously escaped as a raw traceback."""
+    import kuration.core.cli.main as main_mod
+    monkeypatch.setattr(
+        main_mod, "_discovered",
+        lambda: {"broken-plugin": "kuration.core.cli._no_such_plugin_module:main"})
+
+    proc = _run("kuration.core.cli.main", "broken-plugin", expect=1)
+    assert proc.stderr.startswith("error: command 'broken-plugin' failed to load:")
+    assert "Traceback" not in proc.stderr
+
+
+def test_dispatcher_plugin_import_error_reraises_with_debug(monkeypatch):
+    import kuration.core.cli.main as main_mod
+    monkeypatch.setattr(
+        main_mod, "_discovered",
+        lambda: {"broken-plugin": "kuration.core.cli._no_such_plugin_module:main"})
+
+    with pytest.raises(ImportError):
+        _run("kuration.core.cli.main", "broken-plugin", "--debug")
 
 
 def test_dispatcher_discovers_installed_plugin_clis():

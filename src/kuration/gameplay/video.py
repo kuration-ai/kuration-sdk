@@ -37,6 +37,15 @@ def _mime(source: str) -> str:
     return mimetypes.guess_type(urlparse(source).path)[0] or "video/mp4"
 
 
+def _frame_caption(ref, *, timed: bool) -> str:
+    """Label one contact-sheet frame in the unit its reference value actually carries.
+
+    Without a duration or an average rate a provider has no timebase, so the reference value
+    falls back to the frame index; rendering that as seconds would misreport it.
+    """
+    return f"{ref.timestamp:.2f}s" if timed else f"frame {ref.frame_index}"
+
+
 class VideoComparison:
     """A side-by-side gameplay video review with synchronized playback."""
 
@@ -241,10 +250,14 @@ class VideoComparison:
             provider = PyAVMediaProvider()
 
         rows = []
-        timestamps = []
+        captions = []
         for source in (self.left, self.right):
             metadata = provider.probe(source)
             count = metadata.frame_count
+            # Without a duration or an average rate there is no timebase, so the reference
+            # value below falls back to the frame index; a caption must then say "frame N"
+            # rather than labelling an index as seconds.
+            timed = True
             if count is not None and count > 0:
                 from ..core.media import FrameRef
 
@@ -252,6 +265,7 @@ class VideoComparison:
                     0, count - 1, num=min(frames, count), dtype=int
                 )
                 duration = metadata.duration
+                timed = duration is not None or bool(metadata.average_rate)
                 refs = [
                     FrameRef(
                         source,
@@ -275,7 +289,7 @@ class VideoComparison:
             indexes = np.linspace(0, len(refs) - 1, num=min(frames, len(refs)), dtype=int)
             chosen = [refs[index] for index in indexes]
             rows.append(provider.decode_batch(chosen))
-            timestamps.append([ref.timestamp for ref in chosen])
+            captions.append([_frame_caption(ref, timed=timed) for ref in chosen])
         columns = min(len(rows[0]), len(rows[1]))
         figure, axes = plt.subplots(
             2,
@@ -289,7 +303,7 @@ class VideoComparison:
                 axes[row, column].imshow(rows[row][column])
                 axes[row, column].axis("off")
                 axes[row, column].set_title(
-                    f"{label}\n{timestamps[row][column]:.2f}s"
+                    f"{label}\n{captions[row][column]}"
                 )
         return figure
 

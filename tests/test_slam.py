@@ -538,7 +538,10 @@ def test_prepare_video_mapping_decodes_runs_and_exports_alignment(tmp_path):
     )
     document = json.loads(manifest.read_text())
     assert document["timebase"] == "timestamp"
-    assert document["clips"]["clip one"]["video"] == "gameplay.mp4"
+    # A CWD-relative video path is absolutized at export time: the adapter resolves relative
+    # manifest references against the manifest directory, so recording it verbatim would break
+    # re-ingestion from any other working directory.
+    assert document["clips"]["clip one"]["video"] == str(Path("gameplay.mp4").absolute())
     adapter = SLAMTrajectoryAdapter(manifest=manifest)
     assert [tick.time for tick in adapter.ticks("clip one")] == [0.0, 0.25, 0.5]
 

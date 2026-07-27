@@ -1,7 +1,9 @@
 """Compositional operator registration, expansion, and provenance."""
 from __future__ import annotations
 
+import ast
 import json
+import re
 import sys
 
 import pytest
@@ -156,22 +158,100 @@ def test_ambiguous_operator_methods_have_qualified_alternatives():
     assert "beta_value" in beta_result.describe()["strategy"]["define"]
 
 
-def test_qualified_operator_method_handles_a_core_method_name_collision():
+def test_operator_name_that_shadows_a_pipeline_attribute_is_rejected():
+    """A method spelling that is a real Pipeline attribute (`report`, `window`, `schema`, ...) was
+    silently shadowed — ``__getattr__`` never runs — so registration now rejects it."""
+    registry = Registry(default_registry)
+    for name in ("acme/report", "custom/window", "acme/schema", "filter"):
+        with pytest.raises(ValueError, match="silently shadowed"):
+            registry.register_operator(name, lambda pipeline: pipeline.head(1))
+        assert name not in registry.names("operator")
+
+    with pytest.raises(ValueError, match=r"\['report'\].*rename the component"):
+        registry.register_operator("acme/report", lambda pipeline: pipeline.head(1))
+
+    # A namespaced name whose local part does not collide stays callable under both spellings,
+    # and the built-in attribute is untouched.
+    registry.register_operator("acme/report-balance",
+                               lambda pipeline: pipeline.measure("rb", "mean", of="signal"))
+    pipeline = _pipeline().using(registry)
+    assert "rb" in pipeline.report_balance().describe()["strategy"]["define"]
+    assert "rb" in pipeline.acme__report_balance().describe()["strategy"]["define"]
+    assert input([{"signal": float(i)} for i in range(12)]).window(3)._window_desc["window"] == 3
+
+
+def test_plugin_check_reports_a_shadowed_operator_name():
+    """``kur-plugin-check`` must name the collision, not only fail somewhere inside the import."""
+    from kuration.core.plugin_validation import _descriptor_errors
+    from kuration.core.registry import ComponentDescriptor
+
+    def descriptor(name):
+        return ComponentDescriptor(
+            name=name, kind="operator", description="operator under check",
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
+            package="kuration-acme", install_hint="pip install kuration-acme", version="1")
+
+    errors = _descriptor_errors(descriptor("acme/stats"), expected_package="kuration-acme")
+    assert any("silently shadowed" in message and "acme/stats" in message for message in errors)
+    assert _descriptor_errors(descriptor("acme/stats-balance"),
+                              expected_package="kuration-acme") == []
+
+
+def test_plain_operator_name_outranks_a_namespaced_local_shorthand():
+    """``smooth`` and ``acme/smooth`` both wanted ``pipeline.smooth()``; the complete name wins and
+    the namespaced operator keeps its qualified spelling."""
     registry = Registry(default_registry)
     registry.register_operator(
-        "custom/window",
-        lambda pipeline, *, size: pipeline.window(size),
-        parameters={
-            "type": "object",
-            "properties": {"size": {"type": "integer", "minimum": 1}},
-            "required": ["size"],
-            "additionalProperties": False,
-        },
-    )
-    pipeline = input([{"signal": float(i)} for i in range(12)]).using(registry)
+        "smooth", lambda pipeline: pipeline.measure("plain_value", "mean", of="signal"))
+    registry.register_operator(
+        "acme/smooth", lambda pipeline: pipeline.measure("acme_value", "mean", of="signal"))
+    pipeline = _pipeline().using(registry)
 
-    assert pipeline.window(3)._window_desc["window"] == 3
-    assert pipeline.custom__window(size=5)._window_desc["window"] == 5
+    assert "plain_value" in pipeline.smooth().describe()["strategy"]["define"]
+    assert "acme_value" in pipeline.acme__smooth().describe()["strategy"]["define"]
+    assert {"smooth", "acme__smooth"} <= set(dir(pipeline))
+
+
+def _call_suggestion(pipeline, suggestion: str):
+    """Call one spelling exactly as an ambiguity message suggests it."""
+    match = re.fullmatch(r"apply\((.+)\)", suggestion)
+    if match:
+        return pipeline.apply(ast.literal_eval(match.group(1)))
+    assert suggestion.endswith("()"), suggestion
+    return getattr(pipeline, suggestion[:-2])()
+
+
+def _suggestions(message: str) -> list[str]:
+    return ast.literal_eval(re.search(r"use one of (\[.*\])", message).group(1))
+
+
+def test_every_ambiguity_suggestion_is_a_spelling_that_resolves():
+    """The message used to suggest the ambiguous spelling itself, leaving one operator with no
+    working fluent call. Every suggestion must resolve to the operator it names."""
+    registry = Registry(default_registry)
+    # 'a.b/c' shares its local shorthand ('c') with both others, its friendly qualified alias
+    # ('a_b__c') with 'a-b/c', and its canonical alias ('a_db__c') with 'a_db/c' — so it has no
+    # unique method spelling at all and must be suggested as apply().
+    for name, measure in (("a.b/c", "dotted_value"), ("a-b/c", "hyphen_value"),
+                          ("a_db/c", "encoded_value")):
+        registry.register_operator(
+            name, lambda pipeline, measure=measure: pipeline.measure(measure, "mean", of="signal"))
+    pipeline = _pipeline().using(registry)
+
+    with pytest.raises(AttributeError) as info:
+        pipeline.c()
+    suggestions = _suggestions(str(info.value))
+    assert len(suggestions) == 3
+    assert "apply('a.b/c')" in suggestions
+    defined = set()
+    for suggestion in suggestions:
+        defined |= set(_call_suggestion(pipeline, suggestion).describe()["strategy"]["define"])
+    assert {"dotted_value", "hyphen_value", "encoded_value"} <= defined
+
+    with pytest.raises(AttributeError) as info:
+        pipeline.a_db__c()
+    for suggestion in _suggestions(str(info.value)):
+        _call_suggestion(pipeline, suggestion)
 
 
 def test_canonical_operator_alias_resolves_normalized_namespace_collisions():

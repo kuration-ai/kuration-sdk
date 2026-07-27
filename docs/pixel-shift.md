@@ -13,8 +13,9 @@ that stateful judgment separate makes this transform reusable on its own.
 
 1. **Per-segment scalar features**, so it composes inside an ordinary pipeline
    (`.bin()`/`.filter()`/`.sample()`): for each of 8 controls (W/S/A/D and the four signed
-   mouse-axis controls), 5 numbers — `{control}_shift_min`, `{control}_shift_max`,
-   `{control}_shift_mean`, `{control}_n_instances`, and `{control}_requested` — collapsing
+   mouse-axis controls), 6 numbers — `{control}_shift_min`, `{control}_shift_max`,
+   `{control}_shift_mean`, `{control}_shift_measured`, `{control}_n_instances`, and
+   `{control}_requested` — collapsing
    across whatever press-lengths (1/2/3 frames, for W/S/A/D) or delta magnitudes (for the
    mouse controls) were found for that control in that segment. `min`/`max` are the true
    worst-case/best-case signed shift among however many instances were found in that
@@ -23,7 +24,16 @@ that stateful judgment separate makes this transform reusable on its own.
    `{control}_requested` is `1` for controls the call measured and `0` for controls omitted
    from `controls`; together with `n_instances`, it distinguishes “not requested” from
    “requested, but no qualifying event was found.” Shift statistics are placeholders when
-   `n_instances == 0` and must not be interpreted as measured zero motion.
+   `n_instances == 0` and must not be interpreted as measured zero motion. The core transform
+   contract admits only finite scalars, so there is no NaN to mark them with:
+   `{control}_shift_measured` is the explicit 0/1 flag to select on, e.g.
+
+   ```python
+   pipeline.pixel_shift(controls=["W"]).filter("w_shift_measured", ">=", 1).bin("w_shift_mean", bins=8)
+   ```
+
+   which keeps only segments where a W shift was actually measured (equivalent to
+   `w_n_instances >= 1`).
 
 2. **A console report** (`PixelShiftReport`, prints to stdout via `.print_report()`, writes
    nothing to disk) — for every (control, press_len/delta) combination found across the
@@ -125,7 +135,9 @@ press lengths, axes, color spaces, segment IDs, and lookaround shapes are valida
 Python callers may use any non-empty sequence such as a list or tuple for `controls`.
 
 An arbitrary window boundary can cut through a press. The registered pipeline transform declares
-one lookbehind action and three lookahead action/frame rows, so the SDK supplies enough bounded
+one lookbehind row **on the action input only** (`lookbehind={"field:action": 1}` — the
+measurement never reads a lookbehind frame, so none is decoded) and three lookahead action/frame
+rows, so the SDK supplies enough bounded
 context to classify every supported one-, two-, or three-frame press. Overlapping windows use the
 SDK's `rightmost-start` ownership rule: an event belongs to the latest window whose start is at or
 before the event, and per-segment counts do not duplicate it. Source edges still have shorter
@@ -189,7 +201,9 @@ cost of recomputation if one process repeatedly alternates among more than two r
   `color_space: "RGB"` (`src/kuration/core/media.py` — its first-party PyAV provider decodes
   `rgb24`), the *opposite* of this function's default. The registered `aintropy/pixel-shift`
   transform handles this for you -- `PixelShift.transform_batch` reads the real declared
-  `color_space` off `ctx["schema"].media["frame"]` (populated by the SDK runtime itself)
+  `color_space` off the media column the run actually resolved for its `media:frame` role
+  (`ctx.input_token("media:frame")` against `ctx["schema"].media`, populated by the SDK runtime
+  itself, so a per-use `inputs=("media:frames2", "field:controls")` remapping works too)
   and threads it down through `segment_scalars` and the measurement helpers to
   `_prep_gray`, so calling this operator through a
   normal kuration `Pipeline` is correct regardless of source, with no extra array copy.

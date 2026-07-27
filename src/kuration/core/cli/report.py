@@ -58,9 +58,13 @@ def _run(args) -> None:
     rep = dataset_report(segs)
     print(f"{rep['n_segments']} segments from {rep['n_sources']} sources "
           f"({len(errors)} skipped)\n")
+    def _fmt(value):
+        # An all-non-finite metric reports None statistics (JSON-safe) — render as a dash.
+        return "—" if value is None else f"{value:.3f}"
+
     for m, d in rep["metrics"].items():
-        print(f"  {m:<24} mean={d['mean']:.3f}  p50={d['p50']:.3f}  p95={d['p95']:.3f}  "
-              f"[{d['min']:.3f}, {d['max']:.3f}]")
+        print(f"  {m:<24} mean={_fmt(d['mean'])}  p50={_fmt(d['p50'])}  p95={_fmt(d['p95'])}  "
+              f"[{_fmt(d['min'])}, {_fmt(d['max'])}]")
     if rep["tags"]:
         top = sorted(rep["tags"].items(), key=lambda x: -x[1])[:8]
         print("  tags:", "  ".join(f"{k}={v}" for k, v in top))

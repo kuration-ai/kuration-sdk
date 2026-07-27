@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from ._common import cli_run, read_job
+from ._common import cli_run, parse_mapping_option, read_job
 
 
 def _job_subject(path: str):
@@ -54,8 +54,9 @@ def main() -> None:
     ap.add_argument("--time", help="Time-column override (--infer only).")
     ap.add_argument("--entity", help="Entity-column override (--infer only).")
     ap.add_argument("--hz", type=float, help="Sample-rate override (--infer only).")
-    ap.add_argument("--kinds", metavar="JSON",
-                    help="JSON object of per-column kind overrides (--infer only).")
+    ap.add_argument("--kinds", metavar="JSON|PATH",
+                    help="Per-column kind overrides (--infer only), as inline JSON or path "
+                         "to JSON file.")
     ap.add_argument("--json", action="store_true", help="Emit structured JSON.")
     ap.add_argument("--html", metavar="PATH", help="Write a self-contained HTML preview.")
     ap.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
@@ -75,9 +76,7 @@ def main() -> None:
                                  "spec carries its own schema and adapter")
             schema, adapter, sources = _job_subject(args.target[0])
         else:
-            kinds = json.loads(args.kinds) if args.kinds else None
-            if kinds is not None and not isinstance(kinds, dict):
-                raise ValueError("--kinds must be a JSON object of column -> kind")
+            kinds = parse_mapping_option(args.kinds, label="--kinds")
             schema, adapter, sources = _inferred_subject(
                 args.target, time=args.time, entity=args.entity, hz=args.hz, kinds=kinds)
 

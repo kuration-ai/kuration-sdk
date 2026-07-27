@@ -10,3 +10,11 @@ https://github.com/facebookresearch/dinov2
 
 The bundled sources are licensed under the Apache License, Version 2.0. Local modifications
 integrate the runtime with kuration-sdk, narrow optional imports, and fix validation defects.
+
+Local modifications:
+- imports are rewritten to the vendored `kuration.gameplay.slam._vendor.depth_anything_3` path;
+  optional imports are narrowed so the tree imports without the full upstream dependency set.
+- validation defects fixed in place.
+- `utils/export.py` is a kuration stub, not upstream code: the upstream GLB/PLY export helpers
+  are not vendored, and the stub raises NotImplementedError pointing at kuration's own export
+  path (previously `api.py::_export_results` imported a module that did not exist here).

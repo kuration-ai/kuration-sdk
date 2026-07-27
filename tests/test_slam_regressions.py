@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import threading
 from types import SimpleNamespace
 
 import numpy as np
@@ -9,12 +14,20 @@ import pytest
 
 import kuration.gameplay.slam.export as slam_export_module
 import kuration.gameplay.slam.runner as slam_runner_module
+import kuration.gameplay.slam.workflow as slam_workflow_module
 from kuration.gameplay.slam import (
     PointCloudArtifact,
     SLAMReconstructor,
+    SLAMTrajectoryAdapter,
+    build_pointcloud_scene,
+    curate_slam_gameplay,
     export_slam_output,
+    input_slam,
     load_point_cloud,
+    load_slam_output,
+    prepare_slam_input,
 )
+from kuration.gameplay.slam.demo import write_demo_reconstruction
 from kuration.gameplay.slam.export import _times_for_clip
 
 
@@ -312,3 +325,376 @@ def test_point_cloud_loader_validates_manifest_scene_metadata(
 
     with pytest.raises(ValueError, match=message):
         load_point_cloud(manifest)
+
+
+# ----------------------------------------------------------------------
+# 2026-07 SLAM review fixes
+# ----------------------------------------------------------------------
+
+
+def _fake_depth_model(torch):
+    """Smallest object `SLAMOperator` accepts: a real module (so `.parameters()`/`.to()` behave)
+    whose `inference` returns the identity reconstruction the runtime expects."""
+
+    class FakeDepth(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.anchor = torch.nn.Parameter(torch.zeros(()))
+
+        def inference(self, *, image, process_res, export_dir):
+            count = len(image)
+            intrinsics = np.repeat(np.eye(3)[None, ...], count, axis=0)
+            intrinsics[:, 0, 0] = 2.0
+            intrinsics[:, 1, 1] = 2.0
+            return SimpleNamespace(
+                depth=np.ones((count, 2, 2), dtype=np.float32),
+                intrinsics=intrinsics,
+                extrinsics=np.repeat(np.eye(4)[None, ...], count, axis=0),
+                conf=np.ones((count, 2, 2), dtype=np.float32),
+                processed_images=np.asarray(image),
+            )
+
+    return FakeDepth()
+
+
+def _operator(torch, model, **overrides):
+    from kuration.gameplay.slam._runtime import SLAMOperator
+
+    options = {
+        "output_pointcloud": False,
+        "window_size": 2,
+        "overlap": 1,
+        "bridge_size": 1,
+        "process_res": 32,
+    }
+    options.update(overrides)
+    return SLAMOperator(model, **options)
+
+
+def test_unindexed_and_index_zero_devices_compare_as_the_same_device():
+    torch = pytest.importorskip("torch")
+    from kuration.gameplay.slam._runtime import SLAMOperator
+
+    same = SLAMOperator._same_device
+    # Autodetection yields the unindexed form; a parameter always reports the indexed one.
+    assert same(torch.device("cuda:0"), torch.device("cuda"))
+    assert same(torch.device("cuda"), torch.device("cuda:0"))
+    assert same(torch.device("mps:0"), torch.device("mps"))
+    assert same(torch.device("cpu"), torch.device("cpu"))
+    assert not same(torch.device("cuda:1"), torch.device("cuda"))
+    assert not same(torch.device("cpu"), torch.device("cuda"))
+    assert not same(None, torch.device("cpu"))
+
+
+def test_autodetected_single_device_reuses_the_model_instead_of_replicating_it():
+    torch = pytest.importorskip("torch")
+    from kuration.gameplay.slam._runtime import SLAMOperator
+
+    device = SLAMOperator._resolve_devices(None)[0]
+    model = _fake_depth_model(torch).to(device)
+    operator = _operator(torch, model, devices=None)
+
+    # A deepcopy here would put a second full copy of the model on the same accelerator.
+    assert operator._get_model_for_device(operator.devices[0]) is model
+    assert operator._device_models[operator.devices[0]] is model
+
+
+def test_indexed_parameter_device_matches_an_unindexed_target_without_replicating():
+    """The accelerator case, without needing an accelerator: a model whose parameters live on
+    `cuda:0` must be reused as-is for the autodetected `cuda` target instead of being deepcopied
+    onto the very same GPU."""
+    torch = pytest.importorskip("torch")
+
+    class IndexedDepth:
+        def parameters(self):
+            return iter([SimpleNamespace(device=torch.device("cuda:0"))])
+
+        def to(self, device):  # pragma: no cover - must never be reached
+            raise AssertionError(f"model must not be replicated onto {device}")
+
+        def eval(self):  # pragma: no cover - must never be reached
+            raise AssertionError("model must not be replicated")
+
+    model = IndexedDepth()
+    operator = _operator(torch, model, devices=["cuda"])
+    assert operator.devices == [torch.device("cuda")]
+    assert operator._get_model_for_device(operator.devices[0]) is model
+
+
+def test_device_replica_clears_the_lazily_cached_model_device():
+    torch = pytest.importorskip("torch")
+
+    class CachingDepth:
+        """Mimics the vendored DA3 model: `.device` is memoized on first use and `.to()` does
+        not reset it, so a replica would keep moving inputs to the source device."""
+
+        def __init__(self):
+            self.device = torch.device("cuda:3")
+            self.moved_to = None
+            self.evaluated = False
+
+        def parameters(self):
+            return iter(())
+
+        def to(self, device):
+            self.moved_to = device
+            return self
+
+        def eval(self):
+            self.evaluated = True
+            return self
+
+    model = CachingDepth()
+    operator = _operator(torch, model, devices=["cpu"])
+    replica = operator._get_model_for_device(torch.device("cpu"))
+
+    assert replica is not model
+    assert replica.moved_to == torch.device("cpu")
+    assert replica.evaluated
+    assert replica.device is None
+    assert model.device == torch.device("cuda:3")
+
+
+def test_computed_device_property_on_a_replica_is_left_alone():
+    torch = pytest.importorskip("torch")
+
+    class PropertyDepth:
+        @property
+        def device(self):
+            return torch.device("cpu")
+
+        def parameters(self):
+            return iter(())
+
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return self
+
+    operator = _operator(torch, PropertyDepth(), devices=["cpu"])
+    replica = operator._get_model_for_device(torch.device("cpu"))
+    assert replica.device == torch.device("cpu")
+
+
+def test_device_replicas_are_materialized_before_any_worker_thread_runs():
+    torch = pytest.importorskip("torch")
+    from kuration.gameplay.slam._runtime import SLAMOperator
+
+    events: list[tuple[str, bool]] = []
+
+    class RecordingOperator(SLAMOperator):
+        def _get_model_for_device(self, device):
+            events.append(("replica", threading.current_thread() is threading.main_thread()))
+            return super()._get_model_for_device(device)
+
+        def _run_chunk(self, chunk, model):
+            events.append(("chunk", threading.current_thread() is threading.main_thread()))
+            return super()._run_chunk(chunk, model)
+
+    from kuration.gameplay.slam import _runtime as runtime_module
+
+    operator = RecordingOperator(
+        _fake_depth_model(torch),
+        output_pointcloud=False,
+        devices=["cpu"],
+        window_size=2,
+        overlap=1,
+        bridge_size=1,
+        process_res=32,
+    )
+    assert isinstance(operator, runtime_module.SLAMOperator)
+    operator({"clip": np.zeros((3, 2, 2, 3), dtype=np.uint8)})
+
+    kinds = [kind for kind, _ in events]
+    assert kinds.count("replica") == 1
+    assert "chunk" in kinds
+    assert kinds.index("replica") < kinds.index("chunk")
+    assert all(on_main for kind, on_main in events if kind == "replica")
+
+
+def test_replica_creation_is_serialized_by_the_model_lock():
+    torch = pytest.importorskip("torch")
+
+    operator = _operator(torch, _fake_depth_model(torch), devices=["cpu"])
+    entered = threading.Event()
+    finished = threading.Event()
+
+    def call():
+        entered.set()
+        operator._get_model_for_device(torch.device("cpu"))
+        finished.set()
+
+    thread = threading.Thread(target=call)
+    with operator._model_lock:
+        thread.start()
+        assert entered.wait(5)
+        assert not finished.wait(0.25)
+    assert finished.wait(5)
+    thread.join(5)
+    assert not thread.is_alive()
+
+
+def test_export_keeps_in_tree_videos_relative_and_absolutizes_the_rest(tmp_path, monkeypatch):
+    destination = tmp_path / "export"
+    inside = destination / "media" / "clip.mp4"
+    inside.parent.mkdir(parents=True)
+    inside.write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+
+    manifest = export_slam_output(
+        _output(), destination, sample_hz=1.0, videos={"clip": "export/media/clip.mp4"}
+    )
+    assert json.loads(manifest.read_text())["clips"]["clip"]["video"] \
+        == str(Path("media") / "clip.mp4")
+
+    outside = tmp_path / "elsewhere" / "clip.mp4"
+    outside.parent.mkdir()
+    outside.write_bytes(b"")
+    manifest = export_slam_output(
+        _output(), destination, sample_hz=1.0, videos={"clip": "elsewhere/clip.mp4"}
+    )
+    assert json.loads(manifest.read_text())["clips"]["clip"]["video"] == str(outside)
+
+    manifest = export_slam_output(
+        _output(), destination, sample_hz=1.0, videos={"clip": "gs://bucket/clip.mp4"}
+    )
+    assert json.loads(manifest.read_text())["clips"]["clip"]["video"] == "gs://bucket/clip.mp4"
+
+    with pytest.raises(ValueError, match="non-empty path or URI"):
+        export_slam_output(_output(), destination, sample_hz=1.0, videos={"clip": ""})
+
+
+def test_cwd_relative_video_reingests_from_a_different_working_directory(tmp_path, monkeypatch):
+    workdir = tmp_path / "work"
+    (workdir / "videos").mkdir(parents=True)
+    video = workdir / "videos" / "clip.mp4"
+    video.write_bytes(b"")
+
+    monkeypatch.chdir(workdir)
+    manifest = prepare_slam_input(
+        _output(),
+        tmp_path / "export",
+        export_options={"sample_hz": 1.0, "videos": {"clip": "videos/clip.mp4"}},
+        preflight=False,
+    )
+
+    class Provider:
+        capabilities: dict = {}
+
+        def __init__(self):
+            self.probed: list[str] = []
+
+        def probe(self, uri):
+            assert Path(uri).is_file(), f"unresolvable video reference {uri!r}"
+            self.probed.append(uri)
+            return SimpleNamespace(uri=uri, height=2, width=2)
+
+    monkeypatch.chdir(tmp_path)
+    provider = Provider()
+    pipeline = input_slam(manifest, join_video=True, provider=provider)
+
+    assert provider.probed == [str(video)]
+    assert pipeline.adapter.videos == {"clip": str(video)}
+    assert SLAMTrajectoryAdapter(manifest=manifest).video_mapping == {"clip": str(video)}
+
+
+def test_unrecordable_runtime_option_is_rejected_instead_of_dropped():
+    with pytest.raises(ValueError, match="devices.*cannot be recorded"):
+        SLAMReconstructor(depth_model="da3-base", devices={"cuda:0"})
+    with pytest.raises(ValueError, match="tuning.*cannot be recorded"):
+        SLAMReconstructor(depth_model="da3-base", tuning=object())
+
+    first = SLAMReconstructor(depth_model="da3-base", devices=["cuda:0"], window_size=8)
+    second = SLAMReconstructor(depth_model="da3-base", devices=["cuda:1"], window_size=8)
+    nested = SLAMReconstructor(
+        depth_model="da3-base", devices=["cuda:0"], window_size=8, extra={"a": [1, 2]}
+    )
+
+    assert first.provenance["options"]["devices"] == ["cuda:0"]
+    assert nested.provenance["options"]["extra"] == {"a": [1, 2]}
+    assert first.provenance != second.provenance
+    assert first.provenance != nested.provenance
+
+
+def test_pointcloud_scene_renders_a_cloud_without_colors():
+    trimesh = pytest.importorskip("trimesh")
+
+    output = SimpleNamespace(
+        points=np.array([[0.0, 0.0, 1.0], [1.0, 2.0, 3.0]]),
+        colors=None,
+        trajectories={},
+        poses={},
+    )
+    scene = build_pointcloud_scene(output)
+    clouds = [
+        geometry for geometry in scene.geometry.values()
+        if isinstance(geometry, trimesh.PointCloud)
+    ]
+    assert len(clouds) == 1
+    assert clouds[0].vertices.shape == (2, 3)
+    assert len(clouds[0].colors) == 2
+
+
+def test_selection_json_is_written_through_the_atomic_writer(tmp_path, monkeypatch):
+    calls = []
+    real_writer = slam_workflow_module._atomic_write_text
+
+    def recording(target, value):
+        calls.append(Path(target))
+        real_writer(target, value)
+
+    monkeypatch.setattr(slam_workflow_module, "_atomic_write_text", recording)
+    manifest = write_demo_reconstruction(tmp_path / "demo", frames_per_clip=24)
+    destination = tmp_path / "nested" / "selection.json"
+    result = curate_slam_gameplay(
+        manifest, destination, window=8, stride=4, n=2, min_quality=None
+    )
+
+    assert calls == [destination]
+    assert json.loads(result.selection.read_text())["format"] == "kuration-slam-selection"
+    assert not list(destination.parent.glob("*.tmp"))
+
+
+def test_vendored_depth_export_helpers_are_an_explicit_stub():
+    from kuration.gameplay.slam._vendor.depth_anything_3.utils.export import export
+
+    with pytest.raises(NotImplementedError, match="not vendored into kuration-sdk"):
+        export(None, "glb", "/tmp/does-not-matter")
+
+
+def test_importing_the_slam_runtime_does_not_suppress_openmp_duplicate_loading():
+    pytest.importorskip("torch")
+    script = (
+        "import os, sys;"
+        "os.environ.pop('KMP_DUPLICATE_LIB_OK', None);"
+        "import kuration.gameplay.slam._runtime;"
+        "sys.stdout.write(str('KMP_DUPLICATE_LIB_OK' in os.environ))"
+    )
+    environment = dict(os.environ)
+    environment.pop("KMP_DUPLICATE_LIB_OK", None)
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True, text=True, timeout=300, env=environment,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "False"
+
+
+def test_slam_artifact_paths_reject_remote_uris(tmp_path):
+    frames = {"clip": np.zeros((2, 2, 2, 3), dtype=np.uint8)}
+    calls = [
+        lambda: SLAMTrajectoryAdapter(manifest="gs://bucket/run/manifest.json"),
+        lambda: input_slam("gs://bucket/run/manifest.json"),
+        lambda: export_slam_output(_output(), "s3://bucket/run"),
+        lambda: prepare_slam_input("gs://bucket/run/manifest.json"),
+        lambda: prepare_slam_input(frames, "az://container/run"),
+        lambda: load_point_cloud("gs://bucket/run/scene_pointcloud.npz"),
+        lambda: load_slam_output("gs://bucket/run/manifest.json"),
+        lambda: curate_slam_gameplay("gs://bucket/run/manifest.json", tmp_path / "sel.json"),
+        lambda: curate_slam_gameplay(tmp_path / "manifest.json", "gs://bucket/sel.json"),
+        lambda: PointCloudArtifact(np.zeros((1, 3))).save("gs://bucket/cloud.npz"),
+    ]
+    for call in calls:
+        with pytest.raises(ValueError, match="local-only"):
+            call()

@@ -20,7 +20,8 @@ def main() -> None:
         description="Report distribution statistics for a written dataset artifact.")
     ap.add_argument("dataset", help="Dataset directory or dataset_manifest.json path.")
     ap.add_argument("--verify", action="store_true",
-                    help="Verify shard integrity while scanning.")
+                    help="Verify shard integrity: during the content scan, or — with "
+                         "--no-content — as a manifest/checksum verification pass.")
     ap.add_argument("--no-content", action="store_true",
                     help="Summarize the manifest only; do not decode shard contents.")
     ap.add_argument("--hist-bins", type=int, default=10,
@@ -28,7 +29,10 @@ def main() -> None:
     ap.add_argument("--max-values", type=int, default=100_000,
                     help="Values sampled per modality (default: 100000).")
     ap.add_argument("--examples", type=int, default=5,
-                    help="Representative examples to retain (default: 5).")
+                    help="Bound the embedded selection evidence retained (default: 5). Only "
+                         "artifacts that embed examples (an hours-budget review) honor it; "
+                         "a non-default value on an artifact without examples is an error "
+                         "rather than a silently ignored flag.")
     ap.add_argument("--capabilities", action="store_true",
                     help="Print the plots and evidence this report supports, then exit.")
     ap.add_argument("--json", action="store_true", help="Emit the structured report as JSON.")
@@ -49,6 +53,12 @@ def main() -> None:
             from ..stats import write_stats_html
             write_stats_html(args.html, report, title="kuration stats")
         print(json.dumps(report.to_dict(), indent=2) if args.json else report.render())
+        # Same contract as kur-inspect --verify: a failed integrity check is an exit code, not
+        # just a line of output. (A content scan raises instead, exiting 1 through cli_run.)
+        verification = ((report.get("sections") or {}).get("artifact") or {}).get(
+            "verification") or {}
+        if verification.get("requested") and not verification.get("valid"):
+            raise SystemExit(2)
 
     cli_run(body, debug=args.debug)
 

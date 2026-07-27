@@ -33,14 +33,26 @@ def _write_parquet(path: str, arrays: dict) -> None:
         raise ImportError("parquet export needs pyarrow: "
                           "pip install 'kuration-sdk[parquet]'") from error
     columns: dict[str, object] = {}
+    owners: dict[str, str] = {}
     for name, array in arrays.items():
         if array.ndim == 1:
-            columns[name] = array
-            continue
-        # Flatten trailing dimensions into stable, order-preserving column names.
-        flat = array.reshape(array.shape[0], -1)
-        for index in range(flat.shape[1]):
-            columns[f"{name}_{index}"] = flat[:, index]
+            produced = [(name, array)]
+        else:
+            # Flatten trailing dimensions into stable, order-preserving column names.
+            flat = array.reshape(array.shape[0], -1)
+            produced = [(f"{name}_{index}", flat[:, index]) for index in range(flat.shape[1])]
+        for column, values in produced:
+            if column in owners:
+                # Flattening is name-mangling: silently overwriting a sibling modality would
+                # export the wrong data under a plausible column name.
+                raise ValueError(
+                    f"parquet export column {column!r} is claimed by both modality "
+                    f"{owners[column]!r} and modality {name!r}; flattened tensor columns are "
+                    f"named '<modality>_<index>'. Export those modalities separately with "
+                    "--modalities, or use --format npz/npy which keeps tensor shapes."
+                )
+            owners[column] = name
+            columns[column] = values
     from ..io import staged_write
     with staged_write(path) as local_path:
         pq.write_table(pa.table(columns), local_path)

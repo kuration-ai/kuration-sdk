@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 
+from ._paths import local_path
 from .export import EXPORT_FORMAT, EXPORT_VERSION, export_slam_output
 
 
@@ -39,14 +40,32 @@ def _model_identity(value: object, explicit: str | None, *, name: str) -> dict |
 
 
 def _stable_options(options: Mapping[str, object]) -> dict[str, object]:
+    """Record plain runtime options verbatim, rejecting anything unrecordable.
+
+    These options are both provenance and part of the automatic-resume cache key, so silently
+    dropping an option that cannot be JSON-encoded would let two runs that differ *only* in that
+    option share one cache entry (and one recorded identity). Opaque values are refused the same
+    way opaque model identities are (`_validate_automatic_resume_identity`).
+    """
     stable: dict[str, object] = {}
     for key, value in sorted(options.items()):
         if value is None or isinstance(value, (str, int, float, bool)):
             stable[key] = value
-        elif isinstance(value, (list, tuple)) and all(
-            item is None or isinstance(item, (str, int, float, bool)) for item in value
-        ):
-            stable[key] = list(value)
+            continue
+        if isinstance(value, Path):
+            stable[key] = str(value)
+            continue
+        if isinstance(value, tuple):
+            value = list(value)
+        try:
+            stable[key] = json.loads(json.dumps(value, allow_nan=False, sort_keys=True))
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"SLAM runtime option {key!r} of type {type(value).__name__} cannot be recorded "
+                "in reconstruction provenance or the automatic-resume cache key; pass a "
+                "JSON-safe primitive form instead (e.g. devices=['cuda:0'] rather than "
+                "torch.device objects), or an explicit cache_key"
+            ) from error
     return stable
 
 
@@ -478,7 +497,7 @@ def run_slam_reconstruction(
 def _existing_manifest(source) -> Path | None:
     if not isinstance(source, (str, Path)):
         return None
-    path = Path(source)
+    path = local_path(source, name="SLAM input path")
     if path.is_dir():
         path = path / "manifest.json"
     if not path.is_file():
@@ -564,6 +583,7 @@ def prepare_slam_input(
         return manifest
     if out_dir is None:
         raise ValueError("out_dir is required when the input is not an existing SLAM manifest")
+    out_dir = local_path(out_dir, name="SLAM out_dir")
     if resume:
         if cache_key is None:
             raise ValueError("resume=True requires cache_key for non-manifest input")

@@ -51,6 +51,61 @@ def test_action_state_convenience_uses_the_registered_analyzer():
     assert checker.baselines == baselines
 
 
+def test_video_contact_sheet_never_labels_a_frame_index_as_seconds():
+    """Regression test for a review-caught finding: with neither a duration nor an average
+    rate, `plot()` fell back to the frame index for its reference value but still rendered
+    it as "{:.2f}s" -- labelling an index as seconds. A frame index is now labelled as one,
+    while a real timebase still renders seconds."""
+    from kuration import FrameRef
+    from kuration.gameplay.video import _frame_caption
+
+    ref = FrameRef("clip.mp4", "clip.mp4", 3, 3.0)
+    assert _frame_caption(ref, timed=False) == "frame 3"
+    assert _frame_caption(ref, timed=True) == "3.00s"
+
+
+def test_video_contact_sheet_labels_index_fallback_as_a_frame_number(tmp_path):
+    """The same finding through the real contact sheet: an untimed provider's titles carry
+    frame numbers, a provider with a duration carries seconds."""
+    import numpy as np
+    import pytest
+
+    pytest.importorskip("matplotlib")
+    from kuration import FrameRef, VideoMetadata
+
+    class UntimedProvider:
+        capabilities = {"streaming": True, "variable_frame_rate": True}
+
+        def __init__(self, *, duration=None, average_rate=None):
+            self.duration = duration
+            self.average_rate = average_rate
+
+        def probe(self, uri):
+            return VideoMetadata(uri, 4, 4, 4, self.duration, self.average_rate)
+
+        def iter_refs(self, uri, *, source_id=None):
+            for index in range(4):
+                yield FrameRef(uri, source_id or uri, index, float(index))
+
+        def decode_batch(self, refs):
+            return np.stack([np.full((4, 4, 3), ref.frame_index, np.uint8) for ref in refs])
+
+    left = tmp_path / "left.mp4"
+    right = tmp_path / "right.mp4"
+    left.write_bytes(b"left")
+    right.write_bytes(b"right")
+
+    untimed = gameplay.compare_videos(left, right).plot(
+        frames=2, provider=UntimedProvider())
+    titles = [axis.get_title() for axis in untimed.axes]
+    assert all("s" not in title.split("\n")[1] for title in titles)
+    assert {title.split("\n")[1] for title in titles} == {"frame 0", "frame 3"}
+
+    timed = gameplay.compare_videos(left, right).plot(
+        frames=2, provider=UntimedProvider(duration=1.5))
+    assert {axis.get_title().split("\n")[1] for axis in timed.axes} == {"0.00s", "1.50s"}
+
+
 def test_gameplay_import_does_not_load_heavy_runtimes():
     code = """
 import sys

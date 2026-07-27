@@ -101,6 +101,17 @@ sources. Registered `BatchTransform`s consume `field:`/`feature:`/`media:` input
 semantics before decode, load once per runner, and return finite scalar features aligned to stable
 segment IDs.
 
+The tokens a transform declares at registration are *roles*, not fixed batch keys: a per-use
+`inputs=` remapping substitutes one same-kind token per role (validated at pipeline-construction
+time), and `ctx.inputs` / `ctx.input_token(role)` publish the resolution, so an implementation
+never hardcodes a key that a remapped use would not have. `field:` batches are
+`(B,T,E,D)` — numeric entity fields keep the entity/dim axes even for a one-entity scalar field —
+and are NaN-padded to the widest extent in the batch, so every transform also receives
+`ctx.valid_steps` (`valid_steps` in the batch mapping): the real timestep count per row, which
+makes a ragged batch's padding observable instead of silently averaged. `lookbehind`/`lookahead`
+may be one shared tick count or a `{declared input token: count}` mapping, so a transform that
+only reads one input's boundary context does not pay to extract (or decode) the others'.
+
 ### `features.py` — FeatureEngine
 Compiles a strategy's `define` metrics against the schema, pulls registered metrics by name,
 and runs all of them against one `WindowBuffer` per segment. The single amortization point.

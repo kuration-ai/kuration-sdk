@@ -14,13 +14,16 @@ to import ``depth_anything_3`` directly.
 """
 import collections
 import copy
-import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+# NOTE: this module deliberately does NOT set KMP_DUPLICATE_LIB_OK. Importing torch next to
+# another OpenMP-linked wheel (faiss, sklearn) can abort with a duplicate-runtime error, but
+# suppressing that abort is what makes the resulting numerical corruption silent -- and an SDK
+# must not make that decision for the whole process. Callers who accept the risk can export
+# KMP_DUPLICATE_LIB_OK=TRUE themselves before importing kuration.
 
 import numpy as np
 import torch
@@ -291,6 +294,10 @@ class SLAMOperator:
             else depth_model
         )
         self._device_models: Dict[torch.device, Any] = {}
+        # Replicas are created under this lock (and, in `process_chunks`, before any worker
+        # thread starts) so two per-device threads can never race on `_device_models`, nor
+        # deepcopy the source model while another thread is running inference on it.
+        self._model_lock = threading.Lock()
 
         self._clips: Optional[List[Dict[str, Any]]] = None
         self._bridge_pairs: Optional[Dict[Tuple[int, int], Tuple[float, int, int]]] = None
@@ -659,19 +666,49 @@ class SLAMOperator:
     # Step 4: run every chunk through the depth model, split across devices
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _same_device(a: Optional["torch.device"], b: "torch.device") -> bool:
+        """Whether two devices name the same physical device.
+
+        `torch.device("cuda") != torch.device("cuda:0")` even though both mean the first GPU,
+        and autodetection (`_resolve_devices`) produces the *unindexed* form while a parameter
+        always reports the *indexed* one. Comparing them raw made the single-device path always
+        take the deepcopy branch, replicating the model onto the accelerator it already lived on
+        (~2x VRAM, OOM on a full-size DA3). Normalize both sides to (type, index-or-0)."""
+        if a is None:
+            return False
+        return (a.type, 0 if a.index is None else a.index) == \
+            (b.type, 0 if b.index is None else b.index)
+
+    @staticmethod
+    def _clear_cached_device(model: Any) -> None:
+        """Invalidate a lazily cached `.device` attribute on a freshly moved replica.
+
+        Depth Anything 3 memoizes its own device in `self.device` on first use (see
+        `_vendor/depth_anything_3/api.py::_get_model_device`) and `nn.Module.to()` does not
+        reset it, so a deepcopy'd replica would keep moving its inputs to the *source* device --
+        a timing-dependent cross-device RuntimeError. A `device` implemented as a property is
+        recomputed on every access and has nothing to invalidate."""
+        if isinstance(getattr(type(model), "device", None), property):
+            return
+        if isinstance(getattr(model, "device", None), torch.device):
+            model.device = None
+
     def _get_model_for_device(self, device: torch.device):
-        if device in self._device_models:
-            return self._device_models[device]
-        try:
-            current_device = next(self.depth_model.parameters()).device
-        except (StopIteration, AttributeError, TypeError):
-            current_device = None
-        if current_device == device:
-            model = self.depth_model
-        else:
-            model = copy.deepcopy(self.depth_model).to(device).eval()
-        self._device_models[device] = model
-        return model
+        with self._model_lock:
+            if device in self._device_models:
+                return self._device_models[device]
+            try:
+                current_device = next(self.depth_model.parameters()).device
+            except (StopIteration, AttributeError, TypeError):
+                current_device = None
+            if self._same_device(current_device, device):
+                model = self.depth_model
+            else:
+                model = copy.deepcopy(self.depth_model).to(device).eval()
+                self._clear_cached_device(model)
+            self._device_models[device] = model
+            return model
 
     @staticmethod
     def _frustum_points(K, ext_w2c, W, H, scale) -> np.ndarray:
@@ -778,12 +815,19 @@ class SLAMOperator:
             device = self.devices[idx % len(self.devices)]
             device_queues[device].append(idx)
 
+        # Materialize every replica up front, on this thread: deepcopying the source model while
+        # another device's thread is already running inference on it is not safe.
+        device_models = {
+            device: self._get_model_for_device(device)
+            for device, indices in device_queues.items() if indices
+        }
+
         progress = tqdm(total=n_chunks, desc="Reconstructing chunks", disable=not self.verbose)
         progress_lock = threading.Lock()
 
         def _run_on_device(device, indices):
             assert self._all_chunks is not None
-            model = self._get_model_for_device(device)
+            model = device_models[device]
             results = {}
             for idx in indices:
                 results[idx] = self._run_chunk(self._all_chunks[idx], model)

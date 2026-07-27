@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from ._paths import local_path
 from .pointcloud import load_point_cloud
 from .schema import (
     CAMERA_FRUSTUM,
@@ -28,7 +29,7 @@ def load_slam_output(manifest_path: str | Path) -> SimpleNamespace:
     manifest, so code written against that interface -- like
     `build_pointcloud_scene` below -- runs the same whether it's handed a
     freshly-run `SLAMOperator` or a manifest reloaded from disk."""
-    manifest_path = Path(manifest_path)
+    manifest_path = local_path(manifest_path, name="SLAM manifest")
     manifest = json.loads(manifest_path.read_text())
     root = manifest_path.parent
 
@@ -105,7 +106,14 @@ def build_pointcloud_scene(output: Any, *, max_display_points: int = int(3e6)) -
 
     if output.points is not None and output.points.shape[0]:
         points_g = _flip_cv_to_gltf(output.points)
-        rgb = output.colors[:, :3].astype(np.uint8)
+        # Colors are optional on both interfaces (`SLAMOperator` with `output_pointcloud` off
+        # per-point colors, and a manifest whose point cloud carries no `colors` array), so an
+        # uncolored cloud is displayed in neutral grey rather than crashing.
+        colors = getattr(output, "colors", None)
+        if colors is None:
+            rgb = np.full((points_g.shape[0], 3), 170, dtype=np.uint8)
+        else:
+            rgb = np.asarray(colors)[:, :3].astype(np.uint8)
         alpha = np.full((rgb.shape[0], 1), 255, dtype=np.uint8)
         rgba = np.concatenate([rgb, alpha], axis=1)
         cloud = trimesh.PointCloud(vertices=points_g, colors=rgba)

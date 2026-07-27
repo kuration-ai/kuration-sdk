@@ -295,6 +295,13 @@ class Registry:
             raise ValueError(f"invalid component name {name!r}; use 'name' or 'namespace/name'")
         if name in self._entries[kind] and not replace:
             raise ValueError(f"{kind} {name!r} already registered in this registry")
+        if kind == "operator":
+            # Operators become fluent Pipeline methods; a name whose method spelling is already a
+            # real Pipeline attribute would be silently shadowed, so reject it at registration.
+            from .pipeline import operator_name_conflict
+            conflict = operator_name_conflict(name)
+            if conflict is not None:
+                raise ValueError(conflict)
         if execution_traits is not None:
             from .planning import OperatorTraits
             execution_traits = OperatorTraits.from_dict(execution_traits).to_dict()

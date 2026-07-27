@@ -8,10 +8,10 @@ this operator's output, kept deliberately out of this file.
 Two things this operator produces:
 
 1. Per-segment scalar features (so it composes inside a real kuration pipeline --
-   .bin()/.filter()/.sample() on the results): for each of the 8 controls, 5 numbers --
+   .bin()/.filter()/.sample() on the results): for each of the 8 controls, 6 numbers --
    `{control}_shift_min`, `{control}_shift_max`, `{control}_shift_mean`,
-   `{control}_n_instances`, and `{control}_requested` -- collapsing across whatever
-   press-lengths (W/S/A/D) or delta
+   `{control}_shift_measured`, `{control}_n_instances`, and `{control}_requested` --
+   collapsing across whatever press-lengths (W/S/A/D) or delta
    magnitudes (mouse controls) were found for that control in that segment. min/max are
    the true worst-case/best-case signed shift among however many instances were found (NOT
    an average that could hide one bad instance among several good ones) -- see the second
@@ -56,7 +56,13 @@ KEY_CONTROLS = ["W", "S", "A", "D"]
 MOUSE_CONTROLS_LIST = ["MOUSE_X_POS", "MOUSE_X_NEG", "MOUSE_Y_POS", "MOUSE_Y_NEG"]
 PRESS_LENS = [1, 2, 3]
 
-STATS_PER_CONTROL = ("shift_min", "shift_max", "shift_mean", "n_instances", "requested")
+# `shift_measured` is the filterable 0/1 companion to the three shift statistics: the core
+# transform contract admits only finite scalars, so an untested segment has to report *some*
+# number for min/max/mean, and 0.0 alone is indistinguishable from a real zero-motion
+# measurement. Filter or bin on `{control}_shift_measured == 1` (equivalently
+# `{control}_n_instances >= 1`) before trusting a shift statistic.
+STATS_PER_CONTROL = ("shift_min", "shift_max", "shift_mean", "shift_measured",
+                     "n_instances", "requested")
 OUTPUT_KEYS = tuple(
     f"{control.lower()}_{stat}" for control in ALL_CONTROLS for stat in STATS_PER_CONTROL
 )
@@ -126,13 +132,16 @@ def iter_instances(
     lookahead_actions: np.ndarray | None = None,
     lookahead_frames: np.ndarray | None = None,
     boundary: str = "exclude",
+    validated: bool = False,
 ):
-    """Yield ``(cell_key, local_start, signed_shift)`` for one validated control.
+    """Yield ``(cell_key, local_start, signed_shift)`` for one control.
 
     This is the public per-instance measurement contract for integrations that need more
-    detail than :func:`segment_scalars`. Call :func:`validate_segment_inputs` once before
-    iterating one or more controls so frames, actions, and optional boundary context share
-    the same validated representation.
+    detail than :func:`segment_scalars`. Frames, actions, and optional boundary context are
+    validated here, so a direct caller cannot get silent garbage out of malformed arrays.
+    Pass ``validated=True`` only when the arrays already came from
+    :func:`validate_segment_inputs` -- the one supported way to skip the (otherwise repeated)
+    per-control revalidation when iterating several controls over the same segment.
 
     Pure generator: yields (cell_key, local_start, signed_shift) for every isolated-press
     instance of `control` found in this one segment -- no side effects, no shared state,
@@ -147,6 +156,17 @@ def iter_instances(
     control = _validated_controls((control,))[0]
     color_space = validate_color_space(color_space)
     boundary = validate_boundary(boundary)
+    if not isinstance(validated, bool):
+        raise ValueError("validated must be true or false")
+    if not validated:
+        (frames, actions, lookbehind_actions, lookahead_actions,
+         lookahead_frames) = validate_segment_inputs(
+            frames,
+            actions,
+            lookbehind_actions=lookbehind_actions,
+            lookahead_actions=lookahead_actions,
+            lookahead_frames=lookahead_frames,
+        )
     if control in MOUSE_CONTROLS:
         axis = MOUSE_AXIS_OF[control]
         for start, px in _release_transition_displacement_validated(
@@ -258,6 +278,7 @@ def segment_scalars(
             out[f"{prefix}_shift_min"] = 0.0
             out[f"{prefix}_shift_max"] = 0.0
             out[f"{prefix}_shift_mean"] = 0.0
+            out[f"{prefix}_shift_measured"] = 0.0
             out[f"{prefix}_n_instances"] = 0.0
             out[f"{prefix}_requested"] = 0.0
             continue
@@ -272,6 +293,7 @@ def segment_scalars(
                 lookahead_actions=after_actions,
                 lookahead_frames=after_frames,
                 boundary=boundary,
+                validated=True,
             )
             if local_start < owned_length
         ]
@@ -279,15 +301,18 @@ def segment_scalars(
             out[f"{prefix}_shift_min"] = float(min(shifts))
             out[f"{prefix}_shift_max"] = float(max(shifts))
             out[f"{prefix}_shift_mean"] = float(sum(shifts) / len(shifts))
+            out[f"{prefix}_shift_measured"] = 1.0
             out[f"{prefix}_n_instances"] = float(len(shifts))
         else:
-            # 0.0 is a placeholder, not a claim of "zero shift" -- n_instances=0.0 is the
-            # authoritative signal; a downstream consumer must check it before trusting
-            # min/max/mean, exactly like the earlier -1.0 sentinel pattern, just per-control
-            # here instead of one dataset-wide flag.
+            # 0.0 is a placeholder, not a claim of "zero shift". The core transform contract
+            # admits only finite scalars, so NaN is not available as a sentinel;
+            # `shift_measured` (0/1) and `n_instances` are the authoritative signals, and a
+            # downstream consumer must check one of them -- e.g.
+            # `.filter("w_shift_measured", ">=", 1)` -- before trusting min/max/mean.
             out[f"{prefix}_shift_min"] = 0.0
             out[f"{prefix}_shift_max"] = 0.0
             out[f"{prefix}_shift_mean"] = 0.0
+            out[f"{prefix}_shift_measured"] = 0.0
             out[f"{prefix}_n_instances"] = 0.0
         out[f"{prefix}_requested"] = 1.0
     return out
@@ -392,7 +417,8 @@ class PixelShiftReport:
             or end_idx < 0
         ):
             raise ValueError("segment_id start_idx and end_idx must be non-negative integers")
-        if int(end_idx) - int(start_idx) != len(actions):
+        start_idx, end_idx = int(start_idx), int(end_idx)
+        if end_idx - start_idx != len(actions):
             raise ValueError("segment_id range length must match the number of action frames")
         for control in controls:
             for cell_key, local_start, shift in iter_instances(
@@ -404,6 +430,7 @@ class PixelShiftReport:
                 lookahead_actions=after_actions,
                 lookahead_frames=after_frames,
                 boundary=boundary,
+                validated=True,
             ):
                 frame = start_idx + local_start
                 instance_key = (source_id, control, cell_key, frame)
@@ -474,9 +501,20 @@ class PixelShift:
         self.controls = _validated_controls(controls)
         self.boundary = validate_boundary(boundary)
 
+    #: Declared input roles, in registration order. A per-use ``inputs=`` remapping (e.g.
+    #: ``inputs=("media:frames2", "field:controls")``) replaces the tokens but not the roles,
+    #: so every batch/context lookup below resolves the role through ``ctx.input_token`` --
+    #: hardcoding the registration tokens would pass pipeline construction and then fail
+    #: mid-run with a bare KeyError on a remapped use.
+    FRAMES_ROLE = "media:frame"
+    ACTIONS_ROLE = "field:action"
+
     def transform_batch(self, batch, ctx):
-        frames_batch = batch["media:frame"]  # (N, T, H, W, 3)
-        actions_batch = np.asarray(batch["field:action"])
+        typed = hasattr(ctx, "input_token")
+        frames_token = ctx.input_token(self.FRAMES_ROLE) if typed else self.FRAMES_ROLE
+        actions_token = ctx.input_token(self.ACTIONS_ROLE) if typed else self.ACTIONS_ROLE
+        frames_batch = batch[frames_token]  # (N, T, H, W, 3)
+        actions_batch = np.asarray(batch[actions_token])
         if actions_batch.ndim == 4:
             if actions_batch.shape[2] != 1:
                 raise ValueError(
@@ -484,17 +522,17 @@ class PixelShift:
             actions_batch = actions_batch[:, :, 0, :]
         # Schema-driven core inputs are (N,T,E,D); this single-agent plugin consumes E=1.
         # Read the declared media color space rather than assuming the BGR direct-call default.
-        color_space = ctx["schema"].media["frame"].color_space
+        color_space = ctx["schema"].media[frames_token.split(":", 1)[1]].color_space
         count = len(frames_batch)
         if hasattr(ctx, "before"):
-            before_batch = ctx.before("field:action")
-            after_actions_batch = ctx.after("field:action")
-            after_frames_batch = ctx.after("media:frame")
+            before_batch = ctx.before(actions_token)
+            after_actions_batch = ctx.after(actions_token)
+            after_frames_batch = ctx.after(frames_token)
             owned_lengths = ctx.owned_lengths
         else:  # Compatibility for direct callers still supplying a plain context mapping.
-            before_batch = batch.get("lookbehind:field:action", [None] * count)
-            after_actions_batch = batch.get("lookahead:field:action", [None] * count)
-            after_frames_batch = batch.get("lookahead:media:frame", [None] * count)
+            before_batch = batch.get(f"lookbehind:{actions_token}", [None] * count)
+            after_actions_batch = batch.get(f"lookahead:{actions_token}", [None] * count)
+            after_frames_batch = batch.get(f"lookahead:{frames_token}", [None] * count)
             owned_lengths = batch.get("owned_lengths")
         before_batch = tuple(
             None if value is None else _single_action_entity(value, "lookbehind actions")

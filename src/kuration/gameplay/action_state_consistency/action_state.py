@@ -162,6 +162,7 @@ class ActionStateConsistencyChecker(AnomalyChecker):
                 lookahead_actions=after_actions,
                 lookahead_frames=after_frames,
                 boundary=boundary,
+                validated=True,
             ):
                 self.record_instance(source_id, control, cell_key, start_idx + local_start, shift)
 
@@ -179,8 +180,24 @@ class ActionStateConsistencyChecker(AnomalyChecker):
         """Run the analyzer over frame/action modalities in a curated dataset.
 
         Each shard remains a separate measurement segment so unrelated selected spans are
-        never joined. Monotonic synthetic offsets keep evidence from different shards unique,
-        while the manifest ``source_id`` still supplies the clip-level aggregation key.
+        never joined, and the manifest ``source_id`` supplies the clip-level aggregation key.
+
+        **Frame numbers here are not source frames.** A dataset manifest entry records
+        ``path``/``source_id``/``entity_id``/``split``/``shard_index``/``n_steps`` -- it does
+        *not* record where a shard's rows started in its source, and a shard name only carries
+        span and shard *indexes*, so a real source offset is not recoverable from the artifact.
+        Instead every shard of a clip is placed after the previous one, and the returned
+        ``frame_space`` is ``"shard-concatenation"``: positions count rows in manifest order
+        within a clip. ``shard_ranges`` maps each shard path to the ``[start, end)`` it occupies
+        there.
+
+        Consequence, stated loudly because it inverts the per-segment guarantee:
+        ``add_segment`` de-duplicates one physical press seen by two overlapping windows through
+        its ``(source_id, control, cell_key, frame)`` key, and **dataset mode cannot** -- two
+        curated shards covering overlapping source spans land at different concatenation
+        offsets, so the same press is counted (and judged) once per shard. Verdicts are
+        unaffected (one violation already condemns a clip), but instance counts and frame
+        positions are shard-relative evidence, not deduplicated source-frame evidence.
         """
         if not isinstance(frames, str) or not frames:
             raise ValueError("frames must name a non-empty dataset modality")
@@ -190,7 +207,14 @@ class ActionStateConsistencyChecker(AnomalyChecker):
             raise ValueError("verify must be true or false")
         from kuration.core.loaders import iter_shards
 
+        self.declare_frame_space(
+            "shard-concatenation",
+            "positions count rows in manifest order within a clip, not source frames; the same "
+            "press appearing in two curated shards with overlapping source spans is counted "
+            "once per shard (no cross-shard de-duplication in dataset mode)",
+        )
         offsets: dict[str, int] = {}
+        shard_ranges: list[dict] = []
         shards = 0
         for arrays, entry in iter_shards(
             dataset,
@@ -210,6 +234,9 @@ class ActionStateConsistencyChecker(AnomalyChecker):
                     f"shard {entry.get('path')!r} has {len(frame_values)} {frames!r} rows "
                     f"but {len(action_values)} {actions!r} rows"
                 )
+            # Synthetic, clip-local concatenation offsets: they only keep evidence from
+            # different shards distinguishable. See this method's docstring for why real source
+            # offsets are unavailable and what that costs.
             start = offsets.get(source_id, 0)
             end = start + len(action_values)
             self.add_segment(
@@ -221,11 +248,17 @@ class ActionStateConsistencyChecker(AnomalyChecker):
                 boundary=boundary,
             )
             offsets[source_id] = end
+            shard_ranges.append({"path": entry.get("path"), "source_id": source_id,
+                                 "start": start, "end": end})
             shards += 1
         summary = self.summary()
         return {
             "passed": not summary["inconsistent"],
             "shards_checked": shards,
+            "frame_space": self.frame_space,
+            "frame_space_note": self.frame_space_note,
+            "cross_shard_dedup": False,
+            "shard_ranges": shard_ranges,
             "summary": summary,
         }
 

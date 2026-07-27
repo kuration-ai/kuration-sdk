@@ -356,6 +356,50 @@ def test_segment_scalars_sentinel_when_no_instances_found():
     assert scalars["w_requested"] == 1.0
 
 
+def test_segment_scalars_flags_whether_a_shift_was_actually_measured():
+    """Regression test for a review-caught finding: with n_instances == 0 the shift
+    statistics were emitted as 0.0, indistinguishable from a genuine zero-motion
+    measurement (the core transform contract admits only finite scalars, so NaN is not
+    available). `{control}_shift_measured` is the explicit 0/1 companion a `.filter()`
+    can select on."""
+    frames = np.stack(_shifting_noise_frames(3))
+    idle = np.stack([_action(), _action(), _action()])
+    pressed = np.stack([_action(), _action(w=True), _action()])
+
+    untested = pso.segment_scalars(frames, idle, controls=["W"])
+    assert untested["w_shift_measured"] == 0.0
+    assert untested["w_n_instances"] == 0.0
+    assert untested["w_shift_mean"] == 0.0  # placeholder, only trustworthy via the flag
+
+    measured = pso.segment_scalars(frames, pressed, controls=["W"])
+    assert measured["w_shift_measured"] == 1.0
+    assert measured["w_n_instances"] == 1.0
+    # A control that was never requested is not "measured" either.
+    assert measured["s_shift_measured"] == 0.0
+    assert all(f"{control.lower()}_shift_measured" in pso.OUTPUT_KEYS
+               for control in dad.ALL_CONTROLS)
+
+
+def test_iter_instances_validates_its_own_arrays_for_direct_callers():
+    """Regression test for a review-caught finding: `iter_instances` relied on a docstring
+    instruction to call `validate_segment_inputs` first, so a direct caller feeding
+    unvalidated arrays got silent garbage instead of an error."""
+    frames = np.stack(_shifting_noise_frames(3))
+    actions = np.stack([_action(), _action(w=True), _action()])
+
+    with pytest.raises(ValueError, match="shape"):
+        list(pixel_shift.iter_instances(frames, actions[:, :-1], "W"))
+    with pytest.raises(ValueError, match="steps"):
+        list(pixel_shift.iter_instances(frames[:2], actions, "W"))
+    with pytest.raises(ValueError, match="validated"):
+        list(pixel_shift.iter_instances(frames, actions, "W", validated="yes"))
+
+    # Pre-validated arrays may skip the repeated per-control revalidation explicitly.
+    validated = pixel_shift.validate_segment_inputs(frames, actions)
+    assert len(list(pixel_shift.iter_instances(
+        validated[0], validated[1], "W", validated=True))) == 1
+
+
 def test_segment_scalars_distinguishes_unrequested_from_requested_without_events():
     actions = np.stack([_action(), _action(), _action()])
     frames = np.zeros((len(actions), 40, 60, 3), dtype=np.uint8)
@@ -725,6 +769,101 @@ def test_full_pipeline_with_fake_video_provider():
     assert features["w_requested"] == 1.0
     assert features["s_requested"] == 0.0
     assert features["w_shift_min"] == features["w_shift_max"] == features["w_shift_mean"]
+
+
+def _pixel_shift_pipeline(rows, schema, provider, *, media_column, action_field, inputs=None,
+                          window=6):
+    from kuration import input as kur_input
+
+    pipeline = (
+        kur_input(rows, schema=schema, fields={action_field: [
+            column for column in schema.fields[action_field].dims]}, time="t")
+        .join_video({"mem": "fake.mp4"}, provider=provider, column=media_column,
+                    on="frame_index")
+        .window(window, stride=window)
+    )
+    if inputs is None:
+        return pipeline.pixel_shift(controls=["W"])
+    return pipeline.transform("aintropy/pixel-shift", inputs=inputs, controls=["W"])
+
+
+def test_pixel_shift_transform_runs_on_remapped_input_tokens():
+    """Regression test for a review-caught finding: `transform_batch` hardcoded the
+    "media:frame"/"field:action" batch tokens and `ctx["schema"].media["frame"]`, while the
+    core validates a per-use `inputs=` remapping successfully -- so a remapped use passed
+    pipeline construction and then died mid-run with a bare KeyError. The transform now
+    resolves every input through the roles the context publishes."""
+    from kuration import SchemaSpec
+
+    n_frames = 6
+    provider = FakeVideoProvider(_shifting_noise_frames(n_frames))
+    action_cols = [f"a{i}" for i in range(ACTION_DIM)]
+    actions = [_action(), _action(w=True)] + [_action() for _ in range(4)]
+    rows = [
+        {"t": index, **{column: float(value)
+                        for column, value in zip(action_cols, actions[index], strict=True)}}
+        for index in range(n_frames)
+    ]
+    schema = SchemaSpec.from_dict({
+        "name": "pixel_shift_remapped_inputs",
+        "fields": {"controls": {"kind": "vector", "dims": action_cols}},
+    })
+
+    result = (_pixel_shift_pipeline(
+        rows, schema, provider, media_column="frames2", action_field="controls",
+        inputs=("media:frames2", "field:controls"))
+        .organize("w_n_instances", bins=1)
+        .collect(n=10))
+
+    assert not result.errors
+    features = result.all_segments[0].features
+    assert features["w_n_instances"] == 1.0
+    assert features["w_shift_measured"] == 1.0
+
+
+def test_pixel_shift_does_not_decode_an_unused_lookbehind_frame():
+    """Regression test for a review-caught finding: `lookbehind=1` applied to every input, so
+    the runner decoded one lookbehind video frame per segment that `transform_batch` never
+    reads (it only consumes the lookbehind of the action field)."""
+    from kuration import SchemaSpec
+
+    n_frames = 8
+    frames = _shifting_noise_frames(n_frames)
+
+    class CountingProvider(FakeVideoProvider):
+        def __init__(self, frames):
+            super().__init__(frames)
+            self.decode_calls = []
+
+        def decode_batch(self, refs):
+            refs = list(refs)
+            self.decode_calls.append([ref.frame_index for ref in refs])
+            return super().decode_batch(refs)
+
+    provider = CountingProvider(frames)
+    action_cols = [f"a{i}" for i in range(ACTION_DIM)]
+    actions = [_action() for _ in range(n_frames)]
+    actions[5] = _action(w=True)
+    rows = [
+        {"t": index, **{column: float(value)
+                        for column, value in zip(action_cols, actions[index], strict=True)}}
+        for index in range(n_frames)
+    ]
+    schema = SchemaSpec.from_dict({
+        "name": "pixel_shift_lookbehind_decode",
+        "fields": {"action": {"kind": "vector", "dims": action_cols}},
+    })
+
+    result = (_pixel_shift_pipeline(rows, schema, provider, media_column="frame",
+                                   action_field="action", window=4)
+              .organize("w_n_instances", bins=1)
+              .collect(n=10))
+
+    assert not result.errors
+    # Owned windows plus the first window's three lookahead frames. The second window would
+    # additionally decode [3] as its (never-read) lookbehind frame under a shared count.
+    assert provider.decode_calls == [[0, 1, 2, 3], [4, 5, 6], [4, 5, 6, 7]]
+    assert [3] not in provider.decode_calls
 
 
 @pytest.mark.parametrize(

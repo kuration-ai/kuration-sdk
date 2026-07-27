@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from kuration import Segment, default_registry, input
 from kuration.core.report import dataset_report
-from kuration.core.versioning import migrate
+from kuration.core.versioning import ARTIFACT_FORMAT_VERSION, migrate
 
 
 class _SameTextGroup:
@@ -50,7 +50,7 @@ def test_unversioned_resolved_pipeline_config_is_migrated_as_an_artifact():
         "mode": {"name": "strict"},
     }
     migrated = migrate(config)
-    assert migrated["artifact_format_version"] == "1.0"
+    assert migrated["artifact_format_version"] == ARTIFACT_FORMAT_VERSION
     assert "job_schema_version" not in migrated
 
 

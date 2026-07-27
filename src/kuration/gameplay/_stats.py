@@ -32,6 +32,7 @@ _PIXEL_SHIFT_SUFFIXES = (
     "_shift_mean",
     "_n_instances",
     "_requested",
+    "_shift_measured",
 )
 
 
@@ -263,6 +264,13 @@ def plot_gameplay_stats(report, *, metric: str | None = None, ax=None):
 
 
 def _png_data_url(frame, *, color_space: str) -> str:
+    """Encode one HWC frame as an inline PNG data URL.
+
+    Float frames are scaled by the documented heuristic: a float image whose finite peak is
+    ``<= 1.0`` is treated as normalized [0, 1] and multiplied by 255 (clipping alone rendered
+    such frames near-black); any wider float range is treated as 0-255 already. Non-finite
+    float values become 0. uint8 input is used as-is.
+    """
     image = np.asarray(frame)
     if image.ndim == 2:
         image = np.repeat(image[..., None], 3, axis=2)
@@ -271,6 +279,12 @@ def _png_data_url(frame, *, color_space: str) -> str:
     if image.shape[2] == 1:
         image = np.repeat(image, 3, axis=2)
     if image.dtype != np.uint8:
+        if image.dtype.kind == "f":
+            finite = image[np.isfinite(image)]
+            peak = float(finite.max()) if finite.size else 0.0
+            image = np.nan_to_num(image, nan=0.0, posinf=255.0, neginf=0.0)
+            if peak <= 1.0:  # normalized [0, 1] frame — clipping alone would render it black
+                image = image * 255.0
         image = np.clip(image, 0, 255).astype(np.uint8)
     if color_space.upper() == "BGR" and image.shape[2] >= 3:
         image = image[..., [2, 1, 0, *range(3, image.shape[2])]]
@@ -352,11 +366,15 @@ def _decode_frames(pipeline, item: dict, count: int, tick_cache: dict) -> tuple[
     end = item.get("end_idx")
     if source is None or start is None or end is None:
         return [], ""
-    cache_key = (source, int(end))
-    ticks = tick_cache.get(cache_key)
-    if ticks is None:
+    # Cache per source, not per (source, end): keying on `end` re-iterated the source from
+    # index 0 for every distinct window end. Re-read only when a deeper window needs more
+    # ticks than are cached and the source is not already exhausted.
+    cached = tick_cache.get(source)
+    if cached is None or (len(cached["ticks"]) < int(end) and not cached["exhausted"]):
         ticks = _bounded_ticks(pipeline.adapter, source, int(end))
-        tick_cache[cache_key] = ticks
+        cached = {"ticks": ticks, "exhausted": len(ticks) < int(end)}
+        tick_cache[source] = cached
+    ticks = cached["ticks"]
     window = ticks[int(start):int(end)]
     if not window:
         return [], ""
@@ -401,7 +419,7 @@ def render_gameplay_examples(examples) -> str | None:
         )
         if not has_slam:
             return None
-    tick_cache: dict[tuple[object, int], list] = {}
+    tick_cache: dict[object, dict] = {}
     cards = []
     for group, items in groups.items():
         for item in items:

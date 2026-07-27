@@ -10,6 +10,8 @@ from typing import Mapping, SupportsIndex, cast
 
 import numpy as np
 
+from ._paths import local_path
+
 
 POINTCLOUD_FORMAT = "kuration-pointcloud-npz"
 POINTCLOUD_VERSION = 1
@@ -111,7 +113,7 @@ class PointCloudArtifact:
         )
 
     def save(self, path: str | Path) -> Path:
-        target = Path(path)
+        target = local_path(path, name="point-cloud output")
         if target.suffix.lower() != ".npz":
             raise ValueError("point-cloud output currently requires a .npz path")
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -157,7 +159,7 @@ def load_point_cloud(source: str | Path | PointCloudArtifact) -> PointCloudArtif
     """Load an artifact from an NPZ path, SLAM manifest, or existing artifact."""
     if isinstance(source, PointCloudArtifact):
         return source
-    path = Path(source)
+    path = local_path(source, name="point-cloud source")
     if path.is_dir():
         path = path / "manifest.json"
     if path.name == "manifest.json" or path.suffix.lower() == ".json":

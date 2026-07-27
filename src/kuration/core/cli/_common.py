@@ -100,6 +100,32 @@ def _maybe_path(value):
     return value
 
 
+def parse_mapping_option(value: str | None, *, label: str) -> dict | None:
+    """Parse a mapping-style CLI option that accepts either inline JSON or a path to a JSON
+    file (`--kinds`/`--fields`/`--adapter-options` across kur-infer/init/preview/import).
+
+    A value naming an existing file is read from disk; anything else is parsed as inline JSON
+    text. Either form must decode to a JSON object — loud, one-line failure names both
+    accepted forms so the fix is obvious from the error alone.
+    """
+    if value is None:
+        return None
+    path = Path(value)
+    if path.is_file():
+        text, source = path.read_text(), f"file {value!r}"
+    else:
+        text, source = value, "inline JSON"
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"{label} must be inline JSON or a path to a JSON file; could not parse it as "
+            f"{source}: {e}") from e
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{label} must be a JSON object (inline JSON or path to JSON file)")
+    return parsed
+
+
 def build_schema(job: dict) -> Optional[SchemaSpec]:
     """The schema, or None (e.g. the curated adapter derives its own from the dataset)."""
     if "schema" not in job:

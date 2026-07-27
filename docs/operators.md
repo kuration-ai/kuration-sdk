@@ -36,9 +36,15 @@ The method is resolved from the registered component name:
 | `aintropy/pixel-shift` | `.pixel_shift(...)` | `.aintropy__pixel_shift(...)` |
 
 Hyphens and dots become underscores in the readable spelling. If two namespaces expose the same
-local name, the short spelling fails with the qualified alternatives instead of choosing one.
-The qualified form is also useful in shared libraries that want to make component ownership
-explicit.
+local name, the short spelling fails with the qualified alternatives instead of choosing one (an
+un-namespaced operator whose name *is* the short spelling keeps it, and the namespaced ones stay
+callable under their qualified aliases). The qualified form is also useful in shared libraries
+that want to make component ownership explicit.
+
+A local name that is already a `Pipeline` attribute — `report`, `window`, `filter`, `output`,
+`schema`, … — is **rejected at registration** (and by `kur-plugin-check`): Python resolves the
+real attribute before the generated method, so such an operator would be silently shadowed.
+Rename it (`acme/report-balance`).
 
 Import order is flexible for the process-wide registry: importing a registration module makes
 its methods available even on an existing default-registry pipeline. A pipeline created with an
@@ -131,7 +137,17 @@ For edge-sensitive events, registration accepts `lookbehind=<ticks>`, `lookahead
 `ownership="rightmost-start"`. Read the typed context with `ctx.before("field:signal")` and
 `ctx.after("field:signal")`; source-edge entries are `None`. Immutable `ctx.owned_lengths` gives
 the prefix of each logical window whose event starts belong to that segment. The corresponding
-rc2 batch keys remain available during the release-candidate compatibility window.
+rc2 batch keys remain available during the release-candidate compatibility window. Either count
+may instead be a `{declared input token: count}` mapping (`lookbehind={"field:signal": 1}`) when
+only one input needs boundary context — the runner then extracts, and for media decodes, nothing
+for the others.
+
+A caller may remap the declared inputs per use (`.transform(name, inputs=["media:shot",
+"field:signal"])`), supplying one same-kind token per declared role. Address the batch through
+`ctx.input_token("media:frame")` (or the `ctx.inputs` role→token mapping) so a remapped use works;
+a hardcoded registration token would pass construction and fail mid-run. `field:` batches are
+`(B,T,E,D)` and NaN-padded to the batch's widest extent, so use `ctx.valid_steps` (also
+`batch["valid_steps"]`) to bound each row to its real timesteps.
 
 For video, declare `inputs=("media:frame",)` and a semantic requirement such as
 `media_requirements={"kind": "video-frame", "layout": "HWC", "color_space": "RGB"}`.

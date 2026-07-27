@@ -126,6 +126,19 @@ def preview_dataset(*, schema, adapter, sources, max_sources: int = 3,
                   "truncated": truncated or len(sampled) < len(sources)})
 
 
+def _statistic_delta(after: dict, before: dict, key: str) -> float | None:
+    """Candidate→selected change for one statistic.
+
+    An absent side (an empty selected pool) still counts as 0.0, as it always has; a statistic
+    that is ``None`` because the metric had no finite value at all yields ``None`` rather than a
+    fabricated number or a `NaN` that no strict JSON reader accepts.
+    """
+    new, old = after.get(key, 0.0), before.get(key, 0.0)
+    if new is None or old is None:
+        return None
+    return float(new) - float(old)
+
+
 def _segment_example(segment, priority, *, selected: bool | None = None) -> dict:
     value = {
         "source": segment.source_id,
@@ -207,13 +220,20 @@ def selection_examples(
     else:
         pool = list(candidates)
     if metric is not None:
-        missing = [segment for segment in pool if metric not in segment.features]
-        if missing:
-            available = sorted(
-                {name for segment in pool for name in segment.features}
-            )
+        # An empty pool cannot vouch for a metric name, so fall back to the widest namespace
+        # the result knows about instead of silently returning [] for a typo.
+        known = {name for segment in pool for name in segment.features}
+        vouched = bool(pool) and all(metric in segment.features for segment in pool)
+        if not pool:
+            known = {name for segment in result.all_segments for name in segment.features}
+            if not known:
+                known = set(result.strategy.referenced_metrics()) | set(
+                    result.strategy.define or {}
+                )
+            vouched = metric in known
+        if not vouched:
             raise ValueError(
-                f"unknown evidence metric {metric!r}; available: {available}"
+                f"unknown evidence metric {metric!r}; available: {sorted(known)}"
             )
 
     def rank(segment):
@@ -267,8 +287,8 @@ def selection_review(result, *, seed: int = 0, examples: int = 10,
         before = candidate_report["metrics"].get(name) or {}
         after = selected_report["metrics"].get(name) or {}
         metrics[name] = {"candidate": before, "selected": after,
-                         "mean_delta": (after.get("mean", 0.0) - before.get("mean", 0.0)),
-                         "p50_delta": (after.get("p50", 0.0) - before.get("p50", 0.0))}
+                         "mean_delta": _statistic_delta(after, before, "mean"),
+                         "p50_delta": _statistic_delta(after, before, "p50")}
     source_counts = Counter(segment.source_id for segment in selected)
     split_counts = Counter(result.splits.get(segment.source_id, "unsplit")
                            for segment in selected)
@@ -312,7 +332,9 @@ def selection_review(result, *, seed: int = 0, examples: int = 10,
         },
         errors=list(result.errors),
         warnings=([{"code": "source-errors", "message":
-                    f"{len(result.errors)} source(s) were skipped"}] if result.errors else []))
+                    f"{len(result.errors)} source(s) were skipped"}] if result.errors else [])
+        # non-finite metric values are excluded from every statistic; say so out loud.
+        + list(candidate_report.get("warnings") or ()))
 
 
 def hours_selection_review(result) -> HoursSelectionReview:

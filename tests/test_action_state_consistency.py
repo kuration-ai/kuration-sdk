@@ -340,3 +340,45 @@ def test_action_state_analyzer_runs_on_curated_dataset_modalities(tmp_path):
     assert result["passed"] is True
     assert result["shards_checked"] == 1
     assert result["summary"]["consistent"] == ["clip1"]
+
+
+def test_check_dataset_reports_shard_relative_positions_and_no_cross_shard_dedup(
+        tmp_path, capsys):
+    """Regression test for a review-caught finding: `check_dataset` assigns synthetic
+    monotonic per-source offsets, which are not source frames and cannot support the
+    documented (source_id, control, cell_key, frame) cross-window de-duplication. A shard
+    manifest entry records path/source_id/entity_id/split/shard_index/n_steps only -- no
+    source start offset -- so real offsets are unrecoverable; the synthetic space is now
+    named, mapped per shard, and its lost guarantee is stated instead of silently inverted."""
+    source = tmp_path / "clip.npz"
+    dataset = tmp_path / "dataset"
+    rng = np.random.default_rng(11)
+    base = rng.integers(0, 255, size=(40, 66, 3), dtype=np.uint8)
+    frames = np.stack([base[:, index : index + 60] for index in range(6)])
+    actions = np.stack([_action(), _action(w=True), _action(),
+                        _action(), _action(w=True), _action()])
+    np.savez(source, video=frames, input=actions)
+    # Two shards for one clip: exactly the case where a synthetic offset stands in for a
+    # source position, one W tap in each shard.
+    import_dataset(source, dataset, source_id="clip1", shard_length=3)
+
+    checker = asc.action_state_consistency(
+        anomaly_type="action_state",
+        baselines={"W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1e9}}},
+    )
+    result = checker.check_dataset(dataset, frames="video", actions="input", controls=["W"])
+
+    assert result["shards_checked"] == 2
+    assert result["frame_space"] == "shard-concatenation"
+    assert result["cross_shard_dedup"] is False
+    assert "not source frames" in result["frame_space_note"]
+    # Every shard's occupied range is reported, so a caller can map a printed position back.
+    assert [(entry["start"], entry["end"]) for entry in result["shard_ranges"]] == [(0, 3), (3, 6)]
+    assert all(entry["path"] and entry["source_id"] == "clip1"
+               for entry in result["shard_ranges"])
+    assert [record["frame"] for record in checker._clip_records["clip1"]] == [1, 4]
+
+    checker.print_report()
+    out = capsys.readouterr().out
+    assert "frame space: shard-concatenation" in out
+    assert "no cross-shard de-duplication in dataset mode" in out

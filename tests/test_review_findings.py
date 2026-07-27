@@ -195,7 +195,7 @@ def test_input_resolves_named_adapter_from_isolated_registry():
 
 def test_component_parameter_schema_validates_nested_arrays_and_objects():
     registry = Registry()
-    registry.register_operator("review/schema", lambda pipeline: pipeline, parameters={
+    registry.register_operator("review/schema-shapes", lambda pipeline: pipeline, parameters={
         "type": "object",
         "properties": {
             "controls": {"type": "array", "minItems": 1,
@@ -207,7 +207,7 @@ def test_component_parameter_schema_validates_nested_arrays_and_objects():
         "required": ["controls"],
         "additionalProperties": False,
     })
-    descriptor = registry.descriptor("operator", "review/schema")
+    descriptor = registry.descriptor("operator", "review/schema-shapes")
 
     validate_parameters(descriptor, {"controls": ["W"], "config": {"threshold": 0.5}})
     with pytest.raises(ValueError, match=r"controls.*\[0\].*JSON type string"):

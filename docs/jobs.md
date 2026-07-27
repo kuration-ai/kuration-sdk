@@ -144,6 +144,14 @@ and canonical `Tick` conversion as `kuration.input()`. Numeric output is stored 
 categorical columns receive a deterministic integer vocabulary recorded in `config.json`.
 Ambiguous columns fail with the ordinary inference remedy instead of being guessed.
 
+Import never drops data silently — these cases fail loudly with a remedy instead:
+HDF5/Zarr files whose datasets live inside nested groups (the top-level import would miss
+them; use an explicit configured adapter), schemas with `event_streams` (shards cannot carry
+events yet), `--time`/`--entity`/`--kinds` on array sources that have no columns to apply them
+to, remote directory sources that cannot be auto-detected (pass `--adapter` explicitly), and a
+destination whose previous import failed part-way (rerun with `--force` to clear it — this
+also removes the stale shards).
+
 Registered plugin adapters participate by implementing
 `detect_source(uri) -> bool | confidence`. An adapter can additionally implement
 `import_arrays(uri) -> {modality: ndarray}` for lossless tensor import. Otherwise pass an

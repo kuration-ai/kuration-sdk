@@ -154,7 +154,10 @@ Transforms that declare bounded lookbehind/lookahead read neighboring field/medi
 the typed `TransformContext`: `ctx.before(token)` and `ctx.after(token)`. The `rightmost-start`
 ownership policy supplies immutable `ctx.owned_lengths`, one prefix length per window, so
 overlapping windows produce deterministic event ownership. The rc2 batch keys remain available
-during the release-candidate compatibility window.
+during the release-candidate compatibility window. `inputs=` remaps a transform's declared input
+roles for one use; the transform resolves them through `ctx.input_token(role)`/`ctx.inputs`, and
+`ctx.valid_steps` reports each row's real timestep count within the NaN-padded `(B,T,E,D)` field
+batch.
 Framework imports and model loading remain inside the optional transform implementation; core
 import and ordinary pipelines stay NumPy-only.
 

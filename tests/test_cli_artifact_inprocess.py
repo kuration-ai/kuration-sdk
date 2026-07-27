@@ -88,6 +88,23 @@ def test_check_requires_a_policy_or_analyzer(curated):
     assert "--policy and/or --analyzer" in result.stderr
 
 
+def test_check_verify_without_policy_is_rejected_not_silently_ignored(tmp_path):
+    """--verify decodes shards for the *policy* evaluation; in analyzer-only mode it used to
+    be parsed and silently dropped. It must now say so rather than pretend to apply."""
+    result = run_cli("kuration.core.cli.check", tmp_path / "unused",
+                     "--analyzer", "kuration/split-leakage", "--verify", expect=1)
+    assert "--verify requires --policy" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_check_verify_still_works_alongside_a_policy(tmp_path, curated):
+    _job_path, out = curated
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"min_shards": 1}))
+    result = run_cli("kuration.core.cli.check", out, "--policy", policy, "--verify")
+    assert "PASS" in result.stdout
+
+
 # ---- kur-diff ------------------------------------------------------------------
 def test_diff_reports_identical_and_changed_artifacts(tmp_path, curated):
     job_path, out = curated

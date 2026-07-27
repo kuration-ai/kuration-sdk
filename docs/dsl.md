@@ -69,6 +69,9 @@ change per entity (acceleration/jitter) — gaps break adjacency, so a value jum
 absent tick or a filtered-out cell is *not* counted as one step; `entropy` = Shannon over a
 16-bin histogram (numeric) or category counts.
 
+`dispersion` and `min_pair_dist` are computed in **every declared position dimension** (a 3D
+`position` field is measured in 3D); `hull_area` is planar and uses the first two dimensions.
+
 Event metrics count only events that **carry the referenced field** (an unrelated event in the
 same stream isn't a `None` category), and an `==<value>` filter matches numeric event values
 too (`"==5"` matches `code=5`).
@@ -76,7 +79,8 @@ too (`"==5"` matches `code=5`).
 ## SCOPE (optional, default `pooled`)
 
 - `pooled` — flatten all entity×time cells, then reduce.
-- `per_entity_mean` — reduce per entity, then average across entities.
+- `per_entity_mean` — reduce per entity, then average across entities — honored for categorical
+  and event sources as well as numeric ones.
 
 Single-stream schemas (`E=1`) only need `pooled`.
 

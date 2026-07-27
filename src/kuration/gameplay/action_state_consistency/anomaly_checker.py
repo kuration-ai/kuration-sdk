@@ -111,7 +111,11 @@ def _is_consistent(shift: float, baseline: dict) -> bool:
 def _validate_segment_id(segment_id, expected_length: int) -> tuple[str, int, int]:
     """(source_id, start_idx, end_idx): source_id a non-empty string, both indexes
     non-negative integers, range length matching ``expected_length`` (the number of
-    frames/rows the caller's measurements actually cover)."""
+    frames/rows the caller's measurements actually cover).
+
+    NumPy integers are accepted (an SDK-provided ``segment_ids`` entry carries them) and
+    normalized to ``int`` so recorded frame keys have one canonical type.
+    """
     if (
         isinstance(segment_id, (str, bytes))
         or not isinstance(segment_id, Sequence)
@@ -124,12 +128,13 @@ def _validate_segment_id(segment_id, expected_length: int) -> tuple[str, int, in
     if (
         isinstance(start_idx, bool)
         or isinstance(end_idx, bool)
-        or not isinstance(start_idx, int)
-        or not isinstance(end_idx, int)
+        or not isinstance(start_idx, (int, np.integer))
+        or not isinstance(end_idx, (int, np.integer))
         or start_idx < 0
         or end_idx < 0
     ):
         raise ValueError("segment_id start_idx and end_idx must be non-negative integers")
+    start_idx, end_idx = int(start_idx), int(end_idx)
     if end_idx - start_idx != expected_length:
         raise ValueError("segment_id range length must match the number of measured frames")
     return source_id, start_idx, end_idx
@@ -171,6 +176,30 @@ class AnomalyChecker:
         self._seen_instances: set = set()
         self._clips_seen: set = set()
         self._clip_records: dict = {}
+        # What a recorded `frame` counts in. "source" means real source frame numbers, which is
+        # what the per-segment API provides and what cross-window de-duplication relies on. A
+        # caller measuring in some other coordinate space must say so (declare_frame_space), so
+        # a printed report never presents synthetic positions as source frames.
+        self.frame_space = "source"
+        self.frame_space_note = ""
+
+    def declare_frame_space(self, label: str, note: str) -> None:
+        """Declare the coordinate space every recorded ``frame`` value belongs to.
+
+        ``label`` is a short identifier ("source" for real source frame numbers) and ``note``
+        is the caveat printed with the report. Changing the space once instances have been
+        recorded would mix incomparable coordinates in one ledger, so that raises.
+        """
+        if not isinstance(label, str) or not label:
+            raise ValueError("frame space label must be a non-empty string")
+        if not isinstance(note, str) or (not note and label != "source"):
+            raise ValueError("a non-source frame space must document its caveat")
+        if label != self.frame_space and self._seen_instances:
+            raise ValueError(
+                f"cannot redeclare the frame space as {label!r} after recording instances in "
+                f"{self.frame_space!r}")
+        self.frame_space = label
+        self.frame_space_note = note
 
     def resolve_segment(self, segment_id, *, expected_length: int) -> tuple[str, int, int]:
         """Validate segment_id, mark its clip as seen, and return (source_id, start_idx,
@@ -234,14 +263,21 @@ class AnomalyChecker:
         print("=" * 78)
         print(f"ANOMALY REPORT (anomaly_type={self.anomaly_type!r})")
         print("=" * 78)
+        if self.frame_space != "source":
+            print(f"frame space: {self.frame_space} -- {self.frame_space_note}")
         for verdict in ("consistent", "inconsistent", "inconclusive"):
             clip_ids = verdicts[verdict]
             print(f"\n{verdict.upper()}: {len(clip_ids)} clip(s)")
             for clip_id in clip_ids:
                 if verdict == "inconsistent":
                     violations = [r for r in self._clip_records[clip_id] if not r["consistent"]]
+                    # Outside the "source" frame space the number is not a source frame, so it
+                    # is labeled with the space it actually belongs to.
+                    position = ("frame" if self.frame_space == "source"
+                                else f"{self.frame_space}-offset")
                     detail = "; ".join(
-                        f"{r['control']}/{r['cell_key']}@frame{r['frame']} shift={r['shift']:.4f}"
+                        f"{r['control']}/{r['cell_key']}@{position}{r['frame']} "
+                        f"shift={r['shift']:.4f}"
                         for r in violations
                     )
                     print(f"  - {clip_id}  ({len(violations)} violation(s): {detail})")

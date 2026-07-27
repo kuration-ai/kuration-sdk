@@ -28,12 +28,22 @@ parameters fail before source rows are read.
 
 A transform factory is registered with `register_batch_transform()` (or `register_transform`),
 declaring scalar outputs, `field:`/`feature:`/`media:` inputs, semantic media requirements, and
-resource hints. Boundary-sensitive transforms may additionally declare integer `lookbehind` and
-`lookahead` tick counts. The typed `TransformContext` exposes per-row arrays through
+resource hints. Boundary-sensitive transforms may additionally declare `lookbehind` and
+`lookahead` tick counts, either as one integer shared by every input or as a
+`{declared input token: count}` mapping when only some inputs need context. The typed
+`TransformContext` exposes per-row arrays through
 `ctx.before("field:signal")` and `ctx.after("field:signal")`;
 `ownership="rightmost-start"` also supplies immutable `ctx.owned_lengths`, preventing overlapping
 windows from claiming the same event start. The rc2 batch keys remain available during the
-release-candidate compatibility window. A pipeline invokes the transform with
+release-candidate compatibility window.
+
+Declared input tokens are *roles*. A per-use `inputs=` remapping supplies one same-kind token per
+role (arity and kind are validated when the pipeline is built), so read every input through
+`ctx.input_token("media:frame")` — or `ctx.inputs`, the role→token mapping in declaration order —
+rather than hardcoding the registration token, which a remapped use would not have. `field:`
+inputs arrive as `(B,T,E,D)` arrays NaN-padded to the widest extent in the batch; `ctx.valid_steps`
+(also `batch["valid_steps"]`) gives each row's real timestep count, so a ragged batch's padding is
+never averaged into a measurement by accident. A pipeline invokes the transform with
 `.transform(...)`; outputs behave like any other scalar selection feature. Use `get_transform()`
 for direct lookup. Accelerator libraries must be imported inside the factory or execution method
 so discovery and `import kuration` remain dependency-light.

@@ -22,6 +22,7 @@ from .results import (
     StatsReport,
 )
 
+_DEFAULT_EXAMPLES = 5
 _STATS_ENRICHERS: dict[str, Callable[[Any, StatsReport], dict | None]] = {}
 _STATS_PLOTTERS: dict[str, Callable[..., Any]] = {}
 _STATS_EXAMPLE_RENDERERS: dict[str, Callable[[StatsExamples], str | None]] = {}
@@ -131,7 +132,8 @@ def _pipeline_stats(
         return report
 
     report = pipeline.report(hist_bins=hist_bins)
-    warnings = list(preview.get("warnings") or ())
+    # candidate warnings (e.g. non-finite metric values) belong in the lifecycle surface too
+    warnings = list(preview.get("warnings") or ()) + list(report.get("warnings") or ())
     stage = "uncurated"
     sections: dict[str, Any] = {
         "input": preview.to_dict(),
@@ -184,9 +186,39 @@ def _sample_flat(array: np.ndarray, limit: int) -> np.ndarray:
     return flat[indexes]
 
 
+def _even_subsample(values: list, limit: int) -> list:
+    """Thin one collected pool evenly instead of truncating it.
+
+    Per-shard collection over-collects (``ceil(max_values / shards)`` each); keeping the first
+    ``max_values`` would retain only the earliest shards and quietly contradict the recorded
+    even sampling method, biasing sampled percentiles and histograms toward the first shards.
+    """
+    if len(values) <= limit:
+        return values
+    indexes = np.linspace(0, len(values) - 1, num=limit, dtype=np.int64)
+    return [values[int(index)] for index in indexes]
+
+
+def _json_number(value) -> float | None:
+    """Return a strict-JSON-safe float: a non-finite statistic becomes ``None``, not ``NaN``."""
+    if value is None:
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
 def _numeric_chunk(accumulator: dict, values: np.ndarray, sample_limit: int) -> None:
-    numeric = np.asarray(values, dtype=np.float64).reshape(-1)
+    raw = np.asarray(values)
+    numeric = raw.astype(np.float64).reshape(-1)
     accumulator["values"] += int(numeric.size)
+    if raw.dtype.kind in "bui" and raw.size:
+        # int64 magnitudes above 2**53 do not survive the float64 cast, so keep integer
+        # extrema exactly; mean/std stay float by design.
+        chunk_min, chunk_max = int(raw.min()), int(raw.max())
+        accumulator["int_min"] = (chunk_min if accumulator["int_min"] is None
+                                  else min(accumulator["int_min"], chunk_min))
+        accumulator["int_max"] = (chunk_max if accumulator["int_max"] is None
+                                  else max(accumulator["int_max"], chunk_max))
     finite = numeric[np.isfinite(numeric)]
     accumulator["non_finite"] += int(numeric.size - finite.size)
     if finite.size:
@@ -217,29 +249,44 @@ def _text_chunk(accumulator: dict, values: np.ndarray, sample_limit: int) -> Non
 
 
 def _finalize_modality(accumulator: dict, *, hist_bins: int, max_values: int) -> dict:
+    rows = accumulator["rows"]
+    absent = accumulator["absent_rows"]
     out = {
         "dtype": accumulator["dtype"],
         "shape": list(accumulator["shape"]),
-        "rows": accumulator["rows"],
+        "rows": rows,
         "values": accumulator["values"],
+        "shards_present": accumulator["shards_present"],
+        "presence_masked": bool(accumulator["masked_shards"]),
+        "absent_rows": absent,
+        "present_fraction": ((rows - absent) / rows) if rows else 1.0,
     }
+    samples = _even_subsample(accumulator["samples"], max_values)
     if accumulator["numeric"]:
         finite = accumulator["finite"]
         out["finite"] = finite
         out["non_finite"] = accumulator["non_finite"]
         if finite:
-            mean = accumulator["mean"]
+            from .report import _histogram
+
             variance = max(0.0, accumulator["m2"] / finite)
-            sample = np.asarray(accumulator["samples"][:max_values], dtype=np.float64)
-            counts, edges = np.histogram(sample, bins=hist_bins)
+            sample = np.asarray(samples, dtype=np.float64)
+            # shared with the metric reports: tolerates constant / near-constant samples
+            counts, edges = _histogram(sample, hist_bins)
             out.update(
                 {
-                    "min": accumulator["min"],
-                    "max": accumulator["max"],
-                    "mean": mean,
-                    "std": math.sqrt(variance),
-                    "p50": float(np.percentile(sample, 50)),
-                    "p95": float(np.percentile(sample, 95)),
+                    "min": (accumulator["int_min"] if accumulator["int_min"] is not None
+                            else _json_number(accumulator["min"])),
+                    "max": (accumulator["int_max"] if accumulator["int_max"] is not None
+                            else _json_number(accumulator["max"])),
+                    "mean": _json_number(accumulator["mean"]),
+                    "std": _json_number(math.sqrt(variance)),
+                    "p50": (_json_number(np.percentile(sample, 50))
+                            if sample.size else None),
+                    "p95": (_json_number(np.percentile(sample, 95))
+                            if sample.size else None),
+                    # exact only when every finite value survived sampling
+                    "percentiles_sampled": bool(sample.size < finite),
                     "histogram": {
                         "counts": counts.tolist(),
                         "edges": [float(edge) for edge in edges],
@@ -248,12 +295,12 @@ def _finalize_modality(accumulator: dict, *, hist_bins: int, max_values: int) ->
                 }
             )
     else:
-        counts = Counter(accumulator["samples"][:max_values])
+        counts = Counter(samples)
         out.update(
             {
                 "unique_sampled": len(counts),
                 "top_values": dict(counts.most_common(10)),
-                "sampled_values": min(len(accumulator["samples"]), max_values),
+                "sampled_values": len(samples),
             }
         )
     return out
@@ -279,6 +326,17 @@ def _artifact_contents(
         arrays = read_shard_arrays(
             entry, container, trim=True, verify=verify, registry=registry
         )
+        # `trim=True` drops trailing pad only; interior rows for an absent entity are
+        # zero-filled and flagged by `_present`. Accumulating those zeros reported a min of 0
+        # and a halved mean for a field that never held 0 — mask them out per row.
+        present = arrays.get("_present")
+        if present is not None:
+            present = np.asarray(present)
+            if present.dtype != np.bool_ or present.ndim != 1:
+                raise ValueError(
+                    f"shard {entry.get('path')!r} _present must be a 1-D bool mask, got "
+                    f"{present.ndim}-D {present.dtype}"
+                )
         for name, array in arrays.items():
             array = np.asarray(array)
             numeric = array.dtype.kind in "buif"
@@ -297,7 +355,12 @@ def _artifact_contents(
                     "m2": 0.0,
                     "min": float("inf"),
                     "max": float("-inf"),
+                    "int_min": None,
+                    "int_max": None,
                     "samples": [],
+                    "shards_present": 0,
+                    "masked_shards": 0,
+                    "absent_rows": 0,
                 },
             )
             if (
@@ -308,7 +371,20 @@ def _artifact_contents(
                 raise ValueError(
                     f"output modality {name!r} changes dtype or shape across shards"
                 )
-            accumulator["rows"] += int(array.shape[0])
+            rows = int(array.shape[0])
+            accumulator["rows"] += rows
+            accumulator["shards_present"] += 1
+            # `_present` itself stays unmasked — it is the record of what was absent.
+            mask = None if name == "_present" else present
+            if mask is not None:
+                if int(mask.shape[0]) != rows:
+                    raise ValueError(
+                        f"shard {entry.get('path')!r} _present has {int(mask.shape[0])} rows "
+                        f"but modality {name!r} has {rows}"
+                    )
+                array = array[mask]
+                accumulator["absent_rows"] += rows - int(array.shape[0])
+                accumulator["masked_shards"] += 1
             if numeric:
                 _numeric_chunk(accumulator, array, per_shard_sample)
             else:
@@ -329,19 +405,77 @@ def _artifact_contents(
         total=len(entries),
         detail=f"{len(accumulators)} modalities",
     )
+    modalities = {
+        name: _finalize_modality(
+            accumulator, hist_bins=hist_bins, max_values=max_values
+        )
+        for name, accumulator in sorted(accumulators.items())
+    }
+    warnings: list[dict] = []
+    for name, accumulator in sorted(accumulators.items()):
+        if accumulator["shards_present"] != len(entries):
+            warnings.append(
+                {
+                    "code": "modality-missing-from-shards",
+                    "modality": name,
+                    "message": (
+                        f"modality {name!r} appears in {accumulator['shards_present']} of "
+                        f"{len(entries)} shard(s); its statistics cover those shards only"
+                    ),
+                }
+            )
+        if accumulator["masked_shards"] and (
+            accumulator["masked_shards"] != accumulator["shards_present"]
+        ):
+            warnings.append(
+                {
+                    "code": "presence-mask-partial",
+                    "modality": name,
+                    "message": (
+                        f"modality {name!r} was presence-masked in "
+                        f"{accumulator['masked_shards']} of "
+                        f"{accumulator['shards_present']} shard(s); the rest had no _present "
+                        "mask and were accumulated whole"
+                    ),
+                }
+            )
+        if modalities[name].get("percentiles_sampled"):
+            # p50/p95/histogram sit next to an exact mean/std/min/max — say which is which.
+            warnings.append(
+                {
+                    "code": "sampled-percentiles",
+                    "modality": name,
+                    "message": (
+                        f"modality {name!r} p50/p95 and histogram come from "
+                        f"{(modalities[name].get('histogram') or {}).get('sampled_values', 0)} "
+                        f"of {accumulator['finite']} finite values "
+                        f"(max_values={max_values}); mean/std/min/max are exact"
+                    ),
+                }
+            )
+        if accumulator["numeric"] and accumulator["non_finite"]:
+            warnings.append(
+                {
+                    "code": "non-finite-values",
+                    "modality": name,
+                    "message": (
+                        f"modality {name!r} has {accumulator['non_finite']} non-finite value(s); "
+                        "statistics describe the finite values only"
+                    ),
+                }
+            )
     return {
         "shards_scanned": len(entries),
         "verified": verify,
+        "presence_masked": any(
+            accumulator["masked_shards"] for accumulator in accumulators.values()
+        ),
         "sampling": {
             "max_values_per_modality": max_values,
-            "method": "even-within-shard",
+            "method": "even-within-shard-then-even-across-pool",
         },
-        "modalities": {
-            name: _finalize_modality(
-                accumulator, hist_bins=hist_bins, max_values=max_values
-            )
-            for name, accumulator in sorted(accumulators.items())
-        },
+        "modalities": modalities,
+        "warnings": warnings,
     }
 
 
@@ -352,17 +486,30 @@ def _artifact_stats(
     max_values: int,
     verify: bool,
     content: bool,
+    examples: int = _DEFAULT_EXAMPLES,
     progress=None,
     write_result: DatasetWriteResult | None = None,
     registry=None,
 ) -> StatsReport:
     from .inspection import inspect_dataset
 
-    inspection = inspect_dataset(dataset, verify=False, registry=registry)
+    # A content scan decodes (and, with verify=True, checksums) every shard, so verifying the
+    # manifest again would double the work. Without a content scan, `verify` has to reach the
+    # inspection or `--verify --no-content` would verify nothing at all.
+    inspection = inspect_dataset(
+        dataset, verify=verify and not content, registry=registry
+    )
     sections: dict[str, Any] = {"artifact": inspection.to_dict()}
     warnings: list[dict] = []
+    for error in (inspection.get("verification") or {}).get("errors") or ():
+        warnings.append(
+            {
+                "code": "shard-verification",
+                "message": f"{error.get('path')}: {error.get('error')}",
+            }
+        )
     if content:
-        sections["contents"] = _artifact_contents(
+        contents = _artifact_contents(
             dataset,
             hist_bins=hist_bins,
             max_values=max_values,
@@ -370,14 +517,30 @@ def _artifact_stats(
             progress=progress,
             registry=registry,
         )
+        sections["contents"] = contents
+        warnings.extend(contents.get("warnings") or ())
     if write_result is not None:
         results = write_result.get("results") or {}
         if results.get("budget"):
             from .review import hours_selection_review
 
             review = hours_selection_review(write_result)
-            sections["hours_selection"] = review.to_dict()
+            document = review.to_dict()
+            # `examples` bounds embedded evidence here exactly as it does on the pipeline path.
+            document["examples"] = {
+                mode: list(items)[:examples]
+                for mode, items in (document.get("examples") or {}).items()
+            }
+            sections["hours_selection"] = document
             warnings.extend(review.get("warnings") or ())
+    if examples != _DEFAULT_EXAMPLES and not (
+        sections.get("hours_selection") or {}
+    ).get("examples"):
+        raise ValueError(
+            "examples= bounds embedded selection evidence, and this artifact embeds none; "
+            "omit it, or take stats from the pipeline, CurateResult, or hours "
+            "DatasetWriteResult that owns the selection"
+        )
     return StatsReport(
         stage="output",
         subject=str(dataset),
@@ -392,7 +555,7 @@ def _base_stats(
     hist_bins: int = 10,
     max_sources: int = 3,
     max_ticks_per_source: int = 10_000,
-    examples: int = 5,
+    examples: int = _DEFAULT_EXAMPLES,
     max_values: int = 100_000,
     content: bool = True,
     verify: bool = False,
@@ -451,6 +614,7 @@ def _base_stats(
             max_values=max_values,
             verify=verify,
             content=content,
+            examples=examples,
             progress=progress,
             write_result=subject,
             registry=registry,
@@ -497,6 +661,7 @@ def _base_stats(
             max_values=max_values,
             verify=verify,
             content=content,
+            examples=examples,
             progress=progress,
             registry=registry,
         )
@@ -512,7 +677,7 @@ def stats(
     hist_bins: int = 10,
     max_sources: int = 3,
     max_ticks_per_source: int = 10_000,
-    examples: int = 5,
+    examples: int = _DEFAULT_EXAMPLES,
     max_values: int = 100_000,
     content: bool = True,
     verify: bool = False,
@@ -617,10 +782,21 @@ def _embedded_examples(
     if mode in evidence:
         items = [dict(item) for item in evidence[mode]]
         if metric is not None:
-            available = {name for item in items for name in (item.get("features") or {})}
-            if metric not in available:
+            # Check per item, like the live path: a metric on *some* items used to pass the
+            # union check and then raise a bare KeyError inside the sort.
+            available = sorted(
+                {name for item in items for name in (item.get("features") or {})}
+            )
+            complete = bool(items) and all(
+                metric in (item.get("features") or {}) for item in items
+            )
+            if not complete and not items:
+                # No embedded item can vouch for the name; fall back to the metric namespace.
+                available = sorted(selection.get("metrics") or {})
+                complete = metric in available
+            if not complete:
                 raise ValueError(
-                    f"unknown evidence metric {metric!r}; available: {sorted(available)}"
+                    f"unknown evidence metric {metric!r}; available: {available}"
                 )
             items.sort(
                 key=lambda item: float((item.get("features") or {})[metric]),
@@ -759,8 +935,13 @@ def _histogram_metric(report: StatsReport, metric: str | None):
 def _stairs(ax, histogram: dict, *, label: str, alpha: float = 1.0) -> None:
     counts = histogram.get("counts") or ()
     edges = histogram.get("edges") or ()
+    if not counts and not edges:
+        return  # nothing was recorded (e.g. an empty selected pool) — draw nothing
     if len(edges) != len(counts) + 1:
-        return
+        raise ValueError(
+            f"malformed histogram for {label!r}: {len(counts)} counts with {len(edges)} "
+            f"edges (expected {len(counts) + 1})"
+        )
     ax.stairs(counts, edges, label=label, alpha=alpha, fill=alpha < 1.0)
 
 
@@ -913,6 +1094,33 @@ def render_stats_examples_html(examples: StatsExamples) -> str:
     )
 
 
+def _number_cell(value) -> str:
+    """Format one statistic for HTML, showing an em dash for a statistic that does not exist."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return escape("—" if value is None else str(value))
+    return escape(f"{value:.5g}")
+
+
+def _modality_notes(value: dict) -> str:
+    """Describe how honest a modality's numbers are: masking, sampling, non-finite values."""
+    notes = []
+    if value.get("presence_masked"):
+        notes.append(
+            f"present {value.get('present_fraction', 1.0):.0%} "
+            f"({value.get('absent_rows', 0)} absent rows excluded)"
+        )
+    if "histogram" in value:
+        sampled = int((value.get("histogram") or {}).get("sampled_values", 0))
+        notes.append(
+            f"p50/p95 sampled ({sampled} values)"
+            if value.get("percentiles_sampled")
+            else "p50/p95 exact"
+        )
+    if value.get("non_finite"):
+        notes.append(f"{value['non_finite']} non-finite")
+    return " · ".join(notes)
+
+
 def _summary_cards(report: StatsReport) -> str:
     cards = []
     for line in report.render().splitlines()[1:]:
@@ -949,29 +1157,26 @@ def render_stats_html(
     metric_rows = []
     for name, value in metric_source.items():
         metric_rows.append(
-            f"<tr><td>{escape(name)}</td><td>{value.get('mean', 0.0):.5g}</td>"
-            f"<td>{value.get('std', 0.0):.5g}</td><td>{value.get('p50', 0.0):.5g}</td>"
-            f"<td>{value.get('p95', 0.0):.5g}</td></tr>"
+            f"<tr><td>{escape(name)}</td><td>{_number_cell(value.get('mean'))}</td>"
+            f"<td>{_number_cell(value.get('std'))}</td>"
+            f"<td>{_number_cell(value.get('p50'))}</td>"
+            f"<td>{_number_cell(value.get('p95'))}</td></tr>"
         )
     for name, value in selection_metrics.items():
         candidate = value.get("candidate") or {}
         selected = value.get("selected") or {}
-        metric_rows.append(
-            f"<tr><td>{escape(name)}</td><td>{candidate.get('mean', 0.0):.5g} → "
-            f"{selected.get('mean', 0.0):.5g}</td>"
-            f"<td>{candidate.get('std', 0.0):.5g} → "
-            f"{selected.get('std', 0.0):.5g}</td>"
-            f"<td>{candidate.get('p50', 0.0):.5g} → "
-            f"{selected.get('p50', 0.0):.5g}</td>"
-            f"<td>{candidate.get('p95', 0.0):.5g} → "
-            f"{selected.get('p95', 0.0):.5g}</td></tr>"
+        cells = "".join(
+            f"<td>{_number_cell(candidate.get(key))} → {_number_cell(selected.get(key))}</td>"
+            for key in ("mean", "std", "p50", "p95")
         )
+        metric_rows.append(f"<tr><td>{escape(name)}</td>{cells}</tr>")
     modalities = (sections.get("contents") or {}).get("modalities") or {}
     modality_rows = "".join(
         "<tr>"
         f"<td>{escape(name)}</td><td>{escape(value.get('dtype', 'unknown'))}</td>"
         f"<td>{escape(str(value.get('shape', [])))}</td>"
-        f"<td>{value.get('rows', 0)}</td><td>{escape(str(value.get('mean', '—')))}</td>"
+        f"<td>{value.get('rows', 0)}</td><td>{_number_cell(value.get('mean'))}</td>"
+        f"<td>{escape(_modality_notes(value))}</td>"
         "</tr>"
         for name, value in modalities.items()
     )
@@ -1039,7 +1244,7 @@ def render_stats_html(
         )
         + (
             "<h3>Output modalities</h3><table><thead><tr><th>Modality</th>"
-            "<th>Dtype</th><th>Shape</th><th>Rows</th><th>Mean</th></tr></thead>"
+            "<th>Dtype</th><th>Shape</th><th>Rows</th><th>Mean</th><th>Notes</th></tr></thead>"
             f"<tbody>{modality_rows}</tbody></table>"
             if modality_rows
             else ""

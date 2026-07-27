@@ -136,6 +136,54 @@ def test_generic_anomaly_checker_end_to_end_with_synthetic_instances():
     assert checker.summary() == {"consistent": ["clip1"], "inconsistent": [], "inconclusive": []}
 
 
+def test_resolve_segment_accepts_numpy_integer_indexes_and_normalizes_them():
+    """Regression test for a review-caught finding: `_validate_segment_id` required plain
+    `int` indexes and rejected `np.integer`, so an SDK-provided `segment_ids` entry (which
+    carries NumPy scalars) failed here even though the sibling
+    `PixelShiftReport.add_segment` accepts them. Indexes are now normalized to `int` so
+    recorded frame keys have one canonical type."""
+    config = validate_config(
+        {"anomaly_type": "synthetic_demo",
+         "baselines": {"X": {"1": {"expected_sign": 1, "min": 0.0, "max": 10.0}}}}
+    )
+    checker = AnomalyChecker(config)
+
+    source_id, start_idx, end_idx = checker.resolve_segment(
+        ("clip1", np.int64(4), np.int64(9)), expected_length=5)
+
+    assert (start_idx, end_idx) == (4, 9)
+    assert type(start_idx) is int and type(end_idx) is int
+    checker.record_instance(source_id, "X", "1", start_idx + 1, 3.0)
+    # The same instance seen again through plain ints must still de-duplicate.
+    checker.record_instance(source_id, "X", "1", 5, 3.0)
+    assert len(checker._clip_records["clip1"]) == 1
+    with pytest.raises(ValueError, match="non-negative integers"):
+        checker.resolve_segment(("clip1", 0.5, 5.5), expected_length=5)
+
+
+def test_declared_frame_space_is_printed_and_cannot_change_mid_run(capsys):
+    """A caller measuring in a coordinate space other than real source frames must declare
+    it, so the printed report never presents synthetic positions as source frames."""
+    config = validate_config(
+        {"anomaly_type": "synthetic_demo",
+         "baselines": {"X": {"1": {"expected_sign": 1, "min": 0.0, "max": 1.0}}}}
+    )
+    checker = AnomalyChecker(config)
+    assert checker.frame_space == "source"
+    with pytest.raises(ValueError, match="caveat"):
+        checker.declare_frame_space("shard-concatenation", "")
+    checker.declare_frame_space("shard-concatenation", "offsets are shard-relative")
+
+    checker.resolve_segment(("clip1", 0, 5), expected_length=5)
+    checker.record_instance("clip1", "X", "1", 2, 5.0)  # out of range -> violation
+    checker.print_report()
+    out = capsys.readouterr().out
+    assert "frame space: shard-concatenation -- offsets are shard-relative" in out
+    assert "@shard-concatenation-offset2" in out
+    with pytest.raises(ValueError, match="cannot redeclare"):
+        checker.declare_frame_space("source", "")
+
+
 def test_generic_anomaly_checker_record_instance_rejects_unconfigured_control():
     config = validate_config({"anomaly_type": "synthetic_demo", "baselines": {"X": {"1": {"expected_sign": 1, "min": 0.0, "max": 10.0}}}})
     checker = AnomalyChecker(config)

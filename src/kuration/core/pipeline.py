@@ -14,11 +14,13 @@ The factory intentionally shadows `builtins.input` inside this module.
 """
 from __future__ import annotations
 
+import dis
 import json
 import math
 import os
 import copy
 import re
+from functools import lru_cache
 from itertools import islice
 from typing import Any, Callable, Optional
 
@@ -111,12 +113,68 @@ def _operator_aliases(name: str) -> tuple[str, ...]:
     aliases = [_friendly_operator_part(local)]
     if len(parts) == 2:
         aliases.append("__".join(_friendly_operator_part(part) for part in parts))
-    aliases.append("__".join(_canonical_operator_part(part) for part in parts))
+    aliases.append(_canonical_operator_alias(name))
     return tuple(dict.fromkeys(aliases))
 
 
 def _canonical_operator_alias(name: str) -> str:
     return "__".join(_canonical_operator_part(part) for part in name.split("/", 1))
+
+
+def _alias_claim_rank(name: str, alias: str) -> int:
+    """Rank how strongly ``name`` claims ``alias``: 0 spells the whole component name, 1 is the
+    local shorthand of a namespaced component.
+
+    A tighter claim wins outright, so a plain ``smooth`` operator keeps ``pipeline.smooth()``
+    when a plugin also registers ``acme/smooth`` (still reachable as ``acme__smooth()``). Only
+    equally strong claims are ambiguous, and every claimant of an ambiguous spelling then has a
+    stronger spelling of its own to suggest.
+    """
+    if "/" in name and alias == _friendly_operator_part(name.split("/", 1)[1]):
+        return 1
+    return 0
+
+
+@lru_cache(maxsize=1)
+def _pipeline_attribute_names() -> frozenset[str]:
+    """Public ``Pipeline`` attribute names that a registered operator must not try to reuse.
+
+    ``__getattr__`` runs only after normal attribute lookup fails, so an operator whose method
+    spelling equals a real attribute would be silently shadowed by the built-in. The reserved set
+    is derived from the class itself — class attributes plus every attribute the class's own
+    methods assign — so it can never drift from the real fluent surface. It is deliberately a
+    superset: an attribute a method assigns on a collaborator object is reserved too, which only
+    ever makes the guard stricter.
+    """
+    names = {name for name in dir(Pipeline) if not name.startswith("_")}
+    for value in vars(Pipeline).values():
+        for candidate in (value, getattr(value, "__func__", None), getattr(value, "fget", None),
+                          getattr(value, "fset", None)):
+            code = getattr(candidate, "__code__", None)
+            if code is None:
+                continue
+            names.update(instruction.argval for instruction in dis.get_instructions(code)
+                         if instruction.opname == "STORE_ATTR"
+                         and not str(instruction.argval).startswith("_"))
+    return frozenset(names)
+
+
+def operator_name_conflict(name: str) -> Optional[str]:
+    """Return a loud message when a registered operator name could never be reached fluently.
+
+    Registration-time guard shared by ``Registry.register`` and plugin validation: any method
+    spelling of the operator that collides with a real ``Pipeline`` attribute resolves to the
+    built-in, so the operator would be silently shadowed instead of callable.
+    """
+    reserved = sorted(alias for alias in _operator_aliases(name)
+                      if alias in _pipeline_attribute_names())
+    if not reserved:
+        return None
+    local = name.split("/", 1)[-1]
+    return (f"operator {name!r} method name(s) {reserved} collide with existing Pipeline "
+            f"attribute(s) of the same name; Python resolves the attribute first, so the "
+            f"operator would be silently shadowed — rename the component (for example "
+            f"{local}-<qualifier>)")
 
 
 def _clone_adapter(adapter, memo=None):
@@ -462,7 +520,11 @@ class Pipeline:
         self._registry = default_registry if registry is None else registry.snapshot()
 
     def _operator_method_map(self, *, discover_plugins: bool) -> dict[str, list[str]]:
-        """Map fluent Python spellings to the registered operator names they identify."""
+        """Map fluent Python spellings to the registered operator names they identify.
+
+        Claims are resolved by strength (see ``_alias_claim_rank``), so a spelling is reported as
+        ambiguous only when several operators claim it equally strongly.
+        """
         registry = self.__dict__.get("_registry")
         if registry is None:
             return {}
@@ -471,11 +533,12 @@ class Pipeline:
             from .registry import default_registry
             if _registry_inherits(registry, default_registry):
                 load_plugins()
-        methods: dict[str, list[str]] = {}
+        claims: dict[str, dict[int, list[str]]] = {}
         for operator_name in registry.names("operator"):
             for alias in _operator_aliases(operator_name):
-                methods.setdefault(alias, []).append(operator_name)
-        return methods
+                rank = _alias_claim_rank(operator_name, alias)
+                claims.setdefault(alias, {}).setdefault(rank, []).append(operator_name)
+        return {alias: by_rank[min(by_rank)] for alias, by_rank in claims.items()}
 
     def __getattr__(self, name: str) -> Callable[..., "Pipeline"]:
         """Resolve registered operators as immutable fluent methods.
@@ -486,13 +549,16 @@ class Pipeline:
         """
         if name.startswith("_"):
             raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
-        matches = self._operator_method_map(discover_plugins=False).get(name, [])
+        methods = self._operator_method_map(discover_plugins=False)
+        matches = methods.get(name, [])
         if not matches:
-            matches = self._operator_method_map(discover_plugins=True).get(name, [])
+            methods = self._operator_method_map(discover_plugins=True)
+            matches = methods.get(name, [])
         if not matches:
             raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
         if len(matches) > 1:
-            methods = self._operator_method_map(discover_plugins=False)
+            # Only suggest spellings that actually resolve on the same registry view that
+            # produced the ambiguity; `apply()` is the always-available fallback.
             alternatives = []
             for operator_name in matches:
                 alternative = next(
@@ -500,9 +566,10 @@ class Pipeline:
                         alias for alias in _operator_aliases(operator_name)
                         if methods.get(alias) == [operator_name]
                     ),
-                    _canonical_operator_alias(operator_name),
+                    None,
                 )
-                alternatives.append(f"{alternative}()")
+                alternatives.append(f"{alternative}()" if alternative is not None
+                                    else f"apply({operator_name!r})")
             raise AttributeError(
                 f"registered operator method {name!r} is ambiguous between {matches}; "
                 f"use one of {alternatives}")

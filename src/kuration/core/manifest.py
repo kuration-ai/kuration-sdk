@@ -101,6 +101,78 @@ def begin_dataset(out_dir: str) -> dict:
     return payload
 
 
+def dataset_state(out_dir: str) -> str:
+    """Classify what a destination already holds: ``absent``, ``writing``, or ``committed``.
+
+    ``writing`` means a previous run published shards and the ``state=writing`` sidecar but
+    never committed — readers reject that artifact, so nothing readable is lost by replacing
+    it. A manifest without a sidecar predates the commit protocol and is treated as committed
+    so a legacy artifact is never silently clobbered.
+    """
+    from .io import exists, read_text
+    if not exists(f"{out_dir}/dataset_manifest.json"):
+        return "absent"
+    commit_path = f"{out_dir}/dataset.commit.json"
+    if not exists(commit_path):
+        return "committed"
+    try:
+        commit = json.loads(read_text(commit_path))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return "committed"
+    state = commit.get("state") if isinstance(commit, dict) else None
+    return "writing" if state == "writing" else "committed"
+
+
+def _recorded_shard_paths(out_dir: str) -> list[str]:
+    """Absolute shard paths the destination's current manifest points at (may be none)."""
+    from .io import exists, read_text
+    manifest_path = f"{out_dir}/dataset_manifest.json"
+    if not exists(manifest_path):
+        return []
+    try:
+        manifest = json.loads(read_text(manifest_path))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return []
+    entries = manifest.get("shards") if isinstance(manifest, dict) else None
+    if not isinstance(entries, list):
+        return []
+    from .loaders import rebase_entries
+    resolved = rebase_entries(
+        [entry for entry in entries if isinstance(entry, dict) and entry.get("path")], out_dir)
+    return [str(entry["path"]) for entry in resolved]
+
+
+def clear_dataset_shards(out_dir: str) -> list[str]:
+    """Delete a prior attempt's shard files and return the removed paths (sorted).
+
+    Two sources, because an interrupted write leaves shards the manifest never learned about:
+    the paths the current manifest records, plus every ``<split>/<name>_shard*`` file the
+    writers can produce beneath the dataset root. Shard names are derived per run, so those
+    leftovers are not guaranteed to be overwritten by the next attempt — they would linger
+    unreferenced inside the artifact. Callers report what this removes; only ``force`` gets
+    here.
+    """
+    from .io import exists, glob, is_remote
+    candidates = set(_recorded_shard_paths(out_dir))
+    candidates.update(glob(f"{str(out_dir).rstrip('/')}/*/*_shard*"))
+    removed: list[str] = []
+    for path in sorted(candidates):
+        if not exists(path):
+            continue
+        if is_remote(path):
+            from .io import _fs
+            _fs(path).rm(path)
+        else:
+            from pathlib import Path as _Path
+            from .io import _local
+            local = _Path(_local(path))
+            if not local.is_file():
+                continue
+            local.unlink()
+        removed.append(path)
+    return removed
+
+
 def build_config(schema: SchemaSpec, strategy: Strategy, *, results: dict, seed: int,
                  started: Optional[str] = None, ended: Optional[str] = None) -> dict:
     """Build the reproducibility configuration embedded in a curated dataset.

@@ -221,3 +221,71 @@ def test_gameplay_stats_notebook_is_valid_and_all_code_cells_compile():
     for cell in notebook["cells"]:
         if cell["cell_type"] == "code":
             compile("".join(cell["source"]), str(path), "exec")
+
+
+# --- evidence rendering fixes (2026-07 stats review) ---------------------------------------
+
+def test_float_frames_are_scaled_instead_of_rendered_black():
+    """Finding 11: a normalized float frame in [0, 1] is not near-black."""
+    from kuration.gameplay._stats import _png_data_url
+
+    normalized = np.zeros((3, 4, 3), dtype=np.float32)
+    normalized[..., 0] = 1.0
+    bright = np.zeros((3, 4, 3), dtype=np.uint8)
+    bright[..., 0] = 255
+
+    assert _png_data_url(normalized, color_space="RGB") == _png_data_url(
+        bright, color_space="RGB"
+    )
+    # a wider float range is already 0-255 and must not be scaled again
+    wide = np.zeros((3, 4, 3), dtype=np.float32)
+    wide[..., 0] = 255.0
+    assert _png_data_url(wide, color_space="RGB") == _png_data_url(
+        bright, color_space="RGB"
+    )
+    # non-finite float values degrade to black rather than raising or wrapping
+    nan_frame = np.full((3, 4, 3), np.nan, dtype=np.float32)
+    assert _png_data_url(nan_frame, color_space="RGB") == _png_data_url(
+        np.zeros((3, 4, 3), dtype=np.uint8), color_space="RGB"
+    )
+
+
+def test_evidence_tick_cache_reuses_one_iteration_per_source():
+    """Finding 12: keying the cache on the window end re-read the source from index 0."""
+    from kuration.gameplay._stats import _decode_frames
+
+    calls: list[str] = []
+
+    class _CountingAdapter:
+        in_memory = True
+
+        def ticks(self, source):
+            calls.append(source)
+            return [
+                Tick(
+                    time=index / 10,
+                    entities={0: {"score": float(index), "action": "move"}},
+                    media={"frame": np.full((3, 4, 3), index * 10, dtype=np.uint8)},
+                )
+                for index in range(16)
+            ]
+
+    class _StubPipeline:
+        adapter = _CountingAdapter()
+        schema = MEDIA_SCHEMA
+
+    pipeline = _StubPipeline()
+    cache: dict = {}
+    for start, end in ((0, 4), (4, 8), (8, 16), (0, 4)):
+        frames, action = _decode_frames(
+            pipeline, {"source": "match", "start_idx": start, "end_idx": end}, 2, cache
+        )
+        assert len(frames) == 2 and "action:" in action
+
+    # one read per deepening window end, then nothing more once 16 ticks are cached
+    assert len(calls) == 3
+    assert len(cache) == 1
+    frames, _ = _decode_frames(
+        pipeline, {"source": "match", "start_idx": 0, "end_idx": 12}, 1, cache
+    )
+    assert len(calls) == 3 and len(frames) == 1

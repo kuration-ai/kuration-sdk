@@ -296,9 +296,17 @@ def test_ray_worker_receives_metric_plugin_modules_even_with_one_worker(monkeypa
         def ticks(self, source):
             return ticks
 
-    segments, errors, _ = score_sources(
-        schema=SCHEMA, adapter=Adapter(), sources=["s"], define={},
-        registered=["acme/ray"], segmenter=Segmenter(2, 2), executor="ray",
-        workers=1, on_error="raise", registry=registry)
+    # The fake backend runs the worker-side load_plugins(__name__) in-process, which would
+    # leave this test module in the global loaded-plugins set and get forwarded to the real
+    # Ray workers of later tests (where it cannot be imported) — snapshot and restore.
+    import kuration.core.plugins as plugin_state
+    snapshot = plugin_state._plugin_state_snapshot()
+    try:
+        segments, errors, _ = score_sources(
+            schema=SCHEMA, adapter=Adapter(), sources=["s"], define={},
+            registered=["acme/ray"], segmenter=Segmenter(2, 2), executor="ray",
+            workers=1, on_error="raise", registry=registry)
+    finally:
+        plugin_state._restore_plugin_state(snapshot, None)
     assert segments and not errors
     assert __name__ in seen["modules"]

@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from ._common import cli_run
+from ._common import cli_run, parse_mapping_option
 from .infer_schema_cli import infer_source
 
 
@@ -94,7 +94,8 @@ def main() -> None:
     ap.add_argument("--time", help="Time-column override.")
     ap.add_argument("--entity", help="Entity-column override.")
     ap.add_argument("--hz", type=float, help="Sample-rate override.")
-    ap.add_argument("--kinds", metavar="JSON", help="JSON object of per-column kind overrides.")
+    ap.add_argument("--kinds", metavar="JSON|PATH",
+                    help="Per-column kind overrides, as inline JSON or path to JSON file.")
     ap.add_argument("--sample", type=int, default=200, help="Rows to sample for inference.")
     ap.add_argument("--force", action="store_true", help="Overwrite an existing job spec.")
     ap.add_argument("--json", action="store_true", help="Print the job document to stdout.")
@@ -110,9 +111,7 @@ def main() -> None:
         stride = args.stride if args.stride is not None else args.window
         if stride < 1:
             raise ValueError("--stride must be a positive integer")
-        kinds = json.loads(args.kinds) if args.kinds else None
-        if kinds is not None and not isinstance(kinds, dict):
-            raise ValueError("--kinds must be a JSON object of column -> kind")
+        kinds = parse_mapping_option(args.kinds, label="--kinds")
         job = build_job(args.sources, out=args.dataset_out, window=args.window,
                         stride=stride, train_hours=args.train_hours,
                         test_hours=args.test_hours, preset=args.preset, seed=args.seed,

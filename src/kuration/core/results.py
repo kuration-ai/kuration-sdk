@@ -221,11 +221,15 @@ class SelectionReview(TypedResult):
         selected = self["coverage"]["selected"]
         lines.append(f"coverage: {selected['sources']} sources; "
                      f"{(selected.get('bins') or {}).get('occupied', 0)} occupied bins")
+        def fmt(value, spec: str) -> str:
+            # An all-non-finite metric reports None statistics (JSON-safe) — render as a dash.
+            return "—" if value is None else format(value, spec)
+
         for name, metric in self["metrics"].items():
             lines.append(f"metric {name}: mean "
-                         f"{metric['candidate'].get('mean', 0):.3g} -> "
-                         f"{metric['selected'].get('mean', 0):.3g} "
-                         f"(delta {metric['mean_delta']:+.3g})")
+                         f"{fmt(metric['candidate'].get('mean', 0), '.3g')} -> "
+                         f"{fmt(metric['selected'].get('mean', 0), '.3g')} "
+                         f"(delta {fmt(metric['mean_delta'], '+.3g')})")
         for warning in self["warnings"]:
             lines.append(f"warning [{warning['code']}]: {warning['message']}")
         return "\n".join(lines)

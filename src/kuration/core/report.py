@@ -140,10 +140,40 @@ def _histogram(values: np.ndarray, hist_bins: int) -> tuple[np.ndarray, np.ndarr
     if finite.size == 0:
         return np.zeros(hist_bins, dtype=int), np.linspace(0.0, 1.0, hist_bins + 1)
     low, high = float(finite.min()), float(finite.max())
-    resolution = max(abs(low), abs(high)) * np.finfo(np.float64).eps * hist_bins
-    if high - low <= resolution:
-        low, high = low - 0.5, high + 0.5
+    # A bin narrower than the float spacing at this magnitude is what NumPy refuses, so the
+    # widened span has to scale with the magnitude: `low - 0.5, high + 0.5` still crashed for
+    # constant values around 2**53, where consecutive doubles are 2.0 apart.
+    floor = max(0.5, hist_bins * float(np.spacing(max(abs(low), abs(high)))))
+    if high - low <= floor:
+        center = low + (high - low) / 2
+        low, high = center - floor, center + floor
     return np.histogram(finite, bins=hist_bins, range=(low, high))
+
+
+def _metric_summary(values: np.ndarray, hist_bins: int) -> dict:
+    """Summarize one metric over its *finite* values, keeping the exclusion visible.
+
+    The histogram has always ignored non-finite values; mean/std/min/max/p50/p95 used to keep
+    them, so one NaN feature produced `mean=nan` beside a clean histogram — and `nan`/`inf`
+    serialize as `NaN`/`Infinity`, which is not valid JSON (`kur-report --out`, `kur-stats
+    --json`). Every statistic now describes the finite values only, `n_nonfinite` records how
+    many were excluded, and a metric with no finite value at all reports `None` rather than a
+    number nobody can trust.
+    """
+    finite = values[np.isfinite(values)]
+    counts, edges = _histogram(values, hist_bins)
+    summary: dict = {
+        "mean": float(finite.mean()) if finite.size else None,
+        "std": float(finite.std()) if finite.size else None,
+        "min": float(finite.min()) if finite.size else None,
+        "max": float(finite.max()) if finite.size else None,
+        "p50": float(np.percentile(finite, 50)) if finite.size else None,
+        "p95": float(np.percentile(finite, 95)) if finite.size else None,
+        "n_finite": int(finite.size),
+        "n_nonfinite": int(values.size - finite.size),
+        "histogram": {"counts": counts.tolist(), "edges": [float(e) for e in edges]},
+    }
+    return summary
 
 
 def dataset_report(segments: list[Segment], *, metrics: Optional[Sequence[str]] = None,
@@ -153,19 +183,20 @@ def dataset_report(segments: list[Segment], *, metrics: Optional[Sequence[str]] 
     if n == 0:
         # keep the key set identical to the populated case so consumers (e.g. the report CLI)
         # don't KeyError on an empty pool.
-        return DatasetReport(n_segments=0, n_sources=0, metrics={}, groups={}, tags={})
+        return DatasetReport(n_segments=0, n_sources=0, metrics={}, groups={}, tags={},
+                             warnings=[])
     names = list(metrics) if metrics is not None else sorted({k for s in segments for k in s.features})
 
     metric_rep: dict = {}
+    warnings: list[dict] = []
     for m in names:
         v = np.array([_feature_value(s, m) for s in segments], dtype=np.float64)
-        counts, edges = _histogram(v, hist_bins)
-        metric_rep[m] = {
-            "mean": float(v.mean()), "std": float(v.std()),
-            "min": float(v.min()), "max": float(v.max()),
-            "p50": float(np.percentile(v, 50)), "p95": float(np.percentile(v, 95)),
-            "histogram": {"counts": counts.tolist(), "edges": [float(e) for e in edges]},
-        }
+        metric_rep[m] = _metric_summary(v, hist_bins)
+        if metric_rep[m]["n_nonfinite"]:
+            warnings.append({
+                "code": "non-finite-metric", "metric": m,
+                "message": f"{m} has {metric_rep[m]['n_nonfinite']}/{n} non-finite value(s); "
+                           "statistics describe the finite values only"})
 
     rep = {
         "n_segments": n,
@@ -173,6 +204,7 @@ def dataset_report(segments: list[Segment], *, metrics: Optional[Sequence[str]] 
         "metrics": metric_rep,
         "groups": _group_counts(segments),
         "tags": {str(k): v for k, v in Counter(t for s in segments for t in s.tags).items()},
+        "warnings": warnings,
     }
     if any(s.bin for s in segments):
         bc = Counter(s.bin for s in segments)

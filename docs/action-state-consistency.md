@@ -156,6 +156,19 @@ silently joined; verdicts are still aggregated by the manifest's `source_id`. An
 clip makes the analyzer check fail with exit code 2, while inconclusive clips remain visible in
 the result without being treated as inconsistent.
 
+**Dataset-mode positions are not source frames.** A manifest entry records
+path/`source_id`/`entity_id`/`split`/`shard_index`/`n_steps` and no source start offset, so a
+real source position cannot be recovered from the artifact. `check_dataset` therefore places each
+shard of a clip after the previous one and reports `frame_space: "shard-concatenation"` plus a
+`shard_ranges` list mapping every shard path to the `[start, end)` it occupies; the printed report
+carries the same caveat and labels positions `@shard-concatenation-offset<N>`. The consequence is
+stated explicitly rather than implied: `add_segment()` de-duplicates one physical press seen by two
+overlapping windows through its `(source_id, control, cell_key, frame)` key, and dataset mode
+**cannot** (`cross_shard_dedup: false`) — two curated shards covering overlapping source spans land
+at different concatenation offsets, so such a press is judged once per shard. Verdicts are
+unaffected (one violation already condemns a clip); instance counts and positions are
+shard-relative evidence.
+
 `action_state_checker()` delegates to the registered
 `aintropy/action-state-consistency` analyzer, preserving discovery and parameter validation.
 `kuration.get_analyzer("aintropy/action-state-consistency", **config)` remains available for

@@ -3,19 +3,9 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
 from ..importing import import_dataset
-from ._common import cli_run
-
-
-def _read_object(path: str | None, *, label: str):
-    if path is None:
-        return None
-    value = json.loads(Path(path).read_text())
-    if not isinstance(value, dict):
-        raise ValueError(f"{label} must contain a JSON object")
-    return value
+from ._common import cli_run, parse_mapping_option
 
 
 def main() -> None:
@@ -39,21 +29,22 @@ def main() -> None:
     )
     parser.add_argument(
         "--fields",
-        metavar="PATH",
-        help="JSON field mapping override.",
+        metavar="JSON|PATH",
+        help="Field mapping override, as inline JSON or path to JSON file.",
     )
     parser.add_argument("--time", help="Time-column override for tabular adapters.")
     parser.add_argument("--entity", help="Entity-column override for tabular adapters.")
     parser.add_argument("--hz", type=float, help="Sample-rate override.")
     parser.add_argument(
         "--kinds",
-        metavar="PATH",
-        help="JSON scalar/categorical inference overrides for tabular columns.",
+        metavar="JSON|PATH",
+        help="Scalar/categorical inference overrides for tabular columns, as inline JSON or "
+             "path to JSON file.",
     )
     parser.add_argument(
         "--adapter-options",
-        metavar="PATH",
-        help="JSON object of adapter-specific construction options.",
+        metavar="JSON|PATH",
+        help="Adapter-specific construction options, as inline JSON or path to JSON file.",
     )
     parser.add_argument("--source-id", help="Source ID override; only valid for one input file.")
     parser.add_argument("--split", default="train", help="Manifest split (default: train).")
@@ -71,7 +62,8 @@ def main() -> None:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Replace an existing Kuration manifest at the destination.",
+        help="Replace an existing Kuration dataset at the destination, "
+             "removing its manifest and any stale shard files.",
     )
     parser.add_argument("--json", action="store_true", help="Emit a structured import result.")
     parser.add_argument("--debug", action="store_true", help="Show tracebacks on failure.")
@@ -83,12 +75,12 @@ def main() -> None:
             args.out,
             adapter=args.adapter,
             schema=args.schema,
-            fields=_read_object(args.fields, label="fields"),
+            fields=parse_mapping_option(args.fields, label="--fields"),
             time=args.time,
             entity=args.entity,
             hz=args.hz,
-            kinds=_read_object(args.kinds, label="kinds"),
-            adapter_options=_read_object(args.adapter_options, label="adapter options"),
+            kinds=parse_mapping_option(args.kinds, label="--kinds"),
+            adapter_options=parse_mapping_option(args.adapter_options, label="--adapter-options"),
             source_id=args.source_id,
             split=args.split,
             shard_length=args.shard_length,
