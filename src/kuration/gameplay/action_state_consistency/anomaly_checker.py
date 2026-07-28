@@ -280,11 +280,51 @@ class AnomalyChecker:
             verdicts[self.clip_verdict(source_id)].append(source_id)
         return verdicts
 
+    def to_records(self) -> list[dict]:
+        """Export the accumulated ledger as flat, per-instance rows -- the same storage
+        role ``PixelShiftReport._ledger`` plays for pixel_shift, in the same row shape
+        (``clip_id``/``control``/``cell_key``/``frame``/``shift``), so this can be
+        concatenated directly onto that ledger's own instances. ``consistent`` is the
+        one column action_state's judgment adds on top; ``verdict``/``n_instances`` are
+        that clip's aggregate, repeated on every one of its rows so grouping by clip
+        needs no second lookup. Does not print anything -- see ``print_report()`` for
+        the human-readable report over this same underlying data.
+
+        One row per recorded instance, sorted by ``(clip_id, frame)``. A clip with no
+        recorded instance (``verdict == "inconclusive"`` with nothing observed) still
+        gets exactly one row, with ``control``/``cell_key``/``frame``/``shift``/
+        ``consistent`` all ``None``, so it isn't silently absent from the export.
+
+        ``frame`` is a real source frame only when ``self.frame_space == "source"`` --
+        otherwise it is in whatever coordinate space ``self.frame_space`` names (see
+        ``declare_frame_space``), the same caveat ``print_report()`` prints.
+        """
+        rows = []
+        for source_id in sorted(self._clips_seen):
+            records = self._clip_records.get(source_id, [])
+            verdict = self.clip_verdict(source_id)
+            if not records:
+                rows.append({
+                    "clip_id": source_id, "control": None, "cell_key": None,
+                    "frame": None, "shift": None, "consistent": None,
+                    "verdict": verdict, "n_instances": 0,
+                })
+                continue
+            for record in sorted(records, key=lambda r: r["frame"]):
+                rows.append({
+                    "clip_id": source_id, "control": record["control"],
+                    "cell_key": record["cell_key"], "frame": record["frame"],
+                    "shift": record["shift"], "consistent": record["consistent"],
+                    "verdict": verdict, "n_instances": len(records),
+                })
+        return rows
+
     def print_report(self) -> None:
         """Print the full anomaly report: counts and exact clip IDs per verdict, plus
         which control/cell/frame violated the baseline for each inconsistent clip.
         Printed to the screen, nothing written to disk (same convention as
-        PixelShiftReport.print_report())."""
+        PixelShiftReport.print_report()). See ``to_records()`` for this same data as
+        plain, unprinted structured rows."""
         verdicts = self.summary()
         print("=" * 78)
         print(f"ANOMALY REPORT (anomaly_type={self.anomaly_type!r})")
