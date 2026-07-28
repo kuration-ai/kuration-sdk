@@ -116,10 +116,10 @@ custom domains and plugins follow the same registered-operator mechanism.
 
 `.measure`'s four forms:
 ```python
-.measure("hp")                            # bare name -> mean of the auto-qualified field
-.measure("hp_p95", "p95", of="hp")        # reduce string + of=/map=/filter=/scope= kwargs
-.measure("hp_max", {"source": "e.hp", "reduce": "max"})   # a full DSL dict, passed through
-.measure("wlen", lambda w: float(w.T))    # a callable(WindowBuffer) -> float (registered)
+pipeline.measure("hp")                            # bare name -> mean of the auto-qualified field
+pipeline.measure("hp_p95", "p95", of="hp")        # reduce string + of=/map=/filter=/scope= kwargs
+pipeline.measure("hp_max", {"source": "e.hp", "reduce": "max"})  # full DSL dict
+pipeline.measure("wlen", lambda w: float(w.T))    # callable(WindowBuffer) -> float
 ```
 A bare token auto-qualifies against the schema: an entity field becomes `<entity_axis>.field`,
 a global stays bare, an event-stream name raises (name a field on it: `"stream.field"`).

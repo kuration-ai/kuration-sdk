@@ -38,13 +38,15 @@ structure of the walkthrough runs with no network. Downloading is not part of CI
 ## What the pipeline says
 
 ```python
-input(source, time="date", hz=1 / 3600)
-  .window(24)                          # one day; stride defaults to the window
-  .measure("load", "mean", of="HUFL")
-  .measure("temp_swing", "std", of="OT")
-  .bin("load", bins=6)
-  .bin("temp_swing", bins=4)
-  .sample("equal", n=60)
+pipeline = (
+    input("data/ETTh1.csv", time="date", hz=1 / 3600)
+    .window(24)                          # one day; stride defaults to the window
+    .measure("load", "mean", of="HUFL")
+    .measure("temp_swing", "std", of="OT")
+    .bin("load", bins=6)
+    .bin("temp_swing", bins=4)
+    .sample("equal", n=60)
+)
 ```
 
 Two things are worth pointing at:

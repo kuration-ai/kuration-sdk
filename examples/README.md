@@ -22,6 +22,7 @@ python examples/03_compare_strategies.py
 python examples/04_operator_pipeline.py
 python examples/05_custom_operators.py
 python examples/06_gameplay_operator_methods.py
+python examples/07_action_state_consistency.py
 ```
 
 | script | shows |
@@ -33,6 +34,7 @@ python examples/06_gameplay_operator_methods.py
 | **04_operator_pipeline** | the fluent path in depth: one chain run by **count** and by **hours**, `.describe()` as the resolved-but-unrun plan, and the operator chain recorded in `config.json`. |
 | **05_custom_operators** | reusable extension path: register, discover, and run compositional and transform-backed operators through short and namespace-qualified fluent methods. |
 | **06_gameplay_operator_methods** | maintained domain path: import gameplay, call SLAM trajectory operators directly on the core `Pipeline`, and use the qualified spelling without a model or GPU. |
+| **07_action_state_consistency** | stateful analyzer path: join lazy frames, run action-state consistency through the terminal `.analyze()` API, and inspect passing and failing clip verdicts without PyAV. |
 | **notebooks/gameplay_stats** | JupyterLab lifecycle: automatic notebook progress, uncurated/curated/emitted stats, gameplay plots, and optional synchronized before/after video review. |
 | **notebooks/slam_kurious** | output-free SLAM reconstruction, trajectory curation, and notebook point-cloud exploration. |
 | **public_data/ett_fluent** | real data, fluent API only: infer a schema from an hourly transformer CSV, bin day-length windows on load and temperature swing, and select a spread — no schema, adapter, or strategy dict. |

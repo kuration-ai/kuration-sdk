@@ -3,7 +3,7 @@
 This project follows semantic versioning after `1.0`. During the `0.x` beta, minor releases may
 change documented APIs with the notice and deprecation process in `docs/compatibility.md`.
 
-## Unreleased
+## 0.1.0rc5
 
 Target release: `0.1.0rc5` (current development identity: `0.1.0rc5.dev0`).
 

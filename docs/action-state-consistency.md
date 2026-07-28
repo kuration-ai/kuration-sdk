@@ -148,6 +148,10 @@ The analyzer is also an ordinary pipeline terminal — no job spec, no CLI, and 
 segment loop. `.analyze()` drives it over the pipeline's segmented tick stream, with frames
 decoded lazily by the SDK's one bounded media path:
 
+The download-free runnable companion is
+[`examples/07_action_state_consistency.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/07_action_state_consistency.py);
+it injects an in-memory media provider, exercises real optical flow, and shows both verdicts.
+
 ```python
 from kuration import input
 

@@ -110,6 +110,14 @@ are grouped below by user task.
   `register_batch_transform`, `register_transform`, `get_transform`, `apply_transforms`,
   `apply_transforms_to_windows`, `ExecutionBackend`, `ResourceSpec`, `LocalExecutionBackend`,
   `RayExecutionBackend`, `get_execution_backend`.
+- Bounded execution and physical planning: `SegmentBatch`, `IDENTITY_COLUMNS`,
+  `iter_segment_batches`, `CheckpointIdentity`, `PartitionCommit`, `StageCheckpoint`,
+  `canonical_hash`, `FeatureStageResult`, `checkpoint_feature_stage`, `external_quantile_edges`,
+  `external_top_k`, `external_uniform_bins`, `iter_external_top_k_priorities`,
+  `iter_external_span_items`, `iter_external_uniform_priorities`, `external_weighted`,
+  `iter_external_weighted_priorities`, `iter_external_hash_dedup`, `OperatorResources`,
+  `OperatorTraits`, `PhysicalOperator`, `PhysicalStage`, `PhysicalPlan`,
+  `compile_physical_plan`.
 - Strategies and selection: `Strategy`, `load_strategy`, `bin_segments`, `quantile_bins`,
   `select`, `segment_priorities`, `assign_splits`, `apply_filters`, `method_priorities`,
   `register_method`, `register_filter`.
@@ -142,7 +150,7 @@ All non-underscore methods intentionally exposed by `Pipeline` are public:
   `score`, `tag`, `split`, `group`, `options`, `expect`, `sample`, plus direct methods generated
   for registered operators; `apply`, `organize`, and `curate` remain compatibility aliases.
 - Inspection: `head`, `describe`, `preview`, `review`, `explain`.
-- Terminals: `collect`, `report`, `experiment`, `output`.
+- Terminals: `collect`, `report`, `stats`, `analyze`, `check`, `experiment`, `output`.
 
 Registered operator methods normalize the local component name (`acme/signal-diversity` becomes
 `signal_diversity`) and expose a namespace-qualified spelling (`acme__signal_diversity`) for

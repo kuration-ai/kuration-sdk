@@ -59,6 +59,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | name | signature | does |
 |---|---|---|
 | `input` | `(src=None, *, schema=None, adapter=None, sources=None, fields=None, time=None, entity=None, hz=None, kinds=None, sample=200, globals=None, registry=None, **adapter_kw) -> Pipeline` | sniff `src`, infer a schema (unless `schema=`), build the adapter — eagerly, loudly; an explicit registry also resolves named adapters in isolation |
+| `Pipeline` | `(*, schema, adapter, sources, in_memory, ops, registry=None)` | immutable fluent pipeline type; ordinary users construct it through `input(...)`, while extensions receive and return it |
 | `infer_schema` | `(sample, *, name="inferred", time=None, entity=None, hz=None, kinds=None) -> (SchemaSpec, hints)` | classify a sample (rows/dict-of-arrays/ticks) into a schema + adapter `fields=` hints |
 | `Pipeline.window` | `(window, stride=None, unit="steps") -> Pipeline` | set the `Segmenter` |
 | `Pipeline.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None) -> Pipeline` | attach a strictly aligned lazy video media column |
@@ -132,7 +133,6 @@ See [pipeline.md](pipeline.md) for accepted operator forms and validation behavi
 | `compare_datasets` | `(left, right, *, verify=False) -> DatasetComparison` | compare artifact schema, output, pipeline, provenance, size, and integrity |
 | `render_html_report` | `(*reports, title="kuration review") -> str` | render typed/mapping reports as dependency-free static HTML |
 | `write_html_report` | `(path, *reports, title="kuration review") -> str` | write the static HTML report locally or through configured path I/O |
-| `Arm` | `(name, strategy)` | one named `run_experiment` strategy arm |
 | `union_define` | `(arms) -> dict` | merge arm metric definitions, rejecting incompatible duplicate names |
 
 The dict-compatible result types preserve ordinary key access while adding attribute access
@@ -160,14 +160,15 @@ subclass implementation.
 | `compile_metric` | `(spec, schema) -> fn(WindowBuffer) -> float` | compile + validate one closed-grammar spec ([dsl.md](dsl.md)) |
 | `register_metric` | `@register_metric("name")` on `fn(WindowBuffer) -> float` | escape hatch: a Python per-segment metric |
 | `register_compiled` | `(name, fn)` | same, non-decorator form |
-| `FeatureEngine` | `(schema, *, define=None, registered=None, tags_spec=None)`; `.compute(ticks, segments)`, `.score_window(seg, window_ticks)` | runs all metrics over one buffer per segment |
+| `FeatureEngine` | `(schema, *, define=None, registered=None, tags_spec=None, registry=None)`; `.compute(ticks, segments)`, `.score_window(seg, window_ticks)` | runs all metrics over one buffer per segment; `registry` isolates registered metric resolution |
 | `score_sources` | `(*, schema, adapter, sources, define, registered, segmenter, tags_spec=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local", registry=None, required_fields=()) -> (segments, errors, source_tracks)` | the shared ordered feature pass (raises on an empty pool) |
 
 ## Input adapters
 
-All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
-`.check_source(source_uri)` preflight (used by `kur-validate --check-sources`); see
-[adapters.md](adapters.md).
+The tabular and array adapters take `schema` first and expose `.ticks(source_uri)`, plus a
+metadata-only `.check_source(source_uri)` preflight (used by
+`kur-validate --check-sources`). Curated and video adapters derive their schema from an existing
+artifact or media source; see [adapters.md](adapters.md).
 
 | name | constructor | reads |
 |---|---|---|
@@ -178,11 +179,32 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `ParquetDatasetAdapter` | `(schema, *, fields, path, source_per="part", time_column=None, entity_column=None, globals=None)`; `.sources()` | a directory/glob of Parquet parts (`[parquet]`) |
 | `HuggingFaceAdapter` | `(schema, *, fields, dataset, split="train", config=None, time_column=None, entity_column=None, globals=None, source_column=None, load_kwargs=None)`; `.sources()` | a HF dataset (`[hf]`) |
 | `ZarrAdapter` | `(schema, *, fields, globals=None)` | a Zarr store (`[zarr]`; remote via `[gcs]`, `[s3]`, or `[azure]`) |
-| `CuratedDatasetAdapter` | `(dataset_dir_or_list, schema=None)`; `.sources()`, `.dataset_of` | kuration's own output, re-curatable |
+| `CuratedDatasetAdapter` | `(dataset_dir, schema=None, registry=None)`; `.sources()`, `.dataset_of` | one dataset directory or a list of directories, re-curatable; `registry` resolves their shard containers |
 | `schema_from_output` | `(output_spec, *, name="curated", sample_hz=None, entity_axis="e") -> SchemaSpec` | derive a schema from a dataset's `config.json` output block |
-| `register_adapter` / `get_adapter` | `(name, factory, **metadata) -> None` / `(name, *, registry=None, **kwargs) -> InputAdapter` | declarative adapter registry |
+| `register_adapter` | `(name, factory, **metadata) -> None` | register an input-adapter factory and component metadata |
+| `get_adapter` | `(name, *, registry=None, **kwargs) -> InputAdapter` | construct a registered adapter, optionally through an isolated registry |
 | `InputAdapter` | Protocol: `schema` + `ticks(uri)`; optional lazy `iter_ticks(uri)`, `check_source(uri)`, and `sources_are_paths` | the seam to implement for bespoke formats |
-| `VideoAdapter` / `JoinedMediaAdapter` | video-only sources / strict media join over another adapter | lazy MP4 media columns (`[video]` for PyAV provider) |
+| `FrameRef` | `(uri, source_id, frame_index, timestamp, stream_index=0, pts=None, time_base=None)` | immutable lazy reference to one source video frame |
+| `VideoMetadata` | `(uri, width, height, frame_count, duration, average_rate, stream_index=0, variable_rate=False, codec=None)` | probed video dimensions, timing, stream, and codec metadata |
+| `MediaProvider` | Protocol: `probe(uri)`, `iter_refs(uri, *, source_id=None)`, `decode_batch(refs)` | injectable media metadata/reference/decoding seam |
+| `PyAVMediaProvider` | `(*, remote_cache_size=4)` | bounded CPU video provider (`[video]`); PyAV loads only when probing or decoding |
+| `VideoAdapter` | `(sources, *, provider=None, column="frame", rate_tolerance=1e-09)` | turn video-only sources into ticks with one lazy media column |
+| `JoinedMediaAdapter` | `(adapter, videos, *, provider=None, column="frame", on="timestamp", tolerance=None, mismatch="error")` | strictly align one video to every source from an existing adapter |
+
+## Batch transforms and execution
+
+| name | signature | does |
+|---|---|---|
+| `BatchTransform` | Protocol: `transform_batch(batch, ctx) -> mapping`; `output_features` | bounded window/media computation seam |
+| `register_batch_transform` | `(name, factory=None, *, outputs=(), inputs=(), media_requirements=None, resources=None, lookbehind=0, lookahead=0, ownership=None, **metadata)` | register a transform factory directly or as a decorator |
+| `register_transform` | `(name, factory=None, *, outputs=(), inputs=(), media_requirements=None, resources=None, lookbehind=0, lookahead=0, ownership=None, **metadata)` | compatibility alias for `register_batch_transform` |
+| `get_transform` | `(name, *, registry=None) -> BatchTransform factory` | resolve a transform factory from the selected registry |
+| `apply_transforms` | `(calls, segments, *, adapter, registry, progress=None, on_error="raise", errors=None)` | execute resolved transforms over canonical segments; source-level skip removes the complete failed source |
+| `ExecutionBackend` | Protocol: `map_sources(items, fn, resources)`, `map_batches(...)`, `iter_batches(...)` | ordered execution seam |
+| `LocalExecutionBackend` | `()` | in-process ordered backend with bounded producer backpressure |
+| `RayExecutionBackend` | `(**init_kwargs)` | optional ordered Ray backend (`[ray]`) |
+| `ResourceSpec` | `(num_cpus=1.0, num_gpus=0.0, memory=None)` | portable non-negative task resource request |
+| `get_execution_backend` | `(name)` | construct the `"local"` or optional `"ray"` backend |
 
 ## Selection
 
@@ -203,7 +225,8 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | name | signature | does |
 |---|---|---|
 | `SegmentScorer` | Protocol: `score(segments, ctx) -> array`; optional `needs_buffers=True` | the learned/whole-pool seam |
-| `register_scorer` / `get_scorer` | `(name, factory, **metadata)` / `(name, *, registry=None, **kwargs)` | registry (`action_residual` ships, `[methods]`) |
+| `register_scorer` | `(name, factory, **metadata) -> None` | register a whole-pool scorer factory (`action_residual` ships with `[methods]`) |
+| `get_scorer` | `(name, *, registry=None, **kwargs) -> SegmentScorer` | construct a registered scorer, optionally through an isolated registry |
 | `apply_scorers` | `(entries, segments, *, schema, adapter, seed=0, progress=None, registry=None, on_error="raise", errors=None) -> None` | run parsed scorers and write outputs into `seg.features`; optional source-level skip applies to second-read buffer failures |
 
 ## Plugins and progress
@@ -218,7 +241,8 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `PluginCheckResult` | immutable result with `.passed`, `.to_dict()`, and `.render()` | plugin load, descriptor, package, namespace, parameter-schema, and transform-contract diagnostics |
 | `ProgressCallback` | `Callable[[dict], None]` | receives structured `{phase, event, ...}` execution events |
 | `ProgressSpec` | `ProgressCallback \| str \| bool` | user selection accepted by `progress_callback` and fluent pipeline options |
-| `notebook_progress` / `cli_progress` | `() -> ProgressCallback` | explicit rich notebook or throttled terminal renderer |
+| `notebook_progress` | `() -> ProgressCallback` | explicit rich notebook renderer |
+| `cli_progress` | `(*, file=None) -> ProgressCallback` | throttled terminal renderer, optionally writing to a selected stream |
 | `progress_callback` | `(progress="auto") -> ProgressCallback \| None` | environment-aware renderer selection; callbacks pass through unchanged |
 | `register_stats_enricher` | `(name, enricher, *, plotter=None, example_renderer=None) -> None` | advanced domain hook in `kuration.core.stats`; adds a section, optional plot, and optional rich evidence renderer without changing the ordinary stats API |
 
@@ -310,21 +334,19 @@ remain the Python convenience boundary.
 
 ## Output
 
-Media contracts include `MediaSpec`, `FrameRef`, `VideoMetadata`, `MediaProvider`,
-`PyAVMediaProvider`, `VideoAdapter`, and `JoinedMediaAdapter`. Transform and execution contracts
-include `BatchTransform`, `TransformContext`, `register_batch_transform` (`register_transform`
-alias), `get_transform`, `ExecutionBackend`, `ResourceSpec`, and the
-ordered `LocalExecutionBackend` / `RayExecutionBackend` implementations. `apply_transforms`
-executes resolved calls over canonical segments; it accepts `on_error="raise"|"skip"` and an
-optional error list, and skip removes the failed source's entire segment set and resets component
-state before the next source. `get_execution_backend` resolves a backend.
+Media input contracts are listed under [Input adapters](#input-adapters), and transform/backend
+contracts are listed under [Batch transforms and execution](#batch-transforms-and-execution).
+`TransformContext` and the bounded physical-planning helpers remain in the preceding section
+because they define checkpoint and batch execution records.
 
 | name | signature | does |
 |---|---|---|
 | `OutputSpec` | `.from_dict({shard_length, short_policy?, container?, presence_mask?, modalities})` | declared modalities + chunking; `_present` enabled by default ([output.md](output.md)) |
 | `Modality` | `(name, dtype, shape, src_kind, src_arg)` | one declared modality |
-| `OutputEncoder` / `PassthroughEncoder` | `timestep(record, ctx)` and optional `encode_batch(records, ctx)` | the domain seam for derived tensors |
-| `register_encoder` / `get_encoder` | `(name, factory)` / `(name, **kwargs)` | encoder registry |
+| `OutputEncoder` | type alias: `TimestepOutputEncoder \| BatchOutputEncoder` | derived-tensor seam implementing `timestep(record, ctx)` or `encode_batch(records, ctx)` |
+| `PassthroughEncoder` | `()`; `.timestep(record, ctx) -> {}` | default encoder when every modality comes from a field or segment |
+| `register_encoder` | `(name, factory, **metadata) -> None` | register an output-encoder factory |
+| `get_encoder` | `(name, *, registry=None, **kwargs) -> OutputEncoder` | construct a registered encoder |
 | `Track` | `(source_id, entity_id, records, meta={})` | one entity's timestep sequence — the output unit |
 | `tracks_from_ticks` | `(schema, ticks, source_id) -> list[Track]` | one track per entity |
 | `write_track` | `(out_dir, track, spec, *, encoder=None, schema=None, split="all", resume=False, name_suffix="", media_provider=None, resume_entries=None, registry=None) -> [manifest entries]` | low-level: write one track's shards; `resume_entries` supplies a previously committed checksummed manifest for verified reuse and `registry` resolves overlay containers |
@@ -342,6 +364,15 @@ any output is written.
 
 The `kuration.gameplay` domain ships in the SDK wheel. Its heavy
 measurement runtimes remain optional.
+
+The facade itself also exports three registration modules and its idempotent registration hook:
+
+| name | signature | does |
+|---|---|---|
+| `kuration.gameplay.pixel_shift` | module | pixel-shift transform, operator, and report facade |
+| `kuration.gameplay.action_state_consistency` | module | action-state analyzer facade |
+| `kuration.gameplay.slam` | module | SLAM reconstruction, trajectory, and point-cloud facade |
+| `kuration.gameplay.register` | `() -> None` | idempotently register every maintained gameplay component and stats enricher |
 
 | name | signature | does |
 |---|---|---|
@@ -386,7 +417,8 @@ workflow.
 | `slam_provenance` | `(options) -> dict` | stable JSON-safe engine, model, and option identity without live-object reprs |
 | `curate_slam_gameplay` | `(manifest, output, *, window=32, stride=16, n=2000, min_quality=0.5, quality_options=None, feature_space=None, selection_method="uniform-bins", bins=4, seed=0, progress=None) -> SLAMCurationResult` | one-call trajectory quality/diversity selection workflow |
 | `PointCloudArtifact` | `(points, colors=None, attributes={})`; `.select(...)`, `.save(...)` | validated immutable point cloud |
-| `load_point_cloud` / `curate_point_cloud` | `(source)` / `(source, *, method="voxel", max_points=None, voxel_size=None, min_confidence=None, seed=0, output=None)` | load or deterministically reduce an exported scene |
+| `load_point_cloud` | `(source) -> PointCloudArtifact` | load an exported scene |
+| `curate_point_cloud` | `(source, *, method="voxel", max_points=None, voxel_size=None, min_confidence=None, seed=0, output=None) -> PointCloudArtifact` | deterministically reduce an exported scene and optionally save it |
 | `build_pointcloud_scene` / `load_slam_output` | visualization helpers | build a notebook scene (`[slam-viz]`) or load a duck-typed output view |
 | `slam_schema` | `(*, sample_hz=None) -> SchemaSpec` | canonical camera trajectory schema |
 

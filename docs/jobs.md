@@ -6,19 +6,25 @@ recognized key per job kind. The same information ships machine-readably as a JS
 and `kur-validate job.json` preflights any job in milliseconds — no data read.
 
 ```bash
-kur-infer      SOURCE [--out schema.json] [--force] [--time C] [--entity C] [--hz N] [--json]
-kur-init       SOURCE... --out job.json [--window N] [--dataset-out DIR] [--force]
-kur-preview    job.json | --infer SOURCE... [--max-sources N] [--json] [--html PATH]
+kur-infer      SOURCE [--out schema.json] [--force] [--name NAME] [--time C] [--entity C]
+               [--hz N] [--kinds JSON|PATH] [--sample N] [--json]
+kur-init       SOURCE... --out job.json [--dataset-out DIR] [--window N] [--stride N]
+               [--train-hours N] [--test-hours N] [--preset NAME] [--seed N] [--name NAME]
+               [--time C] [--entity C] [--hz N] [--kinds JSON|PATH] [--sample N] [--force] [--json]
+kur-preview    job.json | --infer SOURCE... [--max-sources N] [--max-ticks N] [--examples N]
+               [--time C] [--entity C] [--hz N] [--kinds JSON|PATH] [--json] [--html PATH]
 kur-validate   job.json [--check-sources] [--json-schema] [--print-schema]
 kur-explain    job.json [--json]           # budget, execution, extras, warnings + fixes
 kur-curate     job.json [--force] [--review] [--review-json PATH] [--review-html PATH]
 kur-experiment job.json [--out cmp.json] [--force] # experiment -> per-arm JS-vs-baseline
 kur-report     job.json [--out rep.json] [--force] # report -> metric distribution profile
 kur-inspect    DATASET [--verify] [--json] [--html PATH] # artifact summary/integrity check
-kur-stats      DATASET [--verify] [--json] [--html PATH] # artifact distribution profile
+kur-stats      DATASET [--verify] [--no-content] [--hist-bins N] [--max-values N]
+               [--examples N] [--capabilities] [--json] [--html PATH]
 kur-diff       LEFT RIGHT [--verify] [--json] [--html PATH] # compare two artifacts
 kur-check      DATASET [--policy POLICY] [--analyzer NAME] [--json] # gates/analyzers
 kur-export     DATASET --out DIR [--force] [--format npz|npy|parquet] [--split S]
+               [--modalities A,B] [--no-trim] [--no-verify] [--json]
 kur-import     SOURCE... --out DATASET [--force] [--adapter NAME] [--json] # detected import
 kur-list       KIND [--json]                  # list one plural component kind
 kur-plugin-check [ENTRY-POINT|MODULE] [--json] # validate plugin loading and descriptors
@@ -68,6 +74,13 @@ resolves it before writing, so a scaffold that lands on disk is one `kur-validat
 `kur-preview` decodes a bounded prefix of the sources and reports field ranges, missingness,
 and example ticks; unlike `kur-explain` (which reads no rows) it shows what the data contains.
 
+`kur-infer` and `kur-init` sample 200 rows by default; use `--sample` to change that bound and
+`--name` to set the inferred schema name. `kur-init` defaults to a 64-step window whose stride
+equals the window, a one-hour train budget, zero test hours, the `numpy-timeseries` preset, and
+seed zero. Override those choices with `--window`, `--stride`, `--train-hours`, `--test-hours`,
+`--preset`, and `--seed`. For raw-source previews, `--max-sources`, `--max-ticks`, and
+`--examples` independently bound source count, ticks per source, and retained example rows.
+
 ```bash
 kur-infer   telemetry.csv --out schema.json     # inspect the inferred schema first
 kur-init    telemetry.csv --out job.json --window 128 --dataset-out out/curated
@@ -86,13 +99,18 @@ write by hand.
 `kur-inspect` answers "is this artifact intact"; `kur-stats` answers "what is in it" —
 per-modality distributions, split composition, and any section a domain package contributes
 through a registered stats enricher. `--capabilities` lists the plots and evidence a given
-report supports.
+report supports. `--hist-bins` controls histogram resolution, `--max-values` bounds the values
+sampled per modality, and `--examples` bounds embedded selection evidence when the artifact
+contains it. `--no-content` reads only manifest metadata; combine it with `--verify` for a
+checksum pass without distribution decoding.
 
 `kur-export` walks the manifest and writes shards as plain array files for consumers outside
 Python, alongside an `export_index.json` carrying the manifest metadata (source, entity,
 split, `n_steps`) that bare arrays would lose. `--format npy` writes one file per shard and
 modality; `npz` and `parquet` write one file per shard. Pad rows are trimmed unless
-`--no-trim` is given. Every indexed payload has a SHA-256 and byte size. Payloads are staged
+`--no-trim` is given. `--modalities` accepts a comma-separated subset, and `--no-verify`
+explicitly skips source-artifact checksum verification for trusted inputs. Every indexed payload
+has a SHA-256 and byte size. Payloads are staged
 under an owned generation namespace and `export_index.json` is committed last; `--force`
 atomically points the index at a new complete generation while leaving unrelated files alone.
 One destination lease prevents concurrent exporters from interleaving.

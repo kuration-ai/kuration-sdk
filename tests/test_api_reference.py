@@ -11,23 +11,40 @@ import kuration
 
 ROOT = Path(__file__).parents[1]
 REFERENCE = ROOT / "docs" / "api.md"
+DOCUMENTATION_CONTRACT = ROOT / "docs" / "documentation-contract.md"
 
 
-def _mentions_identifier(text: str, name: str) -> bool:
-    return re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", text) is not None
+def _reference_rows(text: str) -> set[str]:
+    """Return the exact object names that own API-reference table rows."""
+
+    return set(re.findall(r"^\| `([^`]+)` \|", text, re.MULTILINE))
 
 
 def test_api_reference_covers_every_top_level_export():
     text = REFERENCE.read_text()
-    missing = [name for name in kuration.__all__ if not _mentions_identifier(text, name)]
+    rows = _reference_rows(text)
+    missing = [name for name in kuration.__all__ if name not in rows]
     assert not missing, f"docs/api.md is missing kuration exports: {missing}"
+
+
+def test_documentation_contract_inventories_every_top_level_export():
+    text = DOCUMENTATION_CONTRACT.read_text()
+    inventory = text.split("### Top-level Python API", 1)[1].split("### Fluent pipeline", 1)[0]
+    missing = [
+        name for name in kuration.__all__
+        if re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", inventory) is None
+    ]
+    assert not missing, f"documentation contract is missing kuration exports: {missing}"
 
 
 def test_api_reference_covers_every_gameplay_facade_export():
     import kuration.gameplay as gameplay
 
-    text = REFERENCE.read_text()
-    missing = [name for name in gameplay.__all__ if not _mentions_identifier(text, name)]
+    rows = _reference_rows(REFERENCE.read_text())
+    missing = [
+        name for name in gameplay.__all__
+        if not any(row == name or row.endswith(f".{name}") for row in rows)
+    ]
     assert not missing, f"docs/api.md is missing kuration.gameplay exports: {missing}"
 
 
@@ -43,6 +60,17 @@ def test_api_reference_covers_every_public_pipeline_method():
     text = REFERENCE.read_text()
     missing = [name for name in methods if f"Pipeline.{name}" not in text]
     assert not missing, f"docs/api.md is missing Pipeline methods: {missing}"
+
+    contract = DOCUMENTATION_CONTRACT.read_text()
+    inventory = contract.split("### Fluent pipeline", 1)[1].split(
+        "### Framework integration", 1)[0]
+    contract_missing = [
+        name for name in methods
+        if re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", inventory) is None
+    ]
+    assert not contract_missing, (
+        f"documentation contract is missing Pipeline methods: {contract_missing}"
+    )
 
 
 def test_operator_guides_cover_every_bundled_gameplay_operator():
@@ -84,7 +112,7 @@ def _plain_signature(obj) -> str:
 
 
 def _documented_signature(text: str, name: str) -> str:
-    match = re.search(rf"\| `{re.escape(name)}` \| `([^`]+)` \|", text)
+    match = re.search(rf"\| `{re.escape(name)}` \| `([^`]+)`", text)
     assert match is not None, f"docs/api.md has no signature row for {name}"
     return match.group(1).split(" -> ", 1)[0]
 
@@ -97,12 +125,33 @@ def test_primary_api_signatures_match_the_reference():
         "run_experiment": kuration.run_experiment,
         "dataset_report": kuration.dataset_report,
         "input": kuration.input,
+        "Pipeline": kuration.Pipeline,
         "Pipeline.sample": kuration.Pipeline.sample,
         "Pipeline.curate": kuration.Pipeline.curate,
         "Pipeline.output": kuration.Pipeline.output,
         "Pipeline.review": kuration.Pipeline.review,
         "schema_from_output": kuration.schema_from_output,
+        "FeatureEngine": kuration.FeatureEngine,
+        "CuratedDatasetAdapter": kuration.CuratedDatasetAdapter,
+        "FrameRef": kuration.FrameRef,
+        "VideoMetadata": kuration.VideoMetadata,
+        "PyAVMediaProvider": kuration.PyAVMediaProvider,
+        "VideoAdapter": kuration.VideoAdapter,
+        "JoinedMediaAdapter": kuration.JoinedMediaAdapter,
+        "get_adapter": kuration.get_adapter,
+        "register_batch_transform": kuration.register_batch_transform,
+        "register_transform": kuration.register_transform,
+        "get_transform": kuration.get_transform,
+        "apply_transforms": kuration.apply_transforms,
+        "LocalExecutionBackend": kuration.LocalExecutionBackend,
+        "RayExecutionBackend": kuration.RayExecutionBackend,
+        "ResourceSpec": kuration.ResourceSpec,
+        "get_execution_backend": kuration.get_execution_backend,
         "load_strategy": kuration.load_strategy,
+        "get_scorer": kuration.get_scorer,
+        "PassthroughEncoder": kuration.PassthroughEncoder,
+        "get_encoder": kuration.get_encoder,
+        "cli_progress": kuration.cli_progress,
         "register_analyzer": kuration.register_analyzer,
         "Arm": kuration.Arm,
         "PartitionCommit": kuration.PartitionCommit,

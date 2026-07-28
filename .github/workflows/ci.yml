@@ -61,6 +61,7 @@ jobs:
           python examples/04_operator_pipeline.py
           python examples/05_custom_operators.py
           python examples/06_gameplay_operator_methods.py
+          python examples/07_action_state_consistency.py
 
   minimum-dependencies:
     name: Minimum dependencies

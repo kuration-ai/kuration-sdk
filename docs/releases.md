@@ -22,7 +22,7 @@ The changes on this branch target `0.1.0rc5`. The candidate:
 
 Dataset writes are no-clobber by default, persisted reuse requires a strong source identity,
 and unsupported future artifact or job versions fail loudly. See the
-[Unreleased changelog](https://github.com/aintropy-ai/kuration-sdk/blob/main/CHANGELOG.md#unreleased)
+[0.1.0rc5 changelog](https://github.com/aintropy-ai/kuration-sdk/blob/main/CHANGELOG.md#010rc5)
 for the complete evolving list.
 
 ## Prior `0.1.0rc4` candidate

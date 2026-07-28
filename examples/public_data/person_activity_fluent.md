@@ -52,15 +52,24 @@ PY
 ## What the pipeline says
 
 ```python
-input("data/person_activity/*.csv", time="timestamp", entity="tag_id", hz=37.0)
-  .window(2, unit="seconds")
-  .measure("motion", "std", of="z")
-  .measure("sway", "std", of="x")
-  .tag("activity", min_frac=0.02)
-  .bin("motion", bins=6)
-  .group(person_of)
-  .split(test=0.2)
-  .sample("equal", n=200)
+from pathlib import Path
+
+
+def person_of(source: str) -> str:
+    return Path(source).stem[0]
+
+
+pipeline = (
+    input("data/person_activity/*.csv", time="timestamp", entity="tag_id", hz=37.0)
+    .window(2, unit="seconds")
+    .measure("motion", "std", of="z")
+    .measure("sway", "std", of="x")
+    .tag("activity", min_frac=0.02)
+    .bin("motion", bins=6)
+    .group(person_of)
+    .split(test=0.2)
+    .sample("equal", n=200)
+)
 ```
 
 Four things this shape demonstrates that a single-column table cannot:
