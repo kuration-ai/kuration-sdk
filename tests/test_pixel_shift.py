@@ -618,6 +618,64 @@ def test_pixel_shift_report_instances_are_independent_per_object():
     assert "A" in report_1._ledger
 
 
+def test_report_record_exports_have_one_concat_safe_schema():
+    """PixelShiftReport and AnomalyChecker exports use the same keys and source-level
+    instance-count semantics, so combining their returned lists needs no reshaping."""
+    report = pso.PixelShiftReport()
+    report._ledger = {
+        "W": {
+            "1": [
+                {"source_id": "clip2", "frame": 9, "shift": 1.5},
+                {"source_id": "clip1", "frame": 4, "shift": 2.5},
+            ],
+        },
+        "A": {
+            "2": [{"source_id": "clip1", "frame": 2, "shift": -3.5}],
+        },
+    }
+    pixel_records = report.to_records()
+
+    from kuration.gameplay.action_state_consistency import AnomalyChecker, validate_config
+
+    checker = AnomalyChecker(
+        validate_config(
+            {
+                "anomaly_type": "synthetic_demo",
+                "baselines": {
+                    "X": {"1": {"expected_sign": 1, "min": 0.0, "max": 10.0}},
+                },
+            }
+        )
+    )
+    checker.resolve_segment(("clip3", 0, 5), expected_length=5)
+    checker.record_instance("clip3", "X", "1", 1, 3.0)
+    anomaly_records = checker.to_records()
+
+    expected_fields = {
+        "source_id",
+        "control",
+        "cell_key",
+        "frame",
+        "shift",
+        "consistent",
+        "verdict",
+        "n_instances",
+        "frame_space",
+        "frame_space_note",
+    }
+    combined = pixel_records + anomaly_records
+    assert all(set(record) == expected_fields for record in combined)
+    assert [(record["source_id"], record["frame"]) for record in pixel_records] == [
+        ("clip1", 2),
+        ("clip1", 4),
+        ("clip2", 9),
+    ]
+    assert [record["n_instances"] for record in pixel_records] == [2, 2, 1]
+    assert all(record["frame_space"] == "source" for record in pixel_records)
+    assert all(record["consistent"] is None and record["verdict"] is None
+               for record in pixel_records)
+
+
 def test_pixel_shift_report_deduplicates_the_same_press_across_overlapping_windows():
     """Regression test for a review-caught bug: a press's global start can fall within
     more than one overlapping window's local range, so each window's add_segment() call

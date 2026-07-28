@@ -35,12 +35,12 @@ that stateful judgment separate makes this transform reusable on its own.
    which keeps only segments where a W shift was actually measured (equivalent to
    `w_n_instances >= 1`).
 
-2. **A console report** (`PixelShiftReport`, prints to stdout via `.print_report()`, writes
-   nothing to disk) — for every (control, press_len/delta) combination found across the
-   whole dataset: instance count, an ASCII histogram of the shift values, and which clips
-   (by source + exact frame) each instance came from. `PixelShiftReport` is a plain object
-   you construct and feed yourself, deliberately independent of `PixelShift.transform_batch`
-   -- see "Why the report is a separate object" below.
+2. **A per-instance report** (`PixelShiftReport`) — `.print_report()` prints counts,
+   histograms, and clip/frame provenance to stdout, while `.to_records()` returns that
+   ledger as flat dictionaries for storage or combination with action-state records.
+   `PixelShiftReport` is a plain object you construct and feed yourself, deliberately
+   independent of `PixelShift.transform_batch` -- see "Why the report is a separate
+   object" below.
 
 ## Install
 
@@ -106,7 +106,15 @@ for frames, actions, segment_id in your_own_segments:
     # per-instance locations instead of collapsing them).
     report.add_segment(frames, actions, segment_id, controls=["W", "S", "A", "D"])
 report.print_report()
+records = report.to_records()
 ```
+
+Every record contains `source_id`, `control`, `cell_key`, `frame`, `shift`,
+`consistent`, `verdict`, `n_instances`, `frame_space`, and `frame_space_note`.
+Pixel-shift measures rather than judges, so `consistent` and `verdict` are `None`;
+`frame_space` is `"source"`. `n_instances` is the total recorded for that `source_id`.
+This is the same schema returned by action-state's `AnomalyChecker.to_records()`, so the
+two lists can be concatenated directly.
 
 ### Why the report is a separate object
 

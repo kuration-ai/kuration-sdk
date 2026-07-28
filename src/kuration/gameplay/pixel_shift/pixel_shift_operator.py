@@ -440,10 +440,57 @@ class PixelShiftReport:
                 record = {"source_id": source_id, "frame": frame, "shift": shift}
                 self._ledger.setdefault(control, {}).setdefault(cell_key, []).append(record)
 
+    def to_records(self) -> list[dict]:
+        """Export the accumulated ledger as flat, per-instance rows.
+
+        The row schema is identical to ``AnomalyChecker.to_records()`` so callers can
+        concatenate the two lists directly. Pixel shift measures instances without
+        judging them, so ``consistent`` and ``verdict`` are ``None``.
+        ``n_instances`` is the total number of recorded instances for the row's
+        ``source_id``. PixelShiftReport positions are always real source frames.
+
+        Rows are sorted by ``(source_id, frame, control, cell_key)``. Sources with no
+        recorded instances are absent because this report only learns about a source
+        when an instance is recorded.
+        """
+        rows = []
+        instance_counts: dict[str, int] = {}
+        for control, cells in self._ledger.items():
+            for cell_key, entries in cells.items():
+                for entry in entries:
+                    source_id = entry["source_id"]
+                    instance_counts[source_id] = instance_counts.get(source_id, 0) + 1
+                    rows.append(
+                        {
+                            "source_id": source_id,
+                            "control": control,
+                            "cell_key": cell_key,
+                            "frame": entry["frame"],
+                            "shift": entry["shift"],
+                            "consistent": None,
+                            "verdict": None,
+                            "n_instances": None,
+                            "frame_space": "source",
+                            "frame_space_note": "",
+                        }
+                    )
+        for row in rows:
+            row["n_instances"] = instance_counts[row["source_id"]]
+        return sorted(
+            rows,
+            key=lambda item: (
+                item["source_id"],
+                item["frame"],
+                item["control"],
+                item["cell_key"],
+            ),
+        )
+
     def print_report(self, controls: Sequence[str] | None = None) -> None:
         """Print the full pixel-shift report accumulated so far -- instance counts,
         histograms, and clip provenance, per (control, press_len/delta). Distribution-only
-        style: printed to the screen, nothing written to disk."""
+        style: printed to the screen, nothing written to disk. See ``to_records()`` for
+        this same data as plain, unprinted structured rows."""
         controls = _validated_controls(controls)
         print("=" * 78)
         print("PIXEL SHIFT REPORT -- isolated key/mouse presses found across the dataset")

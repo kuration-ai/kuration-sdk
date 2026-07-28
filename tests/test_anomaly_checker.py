@@ -191,14 +191,14 @@ def test_declared_frame_space_is_printed_and_cannot_change_mid_run(capsys):
 
 def test_to_records_exports_flat_per_instance_rows_without_printing(capsys):
     """to_records() is the unprinted, structured sibling of print_report() -- same
-    ledger, same (clip_id/control/cell_key/frame/shift) shape PixelShiftReport's own
-    ledger uses, plus the `consistent` column action_state adds and the clip's
-    aggregate verdict/n_instances repeated on every one of its rows."""
+    source/control/cell/frame schema as PixelShiftReport.to_records(), plus the
+    action-state judgment and source-level aggregate repeated on every row."""
     config = validate_config(
         {"anomaly_type": "synthetic_demo",
          "baselines": {"X": {"1": {"expected_sign": 1, "min": 0.0, "max": 10.0}}}}
     )
     checker = AnomalyChecker(config)
+    checker.declare_frame_space("shard-concatenation", "offsets are shard-relative")
 
     # clip1: consistent, two instances.
     checker.resolve_segment(("clip1", 0, 5), expected_length=5)
@@ -214,14 +214,30 @@ def test_to_records_exports_flat_per_instance_rows_without_printing(capsys):
     assert capsys.readouterr().out == ""  # nothing printed
 
     assert records == [
-        {"clip_id": "clip1", "control": "X", "cell_key": "1", "frame": 1, "shift": 5.0,
-         "consistent": True, "verdict": "consistent", "n_instances": 2},
-        {"clip_id": "clip1", "control": "X", "cell_key": "1", "frame": 4, "shift": 3.0,
-         "consistent": True, "verdict": "consistent", "n_instances": 2},
-        {"clip_id": "clip2", "control": "X", "cell_key": "1", "frame": 2, "shift": 20.0,
-         "consistent": False, "verdict": "inconsistent", "n_instances": 1},
-        {"clip_id": "clip3", "control": None, "cell_key": None, "frame": None,
-         "shift": None, "consistent": None, "verdict": "inconclusive", "n_instances": 0},
+        {
+            "source_id": "clip1", "control": "X", "cell_key": "1", "frame": 1,
+            "shift": 5.0, "consistent": True, "verdict": "consistent", "n_instances": 2,
+            "frame_space": "shard-concatenation",
+            "frame_space_note": "offsets are shard-relative",
+        },
+        {
+            "source_id": "clip1", "control": "X", "cell_key": "1", "frame": 4,
+            "shift": 3.0, "consistent": True, "verdict": "consistent", "n_instances": 2,
+            "frame_space": "shard-concatenation",
+            "frame_space_note": "offsets are shard-relative",
+        },
+        {
+            "source_id": "clip2", "control": "X", "cell_key": "1", "frame": 2,
+            "shift": 20.0, "consistent": False, "verdict": "inconsistent",
+            "n_instances": 1, "frame_space": "shard-concatenation",
+            "frame_space_note": "offsets are shard-relative",
+        },
+        {
+            "source_id": "clip3", "control": None, "cell_key": None, "frame": None,
+            "shift": None, "consistent": None, "verdict": "inconclusive",
+            "n_instances": 0, "frame_space": "shard-concatenation",
+            "frame_space_note": "offsets are shard-relative",
+        },
     ]
 
 
