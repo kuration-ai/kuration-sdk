@@ -138,9 +138,16 @@ for frames, actions, segment_id in your_own_segments:
     checker.add_segment(frames, actions, segment_id)
 
 checker.print_report()          # counts + exact clip IDs per verdict, printed to stdout
+records = checker.to_records()  # flat rows compatible with PixelShiftReport.to_records()
 print(checker.summary())        # {"consistent": [...], "inconsistent": [...], "inconclusive": [...]}
 print(checker.clip_verdict("clip_042"))  # "consistent" | "inconsistent" | "inconclusive"
 ```
+
+Each record uses the shared `source_id`/`control`/`cell_key`/`frame`/`shift` schema
+and adds `consistent`, the source-level `verdict`, and source-level `n_instances`.
+`frame_space` and `frame_space_note` are included on every row so dataset-mode
+shard-concatenation offsets cannot be mistaken for real source frames. A source with no
+measured instance still emits one inconclusive row.
 
 ### Running it as a fluent pipeline operation
 
@@ -252,6 +259,7 @@ checker = AnomalyChecker(config)
 source_id, start_idx, _ = checker.resolve_segment(("clip1", 0, 5), expected_length=5)
 checker.record_instance(source_id, "some_control", "some_cell", start_idx + 2, measured_value)
 checker.print_report()
+records = checker.to_records()
 ```
 
 ## Verdict rule
