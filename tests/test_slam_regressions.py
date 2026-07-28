@@ -250,6 +250,63 @@ def test_failed_manifest_commit_preserves_previous_export(tmp_path, monkeypatch)
     SLAMTrajectoryAdapter(manifest=manifest).check_source("clip")
 
 
+def test_concurrent_exports_never_prune_another_writers_staged_payload(
+    tmp_path,
+    monkeypatch,
+):
+    """A later manifest commit must never reference a payload pruned by an earlier writer."""
+    destination = tmp_path / "export"
+    first = _output()
+    first.trajectories["clip"] = first.trajectories["clip"] + 10.0
+    second = _output()
+    second.trajectories["clip"] = second.trajectories["clip"] + 20.0
+    first_waiting = threading.Event()
+    second_done = threading.Event()
+    failures = []
+    real_writer = slam_export_module._atomic_write_text
+
+    def ordered_writer(target, value):
+        if threading.current_thread().name == "first-export":
+            first_waiting.set()
+            if not second_done.wait(5):
+                raise TimeoutError("second export did not finish")
+        real_writer(target, value)
+
+    def run(output, *, done=None):
+        try:
+            export_slam_output(output, destination, sample_hz=1.0)
+        except Exception as error:  # pragma: no cover - surfaced by the assertion below
+            failures.append(error)
+        finally:
+            if done is not None:
+                done.set()
+
+    monkeypatch.setattr(slam_export_module, "_atomic_write_text", ordered_writer)
+    first_thread = threading.Thread(
+        target=run,
+        args=(first,),
+        name="first-export",
+    )
+    second_thread = threading.Thread(
+        target=run,
+        args=(second,),
+        kwargs={"done": second_done},
+        name="second-export",
+    )
+    first_thread.start()
+    assert first_waiting.wait(5)
+    second_thread.start()
+    first_thread.join(5)
+    second_thread.join(5)
+
+    assert not first_thread.is_alive() and not second_thread.is_alive()
+    assert not failures
+    # The deliberately delayed first writer commits last, so its manifest is authoritative.
+    adapter = SLAMTrajectoryAdapter(manifest=destination / "manifest.json")
+    adapter.check_source("clip")
+    assert adapter.ticks("clip")[0].entities[0]["camera_position"] == (10.0, 10.0, 10.0)
+
+
 def test_private_depth_vendor_resolves_nested_config_modules():
     pytest.importorskip("omegaconf")
     from kuration.gameplay.slam._vendor.depth_anything_3.cfg import load_config
@@ -326,6 +383,35 @@ def test_point_cloud_loader_validates_manifest_scene_metadata(
 
     with pytest.raises(ValueError, match=message):
         load_point_cloud(manifest)
+
+
+def test_slam_manifest_readers_reject_non_object_json(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("[]")
+
+    calls = [
+        lambda: SLAMTrajectoryAdapter(manifest=manifest),
+        lambda: prepare_slam_input(manifest),
+        lambda: load_point_cloud(manifest),
+        lambda: load_slam_output(manifest),
+    ]
+    for call in calls:
+        with pytest.raises(ValueError, match="JSON object"):
+            call()
+
+
+def test_slam_adapter_rejects_remote_trajectory_archives(tmp_path):
+    manifest = export_slam_output(_output(), tmp_path / "export")
+    document = json.loads(manifest.read_text())
+    document["clips"]["clip"]["trajectory"] = "gs://bucket/trajectory.npz"
+    manifest.write_text(json.dumps(document))
+
+    for call in (
+        lambda: SLAMTrajectoryAdapter(manifest=manifest),
+        lambda: load_slam_output(manifest),
+    ):
+        with pytest.raises(ValueError, match="trajectory archives must use local paths"):
+            call()
 
 
 # ----------------------------------------------------------------------
@@ -697,6 +783,19 @@ def test_selection_json_is_written_through_the_atomic_writer(tmp_path, monkeypat
     assert not list(destination.parent.glob("*.tmp"))
 
 
+def test_slam_curation_rejects_empty_or_duplicate_feature_spaces(tmp_path):
+    manifest = write_demo_reconstruction(tmp_path / "demo", frames_per_clip=24)
+
+    with pytest.raises(ValueError, match="non-empty"):
+        curate_slam_gameplay(manifest, tmp_path / "empty.json", feature_space=[])
+    with pytest.raises(ValueError, match="duplicates"):
+        curate_slam_gameplay(
+            manifest,
+            tmp_path / "duplicate.json",
+            feature_space=["slam_path_length", "slam_path_length"],
+        )
+
+
 def test_slam_cli_no_clobber_force_and_strict_json(tmp_path, capsys):
     destination = tmp_path / "demo"
 
@@ -847,3 +946,8 @@ def test_slam_artifact_paths_reject_remote_uris(tmp_path):
     for call in calls:
         with pytest.raises(ValueError, match="local-only"):
             call()
+
+
+def test_slam_artifact_paths_reject_empty_strings_before_writing():
+    with pytest.raises(ValueError, match="non-empty local path"):
+        export_slam_output(_output(), "")

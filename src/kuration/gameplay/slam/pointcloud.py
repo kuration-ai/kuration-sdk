@@ -131,7 +131,12 @@ class PointCloudArtifact:
 
 def _manifest_pointcloud(path: Path) -> Path:
     document = json.loads(path.read_text())
-    scene = document.get("scene") or {}
+    if not isinstance(document, dict):
+        raise ValueError(f"SLAM manifest {str(path)!r} must be a JSON object")
+    scene = document.get("scene")
+    if scene is not None and not isinstance(scene, dict):
+        raise ValueError(f"SLAM manifest {str(path)!r} scene must be an object")
+    scene = scene or {}
     value = scene.get("pointcloud")
     if not isinstance(value, str) or not value:
         raise ValueError(f"SLAM manifest {str(path)!r} has no scene point cloud")

@@ -6,7 +6,9 @@ import subprocess
 import sys
 import tomllib
 
-from kuration import core, gameplay, input
+import pytest
+
+from kuration import Registry, core, gameplay, input
 from kuration.core.pipeline import Pipeline
 
 
@@ -49,6 +51,24 @@ def test_action_state_convenience_uses_the_registered_analyzer():
 
     assert isinstance(checker, gameplay.ActionStateConsistencyChecker)
     assert checker.baselines == baselines
+
+
+def test_gameplay_registration_is_idempotent_but_rejects_name_hijacking():
+    from kuration.gameplay._registration import needs_registration
+
+    registry = Registry()
+
+    def expected():
+        return None
+
+    def conflicting():
+        return None
+
+    assert needs_registration(registry, "operator", "demo/gameplay", expected) is True
+    registry.register_operator("demo/gameplay", expected, package="expected")
+    assert needs_registration(registry, "operator", "demo/gameplay", expected) is False
+    with pytest.raises(ValueError, match="already owned"):
+        needs_registration(registry, "operator", "demo/gameplay", conflicting)
 
 
 def test_video_contact_sheet_never_labels_a_frame_index_as_seconds():

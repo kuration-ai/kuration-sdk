@@ -99,27 +99,88 @@ def load_baselines_from_reference(reference: dict, *, controls: Sequence[str] | 
     untrustworthy floor/ceiling. ``controls``, if given, restricts which controls are
     pulled from the reference (as pixel_shift-style names, e.g. "W", "MOUSE_X_POS").
     """
-    all_controls = set(_require_pixel_shift().ALL_CONTROLS)
-    wanted = None if controls is None else set(controls)
+    control_names = tuple(_require_pixel_shift().ALL_CONTROLS)
+    all_controls = set(control_names)
+    if controls is None:
+        wanted = None
+    else:
+        if (
+            isinstance(controls, (str, bytes))
+            or not isinstance(controls, Sequence)
+            or not controls
+            or any(not isinstance(control, str) for control in controls)
+        ):
+            raise ValueError("controls must be a non-empty sequence of control names")
+        unknown = sorted(set(controls) - all_controls)
+        if unknown:
+            raise ValueError(
+                f"unknown action-state reference control(s) {unknown}; "
+                f"expected {list(control_names)}"
+            )
+        if len(controls) != len(set(controls)):
+            raise ValueError("controls must not contain duplicates")
+        wanted = set(controls)
+    if not isinstance(reference, dict):
+        raise ValueError("reference must be a dict containing a non-empty 'cells' object")
+    cells = reference.get("cells")
+    if not isinstance(cells, dict) or not cells:
+        raise ValueError("reference must contain a non-empty 'cells' object")
     baselines: dict = {}
-    for control_lower, per_cell in reference.get("cells", {}).items():
+    seen_controls = set()
+    for control_lower, per_cell in cells.items():
+        if not isinstance(control_lower, str) or not control_lower:
+            raise ValueError("reference control keys must be non-empty strings")
         control = control_lower.upper()
         if control not in all_controls:
-            continue
-        if wanted is not None and control not in wanted:
-            continue
+            raise ValueError(
+                f"unknown control {control_lower!r} in reference; expected "
+                f"{list(control_names)}"
+            )
+        if control in seen_controls:
+            raise ValueError(
+                f"reference contains duplicate case-insensitive control {control!r}"
+            )
+        seen_controls.add(control)
+        if not isinstance(per_cell, dict) or not per_cell:
+            raise ValueError(
+                f"reference cells for control {control!r} must be a non-empty dict"
+            )
         kept = {}
         for cell_key, cell in per_cell.items():
-            if not cell.get("reliable"):
+            if not isinstance(cell_key, str) or not cell_key:
+                raise ValueError(
+                    f"reference cell keys for control {control!r} must be non-empty strings"
+                )
+            if not isinstance(cell, dict):
+                raise ValueError(
+                    f"reference cell {control!r}/{cell_key!r} must be a dict"
+                )
+            reliable = cell.get("reliable")
+            if not isinstance(reliable, bool):
+                raise ValueError(
+                    f"reference cell {control!r}/{cell_key!r} must declare boolean 'reliable'"
+                )
+            if not reliable:
                 continue
+            missing = {"expected_sign", "floor", "ceiling"} - set(cell)
+            if missing:
+                raise ValueError(
+                    f"reliable reference cell {control!r}/{cell_key!r} "
+                    f"missing {sorted(missing)}"
+                )
             kept[cell_key] = {
                 "expected_sign": cell["expected_sign"],
                 "min": cell["floor"],
                 "max": cell["ceiling"],
             }
         if kept:
-            baselines[control] = kept
-    return baselines
+            validated_cells = validate_baselines({control: kept})[control]
+            if wanted is None or control in wanted:
+                baselines[control] = validated_cells
+    if not baselines:
+        scope = "the requested controls" if wanted is not None else "the reference"
+        raise ValueError(f"{scope} contain no reliable action-state baseline cells")
+    return validate_action_state_baselines(baselines)
 
 
 class ActionStateConsistencyChecker(AnomalyChecker):

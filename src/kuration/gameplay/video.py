@@ -8,6 +8,7 @@ from html import escape
 import mimetypes
 from pathlib import Path
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import numpy as np
 
@@ -126,8 +127,10 @@ class VideoComparison:
         right, right_embedded = self._source_url(
             self.right, embed=embed, max_embed_bytes=max_embed_bytes
         )
+        # A comparison may be displayed more than once in the same notebook document.
+        # Every render needs a fresh DOM id or a later script binds to the first pair of players.
         identifier = "kur-video-" + sha256(
-            f"{self.left}\0{self.right}".encode()
+            f"{self.left}\0{self.right}\0{uuid4().hex}".encode()
         ).hexdigest()[:12]
         notices = []
         if _is_local(self.left) and not left_embedded:

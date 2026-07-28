@@ -1,6 +1,7 @@
 """High-level, reproducible SLAM trajectory curation workflow."""
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -54,7 +55,7 @@ def curate_slam_gameplay(
     n: int = 2_000,
     min_quality: float | None = 0.5,
     quality_options: Mapping[str, object] | None = None,
-    feature_space: list[str] | None = None,
+    feature_space: Sequence[str] | None = None,
     selection_method: str = "uniform-bins",
     bins: int = 4,
     seed: int = 0,
@@ -62,16 +63,35 @@ def curate_slam_gameplay(
 ) -> SLAMCurationResult:
     """Select diverse, reconstruction-quality gameplay windows and write a JSON manifest."""
     from . import QUALITY_TRANSFORM_NAME, TRANSFORM_NAME, register
+    from .quality import _fraction
 
     register()
     path = local_path(manifest, name="SLAM manifest")
     destination = local_path(output, name="SLAM selection output")
-    features = feature_space or [
-        "slam_path_length",
-        "slam_turn_degrees",
-        "slam_spatial_extent",
-        "slam_quality_score",
-    ]
+    if quality_options is not None and not isinstance(quality_options, Mapping):
+        raise ValueError("quality_options must be a mapping or None")
+    if feature_space is None:
+        features = [
+            "slam_path_length",
+            "slam_turn_degrees",
+            "slam_spatial_extent",
+            "slam_quality_score",
+        ]
+    else:
+        if (
+            isinstance(feature_space, (str, bytes))
+            or not isinstance(feature_space, Sequence)
+            or not feature_space
+            or any(not isinstance(feature, str) or not feature for feature in feature_space)
+        ):
+            raise ValueError("feature_space must be a non-empty sequence of feature names")
+        if len(feature_space) != len(set(feature_space)):
+            raise ValueError("feature_space must not contain duplicates")
+        features = list(feature_space)
+    if min_quality is not None:
+        min_quality = _fraction(min_quality, "min_quality")
+    if selection_method not in {"uniform-bins", "k-center"}:
+        raise ValueError("selection_method must be 'uniform-bins' or 'k-center'")
     pipeline = (
         input_slam(path)
         .window(window, stride=stride)
@@ -86,8 +106,6 @@ def curate_slam_gameplay(
         pipeline = pipeline.curate("uniform-bins", n=n)
     elif selection_method == "k-center":
         pipeline = pipeline.curate("k-center", n=n, feature_space=list(features))
-    else:
-        raise ValueError("selection_method must be 'uniform-bins' or 'k-center'")
     pipeline = pipeline.options(seed=seed, on_error="raise", progress=progress)
     result = pipeline.collect()
     candidate_count = sum(

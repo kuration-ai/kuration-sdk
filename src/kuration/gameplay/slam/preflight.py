@@ -70,6 +70,8 @@ def _manifest(path: Path) -> bool:
         document = json.loads(candidate.read_text())
     except (OSError, json.JSONDecodeError):
         return False
+    if not isinstance(document, dict):
+        return False
     return (
         document.get("format") == EXPORT_FORMAT
         and document.get("version") == EXPORT_VERSION

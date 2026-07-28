@@ -301,47 +301,6 @@ def _point_cloud(
     return metadata, payload
 
 
-def _cleanup_unreferenced_payloads(
-    root: Path,
-    *,
-    clip_filenames: set[str],
-    pointcloud_filename: str | None,
-    video_references: set[str],
-) -> None:
-    clips_dir = root / "clips"
-    if clips_dir.is_dir():
-        for candidate in clips_dir.glob("*.npz"):
-            if candidate.name not in clip_filenames:
-                try:
-                    candidate.unlink()
-                except OSError:
-                    pass
-    for candidate in root.glob("scene_pointcloud*.npz"):
-        if candidate.name != pointcloud_filename:
-            try:
-                candidate.unlink()
-            except OSError:
-                pass
-    media_dir = root / "media"
-    if media_dir.is_dir() and not media_dir.is_symlink():
-        referenced = {
-            Path(reference).name
-            for reference in video_references
-            if Path(reference).parent == Path("media")
-        }
-        for candidate in media_dir.iterdir():
-            if (
-                candidate.is_file()
-                and re.fullmatch(r"video-[0-9a-f]{64}(?:\.[a-z0-9]{1,10}|\.media)",
-                                 candidate.name)
-                and candidate.name not in referenced
-            ):
-                try:
-                    candidate.unlink()
-                except OSError:
-                    pass
-
-
 def export_slam_output(
     output,
     out_dir: str | Path,
@@ -420,7 +379,6 @@ def export_slam_output(
         prepared_clips[name] = (filename, arrays, entry)
 
     point_cloud = _point_cloud(output, point_attributes)
-    video_references: set[str] = set()
     if videos is not None:
         for name in clip_names:
             if name in videos:
@@ -428,7 +386,6 @@ def export_slam_output(
                     videos[name], root, name=f"videos[{name!r}]"
                 )
                 manifest_clips[name]["video"] = reference
-                video_references.add(reference)
 
     manifest = {
         "format": EXPORT_FORMAT,
@@ -456,10 +413,8 @@ def export_slam_output(
         manifest_path,
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
     )
-    _cleanup_unreferenced_payloads(
-        root,
-        clip_filenames={filename for filename, _arrays, _entry in prepared_clips.values()},
-        pointcloud_filename=pointcloud_filename,
-        video_references=video_references,
-    )
+    # Content-addressed payloads are immutable and may have been staged by another writer.
+    # Pruning files not referenced by *this* manifest can race with that writer between its
+    # payload and manifest commits, leaving the eventual manifest broken. Superseded payloads
+    # are therefore retained; garbage collection must be an explicit target-level operation.
     return manifest_path

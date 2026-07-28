@@ -28,7 +28,7 @@ into `PixelShift.transform_batch`. An earlier version accumulated instance detai
 module-level dict as a transform side effect. Transform execution has no supported channel
 for arbitrary per-instance side data, and execution placement may change across plans, so
 process-global accumulation is not a valid contract. `transform_batch` therefore does exactly
-one thing: compute the 5 declared scalars per control. Build a
+one thing: compute the 6 declared scalars per control. Build a
 `PixelShiftReport` yourself, by calling `add_segment()` directly over your own segments,
 entirely outside pipeline execution, if you want the fuller per-instance report.
 """
@@ -248,7 +248,7 @@ def segment_scalars(
     owned_length: int | None = None,
     boundary: str = "exclude",
 ) -> dict:
-    """The 5-number-per-control summary for ONE segment -- true to the data (no reference,
+    """The 6-number-per-control summary for ONE segment -- true to the data (no reference,
     no consistency judgment): the actual worst/best/mean signed shift and how many
     instances were found, collapsed across whatever press-lengths/deltas occurred for each
     control in this segment. Pure function, no side effects -- safe under any execution

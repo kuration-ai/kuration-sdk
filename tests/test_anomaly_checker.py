@@ -68,8 +68,13 @@ def test_generic_validate_baselines_accepts_numpy_real_scalars():
 
 
 def test_generic_validate_baselines_rejects_non_string_cell_key():
-    with pytest.raises(ValueError, match="cell keys must be strings"):
+    with pytest.raises(ValueError, match="cell keys must be non-empty strings"):
         validate_baselines({"X": {1: {"expected_sign": 1, "min": 0.0, "max": 1.0}}})
+
+
+def test_generic_validate_baselines_rejects_empty_cell_key():
+    with pytest.raises(ValueError, match="non-empty strings"):
+        validate_baselines({"X": {"": {"expected_sign": 1, "min": 0.0, "max": 1.0}}})
 
 
 def test_generic_validate_config_accepts_any_non_empty_anomaly_type():
@@ -190,6 +195,27 @@ def test_generic_anomaly_checker_record_instance_rejects_unconfigured_control():
     checker.resolve_segment(("clip1", 0, 5), expected_length=5)
     with pytest.raises(KeyError):
         checker.record_instance("clip1", "Y", "1", 2, 3.0)  # "Y" was never configured
+
+
+def test_generic_anomaly_checker_record_instance_requires_resolved_valid_coordinates():
+    config = validate_config({
+        "anomaly_type": "synthetic_demo",
+        "baselines": {"X": {"1": {"expected_sign": 1, "min": 0.0, "max": 10.0}}},
+    })
+    checker = AnomalyChecker(config)
+    with pytest.raises(ValueError, match=r"resolve_segment\(\)"):
+        checker.record_instance("clip1", "X", "1", 2, 3.0)
+
+    checker.resolve_segment(("clip1", 0, 5), expected_length=5)
+    with pytest.raises(ValueError, match="source_id"):
+        checker.record_instance("", "X", "1", 2, 3.0)
+    with pytest.raises(ValueError, match="cell_key"):
+        checker.record_instance("clip1", "X", "", 2, 3.0)
+    with pytest.raises(ValueError, match="non-negative integer"):
+        checker.record_instance("clip1", "X", "1", -1, 3.0)
+    checker.record_instance("clip1", "X", "1", np.int64(2), 3.0)
+    assert checker._clip_records["clip1"][0]["frame"] == 2
+    assert type(checker._clip_records["clip1"][0]["frame"]) is int
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])

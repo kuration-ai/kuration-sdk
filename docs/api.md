@@ -377,8 +377,8 @@ The facade itself also exports three registration modules and its idempotent reg
 | name | signature | does |
 |---|---|---|
 | `kuration.gameplay.pixel_shift.pixel_shift` | `(pipeline, *, controls=None, boundary="exclude") -> Pipeline` | compositional `aintropy/pixel-shift` operator backed by the transform of the same name (`[pixel-shift]` for OpenCV execution) |
-| `PixelShift` | `(*, controls=None, boundary="exclude")` | bounded batch transform producing per-control shift min/max/mean/count/requested features |
-| `PixelShiftReport` | `()`; `.add_segment(...)`, `.summary()`, `.print_report()` | user-owned cross-segment instance report |
+| `PixelShift` | `(*, controls=None, boundary="exclude")` | bounded batch transform producing per-control shift min/max/mean/measured/count/requested features |
+| `PixelShiftReport` | `()`; `.add_segment(...)`, `.print_report()` | user-owned cross-segment instance report |
 | `kuration.gameplay.action_state_consistency.action_state_consistency` | `(*, anomaly_type, baselines) -> ActionStateConsistencyChecker` | factory registered as analyzer `aintropy/action-state-consistency` |
 | `ActionStateConsistencyChecker` | `(config)`; `.add_segment(...)`, `.clip_verdict(source_id)`, `.summary()`, `.print_report()` | classify clips against pixel-shift baselines (`[action-state]` for frame measurement) |
 | `AnomalyChecker` | `(validated_config)` | measurement-agnostic tuple aggregation used by the action-state adapter |

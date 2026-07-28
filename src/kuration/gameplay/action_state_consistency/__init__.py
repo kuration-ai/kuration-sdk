@@ -37,6 +37,7 @@ ANALYZER_NAME = "aintropy/action-state-consistency"
 def register() -> None:
     """Idempotently register the real stateful action-state analyzer."""
     from kuration import default_registry, register_analyzer
+    from .._registration import needs_registration
 
     common: dict[str, Any] = {
         "version": "1",
@@ -49,7 +50,12 @@ def register() -> None:
         "capabilities": {"stateful": True, "cross_segment": True,
                          "tick_stream": True, "dataset": True},
     }
-    if ANALYZER_NAME not in default_registry.names("analyzer"):
+    if needs_registration(
+        default_registry,
+        "analyzer",
+        ANALYZER_NAME,
+        action_state_consistency,
+    ):
         register_analyzer(
             ANALYZER_NAME,
             action_state_consistency,

@@ -65,7 +65,7 @@ python -m pytest tests/test_pixel_shift.py -q
 
 ## Usage
 
-**As a pipeline transform** — gets you the 5 aggregated scalars per control, per segment,
+**As a pipeline transform** — gets you the 6 aggregated scalars per control, per segment,
 composable with `.bin()`/`.filter()`/`.sample()` like any other kuration feature:
 
 ```python
@@ -116,7 +116,7 @@ where a physical plan happened to run transforms. Today the ordinary count path 
 after the parallel feature pass, while bounded plans fuse transforms into their local feature
 stage; neither placement promises a process-global result channel.
 
-So `transform_batch` now does exactly one thing: compute the 5 aggregated scalars per
+So `transform_batch` now does exactly one thing: compute the 6 aggregated scalars per
 control, through the one channel the SDK actually supports for returning data (declared
 per-segment outputs) -- correct regardless of worker count. `PixelShiftReport` gets the
 fuller per-instance detail by being called directly, in your own code, outside pipeline

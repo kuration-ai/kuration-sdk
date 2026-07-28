@@ -15,10 +15,20 @@ from .export import EXPORT_FORMAT, EXPORT_VERSION
 from .schema import FIELD_TO_ARRAY, TRACKING_CONFIDENCE, slam_schema
 
 
-def _resolve_reference(root: Path, value: str) -> str:
+def _resolve_reference(
+    root: Path,
+    value: str,
+    *,
+    allow_remote: bool = False,
+) -> str:
     parsed = urlparse(value)
     if parsed.scheme and len(parsed.scheme) > 1:
-        return value
+        if allow_remote:
+            return value
+        raise ValueError(
+            "SLAM trajectory archives must use local paths; "
+            f"remote reference {value!r} is unsupported"
+        )
     path = Path(value)
     return str(path if path.is_absolute() else root / path)
 
@@ -35,6 +45,8 @@ class SLAMTrajectoryAdapter:
             document = json.loads(self.manifest_path.read_text())
         except (OSError, json.JSONDecodeError) as error:
             raise ValueError(f"cannot read SLAM manifest {str(self.manifest_path)!r}") from error
+        if not isinstance(document, dict):
+            raise ValueError("SLAM manifest must be a JSON object")
         if document.get("format") != EXPORT_FORMAT or document.get("version") != EXPORT_VERSION:
             raise ValueError(
                 f"SLAM manifest must declare format={EXPORT_FORMAT!r}, version={EXPORT_VERSION}"
@@ -56,7 +68,11 @@ class SLAMTrajectoryAdapter:
             if video is not None:
                 if not isinstance(video, str) or not video:
                     raise ValueError(f"SLAM clip {name!r} video must be a non-empty path or URI")
-                self.video_mapping[name] = _resolve_reference(root, video)
+                self.video_mapping[name] = _resolve_reference(
+                    root,
+                    video,
+                    allow_remote=True,
+                )
         generated = slam_schema(sample_hz=document.get("sample_hz"))
         self.schema = generated if schema is None else schema
         missing = sorted(set(FIELD_TO_ARRAY) - set(self.schema.fields))
@@ -67,7 +83,10 @@ class SLAMTrajectoryAdapter:
             raise ValueError("SLAM manifest timebase must be 'timestamp' or 'frame_index'")
         self.available_fields = frozenset(FIELD_TO_ARRAY)
         self.available_globals: frozenset[str] = frozenset()
-        self.scene = document.get("scene") or {}
+        scene = document.get("scene")
+        if scene is not None and not isinstance(scene, dict):
+            raise ValueError("SLAM manifest 'scene' must be an object or null")
+        self.scene = scene or {}
 
     def sources(self) -> list[str]:
         return sorted(self._sources)
@@ -91,10 +110,17 @@ class SLAMTrajectoryAdapter:
                         arrays[field] = np.asarray(archive[key])
         except (OSError, KeyError, ValueError) as error:
             raise ValueError(f"cannot read SLAM trajectory for clip {source!r}: {path}") from error
-        lengths = {field: len(value) for field, value in arrays.items()}
+        try:
+            lengths = {field: len(value) for field, value in arrays.items()}
+        except TypeError as error:
+            raise ValueError(
+                f"SLAM clip {source!r} arrays must have a timestep dimension"
+            ) from error
         if len(set(lengths.values())) != 1:
             raise ValueError(f"SLAM clip {source!r} arrays disagree on step count: {lengths}")
         length = next(iter(lengths.values()))
+        if length < 1:
+            raise ValueError(f"SLAM clip {source!r} must contain at least one trajectory row")
         if times.shape != (length,):
             raise ValueError(f"SLAM clip {source!r} time must have shape ({length},)")
         if not np.isfinite(times).all() or (length > 1 and np.any(np.diff(times) <= 0)):

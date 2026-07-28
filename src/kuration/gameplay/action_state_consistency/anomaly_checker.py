@@ -70,9 +70,10 @@ def validate_baselines(baselines) -> dict:
             )
         out[control] = {}
         for cell_key, cell in cells.items():
-            if not isinstance(cell_key, str):
+            if not isinstance(cell_key, str) or not cell_key:
                 raise ValueError(
-                    f"baseline cell keys must be strings, got {cell_key!r} for {control!r}"
+                    f"baseline cell keys must be non-empty strings, got "
+                    f"{cell_key!r} for {control!r}"
                 )
             out[control][cell_key] = _validate_baseline_cell(control, cell_key, cell)
     return out
@@ -208,12 +209,37 @@ class AnomalyChecker:
         self._clips_seen.add(source_id)
         return source_id, start_idx, end_idx
 
-    def record_instance(self, source_id: str, control: str, cell_key: str, frame: int, shift: float) -> None:
+    def record_instance(
+        self,
+        source_id: str,
+        control: str,
+        cell_key: str,
+        frame: int,
+        shift: float,
+    ) -> None:
         """Check one measured instance against its configured baseline and record the
         result under its clip. Silently does nothing if there's no baseline for this
         exact cell_key (matches segment_scalars' own "not requested" semantics) -- but
         raises if `control` itself was never configured at all, since a caller reaching
         this point with an unconfigured control is an adapter bug, not absent data."""
+        if not isinstance(source_id, str) or not source_id:
+            raise ValueError("instance source_id must be a non-empty string")
+        if source_id not in self._clips_seen:
+            raise ValueError(
+                f"clip {source_id!r} was not resolved; call resolve_segment() "
+                "before recording its instances"
+            )
+        if not isinstance(control, str) or not control:
+            raise ValueError("instance control must be a non-empty string")
+        if not isinstance(cell_key, str) or not cell_key:
+            raise ValueError("instance cell_key must be a non-empty string")
+        if (
+            isinstance(frame, bool)
+            or not isinstance(frame, (int, np.integer))
+            or frame < 0
+        ):
+            raise ValueError("instance frame must be a non-negative integer")
+        frame = int(frame)
         cells = self.baselines.get(control)
         if cells is None:
             raise KeyError(f"no baseline configured for control {control!r}")

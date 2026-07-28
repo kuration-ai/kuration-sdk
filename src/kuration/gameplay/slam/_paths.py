@@ -13,7 +13,11 @@ def local_path(value: str | Path, *, name: str) -> Path:
     Remote artifact stores are out of scope; video *references* recorded in a manifest may stay
     remote because they are opened through a media provider, not through this helper.
     """
+    if not isinstance(value, (str, Path)):
+        raise ValueError(f"{name} must be a non-empty local path")
     text = str(value)
+    if not text:
+        raise ValueError(f"{name} must be a non-empty local path")
     if "://" in text:
         raise ValueError(
             f"{name} must be a local path: SLAM artifacts are local-only, got {text!r} -- "

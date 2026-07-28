@@ -10,6 +10,8 @@ from typing import Any
 import numpy as np
 
 from ._paths import local_path
+from .adapter import SLAMTrajectoryAdapter
+from .export import EXPORT_FORMAT, EXPORT_VERSION
 from .pointcloud import load_point_cloud
 from .schema import (
     CAMERA_FRUSTUM,
@@ -31,29 +33,88 @@ def load_slam_output(manifest_path: str | Path) -> SimpleNamespace:
     freshly-run `SLAMOperator` or a manifest reloaded from disk."""
     manifest_path = local_path(manifest_path, name="SLAM manifest")
     manifest = json.loads(manifest_path.read_text())
-    root = manifest_path.parent
+    if not isinstance(manifest, dict):
+        raise ValueError("SLAM manifest must be a JSON object")
+    if (
+        manifest.get("format") != EXPORT_FORMAT
+        or manifest.get("version") != EXPORT_VERSION
+    ):
+        raise ValueError(
+            f"SLAM manifest must declare format={EXPORT_FORMAT!r}, "
+            f"version={EXPORT_VERSION}"
+        )
+    if not isinstance(manifest.get("clips"), dict) or not manifest["clips"]:
+        raise ValueError("SLAM manifest 'clips' must be a non-empty object")
+    scene = manifest.get("scene")
+    if scene is not None and not isinstance(scene, dict):
+        raise ValueError("SLAM manifest 'scene' must be an object or null")
+    adapter = SLAMTrajectoryAdapter(manifest=manifest_path)
 
     trajectories: dict[str, np.ndarray] = {}
     poses: dict[str, list[SimpleNamespace]] = {}
-    for name, entry in manifest["clips"].items():
-        with np.load(root / entry["trajectory"]) as archive:
-            trajectories[name] = archive[CAMERA_POSITION]
-            frustums = archive[CAMERA_FRUSTUM].reshape(-1, 5, 3)
-            intrinsics = archive[CAMERA_INTRINSICS]
-            x_axis, y_axis, z_axis = (
-                archive[CAMERA_X_AXIS], archive[CAMERA_Y_AXIS], archive[CAMERA_Z_AXIS]
-            )
-            poses[name] = [
-                SimpleNamespace(
-                    frustum_points=frustums[i],
-                    cx=intrinsics[i, 0], cy=intrinsics[i, 1], f=intrinsics[i, 2],
-                    x_axis=x_axis[i], y_axis=y_axis[i], z_axis=z_axis[i],
+    for name in adapter.sources():
+        path = adapter._path(name)
+        try:
+            with np.load(path, allow_pickle=False) as archive:
+                trajectory = np.asarray(archive[CAMERA_POSITION])
+                frustums = np.asarray(archive[CAMERA_FRUSTUM])
+                intrinsics = np.asarray(archive[CAMERA_INTRINSICS])
+                x_axis, y_axis, z_axis = (
+                    np.asarray(archive[CAMERA_X_AXIS]),
+                    np.asarray(archive[CAMERA_Y_AXIS]),
+                    np.asarray(archive[CAMERA_Z_AXIS]),
                 )
-                for i in range(len(trajectories[name]))
-            ]
+        except (OSError, KeyError, ValueError) as error:
+            raise ValueError(
+                f"cannot read SLAM trajectory for clip {name!r}: {path}"
+            ) from error
+        length = trajectory.shape[0] if trajectory.ndim else 0
+        expected_shapes = {
+            CAMERA_POSITION: (length, 3),
+            CAMERA_FRUSTUM: (length, 15),
+            CAMERA_INTRINSICS: (length, 3),
+            CAMERA_X_AXIS: (length, 3),
+            CAMERA_Y_AXIS: (length, 3),
+            CAMERA_Z_AXIS: (length, 3),
+        }
+        arrays = {
+            CAMERA_POSITION: trajectory,
+            CAMERA_FRUSTUM: frustums,
+            CAMERA_INTRINSICS: intrinsics,
+            CAMERA_X_AXIS: x_axis,
+            CAMERA_Y_AXIS: y_axis,
+            CAMERA_Z_AXIS: z_axis,
+        }
+        invalid = {
+            field: {"actual": value.shape, "expected": expected_shapes[field]}
+            for field, value in arrays.items()
+            if value.shape != expected_shapes[field]
+        }
+        if length < 1 or invalid:
+            raise ValueError(
+                f"SLAM trajectory for clip {name!r} has invalid pose-array shapes: {invalid}"
+            )
+        if any(not np.isfinite(value).all() for value in arrays.values()):
+            raise ValueError(
+                f"SLAM trajectory for clip {name!r} must contain only finite values"
+            )
+        frustums = frustums.reshape(-1, 5, 3)
+        trajectories[name] = trajectory
+        poses[name] = [
+            SimpleNamespace(
+                frustum_points=frustums[i],
+                cx=intrinsics[i, 0],
+                cy=intrinsics[i, 1],
+                f=intrinsics[i, 2],
+                x_axis=x_axis[i],
+                y_axis=y_axis[i],
+                z_axis=z_axis[i],
+            )
+            for i in range(length)
+        ]
 
     points = colors = None
-    if manifest.get("scene"):
+    if scene:
         cloud = load_point_cloud(manifest_path)
         points, colors = cloud.points, cloud.colors
 
@@ -95,6 +156,13 @@ def build_pointcloud_scene(output: Any, *, max_display_points: int = int(3e6)) -
     Needs `trimesh`, which is not part of the `slam` extra:
     `pip install trimesh`.
     """
+    if (
+        isinstance(max_display_points, bool)
+        or not isinstance(max_display_points, (int, np.integer))
+        or max_display_points < 1
+    ):
+        raise ValueError("max_display_points must be a positive integer")
+    max_display_points = int(max_display_points)
     try:
         import trimesh
     except ImportError as error:
@@ -114,13 +182,18 @@ def build_pointcloud_scene(output: Any, *, max_display_points: int = int(3e6)) -
             rgb = np.full((points_g.shape[0], 3), 170, dtype=np.uint8)
         else:
             rgb = np.asarray(colors)[:, :3].astype(np.uint8)
+        if len(points_g) > max_display_points:
+            selected = np.linspace(
+                0,
+                len(points_g) - 1,
+                max_display_points,
+                dtype=np.int64,
+            )
+            points_g = points_g[selected]
+            rgb = rgb[selected]
         alpha = np.full((rgb.shape[0], 1), 255, dtype=np.uint8)
         rgba = np.concatenate([rgb, alpha], axis=1)
         cloud = trimesh.PointCloud(vertices=points_g, colors=rgba)
-        if cloud.vertices.shape[0] > max_display_points:
-            skip = max(1, cloud.vertices.shape[0] // max_display_points)
-            cloud.vertices = cloud.vertices[::skip].copy()
-            cloud.colors = cloud.colors[::skip].copy()
         combined.add_geometry(cloud, node_name="points")
 
     clip_names = list(output.trajectories.keys())

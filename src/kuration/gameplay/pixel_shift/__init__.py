@@ -29,6 +29,7 @@ COMPONENT_NAME = "aintropy/pixel-shift"
 def register() -> None:
     """Idempotently register the transform and compositional operator."""
     from kuration import default_registry, register_batch_transform, register_operator
+    from .._registration import needs_registration
 
     common = {
         "version": "1",
@@ -38,7 +39,7 @@ def register() -> None:
         "install_hint": 'pip install "kuration-sdk[pixel-shift]"',
         "documentation": "https://aintropy-ai.github.io/kuration-sdk/pixel-shift/",
     }
-    if COMPONENT_NAME not in default_registry.names("transform"):
+    if needs_registration(default_registry, "transform", COMPONENT_NAME, PixelShift):
         register_batch_transform(
             COMPONENT_NAME,
             PixelShift,
@@ -56,7 +57,7 @@ def register() -> None:
             parameters=CONTROL_PARAMETERS,
             **common,
         )
-    if COMPONENT_NAME not in default_registry.names("operator"):
+    if needs_registration(default_registry, "operator", COMPONENT_NAME, pixel_shift):
         register_operator(
             COMPONENT_NAME,
             pixel_shift,

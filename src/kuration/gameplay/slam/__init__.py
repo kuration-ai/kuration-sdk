@@ -107,6 +107,7 @@ def register() -> None:
         register_batch_transform,
         register_operator,
     )
+    from .._registration import needs_registration
 
     common: dict[str, Any] = {
         "package": PACKAGE,
@@ -115,7 +116,9 @@ def register() -> None:
         "version": "1",
         "stability": "experimental",
     }
-    if ADAPTER_NAME not in default_registry.names("adapter"):
+    if needs_registration(
+        default_registry, "adapter", ADAPTER_NAME, SLAMTrajectoryAdapter
+    ):
         register_adapter(
             ADAPTER_NAME,
             SLAMTrajectoryAdapter,
@@ -123,7 +126,7 @@ def register() -> None:
             parameters=ADAPTER_PARAMETERS,
             **common,
         )
-    if TRANSFORM_NAME not in default_registry.names("transform"):
+    if needs_registration(default_registry, "transform", TRANSFORM_NAME, SLAMMotion):
         register_batch_transform(
             TRANSFORM_NAME,
             SLAMMotion,
@@ -134,7 +137,12 @@ def register() -> None:
             parameters=EMPTY_PARAMETERS,
             **common,
         )
-    if QUALITY_TRANSFORM_NAME not in default_registry.names("transform"):
+    if needs_registration(
+        default_registry,
+        "transform",
+        QUALITY_TRANSFORM_NAME,
+        SLAMQuality,
+    ):
         register_batch_transform(
             QUALITY_TRANSFORM_NAME,
             SLAMQuality,
@@ -149,7 +157,12 @@ def register() -> None:
             parameters=QUALITY_PARAMETERS,
             **common,
         )
-    if OPERATOR_NAME not in default_registry.names("operator"):
+    if needs_registration(
+        default_registry,
+        "operator",
+        OPERATOR_NAME,
+        slam_motion_diversity,
+    ):
         register_operator(
             OPERATOR_NAME,
             slam_motion_diversity,
@@ -157,7 +170,12 @@ def register() -> None:
             parameters=OPERATOR_PARAMETERS,
             **common,
         )
-    if QUALITY_OPERATOR_NAME not in default_registry.names("operator"):
+    if needs_registration(
+        default_registry,
+        "operator",
+        QUALITY_OPERATOR_NAME,
+        slam_quality,
+    ):
         register_operator(
             QUALITY_OPERATOR_NAME,
             slam_quality,

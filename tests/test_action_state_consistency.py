@@ -136,6 +136,47 @@ def test_load_baselines_from_reference_result_is_directly_valid():
     validate_action_state_baselines(baselines)  # must not raise
 
 
+@pytest.mark.parametrize(
+    ("reference", "message"),
+    [
+        ({}, "cells"),
+        ({"cells": {"w": {"1": {}}}}, "reliable"),
+        (
+            {"cells": {"w": {"1": {
+                "reliable": True,
+                "floor": 0.0,
+                "ceiling": 1.0,
+            }}}},
+            "missing",
+        ),
+        (
+            {"cells": {"jump": {"1": {
+                "reliable": True,
+                "floor": 0.0,
+                "ceiling": 1.0,
+                "expected_sign": 1,
+            }}}},
+            "unknown control",
+        ),
+    ],
+)
+def test_load_baselines_from_reference_rejects_malformed_reports(reference, message):
+    with pytest.raises(ValueError, match=message):
+        load_baselines_from_reference(reference)
+
+
+def test_load_baselines_from_reference_rejects_invalid_control_filters():
+    reference = _fake_reference()
+    with pytest.raises(ValueError, match="non-empty sequence"):
+        load_baselines_from_reference(reference, controls="W")
+    with pytest.raises(ValueError, match="unknown"):
+        load_baselines_from_reference(reference, controls=["JUMP"])
+    with pytest.raises(ValueError, match="duplicates"):
+        load_baselines_from_reference(reference, controls=["W", "W"])
+    with pytest.raises(ValueError, match="no reliable"):
+        load_baselines_from_reference(reference, controls=["A"])
+
+
 # ---------------------------------------------------------------------------------------
 # ActionStateConsistencyChecker -- per-clip aggregation over real pixel_shift measurements
 # ---------------------------------------------------------------------------------------

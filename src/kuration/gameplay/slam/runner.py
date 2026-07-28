@@ -12,7 +12,12 @@ from typing import Any
 import numpy as np
 
 from ._paths import local_path
-from .export import EXPORT_FORMAT, EXPORT_VERSION, export_slam_output
+from .export import (
+    EXPORT_FORMAT,
+    EXPORT_VERSION,
+    _atomic_write_text,
+    export_slam_output,
+)
 
 
 _CACHE_FORMAT = "kuration-slam-prepare-cache"
@@ -50,6 +55,10 @@ def _stable_options(options: Mapping[str, object]) -> dict[str, object]:
     stable: dict[str, object] = {}
     for key, value in sorted(options.items()):
         if value is None or isinstance(value, (str, int, float, bool)):
+            if isinstance(value, float) and not np.isfinite(value):
+                raise ValueError(
+                    f"SLAM runtime option {key!r} must be JSON-safe and finite"
+                )
             stable[key] = value
             continue
         if isinstance(value, Path):
@@ -506,6 +515,8 @@ def _existing_manifest(source) -> Path | None:
         document = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError(f"cannot read SLAM manifest {str(path)!r}") from error
+    if not isinstance(document, dict):
+        raise ValueError("SLAM manifest must be a JSON object")
     if document.get("format") != EXPORT_FORMAT or document.get("version") != EXPORT_VERSION:
         raise ValueError(
             f"SLAM manifest must declare format={EXPORT_FORMAT!r}, version={EXPORT_VERSION}"
@@ -539,7 +550,6 @@ def _cache_manifest(out_dir: str | Path, cache_key: str) -> Path | None:
 def _write_cache(out_dir: str | Path, cache_key: str) -> None:
     root = Path(out_dir)
     target = root / ".kuration-slam-prepare.json"
-    temporary = root / ".kuration-slam-prepare.json.tmp"
     manifest_path = root / "manifest.json"
     document = {
         "format": _CACHE_FORMAT,
@@ -547,8 +557,7 @@ def _write_cache(out_dir: str | Path, cache_key: str) -> None:
         "cache_key": cache_key,
         "manifest_sha256": sha256(manifest_path.read_bytes()).hexdigest(),
     }
-    temporary.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
-    temporary.replace(target)
+    _atomic_write_text(target, json.dumps(document, indent=2, sort_keys=True) + "\n")
 
 
 def prepare_slam_input(

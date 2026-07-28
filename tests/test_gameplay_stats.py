@@ -194,9 +194,12 @@ def test_video_comparison_renders_saves_probes_and_plots(tmp_path):
     )
 
     html = comparison.render(embed=True)
+    second_html = comparison.render(embed=True)
     assert "data:video/mp4;base64" in html
     assert "Raw &lt;capture&gt;" in html
     assert "Synchronize playback" in html
+    assert html.split('id="kur-video-', 1)[1][:12] != \
+        second_html.split('id="kur-video-', 1)[1][:12]
     assert comparison.probe()["left"]["frame_count"] == 5
 
     output = tmp_path / "comparison.html"

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from kuration import Pipeline, default_registry, describe_component
+from kuration import Pipeline, TransformContext, default_registry, describe_component
 from kuration import gameplay
 from kuration.gameplay.slam import (
     ADAPTER_NAME,
@@ -31,6 +31,7 @@ from kuration.gameplay.slam import (
     preflight_slam,
     register,
     run_slam_reconstruction,
+    slam_provenance,
     slam_schema,
 )
 from kuration.gameplay.slam.cli import main as cli_main
@@ -125,9 +126,18 @@ def test_build_pointcloud_scene_covers_exported_geometry(monkeypatch):
     scene = build_pointcloud_scene(_output(), max_display_points=1)
 
     assert isinstance(scene, trimesh.Scene)
-    assert any(isinstance(geometry, trimesh.PointCloud) for geometry in scene.geometry.values())
+    clouds = [
+        geometry
+        for geometry in scene.geometry.values()
+        if isinstance(geometry, trimesh.PointCloud)
+    ]
+    assert len(clouds) == 1
+    assert len(clouds[0].vertices) == 1
     assert sum(isinstance(geometry, trimesh.path.Path3D)
                for geometry in scene.geometry.values()) == 4
+    for invalid in (0, -1, True, 1.5):
+        with pytest.raises(ValueError, match="positive integer"):
+            build_pointcloud_scene(_output(), max_display_points=invalid)
 
 
 def test_top_level_slam_pipeline_returns_the_normal_fluent_pipeline(tmp_path):
@@ -201,6 +211,46 @@ def test_motion_transform_rejects_zero_forward_axis():
         )
 
 
+def test_slam_transforms_honor_input_remapping_and_ragged_valid_steps():
+    """Built-in transforms follow the same role-remapping and padding contract as plugins."""
+    context = TransformContext(
+        device="cpu",
+        schema=None,
+        transform="SLAM regression",
+        inputs={
+            "field:camera_position": "field:position",
+            "field:camera_z_axis": "field:forward",
+            "field:tracking_confidence": "field:confidence",
+        },
+        valid_steps=np.asarray([3, 1]),
+    )
+    batch = {
+        "field:position": np.asarray([
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            [[4.0, 5.0, 6.0], [np.nan, np.nan, np.nan], [np.nan, np.nan, np.nan]],
+        ]),
+        "field:forward": np.asarray([
+            [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            [[0.0, 0.0, 1.0], [np.nan, np.nan, np.nan], [np.nan, np.nan, np.nan]],
+        ]),
+        "field:confidence": np.asarray([
+            [1.0, 0.8, 0.6],
+            [0.75, np.nan, np.nan],
+        ]),
+    }
+
+    motion = SLAMMotion().transform_batch(batch, context)
+    quality = SLAMQuality().transform_batch(batch, context)
+
+    assert motion["slam_path_length"] == pytest.approx([2.0, 0.0])
+    assert motion["slam_spatial_extent"] == pytest.approx([2.0, 0.0])
+    assert quality["slam_tracking_confidence_mean"] == pytest.approx([0.8, 0.75])
+    assert quality["slam_translation_jump_fraction"] == pytest.approx([0.0, 0.0])
+    assert np.isfinite(
+        np.concatenate([*motion.values(), *quality.values()])
+    ).all()
+
+
 def test_quality_transform_flags_confidence_gaps_pose_jumps_and_scale_drift():
     positions = np.array([[
         [0.0, 0.0, 0.0],
@@ -268,6 +318,12 @@ def test_schema_has_fixed_pose_field_widths():
     assert schema.fields["camera_frustum"].width == 15
     assert schema.fields["tracking_confidence"].kind == "scalar"
     assert schema.sample_hz == 7.5
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_slam_provenance_rejects_nonfinite_runtime_options(bad):
+    with pytest.raises(ValueError, match="JSON-safe and finite"):
+        slam_provenance({"depth_model": "da3-base", "threshold": bad})
 
 
 def test_prepare_reuses_existing_manifest_without_running_slam(tmp_path):
