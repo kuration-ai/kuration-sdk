@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 
 import numpy as np
 
@@ -22,8 +23,12 @@ CONTAINER_EXT = {"npz": ".npz", "json": ".json", "hdf5": ".h5", "parquet": ".par
 class Container:
     """Third-party container contract: extension plus write/read callables."""
     def __init__(self, extension, writer, reader):
-        if not isinstance(extension, str) or not extension.startswith("."):
-            raise ValueError("container extension must start with '.'")
+        if (not isinstance(extension, str)
+                or re.fullmatch(r"\.[A-Za-z0-9][A-Za-z0-9._-]*", extension) is None):
+            raise ValueError(
+                "container extension must be one filename suffix such as '.bin' or "
+                "'.array.v1' (letters, digits, dot, underscore, and hyphen only)"
+            )
         self.extension, self.writer, self.reader = extension, writer, reader
 
 
@@ -41,12 +46,14 @@ def _container_handler(name: str, registry=None):
     from ..registry import default_registry
     registry = registry or default_registry
     handler = registry.get("container", name)
-    if not (isinstance(getattr(handler, "extension", None), str)
+    extension = getattr(handler, "extension", None)
+    if not (isinstance(extension, str)
+            and re.fullmatch(r"\.[A-Za-z0-9][A-Za-z0-9._-]*", extension) is not None
             and callable(getattr(handler, "writer", None))
             and callable(getattr(handler, "reader", None))):
         raise ValueError(
             f"registered container {name!r} must be a Container-like object with "
-            "extension, writer, and reader")
+            "one safe filename extension plus callable writer and reader")
     return handler
 
 
@@ -56,6 +63,25 @@ def container_extension(name: str, *, registry=None) -> str:
     return _container_handler(name, registry).extension
 
 
+def validate_container_availability(name: str, *, registry=None) -> None:
+    """Fail before publication when a container implementation cannot run."""
+    if name == "hdf5":
+        try:
+            import h5py  # noqa: F401
+        except ImportError as error:
+            raise ImportError("container 'hdf5' needs h5py: "
+                              "pip install 'kuration-sdk[array]'") from error
+    elif name == "parquet":
+        try:
+            import pyarrow  # noqa: F401
+            import pyarrow.parquet  # noqa: F401
+        except ImportError as error:
+            raise ImportError("container 'parquet' needs pyarrow: "
+                              "pip install 'kuration-sdk[parquet]'") from error
+    elif name not in CONTAINER_EXT:
+        _container_handler(name, registry)
+
+
 def write_shard(path_no_ext: str, container: str, arrays: dict[str, np.ndarray],
                 n_steps: int, *, registry=None) -> str:
     """Write one shard's modality arrays; returns the written path (local or remote URL).
@@ -63,7 +89,8 @@ def write_shard(path_no_ext: str, container: str, arrays: dict[str, np.ndarray],
     if container not in CONTAINER_EXT:
         handler = _container_handler(container, registry)
         path = path_no_ext + handler.extension
-        handler.writer(path, arrays, n_steps)
+        with staged_write(path) as local:
+            handler.writer(local, arrays, n_steps)
         return path
     path = path_no_ext + CONTAINER_EXT[container]
     with staged_write(path) as local:    # real local path; uploaded on exit if `path` is remote
@@ -105,7 +132,9 @@ def read_shard(path: str, container: str, *, registry=None) -> tuple[dict[str, n
     as stored — a tensor modality written to Parquet is flat `(L, prod(shape))`; reshape it
     with the manifest's per-modality `shape` if you need the original rank (the loaders do)."""
     if container not in CONTAINER_EXT:
-        return _container_handler(container, registry).reader(path)
+        from ..io import local_copy
+        with local_copy(path) as local:
+            return _container_handler(container, registry).reader(local)
     from ..io import local_copy, read_text
     if container == "json":
         data = json.loads(read_text(path))

@@ -69,6 +69,21 @@ def test_validate_accepts_bounded_execution_job_keys(tmp_path):
     assert validate_job(job)["kind"] == "curate"
 
 
+def test_validate_accepts_force_and_rejects_conflicting_write_intents(tmp_path):
+    job = _curate_job(_csv(tmp_path), tmp_path / "out")
+    job["force"] = True
+    assert validate_job(job)["kind"] == "curate"
+
+    job["resume"] = True
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        validate_job(job)
+
+    job["resume"] = False
+    job["force"] = "yes"
+    with pytest.raises(ValueError, match="force must be true or false"):
+        validate_job(job)
+
+
 def test_validate_catches_bad_metric_reference(tmp_path):
     job = _curate_job(_csv(tmp_path), tmp_path / "out")
     job["strategy"]["selection"]["weights"] = {"ghost": 1.0}     # undefined metric

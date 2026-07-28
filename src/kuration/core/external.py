@@ -16,14 +16,9 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from .checkpoints import PartitionCommit
+from .checkpoints import PartitionCommit, pinned_partition_files
 from .columnar import SegmentBatch
 from .segment import Segment
-
-
-def _paths(partitions: Iterable[PartitionCommit | str]) -> list[str]:
-    return [item.data_file if isinstance(item, PartitionCommit) else str(item)
-            for item in partitions]
 
 
 def _database(spill_dir: str | None):
@@ -72,9 +67,33 @@ def _shuffle_slots(connection: sqlite3.Connection, rng: random.Random) -> None:
              for position, candidate_id in enumerate(candidate_ids)))
 
 
-def external_quantile_edges(partitions: Iterable[PartitionCommit | str], feature: str,
-                            n_bins: int, *, spill_dir: str | None = None) -> np.ndarray:
-    """Compute NumPy-compatible exact quantile edges with disk-proportional state."""
+def _create_canonical_uniform_slots(connection: sqlite3.Connection) -> None:
+    """Index uniform-bin members in the same first-seen order as a canonical local pool."""
+    connection.executescript(
+        "CREATE TABLE bins (bin_key TEXT PRIMARY KEY,bin_order INTEGER NOT NULL);"
+        "INSERT INTO bins "
+        "SELECT bin_key,ROW_NUMBER() OVER "
+        "(ORDER BY source_id,start_idx,end_idx)-1 "
+        "FROM ("
+        "SELECT bin_key,source_id,start_idx,end_idx,"
+        "ROW_NUMBER() OVER (PARTITION BY bin_key "
+        "ORDER BY source_id,start_idx,end_idx) AS member_order "
+        "FROM candidates"
+        ") WHERE member_order=1;"
+        "CREATE TABLE slots (bin_key TEXT NOT NULL,position INTEGER NOT NULL,"
+        "candidate_id INTEGER NOT NULL,PRIMARY KEY(bin_key,position));"
+        "INSERT INTO slots "
+        "SELECT bin_key,ROW_NUMBER() OVER (PARTITION BY bin_key "
+        "ORDER BY source_id,start_idx,end_idx)-1,id FROM candidates;")
+
+
+def _external_quantile_edges_paths(
+    paths: Iterable[str],
+    feature: str,
+    n_bins: int,
+    *,
+    spill_dir: str | None = None,
+) -> np.ndarray:
     if not isinstance(n_bins, int) or isinstance(n_bins, bool) or n_bins < 1:
         raise ValueError("n_bins must be a positive integer")
     column = feature if feature.startswith("feature:") else f"feature:{feature}"
@@ -82,7 +101,7 @@ def external_quantile_edges(partitions: Iterable[PartitionCommit | str], feature
     try:
         connection.execute("CREATE TABLE values_table (value REAL NOT NULL)")
         count = 0
-        for path in _paths(partitions):
+        for path in paths:
             batch = SegmentBatch.read_ipc(path, columns=[column])
             values = batch.numpy(column, zero_copy_only=False).astype(np.float64, copy=False)
             if not np.isfinite(values).all():
@@ -112,9 +131,17 @@ def external_quantile_edges(partitions: Iterable[PartitionCommit | str], feature
             os.unlink(db_path)
 
 
+def external_quantile_edges(partitions: Iterable[PartitionCommit | str], feature: str,
+                            n_bins: int, *, spill_dir: str | None = None) -> np.ndarray:
+    """Compute NumPy-compatible exact quantile edges from pinned partition generations."""
+    with pinned_partition_files(partitions) as paths:
+        return _external_quantile_edges_paths(
+            paths, feature, n_bins, spill_dir=spill_dir)
+
+
 def external_top_k(partitions: Iterable[PartitionCommit | str], *, weights: dict[str, float],
                    target_size: int, normalize: str = "quantile",
-                   spill_dir: str | None = None) -> list:
+                   spill_dir: str | None = None, predicates=()) -> list:
     """Exact stable top-k using a disk-backed feature index.
 
     Only the selected ``k`` Python ``Segment`` objects are materialized. Equal feature values
@@ -129,42 +156,47 @@ def external_top_k(partitions: Iterable[PartitionCommit | str], *, weights: dict
             return []
         selected = connection.execute(
             "SELECT data_file,row_idx FROM candidates ORDER BY score DESC,source_id,start_idx,end_idx "
-            "LIMIT ?", (target_size,)).fetchall()
-        return [segment for segment, in _materialize_selected_rows(selected)]
+        ).fetchall()
+        if not predicates:
+            selected = selected[:target_size]
+            return [segment for segment, in _materialize_selected_rows(selected)]
+        from .strategy import _passes
+        out = []
+        for segment, in _materialize_selected_rows(selected):
+            if _passes(segment, predicates):
+                out.append(segment)
+                if len(out) == target_size:
+                    break
+        return out
 
 
-def external_uniform_bins(partitions: Iterable[PartitionCommit | str], *,
-                          axes: Iterable[tuple[str, int]], target_size: int, seed: int = 0,
-                          spill_dir: str | None = None) -> list:
-    """Exact quantile organization plus bounded deterministic equal-bin selection.
-
-    Quantile edges match NumPy exactly. Candidate membership and per-bin ordering live in a
-    disk-backed index; memory is bounded by one Arrow partition plus the selected result.
-    """
+def _external_uniform_bins_paths(paths: Iterable[str], *,
+                                 axes: Iterable[tuple[str, int]], target_size: int,
+                                 seed: int = 0, spill_dir: str | None = None,
+                                 predicates=()) -> list:
     axes = tuple(axes)
     if not axes:
         raise ValueError("external_uniform_bins requires at least one axis")
     if not isinstance(target_size, int) or isinstance(target_size, bool) or target_size < 1:
         raise ValueError("target_size must be a positive integer")
-    paths = _paths(partitions)
+    paths = tuple(paths)
     edges = {}
     for name, bins in axes:
-        values = external_quantile_edges(paths, name, bins, spill_dir=spill_dir)
+        values = _external_quantile_edges_paths(
+            paths, name, bins, spill_dir=spill_dir)
         edges[name] = np.unique(values)
     columns = [f"feature:{name}" for name, _ in axes]
     connection, db_path = _database(spill_dir)
     try:
         connection.executescript(
-            "CREATE TABLE bins (bin_key TEXT PRIMARY KEY, bin_order INTEGER NOT NULL);"
             "CREATE TABLE candidates (id INTEGER PRIMARY KEY,source_id TEXT NOT NULL,"
             "start_idx INTEGER NOT NULL,"
             "end_idx INTEGER NOT NULL,data_file TEXT NOT NULL,row_idx INTEGER NOT NULL,"
             "bin_key TEXT NOT NULL,"
             "UNIQUE(source_id,start_idx,end_idx));")
-        next_bin_order = 0
         candidate_id = 0
         for path in paths:
-            batch = SegmentBatch.read_ipc(path, columns=columns)
+            batch = SegmentBatch.read_ipc(path, columns=None if predicates else columns)
             raw = batch.record_batch.to_pydict()
             rows = []
             for row_idx in range(len(batch)):
@@ -181,12 +213,13 @@ def external_uniform_bins(partitions: Iterable[PartitionCommit | str], *,
                         raise ValueError(f"binning feature {name!r} contains non-finite values")
                     codes.append(int(np.searchsorted(edges[name], value, side="left")))
                 bin_key = json.dumps(codes, separators=(",", ":"))
-                inserted = connection.execute(
-                    "INSERT OR IGNORE INTO bins VALUES (?,?)", (bin_key, next_bin_order))
-                if inserted.rowcount:
-                    next_bin_order += 1
                 source_id = raw["source_id"][row_idx]
                 start_idx, end_idx = raw["start_idx"][row_idx], raw["end_idx"][row_idx]
+                if predicates:
+                    from .strategy import _passes
+                    segment = batch.slice(row_idx, 1).to_segments()[0]
+                    if not _passes(segment, predicates):
+                        continue
                 rows.append((candidate_id, source_id, start_idx, end_idx, path, row_idx,
                              bin_key))
                 candidate_id += 1
@@ -194,12 +227,7 @@ def external_uniform_bins(partitions: Iterable[PartitionCommit | str], *,
                 connection.executemany("INSERT INTO candidates VALUES (?,?,?,?,?,?,?)", rows)
             except sqlite3.IntegrityError as error:
                 raise ValueError("duplicate stable segment key in external feature table") from error
-        connection.executescript(
-            "CREATE TABLE slots (bin_key TEXT NOT NULL,position INTEGER NOT NULL,"
-            "candidate_id INTEGER NOT NULL,PRIMARY KEY(bin_key,position));"
-            "INSERT INTO slots "
-            "SELECT bin_key,ROW_NUMBER() OVER (PARTITION BY bin_key "
-            "ORDER BY source_id,start_idx,end_idx)-1,id FROM candidates;")
+        _create_canonical_uniform_slots(connection)
         _shuffle_slots(connection, random.Random(seed))
         connection.commit()
         selected = connection.execute(
@@ -217,26 +245,33 @@ def external_uniform_bins(partitions: Iterable[PartitionCommit | str], *,
             os.unlink(db_path)
 
 
-def iter_external_uniform_priorities(partitions: Iterable[PartitionCommit | str], *,
-                                     axes: Iterable[tuple[str, int]], seed: int = 0,
-                                     spill_dir: str | None = None):
-    """Yield exact uniform-bin priorities canonically with disk-bounded state."""
+def external_uniform_bins(partitions: Iterable[PartitionCommit | str], *,
+                          axes: Iterable[tuple[str, int]], target_size: int, seed: int = 0,
+                          spill_dir: str | None = None, predicates=()) -> list:
+    """Select exact uniform bins while holding immutable partition snapshots."""
+    with pinned_partition_files(partitions) as paths:
+        return _external_uniform_bins_paths(
+            paths, axes=axes, target_size=target_size, seed=seed,
+            spill_dir=spill_dir, predicates=predicates)
+
+
+def _iter_external_uniform_priorities_paths(paths: Iterable[str], *,
+                                            axes: Iterable[tuple[str, int]], seed: int = 0,
+                                            spill_dir: str | None = None):
     axes = tuple(axes)
     if not axes:
         raise ValueError("uniform-bin priorities require at least one axis")
-    paths = _paths(partitions)
-    edges = {name: np.unique(external_quantile_edges(
+    paths = tuple(paths)
+    edges = {name: np.unique(_external_quantile_edges_paths(
         paths, name, bins, spill_dir=spill_dir)) for name, bins in axes}
     columns = [f"feature:{name}" for name, _ in axes]
     connection, db_path = _database(spill_dir)
     try:
         connection.executescript(
-            "CREATE TABLE bins (bin_key TEXT PRIMARY KEY,bin_order INTEGER NOT NULL);"
             "CREATE TABLE candidates (id INTEGER PRIMARY KEY,source_id TEXT NOT NULL,"
             "start_idx INTEGER NOT NULL,end_idx INTEGER NOT NULL,data_file TEXT NOT NULL,"
             "row_idx INTEGER NOT NULL,bin_key TEXT NOT NULL,"
             "UNIQUE(source_id,start_idx,end_idx));")
-        next_bin_order = 0
         candidate_id = 0
         for path in paths:
             batch = SegmentBatch.read_ipc(path, columns=columns)
@@ -256,10 +291,6 @@ def iter_external_uniform_priorities(partitions: Iterable[PartitionCommit | str]
                         raise ValueError(f"binning feature {name!r} contains non-finite values")
                     codes.append(int(np.searchsorted(edges[name], value, side="left")))
                 bin_key = json.dumps(codes, separators=(",", ":"))
-                inserted = connection.execute(
-                    "INSERT OR IGNORE INTO bins VALUES (?,?)", (bin_key, next_bin_order))
-                if inserted.rowcount:
-                    next_bin_order += 1
                 rows.append((candidate_id, raw["source_id"][row_idx],
                              raw["start_idx"][row_idx], raw["end_idx"][row_idx],
                              path, row_idx, bin_key))
@@ -268,11 +299,7 @@ def iter_external_uniform_priorities(partitions: Iterable[PartitionCommit | str]
                 connection.executemany("INSERT INTO candidates VALUES (?,?,?,?,?,?,?)", rows)
             except sqlite3.IntegrityError as error:
                 raise ValueError("duplicate stable segment key in external feature table") from error
-        connection.executescript(
-            "CREATE TABLE slots (bin_key TEXT NOT NULL,position INTEGER NOT NULL,"
-            "candidate_id INTEGER NOT NULL,PRIMARY KEY(bin_key,position));"
-            "INSERT INTO slots SELECT bin_key,ROW_NUMBER() OVER (PARTITION BY bin_key "
-            "ORDER BY source_id,start_idx,end_idx)-1,id FROM candidates;")
+        _create_canonical_uniform_slots(connection)
         _shuffle_slots(connection, random.Random(seed))
         connection.commit()
         cached_path, cached_batch = None, None
@@ -291,10 +318,19 @@ def iter_external_uniform_priorities(partitions: Iterable[PartitionCommit | str]
             os.unlink(db_path)
 
 
+def iter_external_uniform_priorities(partitions: Iterable[PartitionCommit | str], *,
+                                     axes: Iterable[tuple[str, int]], seed: int = 0,
+                                     spill_dir: str | None = None):
+    """Yield exact uniform-bin priorities from pinned partition generations."""
+    with pinned_partition_files(partitions) as paths:
+        yield from _iter_external_uniform_priorities_paths(
+            paths, axes=axes, seed=seed, spill_dir=spill_dir)
+
+
 @contextmanager
-def _top_k_priority_index(partitions: Iterable[PartitionCommit | str], *,
-                          weights: dict[str, float], normalize: str,
-                          spill_dir: str | None):
+def _top_k_priority_index_paths(paths: Iterable[str], *,
+                                weights: dict[str, float], normalize: str,
+                                spill_dir: str | None):
     """Build one reusable disk-backed normalized-priority index."""
     if not weights:
         raise ValueError("top-k priorities require at least one feature weight")
@@ -312,7 +348,7 @@ def _top_k_priority_index(partitions: Iterable[PartitionCommit | str], *,
             "CREATE TABLE features (candidate_id INTEGER NOT NULL,name TEXT NOT NULL,"
             "value REAL NOT NULL,PRIMARY KEY(candidate_id,name));")
         candidate_id = 0
-        for path in _paths(partitions):
+        for path in paths:
             batch = SegmentBatch.read_ipc(path, columns=columns)
             raw = batch.record_batch.to_pydict()
             candidates, features = [], []
@@ -342,8 +378,8 @@ def _top_k_priority_index(partitions: Iterable[PartitionCommit | str], *,
         connection.execute("CREATE INDEX feature_lookup ON features(name,value)")
         total = candidate_id
         if total:
-            for name, weight in weights.items():
-                weight = float(weight)
+            for name in sorted(weights):
+                weight = float(weights[name])
                 if not math.isfinite(weight):
                     raise ValueError("top-k weights must be finite")
                 if normalize == "quantile":
@@ -386,6 +422,18 @@ def _top_k_priority_index(partitions: Iterable[PartitionCommit | str], *,
         connection.close()
         if os.path.exists(db_path):
             os.unlink(db_path)
+
+
+@contextmanager
+def _top_k_priority_index(partitions: Iterable[PartitionCommit | str], *,
+                          weights: dict[str, float], normalize: str,
+                          spill_dir: str | None):
+    """Build an index while retaining one private snapshot of each partition."""
+    with pinned_partition_files(partitions) as paths:
+        with _top_k_priority_index_paths(
+                paths, weights=weights, normalize=normalize,
+                spill_dir=spill_dir) as indexed:
+            yield indexed
 
 
 def _iter_indexed_priorities(connection):
@@ -512,15 +560,10 @@ def iter_external_span_items(prioritized_segments, source_tracks: dict, *, sampl
             os.unlink(db_path)
 
 
-def iter_external_hash_dedup(partitions: Iterable[PartitionCommit | str], *,
-                             feature_names: Iterable[str] | None = None,
-                             per_group: bool = False, spill_dir: str | None = None):
-    """Yield canonical first occurrences of exact feature vectors using disk-backed hashes.
-
-    SHA-256 narrows lookup, while the complete encoded vector remains in the primary key for
-    collision resolution. This is exact identity deduplication, not cosine/near deduplication.
-    """
-    paths = _paths(partitions)
+def _iter_external_hash_dedup_paths(paths: Iterable[str], *,
+                                    feature_names: Iterable[str] | None = None,
+                                    per_group: bool = False,
+                                    spill_dir: str | None = None):
     connection, db_path = _database(spill_dir)
     try:
         connection.execute(
@@ -563,3 +606,17 @@ def iter_external_hash_dedup(partitions: Iterable[PartitionCommit | str], *,
         connection.close()
         if os.path.exists(db_path):
             os.unlink(db_path)
+
+
+def iter_external_hash_dedup(partitions: Iterable[PartitionCommit | str], *,
+                             feature_names: Iterable[str] | None = None,
+                             per_group: bool = False, spill_dir: str | None = None):
+    """Yield canonical exact-vector first occurrences from pinned partitions.
+
+    SHA-256 narrows lookup, while the complete encoded vector remains in the primary key for
+    collision resolution. This is exact identity deduplication, not cosine/near deduplication.
+    """
+    with pinned_partition_files(partitions) as paths:
+        yield from _iter_external_hash_dedup_paths(
+            paths, feature_names=feature_names, per_group=per_group,
+            spill_dir=spill_dir)

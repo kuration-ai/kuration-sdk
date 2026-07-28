@@ -58,6 +58,9 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     """
     from .strategy import validate_target_size
     target_size = validate_target_size(target_size)
+    sources = list(sources)
+    if not sources:
+        raise ValueError("curate() needs at least one source")
     if (not isinstance(test_frac, (int, float)) or isinstance(test_frac, bool)
             or not math.isfinite(test_frac) or not 0 <= test_frac <= 1):
         raise ValueError(f"test_frac must be a finite number in [0, 1], got {test_frac!r}")
@@ -68,8 +71,10 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     }
     # scorer outputs are produced by the scorer stage, not the feature pass — exclude them.
     transform_outputs = {o for t in transforms for o in t["outputs"]}
-    registered = [r for r in referenced if r not in strategy.define
-                  and r not in strategy.scorer_outputs() and r not in transform_outputs]
+    registered = sorted(
+        r for r in referenced if r not in strategy.define
+        and r not in strategy.scorer_outputs() and r not in transform_outputs
+    )
     transform_fields = {
         token.split(":", 1)[1]
         for call in transforms for token in call["inputs"] if token.startswith("field:")}
@@ -82,13 +87,16 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
 
     if transforms:
         from .transforms import apply_transforms
-        apply_transforms(transforms, all_segments, adapter=adapter,
-                         registry=registry or strategy.registry, progress=progress)
+        all_segments = apply_transforms(
+            transforms, all_segments, adapter=adapter,
+            registry=registry or strategy.registry, progress=progress,
+            on_error=on_error, errors=errors)
 
     if strategy.scorers:   # whole-pool learned/action-aware scoring -> features
         from .scorers import apply_scorers
         apply_scorers(strategy.scorers, all_segments, schema=schema, adapter=adapter, seed=seed,
-                      progress=progress, registry=strategy.registry)
+                      progress=progress, registry=strategy.registry,
+                      on_error=on_error, errors=errors)
 
     from .progress import emit
     emit(progress, "selection", "start", total=len(all_segments))

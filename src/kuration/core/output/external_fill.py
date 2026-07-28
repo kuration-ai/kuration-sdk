@@ -9,7 +9,7 @@ import sqlite3
 import tempfile
 from typing import Any
 
-from ..select import assign_splits
+from ..select import _stable_value_order, assign_splits
 
 
 def _dump(value) -> bytes:
@@ -53,11 +53,36 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
             "CREATE TABLE items (id_blob BLOB PRIMARY KEY,id_hash TEXT NOT NULL,"
             "id_sort TEXT NOT NULL,"
             "source_id TEXT NOT NULL,priority REAL NOT NULL,seconds REAL NOT NULL,"
-            "group_blob BLOB NOT NULL,tags_blob BLOB NOT NULL,start_idx INTEGER,end_idx INTEGER,"
-            "meta_blob BLOB NOT NULL,split TEXT);"
-            "CREATE TABLE item_tags (id_blob BLOB NOT NULL,tag TEXT NOT NULL,"
-            "PRIMARY KEY(id_blob,tag));"
+            "group_key INTEGER NOT NULL,group_blob BLOB NOT NULL,tags_blob BLOB NOT NULL,"
+            "start_idx INTEGER,end_idx INTEGER,meta_blob BLOB NOT NULL,split TEXT);"
+            "CREATE TABLE groups (value_key INTEGER PRIMARY KEY,value_hash TEXT NOT NULL,"
+            "value_blob BLOB NOT NULL);"
+            "CREATE TABLE tags (value_key INTEGER PRIMARY KEY,value_hash TEXT NOT NULL,"
+            "value_blob BLOB NOT NULL);"
+            "CREATE TABLE item_tags (id_blob BLOB NOT NULL,tag_key INTEGER NOT NULL,"
+            "PRIMARY KEY(id_blob,tag_key));"
+            "CREATE INDEX group_equality ON groups(value_hash);"
+            "CREATE INDEX tag_equality ON tags(value_hash);"
             "CREATE INDEX item_equality ON items(id_hash);")
+
+        def equality_key(table: str, value, label: str) -> int:
+            try:
+                value_hash = str(hash(value))
+            except TypeError as error:
+                raise ValueError(f"{label} values must be hashable, got {value!r}") from error
+            for key, blob in connection.execute(
+                    f"SELECT value_key,value_blob FROM {table} WHERE value_hash=?",
+                    (value_hash,)):
+                if _load(blob) == value:
+                    return int(key)
+            cursor = connection.execute(
+                f"INSERT INTO {table} (value_hash,value_blob) VALUES (?,?)",
+                (value_hash, _dump(value)),
+            )
+            if cursor.lastrowid is None:
+                raise RuntimeError(f"failed to register {label} equality value")
+            return int(cursor.lastrowid)
+
         required = {"id", "source_id", "priority", "seconds", "group"}
         count = 0
         for count, item in enumerate(items, 1):
@@ -84,19 +109,24 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
                     "SELECT id_blob FROM items WHERE id_hash=?", (identity_hash,)):
                 if _load(existing_blob) == item["id"]:
                     raise ValueError(f"duplicate fill item id {item['id']!r}")
-            tags = tuple(item.get("tags", ()))
+            group_key = equality_key("groups", item["group"], "group")
+            tags = tuple(_stable_value_order(item.get("tags", ())))
+            tag_keys = [(equality_key("tags", tag, "tag"), tag) for tag in tags]
             try:
                 connection.execute(
-                    "INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL)",
+                    "INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL)",
                     (identity, identity_hash, str(item["id"]), str(item["source_id"]), priority,
-                     float(seconds), _dump(item["group"]), _dump(tags), item.get("start"),
-                     item.get("end"), _dump(dict(item.get("meta") or {}))))
+                     float(seconds), group_key, _dump(item["group"]), _dump(tags),
+                     item.get("start"), item.get("end"),
+                     _dump(dict(item.get("meta") or {}))))
             except sqlite3.IntegrityError as error:
                 raise ValueError(f"duplicate fill item id {item['id']!r}") from error
-            connection.executemany("INSERT INTO item_tags VALUES (?,?)",
-                                   ((identity, str(tag)) for tag in tags))
+            connection.executemany(
+                "INSERT INTO item_tags VALUES (?,?)",
+                ((identity, tag_key) for tag_key, _tag in tag_keys),
+            )
         connection.execute("CREATE INDEX item_priority ON items(priority DESC,source_id,id_sort)")
-        connection.execute("CREATE INDEX tag_lookup ON item_tags(tag,id_blob)")
+        connection.execute("CREATE INDEX tag_lookup ON item_tags(tag_key,id_blob)")
         connection.commit()
 
         train_target, test_target = train_hours * 3600.0, test_hours * 3600.0
@@ -110,8 +140,7 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
                                ((value, source) for source, value in split.items()))
         connection.commit()
 
-        n_groups = max(connection.execute(
-            "SELECT COUNT(DISTINCT hex(group_blob)) FROM items").fetchone()[0], 1)
+        n_groups = max(connection.execute("SELECT COUNT(*) FROM groups").fetchone()[0], 1)
         max_per_group = (max_group_overshoot * total / n_groups
                          if max_group_overshoot is not None and total > 0 else float("inf"))
         seconds = {"train": 0.0, "test": 0.0}
@@ -121,17 +150,16 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
         admission_reasons: dict[bytes, str] = {}
 
         def decode(row):
-            identity, source_id, priority, duration, group_blob, tags_blob = row
-            return identity, source_id, priority, duration, _load(group_blob), _load(tags_blob)
+            identity, source_id, priority, duration, group_key, tags_blob = row
+            return identity, source_id, priority, duration, group_key, _load(tags_blob)
 
         def try_admit(row, reason: str = "priority") -> bool:
-            identity, source_id, priority, duration, group, _tags = decode(row)
+            identity, source_id, priority, duration, group_key, _tags = decode(row)
             if not math.isfinite(priority) or identity in admitted:
                 return False
             item_split = split.get(source_id)
             if item_split is None or seconds[item_split] >= target[item_split]:
                 return False
-            group_key = _dump(group if group is not None else "\x00")
             if group_seconds[group_key] + duration > max_per_group:
                 return False
             seconds[item_split] += duration
@@ -140,24 +168,32 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
             admission_reasons[identity] = reason
             return True
 
-        select_rows = ("SELECT id_blob,source_id,priority,seconds,group_blob,tags_blob "
+        select_rows = ("SELECT id_blob,source_id,priority,seconds,group_key,tags_blob "
                        "FROM items ORDER BY priority DESC,source_id,id_sort")
         if tag_coverage and total > 0:
             reserve_cap = tag_coverage.get("min_tag_frac", 0.005) * total
             reserved = 0.0
-            covered: set[str] = set()
-            all_tags = [row[0] for row in connection.execute(
-                "SELECT DISTINCT tag FROM item_tags ORDER BY tag")]
-            for tag in all_tags:
+            covered: set = set()
+            all_tags = [
+                (int(tag_key), _load(tag_blob))
+                for tag_key, tag_blob in connection.execute(
+                    "SELECT value_key,value_blob FROM tags"
+                )
+            ]
+            all_tags.sort(key=lambda pair: (
+                f"{type(pair[1]).__module__}.{type(pair[1]).__qualname__}",
+                repr(pair[1]),
+            ))
+            for tag_key, tag in all_tags:
                 if tag in covered or reserved >= reserve_cap:
                     continue
-                query = ("SELECT i.id_blob,i.source_id,i.priority,i.seconds,i.group_blob,i.tags_blob "
-                         "FROM items i JOIN item_tags t ON t.id_blob=i.id_blob WHERE t.tag=? "
+                query = ("SELECT i.id_blob,i.source_id,i.priority,i.seconds,i.group_key,i.tags_blob "
+                         "FROM items i JOIN item_tags t ON t.id_blob=i.id_blob WHERE t.tag_key=? "
                          "ORDER BY i.priority DESC,i.source_id,i.id_sort")
-                for row in connection.execute(query, (tag,)):
+                for row in connection.execute(query, (tag_key,)):
                     if try_admit(row, "tag-reserve"):
                         reserved += row[3]
-                        covered.update(map(str, _load(row[5])))
+                        covered.update(_load(row[5]))
                         break
         for row in connection.execute(select_rows):
             if seconds["train"] >= train_target and seconds["test"] >= test_target:
@@ -199,9 +235,10 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
             stats["max"] = priority if stats["max"] is None else max(stats["max"], priority)
 
         for row in connection.execute(
-                "SELECT id_blob,source_id,priority,seconds,group_blob,tags_blob,start_idx,"
-                "end_idx,meta_blob FROM items ORDER BY priority DESC,source_id,id_sort"):
-            (identity, source_id, priority, duration, group_blob, tags_blob,
+                "SELECT id_blob,source_id,priority,seconds,group_key,group_blob,tags_blob,"
+                "start_idx,end_idx,meta_blob FROM items "
+                "ORDER BY priority DESC,source_id,id_sort"):
+            (identity, source_id, priority, duration, group_key, group_blob, tags_blob,
              start, end, meta_blob) = row
             item_split = split[source_id]
             if math.isfinite(priority):
@@ -215,8 +252,6 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
                 reason = admission_reasons.get(identity, "priority")
                 bucket = "admitted"
             elif math.isfinite(max_per_group) and math.isfinite(priority):
-                group = _load(group_blob)
-                group_key = _dump(group if group is not None else "\x00")
                 if group_seconds[group_key] + duration > max_per_group:
                     rejected_group += 1
                     reason = "group-cap"
@@ -237,11 +272,26 @@ def external_fill_to_hours(items, *, train_hours: float, test_hours: float,
             decision_counts[reason] += 1
             add_priority(bucket, priority)
             if len(decision_examples[bucket]) < 20:
+                from ..provenance import publishable_source_id
+                published_source = publishable_source_id(source_id)
+
+                def redact_source(value):
+                    if value == source_id:
+                        return published_source
+                    if isinstance(value, list):
+                        return [redact_source(child) for child in value]
+                    if isinstance(value, dict):
+                        return {key: redact_source(child) for key, child in value.items()}
+                    return value
+
                 decision_examples[bucket].append({
-                    "id": jsonable(_load(identity)), "source": source_id,
+                    "id": redact_source(jsonable(_load(identity))),
+                    "source": published_source,
                     "split": item_split, "priority": priority if math.isfinite(priority) else None,
-                    "seconds": duration, "group": jsonable(_load(group_blob)),
-                    "tags": jsonable(_load(tags_blob)), "start": start, "end": end,
+                    "seconds": duration,
+                    "group": redact_source(jsonable(_load(group_blob))),
+                    "tags": redact_source(jsonable(_load(tags_blob))),
+                    "start": start, "end": end,
                     "decision": reason,
                 })
         admitted_ids = set(admitted_details)

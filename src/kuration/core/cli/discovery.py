@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
+
+from ._common import cli_run, json_document
 
 _PLURAL = {"adapters": "adapter", "metrics": "metric", "scorers": "scorer",
            "methods": "method", "filters": "filter", "encoders": "encoder",
@@ -25,7 +26,6 @@ def list_main() -> None:
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
     args = ap.parse_args()
-    from ._common import cli_run
     cli_run(lambda: _list(args), debug=args.debug)
 
 
@@ -34,7 +34,7 @@ def _list(args) -> None:
     rows = list_components(_PLURAL[args.kind])
     _report_plugin_failures()
     if args.json:
-        print(json.dumps(rows, indent=2))
+        print(json_document(rows, label=f"{args.kind} component listing").rstrip())
     else:
         for row in rows:
             print(f"{row['name']:<28} {row.get('description', '')}")
@@ -47,7 +47,6 @@ def describe_main() -> None:
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
     args = ap.parse_args()
-    from ._common import cli_run
     cli_run(lambda: _describe(args), debug=args.debug)
 
 
@@ -58,7 +57,9 @@ def _describe(args) -> None:
     _report_plugin_failures()
     row = describe_component(_PLURAL.get(args.kind, args.kind), args.name)
     if args.json:
-        print(json.dumps(row, indent=2))
+        print(json_document(row, label="component description").rstrip())
     else:
         print(f"{row['kind']} {row['name']}: {row.get('description', '')}")
-        print(json.dumps(row.get("parameters", {}), indent=2))
+        print(json_document(
+            row.get("parameters", {}), label="component parameters"
+        ).rstrip())

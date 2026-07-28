@@ -39,7 +39,7 @@ and SHA-256 integrity metadata.
 | Preserve useful diversity | Quantile bins, tag coverage, weighted ranking, filters, and feature-space methods |
 | Avoid train/test leakage | Source- and group-aware deterministic splits |
 | Understand what changed | Lifecycle stats, candidate-versus-selected review, artifact comparison, plots, and static HTML reports |
-| Resume long runs safely | Atomic writes, complete run fingerprints, and checksum-verified shard reuse |
+| Resume long runs safely | Staged writes, fail-closed commits, complete run fingerprints, and checksum-verified shard reuse |
 | Add domain intelligence | Discoverable operators, analyzers, metrics, scorers, adapters, transforms, encoders, and presets |
 | Move from laptop to scale | Streaming sources, bounded Arrow checkpoints, process workers, cloud paths, and optional Ray execution |
 
@@ -49,21 +49,25 @@ and SHA-256 integrity metadata.
 
 ## Install
 
+Until the public PyPI launch gates in the roadmap are complete, install from a source checkout:
+
 ```bash
-python -m pip install kuration-sdk
+git clone https://github.com/aintropy-ai/kuration-sdk.git
+cd kuration-sdk
+python -m pip install -e .
 ```
 
 The NumPy-only core handles in-memory, CSV, JSON, and NPZ workflows. Add only the integrations a
 pipeline needs:
 
 ```bash
-python -m pip install 'kuration-sdk[methods,parquet]'  # selection methods + Parquet
-python -m pip install 'kuration-sdk[video]'            # PyAV video frames
-python -m pip install 'kuration-sdk[stats]'            # Matplotlib stats plots
-python -m pip install 'kuration-sdk[gameplay]'         # pixel shift, action-state, and SLAM
-python -m pip install 'kuration-sdk[ray]'              # distributed source execution
-python -m pip install 'kuration-sdk[s3]'               # fsspec + the S3 backend
-python -m pip install 'kuration-sdk[all]'              # every runtime integration/backend
+python -m pip install -e '.[methods,parquet]'  # selection methods + Parquet
+python -m pip install -e '.[video]'            # PyAV video frames
+python -m pip install -e '.[stats]'            # Matplotlib stats plots
+python -m pip install -e '.[gameplay]'         # pixel shift, action-state, and SLAM
+python -m pip install -e '.[ray]'              # distributed source execution
+python -m pip install -e '.[s3]'               # fsspec + the S3 backend
+python -m pip install -e '.[all]'              # every runtime integration/backend
 ```
 
 `pipeline.explain()` reports the extras required by a planned run before it reads the full
@@ -122,7 +126,7 @@ operator-by-operator explanation.
 out/training-v1/
 ├── config.json                 # resolved job, pipeline, versions, and provenance
 ├── dataset_manifest.json       # shard index, splits, shapes, sizes, and SHA-256
-├── dataset.commit.json         # final atomic-publication state and metadata checksums
+├── dataset.commit.json         # final publication state and metadata checksums
 ├── train/
 │   └── <source>_<entity>_<hash>_shard0000.npz
 └── test/

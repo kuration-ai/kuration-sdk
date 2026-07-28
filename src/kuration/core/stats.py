@@ -314,18 +314,31 @@ def _artifact_contents(
     verify: bool,
     progress=None,
     registry=None,
+    _snapshot=None,
 ) -> dict:
-    from .loaders import read_shard_arrays, shard_entries
+    from .loaders import (
+        _assert_snapshot_current,
+        _resolve_operation_snapshot,
+        _snapshot_entries,
+        _validate_snapshot_shard,
+        read_shard_arrays,
+    )
     from .progress import emit
 
-    entries, container = shard_entries(dataset)
+    snapshot = _snapshot or _resolve_operation_snapshot(dataset, None)
+    entries = _snapshot_entries(snapshot)
+    container = snapshot.container
     per_shard_sample = max(1, math.ceil(max_values / max(1, len(entries))))
     accumulators: dict[str, dict] = {}
     emit(progress, "stats", "start", total=len(entries))
     for index, entry in enumerate(entries, 1):
+        _assert_snapshot_current(snapshot, operation="artifact statistics")
+        _validate_snapshot_shard(snapshot, entry)
         arrays = read_shard_arrays(
             entry, container, trim=True, verify=verify, registry=registry
         )
+        _validate_snapshot_shard(snapshot, entry)
+        _assert_snapshot_current(snapshot, operation="artifact statistics")
         # `trim=True` drops trailing pad only; interior rows for an absent entity are
         # zero-filled and flagged by `_present`. Accumulating those zeros reported a min of 0
         # and a halved mean for a field that never held 0 — mask them out per row.
@@ -397,6 +410,7 @@ def _artifact_contents(
             total=len(entries),
             source=entry.get("source_id"),
         )
+    _assert_snapshot_current(snapshot, operation="artifact statistics")
     emit(
         progress,
         "stats",
@@ -491,13 +505,17 @@ def _artifact_stats(
     write_result: DatasetWriteResult | None = None,
     registry=None,
 ) -> StatsReport:
-    from .inspection import inspect_dataset
+    from .inspection import _inspect_resolved_dataset
+    from .loaders import _assert_snapshot_current, _resolve_operation_snapshot
 
     # A content scan decodes (and, with verify=True, checksums) every shard, so verifying the
     # manifest again would double the work. Without a content scan, `verify` has to reach the
     # inspection or `--verify --no-content` would verify nothing at all.
-    inspection = inspect_dataset(
-        dataset, verify=verify and not content, registry=registry
+    snapshot = _resolve_operation_snapshot(dataset, None)
+    inspection = _inspect_resolved_dataset(
+        snapshot,
+        verify=verify and not content,
+        registry=registry,
     )
     sections: dict[str, Any] = {"artifact": inspection.to_dict()}
     warnings: list[dict] = []
@@ -516,6 +534,7 @@ def _artifact_stats(
             verify=verify,
             progress=progress,
             registry=registry,
+            _snapshot=snapshot,
         )
         sections["contents"] = contents
         warnings.extend(contents.get("warnings") or ())
@@ -541,12 +560,14 @@ def _artifact_stats(
             "omit it, or take stats from the pipeline, CurateResult, or hours "
             "DatasetWriteResult that owns the selection"
         )
-    return StatsReport(
+    report = StatsReport(
         stage="output",
         subject=str(dataset),
         sections=sections,
         warnings=warnings,
     )
+    _assert_snapshot_current(snapshot, operation="artifact statistics")
+    return report
 
 
 def _base_stats(

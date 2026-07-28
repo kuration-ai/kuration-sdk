@@ -253,7 +253,7 @@ retain the compatible reference implementation and appear as materialization war
 |---|---|---|
 | `.collect` | `(n=None)` | `curate()` — count-path selection → `CurateResult` |
 | `.review` | `(n=None, *, path=None, examples=10, hist_bins=10, **output_options)` | count selection review; hours selection writes to `path=` and reviews admission/budget decisions without rescoring |
-| `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, dry_run=False, inspect_sources=False)` | validate/estimate with `dry_run=True`, otherwise write through the ordinary `OutputSpec` path |
+| `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, force=False, dry_run=False, inspect_sources=False)` | validate/estimate with `dry_run=True`, otherwise write through the ordinary no-clobber `OutputSpec` path; `force=True` explicitly replaces an existing destination |
 | `.report` | `(**kw)` | feature pass only (no selection) → `dataset_report` |
 | `.stats` | `(**kwargs)` | `kuration.stats(pipeline, **kwargs)` — lifecycle statistics for the pipeline's current stage |
 | `.analyze` | `(name, parameters=None, *, mode=None, inputs=None, batch_size=None, analyzer=None, **options)` | a registered stateful analyzer: `run_stream_analyzer` over the tick stream, or `run_dataset_analyzer`'s `check_dataset` hook for an artifact-backed pipeline |
@@ -331,6 +331,11 @@ Selection, budget, and shard gates need selection or artifact evidence: run thos
   options win; strict mode raises on source errors and implicit categorical omission.
 - The count path rewrites its selection deterministically per run, so `resume=True` on it
   raises (hours path only).
+- Output destinations are protected by default. Pass `force=True` to replace an existing
+  committed or interrupted artifact; selection completes before the old commit is invalidated.
+- A destination-scoped writer lease prevents concurrent fluent, classic, or import publishers
+  from interleaving. Container dependencies and count-output memory minima are checked before
+  publication begins.
 
 `.review()` intentionally materializes the complete candidate pool so it can compare it with the
 selection. Run the output dry run first for a large corpus; use `preview()` when you only need a

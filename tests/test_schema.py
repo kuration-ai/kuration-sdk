@@ -70,6 +70,17 @@ def test_direct_constructors_validate_and_nested_mappings_are_immutable():
         schema.fields["mask"].bits["OFF"] = 2
 
 
+@pytest.mark.parametrize("name", [1, "", "with space", "with.dot"])
+def test_bit_names_must_be_string_dsl_identifiers(name):
+    with pytest.raises(ValueError, match="bit name"):
+        FieldSpec(
+            "mask",
+            "scalar",
+            semantics="bitmask",
+            bits={name: 1},
+        )
+
+
 def test_single_stream_fields_are_valid_unqualified_dsl_sources():
     from kuration.core.dsl import compile_metric
     from kuration.core.buffer import Tick, build_window

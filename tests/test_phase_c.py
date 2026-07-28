@@ -61,6 +61,35 @@ def _curate(strategy, target_size, **kw):
                   strategy=strategy, segmenter=Segmenter(4, 4), target_size=target_size, **kw)
 
 
+def test_curate_rejects_empty_sources():
+    strategy = _strategy(
+        {"selection": {"method": "top-k", "weights": {"am": 1.0}}})
+
+    with pytest.raises(ValueError, match="at least one source"):
+        curate(
+            schema=SCHEMA,
+            adapter=MemAdapter(SCHEMA, {}),
+            sources=[],
+            strategy=strategy,
+            segmenter=Segmenter(4, 4),
+            target_size=1,
+        )
+
+
+def test_score_sources_rejects_an_empty_generator():
+    from kuration.core.scoring import score_sources
+
+    with pytest.raises(ValueError, match="at least one source"):
+        score_sources(
+            schema=SCHEMA,
+            adapter=MemAdapter(SCHEMA, {}),
+            sources=iter(()),
+            define={},
+            registered=[],
+            segmenter=Segmenter(4, 4),
+        )
+
+
 def test_top_k_picks_highest():
     strat = _strategy({"selection": {"method": "top-k", "weights": {"am": 1.0}}})
     res = _curate(strat, target_size=6)

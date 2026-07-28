@@ -113,16 +113,74 @@ def _materialize_buffers(segments, schema, adapter) -> list:
         ticks = list(adapter.ticks(src))
         for i in idxs:
             s = segments[i]
+            if (not isinstance(s.start_idx, int) or isinstance(s.start_idx, bool)
+                    or not isinstance(s.end_idx, int) or isinstance(s.end_idx, bool)
+                    or s.start_idx < 0 or s.end_idx <= s.start_idx
+                    or s.end_idx > len(ticks)):
+                from .provenance import publishable_source_id
+                raise ValueError(
+                    f"source {publishable_source_id(src)!r} changed before scorer buffer "
+                    f"materialization: segment [{s.start_idx}, {s.end_idx}) is outside the "
+                    f"{len(ticks)} ticks available on the second read")
+            observed_range = (ticks[s.start_idx].time, ticks[s.end_idx - 1].time)
+            if observed_range != tuple(s.time_range):
+                from .provenance import publishable_source_id
+                raise ValueError(
+                    f"source {publishable_source_id(src)!r} changed before scorer buffer "
+                    f"materialization: segment [{s.start_idx}, {s.end_idx}) no longer has "
+                    "the timestamps recorded by the feature pass")
             bufs[i] = build_window(schema, ticks[s.start_idx:s.end_idx])
     return bufs
 
 
+def _materialize_buffers_with_policy(segments, schema, adapter, *, on_error, errors) -> list:
+    """Materialize per source so the ordinary skip policy remains an honest isolation unit."""
+    by_src: dict[Any, list] = defaultdict(list)
+    for segment in segments:
+        by_src[segment.source_id].append(segment)
+    retained_segments = []
+    retained_buffers = []
+    failures = 0
+    for source_segments in by_src.values():
+        source = source_segments[0].source_id
+        try:
+            source_buffers = _materialize_buffers(source_segments, schema, adapter)
+        except Exception as error:
+            if on_error == "raise":
+                raise
+            import sys
+            from .scoring import _redact_diagnostic
+
+            failures += 1
+            safe_source = _redact_diagnostic(source)
+            safe_error = _redact_diagnostic(repr(error))
+            print(f"  [skip] scorer source {safe_source!r}: {safe_error}", file=sys.stderr)
+            if errors is not None:
+                errors.append({
+                    "source": safe_source,
+                    "error": safe_error,
+                    "error_type": f"{type(error).__module__}.{type(error).__qualname__}",
+                    "message": _redact_diagnostic(str(error)),
+                    "phase": "scorers",
+                })
+            continue
+        retained_segments.extend(source_segments)
+        retained_buffers.extend(source_buffers)
+    if failures:
+        segments[:] = retained_segments
+    return retained_buffers
+
+
 def apply_scorers(entries: list[tuple], segments: list, *, schema, adapter, seed: int = 0,
-                  progress=None, registry=None) -> None:
+                  progress=None, registry=None, on_error="raise", errors=None) -> None:
     """Run each scorer over the whole pool and write its output into `seg.features[output]`.
-    Buffers are materialized once and shared across buffer-needing scorers."""
+    Buffers are materialized once and shared across buffer-needing scorers. ``on_error="skip"``
+    applies at source granularity to second-read buffer failures; scorer-model failures remain
+    whole-pool errors because they cannot be attributed to one source."""
     if not entries or not segments:
         return
+    if on_error not in {"raise", "skip"}:
+        raise ValueError("on_error must be 'raise' or 'skip'")
     from .progress import emit
     emit(progress, "scorers", "start", total=len(entries))
     buffers = None
@@ -131,7 +189,12 @@ def apply_scorers(entries: list[tuple], segments: list, *, schema, adapter, seed
         ctx = {"schema": schema, "seed": seed}
         if getattr(scorer, "needs_buffers", False):
             if buffers is None:
-                buffers = _materialize_buffers(segments, schema, adapter)
+                buffers = _materialize_buffers_with_policy(
+                    segments, schema, adapter, on_error=on_error, errors=errors)
+                if not segments:
+                    raise RuntimeError(
+                        "segment pool is EMPTY: every source failed scorer buffer "
+                        "materialization")
             ctx["buffers"] = buffers
         vals = np.asarray(scorer.score(segments, ctx), dtype=np.float64)
         if vals.shape != (len(segments),) or not np.isfinite(vals).all():

@@ -26,5 +26,5 @@ body:
     attributes:
       label: Compatibility
       options:
-        - label: I considered whether this belongs in an adapter, operator, transform, scorer, encoder, method, container, or preset.
+        - label: I considered whether this belongs in an adapter, analyzer, container, encoder, filter, method, metric, operator, preset, scorer, or transform.
           required: true

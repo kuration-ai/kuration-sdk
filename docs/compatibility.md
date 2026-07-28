@@ -5,14 +5,17 @@ pretending the API is already frozen.
 
 ## Supported surface
 
-The supported Python surface is the names exported by `kuration.__all__` and documented in
+The supported Python surface is the names exported by `kuration.__all__`, the documented
+`kuration.gameplay.__all__` facade, and the optional facades explicitly documented in
 `docs/api.md`. Supported operational surfaces are documented `kur-*` commands, the current job
 schema, component descriptors, and artifact formats. `kuration.__version__` exposes the installed
 distribution version.
 
 Implementation modules, underscore-prefixed names, undocumented object attributes, log wording,
-and physical execution-plan details are internal. Importing a documented type from its defining
-module remains useful, but the top-level import is the compatibility boundary.
+and undocumented physical execution-plan attributes are internal. Documented planning types
+exported from `kuration.__all__` are part of the supported surface; their private attributes are
+not. Importing a documented type from its defining module remains useful, but the top-level import
+is the compatibility boundary.
 
 ## Beta changes
 

@@ -38,7 +38,7 @@ the field's `semantics`, so they're safe without naming fields:
 |---|---|---|
 | `abs` | any | absolute value |
 | `delta` | any | consecutive difference (wraps if `angular`) |
-| `speed` | `position` vector | per-step displacement magnitude × `sample_hz`; clamped by `max_rate` |
+| `speed` | `position` vector + `sample_hz` | per-step displacement magnitude × `sample_hz`; clamped by `max_rate`; compilation fails when the sampling rate is absent |
 | `angle_delta` | `angular` | abs wrapped per-step change (summed over dims for a vector) |
 | `bit:<NAME>` | `bitmask` field | extract bit `NAME` → 0/1 stream |
 
@@ -55,6 +55,8 @@ Comparison filters take **scalar** (or categorical, `==` only) fields — a vect
 rejected at compile time (there is no `.<dim>` filter syntax). Filters also apply to spatial
 reduces, narrowing which entities count as present (e.g. squad dispersion of the living:
 `{"source": "player.pos", "reduce": "dispersion", "filter": "hp>0"}`).
+Numeric comparison thresholds must be finite: `nan`, positive infinity, and negative infinity
+are rejected while the metric is compiled.
 
 ## REDUCE
 

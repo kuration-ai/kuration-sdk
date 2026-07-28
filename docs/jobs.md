@@ -6,25 +6,25 @@ recognized key per job kind. The same information ships machine-readably as a JS
 and `kur-validate job.json` preflights any job in milliseconds — no data read.
 
 ```bash
-kur-infer      SOURCE [--out schema.json] [--time C] [--entity C] [--hz N] [--json]
+kur-infer      SOURCE [--out schema.json] [--force] [--time C] [--entity C] [--hz N] [--json]
 kur-init       SOURCE... --out job.json [--window N] [--dataset-out DIR] [--force]
 kur-preview    job.json | --infer SOURCE... [--max-sources N] [--json] [--html PATH]
 kur-validate   job.json [--check-sources] [--json-schema] [--print-schema]
 kur-explain    job.json [--json]           # budget, execution, extras, warnings + fixes
-kur-curate     job.json [--review] [--review-json PATH] [--review-html PATH]
-kur-experiment job.json [--out cmp.json]   # experiment job -> per-arm JS-vs-baseline
-kur-report     job.json [--out rep.json]   # report job -> metric distribution profile
+kur-curate     job.json [--force] [--review] [--review-json PATH] [--review-html PATH]
+kur-experiment job.json [--out cmp.json] [--force] # experiment -> per-arm JS-vs-baseline
+kur-report     job.json [--out rep.json] [--force] # report -> metric distribution profile
 kur-inspect    DATASET [--verify] [--json] [--html PATH] # artifact summary/integrity check
 kur-stats      DATASET [--verify] [--json] [--html PATH] # artifact distribution profile
 kur-diff       LEFT RIGHT [--verify] [--json] [--html PATH] # compare two artifacts
 kur-check      DATASET [--policy POLICY] [--analyzer NAME] [--json] # gates/analyzers
-kur-export     DATASET --out DIR [--format npz|npy|parquet] [--split S] [--modalities A,B]
-kur-import     SOURCE... --out DATASET [--adapter NAME] [--json] # detected adapter import
+kur-export     DATASET --out DIR [--force] [--format npz|npy|parquet] [--split S]
+kur-import     SOURCE... --out DATASET [--force] [--adapter NAME] [--json] # detected import
 kur-list       KIND [--json]                  # list one plural component kind
 kur-plugin-check [ENTRY-POINT|MODULE] [--json] # validate plugin loading and descriptors
 kur-describe   KIND NAME [--json]             # inspect one component contract
-kur-checkpoint list|verify|clear ROOT [--stage S] [--json] # stage checkpoint maintenance
-kur-migrate    JOB_OR_CONFIG [--out PATH]     # migrate a versioned JSON document
+kur-checkpoint list|verify|clear ROOT [--stage S] [--identity I] [--json] # checkpoint maintenance
+kur-migrate    JOB_OR_CONFIG [--out PATH] [--force] # migrate a versioned JSON document
 ```
 
 Every command is also reachable through the `kur` dispatcher — `kur curate job.json` is
@@ -42,8 +42,13 @@ direct APIs rather than job-spec or implicit pipeline stages; construct one with
 `get_analyzer()` and drive its documented update methods in Python. An analyzer that also
 implements the dataset-check hook can run directly on a written artifact with `kur-check`.
 
-Every CLI accepts `--debug`: failures normally print a one-line `error: ...` and exit 1;
-`--debug` re-raises for the full traceback.
+Standalone workflow CLIs normally accept `--debug`: failures print a one-line `error: ...` and
+exit 1, while `--debug` re-raises for the full traceback. Dispatcher and domain command groups
+document their own debugging options in `--help`.
+
+File-producing authoring commands refuse an existing output by default. Pass `--force` only when
+replacement is intentional; report, experiment, inference, initialization, migration, import,
+export, and curation commands still reject an output that overlaps one of their inputs.
 
 `kur-inspect`, `kur-stats`, `kur-diff`, `kur-check`, `kur-export`, `kur-checkpoint`, and
 `kur-plugin-check` are exceptions to the job-file model: they take artifact paths, checkpoint
@@ -87,7 +92,10 @@ report supports.
 Python, alongside an `export_index.json` carrying the manifest metadata (source, entity,
 split, `n_steps`) that bare arrays would lose. `--format npy` writes one file per shard and
 modality; `npz` and `parquet` write one file per shard. Pad rows are trimmed unless
-`--no-trim` is given.
+`--no-trim` is given. Every indexed payload has a SHA-256 and byte size. Payloads are staged
+under an owned generation namespace and `export_index.json` is committed last; `--force`
+atomically points the index at a new complete generation while leaving unrelated files alone.
+One destination lease prevents concurrent exporters from interleaving.
 
 ```bash
 kur-stats  out/curated --html stats.html
@@ -102,6 +110,9 @@ whether stale attempt files remain. `verify` re-checksums every committed data f
 2 on a mismatch — it reads the committed metadata rather than reconstructing the run's
 `CheckpointIdentity`, so it works from the checkpoint tree alone. `clear` deletes state and
 requires `--yes`; `--attempts-only` removes leftover attempts while keeping valid commits.
+`--identity` restricts an operation to one run-fingerprint namespace (`legacy` selects the
+pre-fingerprint layout). Clearing a stage that exists under multiple identities fails unless
+the identity is explicit.
 
 `kur-check` accepts `--policy`, `--analyzer`, or both. Analyzer construction parameters and
 dataset-driving options are separate JSON objects:
@@ -139,6 +150,14 @@ array becomes a modality and retains its per-row shape and dtype. A directory co
 episodes is searched recursively and each file becomes one logical source. Array files must
 share a leading row dimension and multiple files must have the same modality contract.
 
+Before schema or modality-contract validation, local files and directory stores are copied into
+private descriptor-pinned snapshots; later pathname or ancestor swaps cannot change the bytes
+published. Smart import therefore requires POSIX descriptor-relative open support; platforms
+without it fail before plugins or adapter detection rather than accepting an ancestry race.
+Generic fsspec reads cannot bind the download to the ETag/version returned by a separate metadata
+request, so remote import likewise fails closed rather than trusting an ABA-vulnerable
+metadata/read/metadata sequence. Download the exact immutable object generation locally first.
+
 Tabular adapters use the same conservative sampling, schema inference, time/entity detection,
 and canonical `Tick` conversion as `kuration.input()`. Numeric output is stored as float64 and
 categorical columns receive a deterministic integer vocabulary recorded in `config.json`.
@@ -148,9 +167,9 @@ Import never drops data silently — these cases fail loudly with a remedy inste
 HDF5/Zarr files whose datasets live inside nested groups (the top-level import would miss
 them; use an explicit configured adapter), schemas with `event_streams` (shards cannot carry
 events yet), `--time`/`--entity`/`--kinds` on array sources that have no columns to apply them
-to, remote directory sources that cannot be auto-detected (pass `--adapter` explicitly), and a
-destination whose previous import failed part-way (rerun with `--force` to clear it — this
-also removes the stale shards).
+to, generic remote files or prefixes that cannot be generation-pinned (download the exact
+immutable generation locally first), and a destination whose previous import failed part-way
+(rerun with `--force` to clear it — this also removes the stale shards).
 
 Registered plugin adapters participate by implementing
 `detect_source(uri) -> bool | confidence`. An adapter can additionally implement
@@ -227,6 +246,7 @@ stays clean; pass `--quiet` to suppress interactive progress explicitly.
 | `test_hours` | no (0) | test budget; sources split leakage-free |
 | `out` | yes | output directory — local path or cloud URL |
 | `resume` | no (false) | verify and reuse checksummed shards only when the complete run/source provenance fingerprint matches; rebuild missing or corrupt shards |
+| `force` | no (false) | explicitly replace a committed or interrupted destination; cannot be combined with `resume` (`kur-curate --force` is an equivalent one-run override) |
 | `encoder` | no | `{"name": registered_name, "params": {...}}` |
 | `span_steps` / `span_seconds` | no | declarative sub-track spans (mutually exclusive) |
 | `clip_aggregate` | no (`"max"`) | `max`, `min`, or `mean` |

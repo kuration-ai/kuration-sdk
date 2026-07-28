@@ -19,6 +19,24 @@ from typing import Iterable
 from .segment import Segment
 
 
+def _stable_value_order(values: Iterable) -> list:
+    """Return Python-equality-unique values in a deterministic mixed-type order.
+
+    A plain ``sorted(set(values))`` cannot compare values such as ``1`` and ``"1"``.
+    Stringifying first is also incorrect because Python considers ``1 == True`` while
+    distinguishing ``1`` from ``"1"``. Dict insertion performs the intended equality
+    comparisons; the type-qualified display key is used only to order representatives.
+    """
+    unique = dict.fromkeys(values)
+    return sorted(
+        unique,
+        key=lambda value: (
+            f"{type(value).__module__}.{type(value).__qualname__}",
+            repr(value),
+        ),
+    )
+
+
 def group_by_bin(segments: list[Segment]) -> dict[tuple, list[Segment]]:
     out: dict[tuple, list[Segment]] = defaultdict(list)
     for s in segments:
@@ -59,13 +77,17 @@ def enforce_tag_coverage(selected: list[Segment], all_segments: list[Segment], *
     """Meet tag floors by adding or swapping segments without exceeding the count budget."""
     tag_order = tuple(tag_vocab)
     selected = list(selected)
+    if min_tag_frac == 0:
+        return selected
     limit = max(target_size, len(selected))  # ``filter`` intentionally selects every match.
     selected_ids = set(id(s) for s in selected)
     counts: Counter = Counter()
     for s in selected:
         for t in s.tags:
             counts[t] += 1
-    floor = max(1, int(round(target_size * min_tag_frac)))
+    # ``min_tag_frac`` is a lower bound: a fractional required count must round upward.
+    # Python's round() would under-deliver at .5 boundaries (for example 5 * .5 -> 2).
+    floor = max(1, math.ceil(target_size * min_tag_frac))
     required_tags = set(tag_order)
     protected = {tag for tag in required_tags if counts[tag] == floor}
     unselected = [s for s in all_segments if id(s) not in selected_ids]
@@ -119,7 +141,7 @@ def enforce_group_cap(selected: list[Segment], *, max_group_overshoot: float) ->
     """Drop excess from any group exceeding `max_group_overshoot` x its fair share,
     cutting its most over-represented bins first. Segments with group=None are pooled
     under a single key, so the cap is a no-op when no groups are set."""
-    gkey = lambda s: s.group if s.group is not None else "\x00"
+    gkey = lambda s: s.group
     group_counts: Counter = Counter(gkey(s) for s in selected)
     if len(group_counts) <= 1:
         return selected

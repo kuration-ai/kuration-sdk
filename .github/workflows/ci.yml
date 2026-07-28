@@ -245,6 +245,23 @@ jobs:
       - run: python -m pip install -e '.[docs]'
       - run: python -m mkdocs build --strict
 
+  dependency-audit:
+    name: Minimum dependency vulnerability audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install pinned audit tool
+        run: >-
+          python -m pip install -c .github/constraints/release.txt pip-audit
+      - name: Audit the resolved minimum dependency graph
+        run: >-
+          python -m pip_audit -r .github/constraints/minimum.txt
+
   plugins:
     name: External plugin template
     runs-on: ubuntu-latest
@@ -276,7 +293,7 @@ jobs:
   build:
     name: Build and wheel smoke test
     needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs,
-            plugins]
+            dependency-audit, plugins]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -333,11 +350,18 @@ jobs:
           assert "aintropy/slam-motion-diversity" in \
               kuration.default_registry.names("operator")
           PY
-          for command in kur-curate kur-experiment kur-report kur-validate kur-list \
-                         kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check \
-                         kur-plugin-check kur-slam; do
+          while IFS= read -r command; do
             /tmp/kuration-wheel-smoke/bin/"$command" --help
-          done
+          done < <(
+            /tmp/kuration-wheel-smoke/bin/python - <<'PY'
+          from importlib.metadata import distribution
+
+          scripts = distribution("kuration-sdk").entry_points
+          for entry_point in sorted(scripts, key=lambda item: item.name):
+              if entry_point.group == "console_scripts":
+                  print(entry_point.name)
+          PY
+          )
       - name: Record distribution hashes
         run: sha256sum dist/* > SHA256SUMS
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -353,7 +377,7 @@ jobs:
     name: Required CI
     if: ${{ always() }}
     needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs,
-            plugins, build]
+            dependency-audit, plugins, build]
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs
@@ -364,10 +388,12 @@ jobs:
           PLATFORM_RESULT: ${{ needs.platform-smoke.result }}
           OPTIONAL_RESULT: ${{ needs.optional-integrations.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
+          DEPENDENCY_AUDIT_RESULT: ${{ needs.dependency-audit.result }}
           PLUGINS_RESULT: ${{ needs.plugins.result }}
           BUILD_RESULT: ${{ needs.build.result }}
         run: |
           for result in "$TEST_RESULT" "$MINIMUM_RESULT" "$CORE_RESULT" "$PLATFORM_RESULT" \
-                        "$OPTIONAL_RESULT" "$DOCS_RESULT" "$PLUGINS_RESULT" "$BUILD_RESULT"; do
+                        "$OPTIONAL_RESULT" "$DOCS_RESULT" "$DEPENDENCY_AUDIT_RESULT" \
+                        "$PLUGINS_RESULT" "$BUILD_RESULT"; do
             test "$result" = success || exit 1
           done

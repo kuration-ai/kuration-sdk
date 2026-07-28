@@ -290,6 +290,9 @@ def run_stream_analyzer(
     sources_analyzed = 0
     emit(progress, "analyze", "start", total=len(ordered_sources))
     for index, source in enumerate(ordered_sources, 1):
+        from .scoring import _redact_diagnostic
+
+        safe_source = _redact_diagnostic(source)
         try:
             segments_analyzed += _drive_stream_source(
                 analyzer, call, source, schema=schema, adapter=adapter, provider=provider,
@@ -299,20 +302,19 @@ def run_stream_analyzer(
                 raise
             import sys
 
-            from .scoring import _redact_diagnostic
-
-            print(f"  [skip] source {source!r}: {error!r}", file=sys.stderr)
-            errors.append({"source": _redact_diagnostic(source),
-                           "error": _redact_diagnostic(repr(error)),
+            safe_error = _redact_diagnostic(repr(error))
+            print(f"  [skip] source {safe_source!r}: {safe_error}", file=sys.stderr)
+            errors.append({"source": safe_source,
+                           "error": safe_error,
                            "error_type": type(error).__name__,
                            "message": _redact_diagnostic(str(error)),
                            "phase": "analyze"})
             emit(progress, "analyze", "advance", current=index,
-                 total=len(ordered_sources), source=source, status="skipped")
+                 total=len(ordered_sources), source=safe_source, status="skipped")
             continue
         sources_analyzed += 1
         emit(progress, "analyze", "advance", current=index, total=len(ordered_sources),
-             source=source, status="ok")
+             source=safe_source, status="ok")
     emit(progress, "analyze", "complete", current=len(ordered_sources),
          total=len(ordered_sources), detail=f"{segments_analyzed} segment(s)")
     if ordered_sources and not segments_analyzed:

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Mapping
 
+from ...core.provenance import publishable_source_id
 from ._paths import local_path
 from .adapter import input_slam
 from .export import _atomic_write_text
@@ -96,7 +97,7 @@ def curate_slam_gameplay(
     document = {
         "format": SELECTION_FORMAT,
         "version": SELECTION_VERSION,
-        "source_manifest": str(path.resolve()),
+        "source_manifest": publishable_source_id(path.resolve()),
         "window": window,
         "stride": stride,
         "selection": {

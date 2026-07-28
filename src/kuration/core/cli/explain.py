@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 
-from ._common import format_error, read_job
+from ._common import format_error, json_document, read_job
 
 
 def explain_job(job: dict) -> dict:
@@ -75,6 +74,7 @@ def explain_job(job: dict) -> dict:
                           "workers": job.get("workers", 1),
                           "streaming": job.get("streaming", False),
                           "resume": job.get("resume", False),
+                          "force": job.get("force", False),
                           "on_error": on_error},
             "optional_extras": sorted(extras), "warnings": warnings,
             "validation": dict(summary)}
@@ -104,6 +104,7 @@ def render_plan(plan: dict) -> str:
              f"output: {container}",
              f"execution: {execution['executor']}; workers={execution['workers']}; "
              f"streaming={execution['streaming']}; resume={execution['resume']}; "
+             f"force={execution['force']}; "
              f"errors={execution['on_error']}",
              f"optional extras: {extras_text}"]
     for warning in plan["warnings"]:
@@ -120,12 +121,14 @@ def main() -> None:
     args = ap.parse_args()
     try:
         plan = explain_job(read_job(args.job))
+        rendered = (json_document(plan, label="job explanation").rstrip()
+                    if args.json else render_plan(plan))
     except Exception as error:
         if args.debug:
             raise
         print(format_error(error), file=sys.stderr)
         raise SystemExit(1)
-    print(json.dumps(plan, indent=2) if args.json else render_plan(plan))
+    print(rendered)
 
 
 if __name__ == "__main__":

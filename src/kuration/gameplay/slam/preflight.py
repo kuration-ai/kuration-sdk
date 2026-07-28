@@ -217,7 +217,7 @@ def preflight_slam(
                 "video-runtime",
                 "fail",
                 "PyAV video decoding support is not installed",
-                "Install pip install 'kuration-sdk[slam]' or inject a provider.",
+                "Run pip install 'kuration-sdk[slam]' or inject a provider.",
             ))
 
     if will_run:

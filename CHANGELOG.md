@@ -5,6 +5,42 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+- Development builds now use the distinct `0.1.0rc5.dev0` identity instead of reusing the
+  prior `0.1.0rc4` candidate identity. `ARTIFACT_FORMAT_VERSION` is `1.2` for the corrected
+  bounded/materialized uniform-bin ordering, experiment-arm tag isolation, and zero
+  tag-coverage-floor semantics described below.
+- Raised the minimum versions of scikit-learn, PyArrow, protobuf, PyTorch/TorchVision, Ray,
+  tqdm, and Pillow past known-vulnerable historical floors; the minimum-dependency CI lane now
+  exercises those security-supported baselines.
+- Dataset publication is no-clobber by default across fluent, classic, job/CLI, and import
+  paths. `force=True` (or `kur-curate --force`) explicitly replaces a destination; `resume=True`
+  remains a separate, fingerprint-matched hours-run intent. Selection, source-contract,
+  container-dependency, and output-memory preflights finish before invalidating an old commit;
+  one writer lease prevents concurrent publishers from interleaving. Resume markers are now
+  commit-checksummed, non-resumable replacements remove stale markers, and bounded checkpoints
+  are namespaced by run fingerprint.
+- Fixed selection correctness across execution modes: bounded uniform-bin RNG order now matches
+  canonical materialized order, predicates remain hard exclusions through tag coverage,
+  fractional tag floors round up, experiment arms no longer inherit unrelated tag vocabularies,
+  `min_tag_frac=0` is a true no-op, and Python-equal group/tag values have the same meaning in
+  memory and SQLite-backed fills.
+- Persisted reuse now fails closed unless inputs have adapter, local-content, or immutable remote
+  version identities. Readers pin one exact commit generation for each operation, validate
+  manifest modality contracts against the committed output config, and reject local shard
+  symlinks and non-regular files. Source references and persisted skip diagnostics no longer
+  publish credentials or host-local paths.
+- Smart imports now validate and consume one private local source snapshot: POSIX ancestry is
+  traversed through no-follow directory descriptors, array/tick publication never reopens the
+  caller pathname, and directory stores are copied descriptor-relatively. Generic remote imports
+  fail closed because an unconditioned fsspec read cannot be bound to a separately reported
+  object generation; download the exact immutable generation locally first. Smart import also
+  fails before source inspection on platforms without POSIX descriptor-relative open support.
+- `on_error="skip"` now applies consistently to transform and scorer second-read failures as
+  well as the feature pass; failed sources are removed as a unit, mutable transform state is
+  reset before continuing, and total failure remains loud.
+- Tightened validation at the boundary: `speed` requires a declared sample rate, numeric filter
+  literals must be finite, bitmask values must be positive exact integers, and mixed-case
+  `.parquet` suffixes follow one detection/preflight/read path.
 - **Analyzers are fluent pipeline operations.** New `Pipeline.analyze(name, parameters=None, *,
   mode=None, inputs=None, batch_size=None, analyzer=None, **options)` terminal drives a
   registered stateful analyzer with no job spec and no CLI. On any `input(...)` pipeline it
@@ -140,8 +176,8 @@ change documented APIs with the notice and deprecation process in `docs/compatib
   `kuration.pipeline` now use `kuration.core.pipeline`; package-level imports such as
   `from kuration import Pipeline` remain available. Removed the former gameplay compatibility
   packages, and nested Depth Anything privately under gameplay SLAM.
-- Integrated a full native `kuration.gameplay.slam.SLAMPipeline` for optional
-  video/frame reconstruction,
+- Integrated the native `kuration.gameplay.slam.SLAMReconstructor` and `slam_pipeline()`
+  workflow for optional video/frame reconstruction,
   stable model/config provenance, resumable portable exports, trajectory quality and diversity
   curation, point-cloud reduction, preflight, and `kur-slam`. Precomputed manifests remain a
   lightweight NumPy-only SDK input; global model execution is intentionally separate from

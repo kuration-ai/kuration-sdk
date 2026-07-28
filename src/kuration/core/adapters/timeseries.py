@@ -20,6 +20,10 @@ from ..schema import SchemaSpec
 from .base import register_adapter
 
 
+def _is_parquet_source(source_uri: str) -> bool:
+    return str(source_uri).lower().endswith(".parquet")
+
+
 def _num_time(v):
     # Preserve integral timestamps exactly. Converting epoch nanoseconds to float collapses
     # adjacent values above 2**53 and can merge distinct timesteps.
@@ -49,7 +53,8 @@ class TimeseriesAdapter:
 
     @staticmethod
     def detect_source(source_uri: str) -> int:
-        return 80 if str(source_uri).lower().endswith((".csv", ".parquet")) else 0
+        source = str(source_uri)
+        return 80 if source.lower().endswith(".csv") or _is_parquet_source(source) else 0
 
     def __init__(self, schema: SchemaSpec, *, fields: dict,
                  time_column: Optional[str] = None, entity_column: Optional[str] = None,
@@ -166,7 +171,7 @@ class TimeseriesAdapter:
         Parquet file schema) and verify every mapped column exists — so a column typo fails
         at `kur-validate --check-sources` time, not after a full feature pass."""
         from ..io import local_copy, open_file
-        if source_uri.endswith(".parquet"):
+        if _is_parquet_source(source_uri):
             try:
                 import pyarrow.parquet as pq
             except ImportError as e:
@@ -195,7 +200,7 @@ class TimeseriesAdapter:
 
     def iter_ticks(self, source_uri: str):
         from ..io import local_copy, open_file
-        if source_uri.endswith(".parquet"):
+        if _is_parquet_source(source_uri):
             try:
                 import pyarrow.parquet as pq  # optional [parquet] extra
             except ImportError as e:

@@ -1,12 +1,16 @@
 """Disk-backed exact quantiles and stable top-k selection."""
+from contextlib import contextmanager
+import os
+import uuid
+
 import numpy as np
 import pytest
 
 import kuration.core.external as external_module
-from kuration import (Segment, SegmentBatch, external_quantile_edges, external_top_k,
-                       external_uniform_bins, external_weighted, iter_external_span_items,
-                       iter_external_hash_dedup, iter_external_top_k_priorities,
-                       iter_external_uniform_priorities,
+from kuration import (PartitionCommit, Segment, SegmentBatch, external_quantile_edges,
+                       external_top_k, external_uniform_bins, external_weighted,
+                       iter_external_span_items, iter_external_hash_dedup,
+                       iter_external_top_k_priorities, iter_external_uniform_priorities,
                        iter_external_weighted_priorities)
 from kuration.core.output.external_fill import external_fill_to_hours
 from kuration.core.output.fill import fill_to_hours
@@ -93,8 +97,9 @@ def test_external_top_k_materializes_each_selected_partition_once(tmp_path, monk
     assert [segment.start_idx for segment in selected] == [
         segments[index].start_idx for index in expected]
     full_reads = [path for path, columns in calls if columns is None]
-    assert sorted(full_reads) == sorted(paths)
-    assert all(full_reads.count(path) == 1 for path in paths)
+    assert len(full_reads) == len(paths)
+    assert len(set(full_reads)) == len(paths)
+    assert not set(full_reads) & set(paths)
 
 
 def test_external_reducers_reject_nonfinite_features(tmp_path):
@@ -161,8 +166,178 @@ def test_external_uniform_materializes_each_selected_partition_once(tmp_path, mo
     assert [(segment.start_idx, segment.bin) for segment in actual] == [
         (segment.start_idx, segment.bin) for segment in expected]
     full_reads = [path for path, columns in calls if columns is None]
-    assert sorted(full_reads) == sorted(paths)
-    assert all(full_reads.count(path) == 1 for path in paths)
+    assert len(full_reads) == len(paths)
+    assert len(set(full_reads)) == len(paths)
+    assert not set(full_reads) & set(paths)
+
+
+def test_external_reducer_keeps_validated_generation_after_path_swap(
+        tmp_path, monkeypatch):
+    original_path = tmp_path / "partition.arrow"
+    original = SegmentBatch.from_segments([
+        Segment("original", 0, 1, (0, 0), {"x": 9.0})
+    ])
+    metadata = original.write_ipc(str(original_path))
+    commit = PartitionCommit(
+        partition_id="source:a",
+        identity="a" * 64,
+        data_file=str(original_path),
+        rows=len(original),
+        sha256=str(metadata["sha256"]),
+        columns=original.column_names,
+        size_bytes=int(metadata["size_bytes"]),
+    )
+    replacement_path = tmp_path / "replacement.arrow"
+    SegmentBatch.from_segments([
+        Segment("replacement", 0, 1, (0, 0), {"x": -1.0})
+    ]).write_ipc(str(replacement_path))
+    real_pins = external_module.pinned_partition_files
+
+    @contextmanager
+    def swap_after_pin(partitions):
+        with real_pins(partitions) as paths:
+            os.replace(replacement_path, original_path)
+            yield paths
+
+    monkeypatch.setattr(external_module, "pinned_partition_files", swap_after_pin)
+
+    selected = external_top_k([commit], weights={"x": 1.0}, target_size=1)
+
+    assert [segment.source_id for segment in selected] == ["original"]
+
+
+def test_external_bare_path_pins_intermediate_ancestor_before_swap(
+        tmp_path, monkeypatch):
+    from kuration.core import io as io_module
+
+    if not io_module._HAS_POSIX_DESCRIPTOR_OPEN:
+        pytest.skip("descriptor-relative no-follow reads are unavailable")
+    trusted = tmp_path / "trusted"
+    attacker = tmp_path / "attacker"
+    trusted.mkdir()
+    attacker.mkdir()
+    original_path = trusted / "partition.arrow"
+    SegmentBatch.from_segments([
+        Segment("original", 0, 1, (0, 0), {"x": 9.0})
+    ]).write_ipc(str(original_path))
+    SegmentBatch.from_segments([
+        Segment("redirected", 0, 1, (0, 0), {"x": -1.0})
+    ]).write_ipc(str(attacker / "partition.arrow"))
+    probe = tmp_path / "symlink-probe"
+    try:
+        probe.symlink_to(attacker, target_is_directory=True)
+        probe.unlink()
+    except OSError:
+        pytest.skip("symlinks are unavailable")
+
+    saved = tmp_path / "trusted-before-swap"
+    real_open = io_module.os.open
+    swapped = False
+
+    def swap_ancestor():
+        nonlocal swapped
+        trusted.rename(saved)
+        trusted.symlink_to(attacker, target_is_directory=True)
+        swapped = True
+
+    def open_then_swap(path, flags, mode=0o777, *, dir_fd=None):
+        if not swapped and path == "trusted" and dir_fd is not None:
+            descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+            swap_ancestor()
+            return descriptor
+        # This branch makes the regression fail under a leaf-only full-path open.
+        if not swapped and str(path) == str(original_path) and dir_fd is None:
+            swap_ancestor()
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(io_module.os, "open", open_then_swap)
+
+    selected = external_top_k(
+        [str(original_path)], weights={"x": 1.0}, target_size=1)
+
+    assert swapped
+    assert [segment.source_id for segment in selected] == ["original"]
+
+
+def test_external_non_posix_fallback_requires_checksum_bound_commit(
+        tmp_path, monkeypatch):
+    from kuration.core import io as io_module
+
+    path = tmp_path / "partition.arrow"
+    original = SegmentBatch.from_segments([
+        Segment("original", 0, 1, (0, 0), {"x": 9.0})
+    ])
+    metadata = original.write_ipc(str(path))
+    commit = PartitionCommit(
+        partition_id="source:a",
+        identity="a" * 64,
+        data_file=str(path),
+        rows=len(original),
+        sha256=str(metadata["sha256"]),
+        columns=original.column_names,
+        size_bytes=int(metadata["size_bytes"]),
+    )
+    monkeypatch.setattr(io_module, "_HAS_POSIX_DESCRIPTOR_OPEN", False)
+
+    with pytest.raises(ValueError, match="checksum-bound PartitionCommit"):
+        external_top_k([str(path)], weights={"x": 1.0}, target_size=1)
+
+    selected = external_top_k([commit], weights={"x": 1.0}, target_size=1)
+    assert [segment.source_id for segment in selected] == ["original"]
+
+
+def test_external_reducer_rejects_changed_commit_and_local_symlink(tmp_path):
+    original_path = tmp_path / "partition.arrow"
+    original = SegmentBatch.from_segments([
+        Segment("original", 0, 1, (0, 0), {"x": 9.0})
+    ])
+    metadata = original.write_ipc(str(original_path))
+    commit = PartitionCommit(
+        partition_id="source:a",
+        identity="a" * 64,
+        data_file=str(original_path),
+        rows=len(original),
+        sha256=str(metadata["sha256"]),
+        columns=original.column_names,
+        size_bytes=int(metadata["size_bytes"]),
+    )
+    replacement_path = tmp_path / "replacement.arrow"
+    SegmentBatch.from_segments([
+        Segment("replacement", 0, 1, (0, 0), {"x": -1.0})
+    ]).write_ipc(str(replacement_path))
+    os.replace(replacement_path, original_path)
+
+    with pytest.raises(ValueError, match="integrity"):
+        external_top_k([commit], weights={"x": 1.0}, target_size=1)
+
+    target = tmp_path / "target.arrow"
+    os.replace(original_path, target)
+    original_path.symlink_to(target)
+    with pytest.raises(ValueError, match="symlink|regular file"):
+        external_quantile_edges([str(original_path)], "x", 2)
+
+
+def test_external_reducer_preserves_remote_partition_commit_behavior():
+    remote_path = f"memory://external-snapshot-{uuid.uuid4().hex}/partition.arrow"
+    original = SegmentBatch.from_segments([
+        Segment("remote", 0, 1, (0, 0), {"x": 3.0})
+    ])
+    metadata = original.write_ipc(remote_path)
+    commit = PartitionCommit(
+        partition_id="source:remote",
+        identity="a" * 64,
+        data_file=remote_path,
+        rows=len(original),
+        sha256=str(metadata["sha256"]),
+        columns=original.column_names,
+        size_bytes=int(metadata["size_bytes"]),
+    )
+
+    selected = external_top_k([commit], weights={"x": 1.0}, target_size=1)
+
+    assert [segment.source_id for segment in selected] == ["remote"]
 
 
 def test_external_uniform_priorities_match_hours_reference_exactly(tmp_path):

@@ -8,10 +8,10 @@ strategy(inline/path/name), output(OutputSpec), train_hours, test_hours?, out, s
 from __future__ import annotations
 
 import argparse
-import json
 
 from ..output import write_dataset
-from ._common import cli_progress_for, cli_run, read_job
+from ._common import (cli_progress_for, cli_run, guard_file_output, json_document,
+                      read_job)
 from .job import resolve_job
 
 
@@ -20,6 +20,8 @@ def main() -> None:
     ap.add_argument("job", help="Path to the job JSON.")
     ap.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
     ap.add_argument("--quiet", action="store_true", help="Suppress interactive progress output.")
+    ap.add_argument("--force", action="store_true",
+                    help="Replace an existing committed or interrupted output artifact.")
     ap.add_argument("--review", action="store_true",
                     help="Explain the hours-budget admission after writing (no rescoring).")
     ap.add_argument("--review-html", metavar="PATH",
@@ -30,13 +32,61 @@ def main() -> None:
     cli_run(lambda: _run(args), debug=args.debug)
 
 
+def _guard_review_outputs(args, *, protected_inputs=()) -> None:
+    """Protect every optional review file before the dataset writer can mutate anything."""
+    outputs = [
+        (args.review_html, "review HTML output"),
+        (args.review_json, "review JSON output"),
+    ]
+    for index, (path, label) in enumerate(outputs):
+        if path:
+            guard_file_output(
+                path,
+                force=None,
+                protected_inputs=(
+                    *protected_inputs,
+                    *(other for other_index, (other, _other_label) in enumerate(outputs)
+                      if other and other_index != index),
+                ),
+                label=label,
+            )
+
+
 def _run(args) -> None:
+    _guard_review_outputs(args, protected_inputs=(args.job,))
     job = read_job(args.job)
+    job_sources = job.get("sources")
+    job_sources = job_sources if isinstance(job_sources, (list, tuple)) else ()
+    raw_sources = tuple(
+        source for source in job_sources if isinstance(source, str)
+    )
+    referenced = tuple(
+        value for value in (job.get("schema"), job.get("strategy"))
+        if isinstance(value, str)
+    )
+    mutable_trees = tuple(
+        value for value in (
+            job.get("out"), job.get("checkpoint_dir"), job.get("spill_dir")
+        )
+        if isinstance(value, str)
+    )
+    _guard_review_outputs(
+        args,
+        protected_inputs=(args.job, *raw_sources, *referenced, *mutable_trees),
+    )
+    if args.force:
+        job = {**job, "force": True}
     resolved = resolve_job(job)
     if resolved.kind != "curate":
         raise ValueError(f"kur-curate requires a curate job, got {resolved.kind!r}")
     if resolved.sources is None or resolved.strategy is None:
         raise RuntimeError("resolved curate job is missing its sources or strategy")
+    _guard_review_outputs(
+        args,
+        protected_inputs=(
+            args.job, *resolved.sources, *referenced, *mutable_trees,
+        ),
+    )
 
     res = write_dataset(job["out"], schema=resolved.schema, adapter=resolved.adapter,
                         sources=resolved.sources, strategy=resolved.strategy,
@@ -45,6 +95,7 @@ def _run(args) -> None:
                         train_hours=job["train_hours"], test_hours=job.get("test_hours", 0.0),
                         seed=job.get("seed", 0), workers=job.get("workers", 1),
                         on_error=resolved.on_error, resume=job.get("resume", False),
+                        force=job.get("force", False),
                         streaming=job.get("streaming", False),
                         span_steps=job.get("span_steps"), span_seconds=job.get("span_seconds"),
                         clip_aggregate=job.get("clip_aggregate", "max"),
@@ -84,7 +135,10 @@ def _run(args) -> None:
                               title="kuration hours selection review")
         if args.review_json:
             from ..io import write_text
-            write_text(args.review_json, json.dumps(review.to_dict(), indent=2) + "\n")
+            write_text(
+                args.review_json,
+                json_document(review.to_dict(), label="hours selection review"),
+            )
         if args.review:
             print(review.render())
 

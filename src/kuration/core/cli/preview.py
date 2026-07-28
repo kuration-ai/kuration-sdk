@@ -11,15 +11,34 @@ between a job that parses and a run that takes an hour.
 from __future__ import annotations
 
 import argparse
-import json
 
-from ._common import cli_run, parse_mapping_option, read_job
+from ._common import (cli_run, guard_file_output, json_document, parse_mapping_option,
+                      read_job)
 
 
-def _job_subject(path: str):
+def _job_subject(path: str, *, html_output: str | None = None):
     """Resolve a job spec into the (schema, adapter, sources) preview needs."""
     from .job import resolve_job
-    resolved = resolve_job(read_job(path))
+    job = read_job(path)
+    if html_output:
+        raw_sources = job.get("sources")
+        raw_sources = raw_sources if isinstance(raw_sources, (list, tuple)) else ()
+        referenced = [
+            value for value in (job.get("schema"), job.get("strategy"))
+            if isinstance(value, str)
+        ]
+        guard_file_output(
+            html_output,
+            force=None,
+            protected_inputs=(
+                path,
+                *(source for source in raw_sources
+                  if isinstance(source, str)),
+                *referenced,
+            ),
+            label="preview HTML output",
+        )
+    resolved = resolve_job(job)
     if resolved.sources is None:
         raise ValueError(
             f"job {path!r} resolves no explicit sources and its adapter lists none; "
@@ -64,6 +83,13 @@ def main() -> None:
 
     def body():
         infer_only = ("--time", "--entity", "--hz", "--kinds")
+        if args.html:
+            guard_file_output(
+                args.html,
+                force=None,
+                protected_inputs=tuple(args.target),
+                label="preview HTML output",
+            )
         if not args.infer:
             if len(args.target) != 1:
                 raise ValueError("job mode takes exactly one job spec; pass --infer to "
@@ -74,12 +100,20 @@ def main() -> None:
             if supplied:
                 raise ValueError(f"{', '.join(supplied)} apply to --infer mode only; a job "
                                  "spec carries its own schema and adapter")
-            schema, adapter, sources = _job_subject(args.target[0])
+            schema, adapter, sources = _job_subject(
+                args.target[0], html_output=args.html)
         else:
             kinds = parse_mapping_option(args.kinds, label="--kinds")
             schema, adapter, sources = _inferred_subject(
                 args.target, time=args.time, entity=args.entity, hz=args.hz, kinds=kinds)
 
+        if args.html:
+            guard_file_output(
+                args.html,
+                force=None,
+                protected_inputs=tuple(sources),
+                label="preview HTML output",
+            )
         from ..review import preview_dataset
         preview = preview_dataset(schema=schema, adapter=adapter, sources=sources,
                                   max_sources=args.max_sources,
@@ -88,7 +122,9 @@ def main() -> None:
         if args.html:
             from ..html_report import write_html_report
             write_html_report(args.html, preview, title="kuration dataset preview")
-        print(json.dumps(preview.to_dict(), indent=2) if args.json else preview.render())
+        print(json_document(
+            preview.to_dict(), label="dataset preview"
+        ).rstrip() if args.json else preview.render())
 
     cli_run(body, debug=args.debug)
 

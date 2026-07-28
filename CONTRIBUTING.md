@@ -74,8 +74,10 @@ Use the narrowest supported seam for the behavior:
 |---|---|
 | Reuse a named sequence of fluent calls | compositional operator |
 | Read a new source format | input adapter |
+| Compute bounded model/device features over batches | batch transform |
 | Compute one scalar from one segment window | registered metric |
 | Score segments using a whole pool, model, or reference set | segment scorer |
+| Accumulate state across a stream or audit a written artifact | analyzer |
 | Derive an output tensor or encoded value | output encoder |
 | Change how segments receive selection priority | selection method |
 | Remove segments before selection | pre-pass filter |
@@ -117,7 +119,7 @@ def balance_signal(pipeline, *, field, bins=8):
     )
 
 
-pipeline = pipeline.apply("acme/balance-signal", field="signal", bins=6)
+pipeline = pipeline.balance_signal(field="signal", bins=6)
 ```
 
 The handler must return a pipeline derived from its argument and add at least one ordinary
@@ -403,6 +405,8 @@ Keep pull requests focused and describe:
 
 - the problem and intended behavior;
 - the compatibility or artifact-format impact;
+- the extension kind affected (adapter, analyzer, container, encoder, filter, method, metric,
+  operator, preset, scorer, or transform);
 - tests and examples run;
 - optional dependencies or compute implications;
 - documentation updated.

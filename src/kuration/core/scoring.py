@@ -16,13 +16,14 @@ loudly.
 """
 from __future__ import annotations
 
+from itertools import chain
 import multiprocessing as mp
 from collections import deque
 from pathlib import Path
 import re
 import sys
 import traceback
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any
 
@@ -30,6 +31,16 @@ from .features import FeatureEngine
 
 
 _URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"<>]+")
+_QUOTED_ABSOLUTE_PATH = re.compile(
+    r"(?P<quote>['\"])(?P<path>(?:[A-Za-z]:[\\/]|\\\\|/)[^'\"]+)(?P=quote)"
+)
+_WINDOWS_PATH = re.compile(r"(?<![A-Za-z0-9_])(?:[A-Za-z]:[\\/]|\\\\)[^\s'\"<>]+")
+_POSIX_PATH = re.compile(r"(?<![A-Za-z0-9_:])/[^\s'\"<>]+")
+
+
+def _publish_diagnostic_reference(value: str) -> str:
+    from .provenance import publishable_source_id
+    return f"<source:{publishable_source_id(value)}>"
 
 
 def _redact_diagnostic(value):
@@ -42,15 +53,36 @@ def _redact_diagnostic(value):
     def clean(match):
         raw = match.group(0)
         try:
-            parts = urlsplit(raw)
-            host = parts.hostname or ""
-            if parts.port is not None:
-                host += f":{parts.port}"
-            return urlunsplit((parts.scheme, host, parts.path, "", ""))
+            urlsplit(raw)
+            return _publish_diagnostic_reference(raw)
         except (TypeError, ValueError):
             return "<redacted-url>"
 
-    return _URL.sub(clean, text)
+    text = _URL.sub(clean, text)
+
+    def clean_quoted_path(match):
+        quote = match.group("quote")
+        return f"{quote}{_publish_diagnostic_reference(match.group('path'))}{quote}"
+
+    text = _QUOTED_ABSOLUTE_PATH.sub(clean_quoted_path, text)
+    text = _WINDOWS_PATH.sub(
+        lambda match: _publish_diagnostic_reference(match.group(0)), text)
+    return _POSIX_PATH.sub(
+        lambda match: _publish_diagnostic_reference(match.group(0)), text)
+
+
+def _cached_group_callback(group_of):
+    """Wrap ``group_of`` so each source's successful value is computed once per terminal run."""
+    values: dict[Any, Any] = {}
+    if group_of is None:
+        return None
+
+    def cached(source):
+        if source not in values:
+            values[source] = group_of(source)
+        return values[source]
+
+    return cached
 
 
 def _entities_in_order(ticks) -> list:
@@ -205,6 +237,18 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
         raise ValueError("streaming must be true or false")
     if executor not in {"local", "ray"}:
         raise ValueError("executor must be 'local' or 'ray'")
+    try:
+        source_total = len(sources)
+    except TypeError:
+        source_iterator = iter(sources)
+        try:
+            first_source = next(source_iterator)
+        except StopIteration as error:
+            raise ValueError("score_sources needs at least one source") from error
+        sources = chain((first_source,), source_iterator)
+    else:
+        if source_total == 0:
+            raise ValueError("score_sources needs at least one source")
     from .registry import default_registry
     registry = registry or default_registry
     _preflight_adapter_inputs(schema, adapter, define, tags_spec, required_fields)
@@ -324,10 +368,12 @@ def score_sources(*, schema, adapter, sources, define, registered, segmenter,
                     f"{payload.get('phase', 'scoring')} source {src!r} failed with "
                     f"{payload['type']}: {payload['message']}\n{payload['traceback']}"
                 )
-            print(f"  [skip] source {src!r}: {payload['repr']}", file=sys.stderr)
+            safe_source = _redact_diagnostic(src)
+            safe_error = _redact_diagnostic(payload["repr"])
+            print(f"  [skip] source {safe_source!r}: {safe_error}", file=sys.stderr)
             errors.append({
-                "source": _redact_diagnostic(src) if isinstance(src, str) else src,
-                "error": _redact_diagnostic(payload["repr"]),
+                "source": safe_source if isinstance(src, str) else src,
+                "error": safe_error,
                 "error_type": payload["type"],
                 "message": _redact_diagnostic(payload["message"]),
                 "phase": payload.get("phase", "scoring"),

@@ -17,11 +17,10 @@ autocomplete); `--json-schema` additionally validates the job against it (needs 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
-from ._common import format_error, read_job
+from ._common import format_error, json_document, parse_json, read_job
 from .job import job_kind as job_kind, resolve_job
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "job.schema.json"
@@ -64,7 +63,10 @@ def _json_schema_check(job: dict) -> None:
     except ImportError as e:
         raise ImportError("--json-schema needs the optional extra: "
                           "pip install 'kuration-sdk[cli]'  (or: pip install jsonschema)") from e
-    jsonschema.validate(job, json.loads(SCHEMA_PATH.read_text()))
+    jsonschema.validate(
+        job,
+        parse_json(SCHEMA_PATH.read_text(), label="shipped job JSON Schema"),
+    )
 
 
 def main() -> None:
@@ -82,7 +84,8 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.print_schema:
-        print(SCHEMA_PATH.read_text())
+        schema = parse_json(SCHEMA_PATH.read_text(), label="shipped job JSON Schema")
+        print(json_document(schema, label="shipped job JSON Schema").rstrip())
         return
     if not args.job:
         ap.error("a job path is required (or use --print-schema)")

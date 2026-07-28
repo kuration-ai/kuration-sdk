@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 
 from .binning import bin_segments
+from .results import ExperimentResult
 from .schema import SchemaSpec
 from .scoring import score_sources
 from .strategy import Strategy, _feature_value, select
@@ -57,7 +58,8 @@ def _js(p: np.ndarray, q: np.ndarray) -> float:
 def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], segmenter,
                    target_size: int, seed: int = 0, baseline: str = None,
                    group_of=None, tags_of=None, workers: int = 1, on_error: str = "skip",
-                   streaming: bool = False, progress=None, executor: str = "local") -> dict:
+                   streaming: bool = False, progress=None,
+                   executor: str = "local") -> ExperimentResult:
     """Score a shared source pool once and compare selections from multiple strategy arms.
 
     Returns an ``ExperimentResult`` containing ``baseline``, ``n_total_segments``, ``metrics``,
@@ -154,14 +156,16 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
     }
     scorer_outputs = set(union_scorers)
     transform_outputs = set(transform_by_output)
-    registered = [r for r in referenced
-                  if r not in union and r not in scorer_outputs and r not in transform_outputs]
+    registered = sorted(
+        r for r in referenced
+        if r not in union and r not in scorer_outputs and r not in transform_outputs
+    )
     # Tags are derived once over the union of every arm's tag sources.
     tag_froms = sorted({s for arm in arms for s in ((arm.strategy.tags or {}).get("from") or [])})
     union_tags = {"from": tag_froms} if tag_froms else None
 
     # Score once over the union (parallel); each arm then bins + selects on the shared pool.
-    all_segments, _, _ = score_sources(
+    all_segments, errors, _ = score_sources(
         schema=schema, adapter=adapter, sources=sources, define=union, registered=registered,
         segmenter=segmenter, tags_spec=union_tags, group_of=group_of, tags_of=tags_of,
         workers=workers, on_error=on_error, streaming=streaming, progress=progress,
@@ -172,15 +176,16 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
 
     if union_transforms:
         from .transforms import apply_transforms
-        apply_transforms(union_transforms, all_segments, adapter=adapter,
-                         registry=registry, progress=progress)
+        all_segments = apply_transforms(
+            union_transforms, all_segments, adapter=adapter,
+            registry=registry, progress=progress, on_error=on_error, errors=errors)
 
     if union_scorers:
         from .scorers import apply_scorers
         apply_scorers(list(union_scorers.values()), all_segments, schema=schema, adapter=adapter,
-                      seed=seed, progress=progress, registry=registry)
+                      seed=seed, progress=progress, registry=registry,
+                      on_error=on_error, errors=errors)
 
-    tag_vocab = sorted({t for s in all_segments for t in s.tags}, key=str)
     selected: dict = {}
     from .progress import emit
     emit(progress, "selection", "start", total=len(arms))
@@ -189,9 +194,21 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
         if arm.strategy.filters:
             from .methods import apply_filters
             pool = apply_filters(all_segments, arm.strategy, seed=seed, workers=workers)
+        pool_tag_vocab = sorted({tag for segment in pool for tag in segment.tags}, key=str)
+        if tags_of is not None:
+            # The callback replaces declarative tags during scoring, so its vocabulary is the
+            # only meaningful one for this arm's filtered pool.
+            arm_tag_vocab = pool_tag_vocab
+        else:
+            tag_sources = tuple((arm.strategy.tags or {}).get("from") or ())
+            prefixes = tuple(f"{source}:" for source in tag_sources)
+            arm_tag_vocab = [
+                tag for tag in pool_tag_vocab
+                if isinstance(tag, str) and tag.startswith(prefixes)
+            ] if prefixes else []
         bin_segments(pool, arm.strategy.axes)                    # sequential; bin overwritten per arm
         selected[arm.name] = select(pool, arm.strategy, target_size=target_size,
-                                    tag_vocab=tag_vocab, seed=seed, workers=workers)
+                                    tag_vocab=arm_tag_vocab, seed=seed, workers=workers)
         emit(progress, "selection", "advance", current=len(selected), total=len(arms),
              source=arm.name, status="ok")
     emit(progress, "selection", "complete", current=len(arms), total=len(arms),
@@ -225,6 +242,5 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
             per_metric[m] = entry
         arms_out[name] = {"n_selected": len(segs), "metrics": per_metric}
 
-    from .results import ExperimentResult
     return ExperimentResult(baseline=base, n_total_segments=len(all_segments),
                             metrics=metrics, arms=arms_out)

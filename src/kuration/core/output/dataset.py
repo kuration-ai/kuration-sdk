@@ -15,20 +15,32 @@ from typing import Any, Callable, Iterable, Optional
 from ..adapters.base import InputAdapter
 from ..binning import bin_segments
 from ..manifest import build_config, write_config
+from ..results import DatasetWriteResult
 from ..schema import SchemaSpec
 from ..scoring import score_sources
 from ..segment import Segmenter
 from ..strategy import Strategy, segment_priorities
 from .base import OutputEncoder, PassthroughEncoder
 from .external_fill import external_fill_to_hours
-from .shardwriter import write_track
+from .shardwriter import entity_id_token, write_track
 from .spec import OutputSpec
 from .track import Track, tracks_from_ticks
 from ..versioning import ARTIFACT_FORMAT_VERSION
 
 
-def _check_resume_run(out_dir: str, signature: dict, resume: bool) -> None:
-    """Pin the complete effective run because resume skips existing files by name."""
+def _admitted_order_key(item):
+    source_id, entity_id, span_index = item
+    return str(source_id), entity_id_token(entity_id), span_index
+
+
+def _check_resume_run(out_dir: str, signature: dict, resume: bool, *,
+                      publish: bool = True) -> None:
+    """Validate resume identity and optionally publish the run marker.
+
+    Writers use ``publish=False`` before selection so a failed replacement cannot mutate a
+    committed artifact. The marker is published only after ``begin_dataset`` establishes the
+    write boundary.
+    """
     from ..io import exists, read_text, write_text
     marker = f"{out_dir}/.kuration_output_spec.json"
     if resume and exists(marker):
@@ -49,7 +61,7 @@ def _check_resume_run(out_dir: str, signature: dict, resume: bool) -> None:
                 f"resume=True but {out_dir!r} was started with different inputs or run "
                 f"configuration ({old_fp[:12]} != {signature['fingerprint'][:12]}); use a "
                 f"fresh out_dir or restore the original job")
-    if not (resume and exists(marker)):
+    if publish and not (resume and exists(marker)):
         write_text(marker, json.dumps({"artifact_format_version": ARTIFACT_FORMAT_VERSION,
                                        "run_fingerprint": signature["fingerprint"],
                                        "output": signature["payload"]["output"]}, indent=2))
@@ -101,9 +113,11 @@ def _registered_features(strategy, transforms):
         for call in transforms for token in call["inputs"]
         if token.startswith("feature:")
     }
-    return [name for name in strategy.referenced_metrics() | transform_inputs
-            if name not in strategy.define and name not in strategy.scorer_outputs()
-            and name not in transform_outputs]
+    return sorted(
+        name for name in strategy.referenced_metrics() | transform_inputs
+        if name not in strategy.define and name not in strategy.scorer_outputs()
+        and name not in transform_outputs
+    )
 
 
 def _minimum_output_working_bytes(spec: OutputSpec, span_len: int | None) -> int:
@@ -139,12 +153,15 @@ def _legacy_hours_selection(*, out_dir, schema, adapter, sources, strategy, segm
         registry=registry or strategy.registry)
     if transforms:
         from ..transforms import apply_transforms
-        apply_transforms(transforms, all_segments, adapter=adapter,
-                         registry=registry or strategy.registry, progress=progress)
+        all_segments = apply_transforms(
+            transforms, all_segments, adapter=adapter,
+            registry=registry or strategy.registry, progress=progress,
+            on_error=on_error, errors=errors)
     if strategy.scorers:
         from ..scorers import apply_scorers
         apply_scorers(strategy.scorers, all_segments, schema=schema, adapter=adapter, seed=seed,
-                      progress=progress, registry=strategy.registry)
+                      progress=progress, registry=strategy.registry,
+                      on_error=on_error, errors=errors)
     from ..progress import emit
     emit(progress, "selection", "start", total=len(all_segments))
     pool = all_segments
@@ -186,7 +203,12 @@ def _bounded_hours_selection(*, out_dir, signature, schema, adapter, sources, st
                              train_hours, test_hours, batch_size, checkpoint_dir, spill_dir,
                              max_in_flight, memory_budget):
     from ..bounded import checkpoint_feature_stage, resolve_bounded_memory_limits
-    from ..checkpoints import CheckpointIdentity, StageCheckpoint, canonical_hash
+    from ..checkpoints import (
+        CheckpointIdentity,
+        StageCheckpoint,
+        artifact_checkpoint_summary,
+        canonical_hash,
+    )
     from ..external import (iter_external_top_k_priorities,
                             iter_external_uniform_priorities,
                             iter_external_weighted_priorities)
@@ -194,7 +216,7 @@ def _bounded_hours_selection(*, out_dir, signature, schema, adapter, sources, st
     from .external_fill import external_fill_to_hours
 
     spill_dir = spill_dir or (None if is_remote(out_dir) else f"{out_dir}/.kuration/spill")
-    checkpoint_dir = checkpoint_dir or f"{out_dir}/.kuration/checkpoints"
+    checkpoint_root = checkpoint_dir or f"{out_dir}/.kuration/checkpoints"
     limits = resolve_bounded_memory_limits(
         schema=schema, segmenter=segmenter, memory_budget=memory_budget,
         batch_size=batch_size, max_in_flight=max_in_flight, transforms=transforms)
@@ -214,6 +236,11 @@ def _bounded_hours_selection(*, out_dir, signature, schema, adapter, sources, st
             {"id": "stage002", "mode": "pipeline_parallel", "operators": ["output"],
              "checkpoint": "partition-reusable"}],
         "spill_path": spill_dir}
+    artifact_physical = {
+        **physical,
+        "spill_path": None,
+        "spill_configured": spill_dir is not None,
+    }
     active_registry = registry or strategy.registry
     components = []
     if active_registry is not None:
@@ -225,11 +252,12 @@ def _bounded_hours_selection(*, out_dir, signature, schema, adapter, sources, st
                 pass
     identity = CheckpointIdentity(
         logical_plan_hash=canonical_hash(signature["payload"]),
-        physical_plan_hash=canonical_hash(physical),
+        physical_plan_hash=canonical_hash(artifact_physical),
         input_fingerprints=tuple(signature["payload"].get("sources", ())),
         schema=schema.to_dict(), components=tuple(components),
         parameters={"seed": signature["payload"]["seed"]})
-    checkpoint = StageCheckpoint(checkpoint_dir, "stage000", identity)
+    checkpoint = StageCheckpoint(
+        f"{checkpoint_root.rstrip('/')}/{identity.fingerprint}", "stage000", identity)
     stage = checkpoint_feature_stage(
         schema=schema, adapter=adapter, sources=sources, define=strategy.define,
         registered=_registered_features(strategy, transforms), segmenter=segmenter,
@@ -267,26 +295,31 @@ def _bounded_hours_selection(*, out_dir, signature, schema, adapter, sources, st
         spans, train_hours=train_hours, test_hours=test_hours,
         max_group_overshoot=group_overshoot, tag_coverage=strategy.tag_coverage,
         seed=signature["payload"]["seed"], spill_dir=spill_dir)
-    execution = {"bounded": True, "physical_plan": physical, "checkpoint": marker,
+    execution = {
+        "bounded": True,
+        "physical_plan": artifact_physical,
+        "checkpoint": artifact_checkpoint_summary(marker),
                  "telemetry": stage.telemetry}
     return (admitted, split, budget, details, list(stage.errors), stage.source_tracks,
             execution, stage.candidate_rows)
 
 
-def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
-                  sources: Iterable[str], strategy: Strategy, segmenter: Segmenter,
-                  spec: OutputSpec, encoder: Optional[OutputEncoder] = None,
-                  train_hours: float, test_hours: float = 0.0,
-                  sample_hz: Optional[float] = None, seed: int = 0,
-                  group_of: Optional[Callable[[str], object]] = None,
-                  tags_of: Optional[Callable] = None,
-                  clip_aggregate: str = "max", span_steps: Optional[int] = None,
-                  span_seconds: Optional[float] = None, workers: int = 1,
-                  on_error: str = "skip", resume: bool = False, streaming: bool = False,
-                  progress=None, transforms=(), registry=None, executor: str = "local",
-                  memory_budget: int | None = None, batch_size: int = 1024,
-                  checkpoint_dir: str | None = None, spill_dir: str | None = None,
-                  approximation: str = "exact", max_in_flight: int = 2) -> dict:
+def _write_dataset_impl(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
+                        sources: Iterable[str], strategy: Strategy, segmenter: Segmenter,
+                        spec: OutputSpec, encoder: Optional[OutputEncoder] = None,
+                        train_hours: float, test_hours: float = 0.0,
+                        sample_hz: Optional[float] = None, seed: int = 0,
+                        group_of: Optional[Callable[[str], object]] = None,
+                        tags_of: Optional[Callable] = None,
+                        clip_aggregate: str = "max", span_steps: Optional[int] = None,
+                        span_seconds: Optional[float] = None, workers: int = 1,
+                        on_error: str = "skip", resume: bool = False, force: bool = False,
+                        streaming: bool = False, progress=None, transforms=(), registry=None,
+                        executor: str = "local", memory_budget: int | None = None,
+                        batch_size: int = 1024,
+                        checkpoint_dir: str | None = None, spill_dir: str | None = None,
+                        approximation: str = "exact", max_in_flight: int = 2,
+                        _config_updates: Optional[dict] = None) -> DatasetWriteResult:
     """`workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips bad sources;
     `resume=True` skips re-writing shards whose files already exist.
 
@@ -309,6 +342,11 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         if (not isinstance(value, (int, float)) or isinstance(value, bool)
                 or not math.isfinite(value) or value < 0):
             raise ValueError(f"{name} must be a finite non-negative number, got {value!r}")
+    if (train_hours > 0 or test_hours > 0) and not sources:
+        raise ValueError(
+            "hours output received no sources for a non-zero budget; nothing can be selected "
+            "or written"
+        )
     if clip_aggregate not in {"max", "min", "mean"}:
         raise ValueError("clip_aggregate must be 'max', 'min', or 'mean'")
     if span_steps is not None and span_seconds is not None:
@@ -322,8 +360,9 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         raise ValueError("span_seconds must be a finite positive number")
     if not isinstance(workers, int) or isinstance(workers, bool) or workers < 1:
         raise ValueError("workers must be a positive integer")
-    if not isinstance(resume, bool) or not isinstance(streaming, bool):
-        raise ValueError("resume and streaming must be true or false")
+    if not isinstance(resume, bool) or not isinstance(force, bool) \
+            or not isinstance(streaming, bool):
+        raise ValueError("resume, force, and streaming must be true or false")
     if (not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1):
         raise ValueError("batch_size must be a positive integer")
     if (not isinstance(max_in_flight, int) or isinstance(max_in_flight, bool)
@@ -337,7 +376,12 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     if approximation == "approximate":
         raise ValueError(f"selection method {strategy.method!r} has no declared approximate "
                          "hours implementation yet")
+    if _config_updates:
+        from ..provenance import strict_json_value
+        strict_json_value(_config_updates, label="output config metadata")
     spec.validate_schema(schema)
+    from .containers import validate_container_availability
+    validate_container_availability(spec.container, registry=registry or strategy.registry)
     span_len = span_steps if span_steps is not None else (
         round(span_seconds * sample_hz) if span_seconds is not None else None)
     if span_len is not None and span_len < 1:
@@ -388,21 +432,51 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                 f"memory_budget={memory_budget} bytes cannot hold one output shard accumulator "
                 f"(estimated minimum {output_minimum} bytes); reduce shard/span size or raise "
                 "memory_budget")
+    from ..manifest import (
+        validate_dataset_destination,
+        validate_source_destination_separation,
+    )
+    destination_state = validate_dataset_destination(
+        out_dir, force=force, resume=resume)
+    validate_source_destination_separation(out_dir, sources, adapter=adapter)
+    resolved_checkpoint_dir, resolved_spill_dir = checkpoint_dir, spill_dir
     from ..progress import emit
     emit(progress, "provenance", "start", total=len(sources))
-    from ..provenance import build_run_signature
+    from ..provenance import (
+        build_run_signature,
+        require_reusable_source_identities,
+        source_identities_allow_reuse,
+    )
     signature = build_run_signature(
         schema=schema, strategy=strategy, spec=spec, segmenter=segmenter, sources=sources,
         adapter=adapter, encoder=(encoder or PassthroughEncoder()), seed=seed, sample_hz=sample_hz,
         train_hours=train_hours, test_hours=test_hours, span_len=span_len,
         clip_aggregate=clip_aggregate, group_of=group_of, tags_of=tags_of,
         transforms=transforms, registry=registry)
-    _check_resume_run(out_dir, signature, resume)
+    _check_resume_run(out_dir, signature, resume, publish=False)
+    source_identities = signature["payload"]["sources"]
+    reusable_sources = source_identities_allow_reuse(source_identities)
+    if resume:
+        require_reusable_source_identities(
+            source_identities, purpose="resume=True shard reuse")
+    if bounded and not reusable_sources:
+        if memory_budget is not None:
+            require_reusable_source_identities(
+                source_identities, purpose="memory-bounded checkpoint reuse")
+        # Automatic bounded execution persists reusable feature partitions. A weak logical
+        # source ID cannot safely key those partitions, so use the non-checkpointed exact
+        # implementation when no hard memory bound was requested.
+        bounded = False
+    if bounded:
+        from ..work_paths import resolve_bounded_work_paths
+        resolved_checkpoint_dir, resolved_spill_dir = resolve_bounded_work_paths(
+            out_dir=out_dir, sources=sources, adapter=adapter,
+            checkpoint_dir=checkpoint_dir, spill_dir=spill_dir)
     resume_entries = _resume_entries(out_dir, resume)
-    from ..manifest import begin_dataset
-    begin_dataset(out_dir)
     emit(progress, "provenance", "complete", current=len(sources), total=len(sources),
          detail=signature["fingerprint"][:12])
+    from ..scoring import _cached_group_callback
+    group_of = _cached_group_callback(group_of)
     if bounded:
         emit(progress, "selection", "start", total=None)
         selection = _bounded_hours_selection(
@@ -411,7 +485,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
             span_len=span_len, clip_aggregate=clip_aggregate, group_of=group_of,
             tags_of=tags_of, on_error=on_error, progress=progress, transforms=transforms,
             registry=registry, train_hours=train_hours, test_hours=test_hours,
-            batch_size=batch_size, checkpoint_dir=checkpoint_dir, spill_dir=spill_dir,
+            batch_size=batch_size, checkpoint_dir=resolved_checkpoint_dir,
+            spill_dir=resolved_spill_dir,
             max_in_flight=max_in_flight, memory_budget=memory_budget)
     else:
         selection = _legacy_hours_selection(
@@ -428,12 +503,43 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
         emit(progress, "selection", "complete", current=len(admitted),
              total=budget["items_total"], detail=f"{len(admitted)} items admitted")
 
+    # Validate every path identity and prove that the selected rows can yield at least one
+    # shard before crossing the destructive force-replacement boundary.
+    ordered_admitted = sorted(admitted, key=_admitted_order_key)
+    if (train_hours > 0 or test_hours > 0) and not ordered_admitted:
+        raise ValueError(
+            "selection is empty for a non-zero hours budget — nothing to write (check sources, "
+            "filters/predicates, errors, and the segment window)"
+        )
+    if ordered_admitted and spec.short_policy == "drop":
+        predicted_shards = sum(
+            max(0, int(admitted_details[item]["end"]) - int(admitted_details[item]["start"]))
+            // spec.shard_length
+            for item in ordered_admitted
+        )
+        if predicted_shards == 0:
+            raise ValueError(
+                "selection would emit zero shards: every admitted track/span is shorter than "
+                f"shard_length={spec.shard_length} with short_policy='drop'; use "
+                "short_policy='keep'/'pad' or reduce shard_length"
+            )
+
+    # Publication starts only after selection succeeds. Until this point an existing committed
+    # destination remains byte-for-byte readable. Forced cleanup happens after the writing
+    # sidecar is visible, so readers can never observe a partially replaced generation.
+    from ..manifest import begin_dataset, clear_dataset_shards, pin_writing_dataset
+    begin_dataset(out_dir)
+    if force and destination_state != "absent":
+        clear_dataset_shards(out_dir)
+    _check_resume_run(out_dir, signature, resume, publish=True)
+    pin_writing_dataset(out_dir)
+
     # Re-read each admitted source once; write each admitted span as its own (sub-)track.
     entries = []
     by_source: dict[str, list[tuple[Any, int]]] = {}
     # `admitted` is a set — iterate in sorted order so manifest entry order (and thus
     # ShardDataset indexing) is hash-seed-independent.
-    for (src, eid, k) in sorted(admitted, key=lambda t: (str(t[0]), str(t[1]), t[2])):
+    for (src, eid, k) in ordered_admitted:
         by_source.setdefault(src, []).append((eid, k))
     emit(progress, "writing", "start", total=len(by_source))
     for source_i, src in enumerate(sorted(by_source), 1):
@@ -544,9 +650,43 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
     cfg["errors"] = errors
     if execution is not None:
         cfg["execution"] = execution
+    if _config_updates:
+        cfg.update(_config_updates)
     write_config(f"{out_dir}/config.json", cfg)
     from ..manifest import commit_dataset
     commit_dataset(out_dir)
-    from ..results import DatasetWriteResult
     return DatasetWriteResult(dataset=str(out_dir), shards=entries, split=split,
                               admitted=admitted, results=results, errors=errors)
+
+
+def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
+                  sources: Iterable[str], strategy: Strategy, segmenter: Segmenter,
+                  spec: OutputSpec, encoder: Optional[OutputEncoder] = None,
+                  train_hours: float, test_hours: float = 0.0,
+                  sample_hz: Optional[float] = None, seed: int = 0,
+                  group_of: Optional[Callable[[str], object]] = None,
+                  tags_of: Optional[Callable] = None,
+                  clip_aggregate: str = "max", span_steps: Optional[int] = None,
+                  span_seconds: Optional[float] = None, workers: int = 1,
+                  on_error: str = "skip", resume: bool = False, force: bool = False,
+                  streaming: bool = False, progress=None, transforms=(), registry=None,
+                  executor: str = "local", memory_budget: int | None = None,
+                  batch_size: int = 1024,
+                  checkpoint_dir: str | None = None, spill_dir: str | None = None,
+                  approximation: str = "exact",
+                  max_in_flight: int = 2) -> DatasetWriteResult:
+    """Write the best spans for an hours budget as one committed dataset artifact."""
+    sources = list(sources)
+    from ..manifest import dataset_writer_lease, validate_source_destination_separation
+    validate_source_destination_separation(out_dir, sources, adapter=adapter)
+    with dataset_writer_lease(out_dir):
+        return _write_dataset_impl(
+            out_dir, schema=schema, adapter=adapter, sources=sources, strategy=strategy,
+            segmenter=segmenter, spec=spec, encoder=encoder, train_hours=train_hours,
+            test_hours=test_hours, sample_hz=sample_hz, seed=seed, group_of=group_of,
+            tags_of=tags_of, clip_aggregate=clip_aggregate, span_steps=span_steps,
+            span_seconds=span_seconds, workers=workers, on_error=on_error, resume=resume,
+            force=force, streaming=streaming, progress=progress, transforms=transforms,
+            registry=registry, executor=executor, memory_budget=memory_budget,
+            batch_size=batch_size, checkpoint_dir=checkpoint_dir, spill_dir=spill_dir,
+            approximation=approximation, max_in_flight=max_in_flight)

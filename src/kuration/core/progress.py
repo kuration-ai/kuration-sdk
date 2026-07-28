@@ -11,6 +11,12 @@ ProgressSpec = ProgressCallback | str | bool
 
 def emit(progress: ProgressCallback, phase: str, event: str, **fields) -> None:
     if progress is not None:
+        # Progress callbacks commonly render into CI logs and persisted notebooks. Keep the
+        # source field useful while applying the same credential/host-path redaction as reports.
+        if fields.get("source") is not None:
+            from .scoring import _redact_diagnostic
+
+            fields["source"] = _redact_diagnostic(fields["source"])
         progress({"phase": phase, "event": event, **fields})
 
 

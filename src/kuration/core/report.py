@@ -177,7 +177,7 @@ def _metric_summary(values: np.ndarray, hist_bins: int) -> dict:
 
 
 def dataset_report(segments: list[Segment], *, metrics: Optional[Sequence[str]] = None,
-                   hist_bins: int = 10) -> dict:
+                   hist_bins: int = 10) -> DatasetReport:
     """Distribution summary over `segments`. `metrics` defaults to every feature present."""
     n = len(segments)
     if n == 0:

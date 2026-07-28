@@ -2,21 +2,18 @@
 from __future__ import annotations
 
 from collections import defaultdict
-import json
 from typing import Any
 
-from .io import exists, file_integrity, read_text
-from .loaders import read_shard_arrays, shard_entries
+from .io import exists
+from .loaders import (
+    _ResolvedDatasetSnapshot,
+    _assert_snapshot_current,
+    _resolve_operation_snapshot,
+    _snapshot_entries,
+    _validate_snapshot_shard,
+    read_shard_arrays,
+)
 from .results import DatasetComparison, DatasetInspection
-from .versioning import check_version
-
-
-def _base_path(dataset) -> str | None:
-    if isinstance(dataset, dict):
-        return None
-    path = str(dataset).rstrip("/")
-    return path.rsplit("/", 1)[0] if path.endswith(".json") and "/" in path else \
-        "." if path.endswith(".json") else path
 
 
 def inspect_dataset(dataset, *, verify: bool = False,
@@ -29,12 +26,19 @@ def inspect_dataset(dataset, *, verify: bool = False,
     """
     if not isinstance(verify, bool):
         raise ValueError("verify must be true or false")
-    entries, resolved_container = shard_entries(dataset, container=container)
-    base = _base_path(dataset)
-    config: dict = {}
-    if base is not None:
-        config = json.loads(read_text(f"{base}/config.json"))
-        check_version(config.get("artifact_format_version"), kind="artifact")
+    snapshot = _resolve_operation_snapshot(dataset, container)
+    return _inspect_resolved_dataset(snapshot, verify=verify, registry=registry)
+
+
+def _inspect_resolved_dataset(
+    snapshot: _ResolvedDatasetSnapshot,
+    *,
+    verify: bool,
+    registry=None,
+) -> DatasetInspection:
+    """Inspect one already-resolved metadata generation without reopening its config."""
+    entries = _snapshot_entries(snapshot)
+    config: dict = snapshot.config or {}
 
     splits: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"shards": 0, "steps": 0, "padded_shards": 0, "padding_steps": 0})
@@ -69,9 +73,12 @@ def inspect_dataset(dataset, *, verify: bool = False,
     if output.get("presence_mask", True):
         expected_modalities["_present"] = {"shape": [], "dtype": "bool"}
     for entry in entries:
+        _assert_snapshot_current(snapshot, operation="dataset inspection")
+        _validate_snapshot_shard(snapshot, entry)
         path = entry.get("path")
         if not exists(path):
             verification_errors.append({"path": path, "error": "missing shard"})
+            _assert_snapshot_current(snapshot, operation="dataset inspection")
             continue
         if verify:
             try:
@@ -87,32 +94,24 @@ def inspect_dataset(dataset, *, verify: bool = False,
                         if shape != list(expected.get("shape") or ()) or dtype != expected["dtype"]:
                             raise ValueError(f"manifest contract mismatch for {name!r}: "
                                              f"shape={shape}, dtype={dtype}")
-                if entry.get("sha256") is not None or entry.get("size_bytes") is not None:
-                    actual = file_integrity(path)
-                    if (entry.get("sha256") is not None
-                            and actual["sha256"] != entry["sha256"]):
-                        raise ValueError(
-                            f"checksum mismatch: expected {entry['sha256']}, "
-                            f"got {actual['sha256']}"
-                        )
-                    if (entry.get("size_bytes") is not None
-                            and actual["size_bytes"] != entry["size_bytes"]):
-                        raise ValueError(
-                            f"size mismatch: expected {entry['size_bytes']}, "
-                            f"got {actual['size_bytes']}"
-                        )
-                read_shard_arrays(entry, resolved_container,
+                if entry.get("sha256") is None or entry.get("size_bytes") is None:
+                    raise ValueError(
+                        "integrity unavailable: shard entry needs both SHA-256 and byte size"
+                    )
+                read_shard_arrays(entry, snapshot.container,
                                   modalities=list(expected_modalities) or None,
-                                  registry=registry, verify=False)
+                                  registry=registry, verify=True)
                 checked += 1
             except Exception as error:
                 verification_errors.append({"path": path, "error": repr(error)})
+        _validate_snapshot_shard(snapshot, entry)
+        _assert_snapshot_current(snapshot, operation="dataset inspection")
 
     execution = config.get("execution") or {}
     physical = execution.get("physical_plan") or {}
     provenance = config.get("provenance") or {}
-    return DatasetInspection(
-        dataset=base, container=resolved_container, shards=len(entries),
+    inspection = DatasetInspection(
+        dataset=snapshot.base, container=snapshot.container, shards=len(entries),
         sources=len({str(entry.get("source_id")) for entry in entries}),
         splits=dict(sorted(splits.items())), modalities=modalities,
         budget=(config.get("results") or {}).get("budget"),
@@ -123,6 +122,8 @@ def inspect_dataset(dataset, *, verify: bool = False,
                    "backend": physical.get("backend", physical.get("mode"))},
         verification={"requested": verify, "checked": checked,
                       "valid": not verification_errors, "errors": verification_errors})
+    _assert_snapshot_current(snapshot, operation="dataset inspection")
+    return inspection
 
 
 def _changes(left: Any, right: Any, path: str = "", *, limit: int = 500) -> list[dict]:
@@ -161,14 +162,22 @@ def _changes(left: Any, right: Any, path: str = "", *, limit: int = 500) -> list
 
 def compare_datasets(left, right, *, verify: bool = False) -> DatasetComparison:
     """Compare two written datasets' schemas, output contracts, provenance, and sizes."""
-    left_base, right_base = _base_path(left), _base_path(right)
+    if not isinstance(verify, bool):
+        raise ValueError("verify must be true or false")
+    left_snapshot = _resolve_operation_snapshot(left, None)
+    right_snapshot = _resolve_operation_snapshot(right, None)
+    left_base, right_base = left_snapshot.base, right_snapshot.base
     if left_base is None or right_base is None:
         raise ValueError("compare_datasets needs dataset directories or manifest paths, not "
                          "loaded manifest dictionaries")
-    left_inspection = inspect_dataset(left, verify=verify)
-    right_inspection = inspect_dataset(right, verify=verify)
-    left_config = json.loads(read_text(f"{left_base}/config.json"))
-    right_config = json.loads(read_text(f"{right_base}/config.json"))
+    left_inspection = _inspect_resolved_dataset(
+        left_snapshot, verify=verify
+    )
+    right_inspection = _inspect_resolved_dataset(
+        right_snapshot, verify=verify
+    )
+    left_config = left_snapshot.config or {}
+    right_config = right_snapshot.config or {}
     comparable_left = {key: left_config.get(key) for key in (
         "artifact_format_version", "schema", "strategy", "output", "pipeline",
         "output_request", "output_preset", "mode", "results", "warnings")}
@@ -189,6 +198,13 @@ def compare_datasets(left, right, *, verify: bool = False) -> DatasetComparison:
         {key: value for key, value in right_summary.items() if key != "dataset"},
         "artifact")
     all_changes = summary_changes + changes
-    return DatasetComparison(left=left_summary, right=right_summary,
-                             identical=not all_changes, changes=all_changes,
-                             verified=verify)
+    comparison = DatasetComparison(
+        left=left_summary,
+        right=right_summary,
+        identical=not all_changes,
+        changes=all_changes,
+        verified=verify,
+    )
+    _assert_snapshot_current(left_snapshot, operation="dataset comparison")
+    _assert_snapshot_current(right_snapshot, operation="dataset comparison")
+    return comparison

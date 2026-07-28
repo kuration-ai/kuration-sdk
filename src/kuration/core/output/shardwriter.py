@@ -232,7 +232,9 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
     ctx = {"schema": schema, "track": {**track.meta, "source_id": track.source_id,
                                        "entity_id": track.entity_id},
            "media_provider": media_provider}
-    name = track_name(track.source_id, track.entity_id, name_suffix)
+    from ..provenance import publishable_source_id
+    published_source_id = publishable_source_id(track.source_id)
+    name = track_name(published_source_id, track.entity_id, name_suffix)
     ext = container_extension(spec.container, registry=registry)
     entries: list[dict] = []
     shape = {m.name: list(m.shape) for m in spec.modalities}
@@ -257,8 +259,9 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
             path = write_shard(base, spec.container, _build_arrays(piece, spec, encoder, ctx),
                                real_len, registry=registry)
             integrity = file_integrity(path)
-        entries.append({"path": path, "source_id": track.source_id,
+        entries.append({"path": path, "source_id": published_source_id,
                         "entity_id": entity_id_token(track.entity_id), "split": split,
-                        "shard_index": k, "n_steps": real_len, "padded": padded,
+                        "track_id": name, "shard_index": k, "n_steps": real_len,
+                        "padded": padded,
                         "shape": shape, "dtype": dtype, **integrity})
     return entries

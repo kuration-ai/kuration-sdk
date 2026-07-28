@@ -6,9 +6,10 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import tempfile
 from typing import Mapping
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import numpy as np
 
@@ -106,27 +107,96 @@ def _atomic_write_text(target: Path, value: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _video_reference(value: str | Path, root: Path, *, name: str) -> str:
-    """Record a video path the SLAM adapter can resolve back from the manifest.
+def _safe_media_suffix(source: Path) -> str:
+    suffix = source.suffix.lower()
+    return suffix if re.fullmatch(r"\.[a-z0-9]{1,10}", suffix) else ".media"
 
-    `SLAMTrajectoryAdapter` resolves relative references against the *manifest directory*, so a
-    CWD-relative path (what `prepare_slam_input` forwards for `--video clip=videos/a.mp4`)
-    recorded verbatim would silently resolve to the wrong place on re-ingestion. A video that
-    lives inside the export tree stays relative, so the artifact keeps travelling as one unit;
-    anything else is absolutized against the current directory. Remote URIs are kept verbatim
-    because they are opened by a media provider, not by pathlib.
-    """
+
+def _bundle_video(source: Path, root: Path, *, name: str) -> str:
+    """Copy one external local video into the export using an atomic content address."""
+    media_dir = root / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    if media_dir.is_symlink():
+        raise ValueError(f"{name} cannot be bundled through symlinked directory {media_dir!s}")
+    try:
+        media_dir.resolve().relative_to(root.resolve(strict=False))
+    except ValueError as error:
+        raise ValueError(f"{name} media directory escapes the SLAM export root") from error
+
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=media_dir,
+        prefix=".video.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    digest = sha256()
+    try:
+        with source.open("rb") as source_handle, os.fdopen(descriptor, "wb") as target_handle:
+            while True:
+                chunk = source_handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                target_handle.write(chunk)
+            target_handle.flush()
+            os.fsync(target_handle.fileno())
+        filename = f"video-{digest.hexdigest()}{_safe_media_suffix(source)}"
+        os.replace(temporary, media_dir / filename)
+    except Exception:
+        # ``os.fdopen`` owns the descriptor after it succeeds; close it when opening the
+        # source failed first.
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        raise
+    finally:
+        temporary.unlink(missing_ok=True)
+    return (Path("media") / filename).as_posix()
+
+
+def _video_reference(value: str | Path, root: Path, *, name: str) -> str:
+    """Return a portable video reference, bundling local files outside the export tree."""
     text = str(value)
     if not text:
         raise ValueError(f"{name} must be a non-empty path or URI")
     parsed = urlparse(text)
     if parsed.scheme and len(parsed.scheme) > 1:
-        return text
-    absolute = Path(os.path.abspath(text))
+        if parsed.query or parsed.fragment or parsed.params:
+            raise ValueError(
+                f"{name} remote URI must not contain query parameters, path parameters, "
+                "or a fragment; use a stable credential-free URI"
+            )
+        try:
+            has_credentials = parsed.username is not None or parsed.password is not None
+        except ValueError as error:
+            raise ValueError(f"{name} is not a valid remote URI") from error
+        if has_credentials:
+            raise ValueError(
+                f"{name} remote URI must not contain embedded credentials; "
+                "configure credentials through the media provider"
+            )
+        if parsed.scheme.lower() != "file":
+            return text
+        if parsed.netloc not in {"", "localhost"}:
+            raise ValueError(f"{name} file URI must refer to the local host")
+        text = unquote(parsed.path)
+
     try:
-        return str(absolute.relative_to(Path(os.path.abspath(root))))
+        source = Path(text).resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise ValueError(f"{name} local video does not exist: {text!r}") from error
+    try:
+        mode = source.stat().st_mode
+    except OSError as error:
+        raise ValueError(f"{name} local video cannot be inspected: {text!r}") from error
+    if not stat.S_ISREG(mode):
+        raise ValueError(f"{name} local video must be a regular file: {text!r}")
+
+    try:
+        return source.relative_to(root.resolve(strict=False)).as_posix()
     except ValueError:
-        return str(absolute)
+        return _bundle_video(source, root, name=name)
 
 
 def _times_for_clip(
@@ -236,6 +306,7 @@ def _cleanup_unreferenced_payloads(
     *,
     clip_filenames: set[str],
     pointcloud_filename: str | None,
+    video_references: set[str],
 ) -> None:
     clips_dir = root / "clips"
     if clips_dir.is_dir():
@@ -251,6 +322,24 @@ def _cleanup_unreferenced_payloads(
                 candidate.unlink()
             except OSError:
                 pass
+    media_dir = root / "media"
+    if media_dir.is_dir() and not media_dir.is_symlink():
+        referenced = {
+            Path(reference).name
+            for reference in video_references
+            if Path(reference).parent == Path("media")
+        }
+        for candidate in media_dir.iterdir():
+            if (
+                candidate.is_file()
+                and re.fullmatch(r"video-[0-9a-f]{64}(?:\.[a-z0-9]{1,10}|\.media)",
+                                 candidate.name)
+                and candidate.name not in referenced
+            ):
+                try:
+                    candidate.unlink()
+                except OSError:
+                    pass
 
 
 def export_slam_output(
@@ -327,12 +416,19 @@ def export_slam_output(
         filename = _clip_filename(name, _payload_digest(arrays))
         relative = str(Path("clips") / filename)
         entry = {"trajectory": relative}
-        if videos is not None and name in videos:
-            entry["video"] = _video_reference(videos[name], root, name=f"videos[{name!r}]")
         manifest_clips[name] = entry
         prepared_clips[name] = (filename, arrays, entry)
 
     point_cloud = _point_cloud(output, point_attributes)
+    video_references: set[str] = set()
+    if videos is not None:
+        for name in clip_names:
+            if name in videos:
+                reference = _video_reference(
+                    videos[name], root, name=f"videos[{name!r}]"
+                )
+                manifest_clips[name]["video"] = reference
+                video_references.add(reference)
 
     manifest = {
         "format": EXPORT_FORMAT,
@@ -364,5 +460,6 @@ def export_slam_output(
         root,
         clip_filenames={filename for filename, _arrays, _entry in prepared_clips.values()},
         pointcloud_filename=pointcloud_filename,
+        video_references=video_references,
     )
     return manifest_path

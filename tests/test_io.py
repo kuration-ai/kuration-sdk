@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+import stat
+from types import SimpleNamespace
 
 import pytest
 
@@ -54,6 +57,81 @@ def test_local_path_passthrough(tmp_path):
     assert kio.read_text(str(p)) == "local"
     with kio.local_copy(str(p)) as q:
         assert q == str(p)        # local: no copy
+
+
+def test_non_posix_file_snapshot_keeps_identity_fallback_but_tree_fails_closed(
+        tmp_path, monkeypatch):
+    source = tmp_path / "tree"
+    source.mkdir()
+    (source / "payload.bin").write_bytes(b"payload")
+    monkeypatch.setattr(kio, "_HAS_POSIX_DESCRIPTOR_OPEN", False)
+
+    with kio.local_snapshot(source / "payload.bin") as snapshot:
+        assert Path(snapshot).read_bytes() == b"payload"
+    with pytest.raises(ValueError, match="require POSIX descriptor-relative"):
+        with kio.local_tree_snapshot(source):
+            pass
+
+
+def test_local_snapshot_accepts_macos_trusted_var_alias(tmp_path):
+    alias = Path("/var")
+    resolved_tmp = tmp_path.resolve()
+    if not alias.is_symlink() or not resolved_tmp.is_relative_to("/private/var"):
+        pytest.skip("macOS root-owned /var alias is not present")
+    source = tmp_path / "payload.bin"
+    source.write_bytes(b"trusted alias payload")
+    aliased_source = alias / source.resolve().relative_to("/private/var")
+
+    with kio.local_snapshot(aliased_source) as snapshot:
+        assert Path(snapshot).read_bytes() == b"trusted alias payload"
+
+
+def test_trusted_root_alias_rewrites_only_root_owned_immutable_links(monkeypatch):
+    root = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+    trusted_link = SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_uid=0)
+    directory = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+
+    def trusted_lstat(path):
+        return {"/": root, "/alias": trusted_link}.get(path, directory)
+
+    monkeypatch.setattr(kio.os, "lstat", trusted_lstat)
+    monkeypatch.setattr(kio.os, "readlink", lambda _path: "real")
+    assert kio._trusted_root_alias("/alias/data.bin") == "/real/data.bin"
+
+    untrusted_link = SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_uid=501)
+    monkeypatch.setattr(
+        kio.os,
+        "lstat",
+        lambda path: root if path == "/" else untrusted_link,
+    )
+    assert kio._trusted_root_alias("/alias/data.bin") == "/alias/data.bin"
+
+
+def test_staged_write_fsyncs_payload_before_replace_and_directory_after(
+        tmp_path, monkeypatch):
+    events: list[str] = []
+    real_fsync = kio.os.fsync
+    real_replace = kio.os.replace
+
+    def observed_fsync(descriptor):
+        mode = kio.os.fstat(descriptor).st_mode
+        events.append("file-fsync" if stat.S_ISREG(mode) else "directory-fsync")
+        real_fsync(descriptor)
+
+    def observed_replace(source, destination):
+        events.append("replace")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(kio.os, "fsync", observed_fsync)
+    monkeypatch.setattr(kio.os, "replace", observed_replace)
+    destination = tmp_path / "new" / "nested" / "payload.bin"
+
+    with kio.staged_write(destination) as temporary:
+        Path(temporary).write_bytes(b"durable")
+
+    assert destination.read_bytes() == b"durable"
+    assert events.index("file-fsync") < events.index("replace")
+    assert events.index("replace") < events.index("directory-fsync")
 
 
 # ---- end to end: curate -> remote, then re-ingest from remote ---------------

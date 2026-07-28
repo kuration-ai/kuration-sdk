@@ -2,20 +2,29 @@
 from __future__ import annotations
 
 import builtins
+from contextlib import contextmanager
 import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from kuration import OutputSpec, SchemaSpec, Segment, Tick
+from kuration import (
+    OutputSpec,
+    SchemaSpec,
+    Segment,
+    Tick,
+    compare_datasets,
+    iter_shards,
+    stats,
+)
 from kuration.core.adapters.curated import CuratedDatasetAdapter
 from kuration.core.adapters.parquet_dataset import ParquetDatasetAdapter
 from kuration.core.adapters.timeseries import TimeseriesAdapter
 from kuration.core.buffer import build_window
 from kuration.core.external import iter_external_hash_dedup
 from kuration.core.io import write_text
-from kuration.core.loaders import read_shard_arrays, rebase_entries
+from kuration.core.loaders import read_shard_arrays, rebase_entries, shard_entries
 from kuration.core.manifest import begin_dataset, commit_dataset, portable_shard_entries
 from kuration.core.media import FrameRef, JoinedMediaAdapter, VideoAdapter, VideoMetadata
 from kuration.core.output.external_fill import external_fill_to_hours
@@ -93,17 +102,291 @@ def test_shard_loader_verifies_integrity_by_default_with_opt_out(tmp_path):
         == [999.0]
 
 
-def _committed_dataset(root: Path) -> None:
-    entry = write_track(str(root), Track("s", 0, [{"x": 1.0}]), SPEC,
-                        schema=SCHEMA, split="train")[0]
+def test_verified_shard_decode_uses_the_exact_snapshot_that_was_hashed(
+        tmp_path, monkeypatch):
+    from kuration.core import io as io_module
+
+    entry = write_track(str(tmp_path), Track("s", 0, [{"x": 1.0}]), SPEC,
+                        schema=SCHEMA)[0]
+    replacement = tmp_path / "replacement.npz"
+    np.savez(
+        replacement,
+        _n_steps=np.asarray(1),
+        x=np.asarray([999.0], dtype=np.float32),
+        _present=np.asarray([True]),
+    )
+    real_snapshot = io_module.local_snapshot
+
+    @contextmanager
+    def replace_after_snapshot(path):
+        with real_snapshot(path) as snapshot:
+            Path(path).write_bytes(replacement.read_bytes())
+            yield snapshot
+
+    monkeypatch.setattr(io_module, "local_snapshot", replace_after_snapshot)
+    arrays = read_shard_arrays(entry, "npz", modalities=["x"])
+
+    assert arrays["x"].tolist() == [1.0]
+    assert np.load(entry["path"])["x"].tolist() == [999.0]
+
+
+def _committed_dataset(root: Path, *, values=(1.0,)) -> None:
+    entries = []
+    for index, value in enumerate(values):
+        entries.extend(
+            write_track(
+                str(root),
+                Track(f"s{index}", 0, [{"x": value}]),
+                SPEC,
+                schema=SCHEMA,
+                split="train",
+            )
+        )
     manifest = {"artifact_format_version": ARTIFACT_FORMAT_VERSION,
-                "commit_protocol": "sidecar-v1", "count": 1,
-                "shards": portable_shard_entries(str(root), [entry])}
+                "commit_protocol": "sidecar-v1", "count": len(entries),
+                "shards": portable_shard_entries(str(root), entries)}
     config = {"artifact_format_version": ARTIFACT_FORMAT_VERSION,
               "schema": SCHEMA.to_dict(), "output": SPEC.to_dict()}
     write_text(root / "dataset_manifest.json", json.dumps(manifest))
     write_text(root / "config.json", json.dumps(config))
     commit_dataset(str(root))
+
+
+def _replace_config_generation(root: Path, generation: str) -> None:
+    config_path = root / "config.json"
+    config = json.loads(config_path.read_text())
+    config["generation_probe"] = generation
+    write_text(config_path, json.dumps(config))
+    commit_dataset(str(root))
+
+
+def test_metadata_reader_rejects_a_generation_switch_mid_snapshot(
+        tmp_path, monkeypatch):
+    from kuration.core import loaders as loaders_module
+
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    _committed_dataset(first)
+    _committed_dataset(second)
+    second_manifest = json.loads((second / "dataset_manifest.json").read_text())
+    second_manifest["generation_probe"] = "second"
+    (second / "dataset_manifest.json").write_text(json.dumps(second_manifest))
+    commit_dataset(str(second))
+    real_read = loaders_module._read_bytes
+    switched = False
+
+    def switch_after_manifest(path):
+        nonlocal switched
+        payload = real_read(path)
+        if not switched and str(path) == str(first / "dataset_manifest.json"):
+            switched = True
+            for name in ("dataset_manifest.json", "config.json", "dataset.commit.json"):
+                (first / name).write_bytes((second / name).read_bytes())
+        return payload
+
+    monkeypatch.setattr(loaders_module, "_read_bytes", switch_after_manifest)
+    with pytest.raises(ValueError, match="not atomically committed"):
+        shard_entries(str(first))
+
+
+def test_iter_shards_never_crosses_force_replacement_generations(tmp_path):
+    _committed_dataset(tmp_path, values=(1.0, 2.0))
+    shards = iter_shards(str(tmp_path), verify=False)
+
+    assert next(shards)["x"].tolist() in ([1.0], [2.0])
+    _replace_config_generation(tmp_path, "replacement")
+
+    with pytest.raises(ValueError, match="changed generation during shard iteration"):
+        next(shards)
+
+
+def test_stats_rejects_generation_switch_during_content_scan(tmp_path, monkeypatch):
+    from kuration.core import loaders as loaders_module
+
+    _committed_dataset(tmp_path, values=(1.0, 2.0))
+    real_read = loaders_module.read_shard_arrays
+    switched = False
+
+    def switch_after_first_read(entry, container, **kwargs):
+        nonlocal switched
+        arrays = real_read(entry, container, **kwargs)
+        if not switched:
+            switched = True
+            _replace_config_generation(tmp_path, "replacement")
+        return arrays
+
+    monkeypatch.setattr(loaders_module, "read_shard_arrays", switch_after_first_read)
+    with pytest.raises(ValueError, match="changed generation during artifact statistics"):
+        stats(str(tmp_path), verify=False)
+
+
+def test_compare_rejects_generation_switch_after_one_side_is_inspected(
+        tmp_path, monkeypatch):
+    from kuration.core import inspection as inspection_module
+
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    _committed_dataset(left)
+    _committed_dataset(right)
+    real_inspect = inspection_module._inspect_resolved_dataset
+    switched = False
+
+    def switch_after_left(snapshot, **kwargs):
+        nonlocal switched
+        result = real_inspect(snapshot, **kwargs)
+        if not switched and snapshot.base == str(left):
+            switched = True
+            _replace_config_generation(left, "replacement")
+        return result
+
+    monkeypatch.setattr(
+        inspection_module, "_inspect_resolved_dataset", switch_after_left
+    )
+    with pytest.raises(ValueError, match="changed generation during dataset comparison"):
+        compare_datasets(str(left), str(right))
+
+
+def test_curated_adapter_rejects_generation_switch_before_shard_reuse(tmp_path):
+    _committed_dataset(tmp_path)
+    adapter = CuratedDatasetAdapter(str(tmp_path))
+    shard = adapter.sources()[0]
+
+    _replace_config_generation(tmp_path, "replacement")
+
+    with pytest.raises(ValueError, match="changed generation during curated shard read"):
+        adapter.ticks(shard)
+
+
+def test_current_format_shard_symlink_cannot_escape_dataset_root(tmp_path):
+    dataset = tmp_path / "dataset"
+    _committed_dataset(dataset)
+    adapter = CuratedDatasetAdapter(str(dataset))
+    adapter_shard = adapter.sources()[0]
+    manifest = json.loads((dataset / "dataset_manifest.json").read_text())
+    shard = dataset / manifest["shards"][0]["path"]
+    victim = tmp_path / "outside.npz"
+    victim.write_bytes(shard.read_bytes())
+    shard.unlink()
+    try:
+        shard.symlink_to(victim)
+    except OSError:
+        pytest.skip("symlinks are unavailable")
+
+    with pytest.raises(ValueError, match="shard path .* is a symlink"):
+        shard_entries(str(dataset))
+    with pytest.raises(ValueError, match="shard path .* is a symlink"):
+        CuratedDatasetAdapter(str(dataset))
+    with pytest.raises(ValueError, match="shard path .* is a symlink"):
+        adapter.ticks(adapter_shard)
+
+
+def test_current_format_shard_must_be_a_regular_file(tmp_path):
+    _committed_dataset(tmp_path)
+    manifest = json.loads((tmp_path / "dataset_manifest.json").read_text())
+    shard = tmp_path / manifest["shards"][0]["path"]
+    shard.unlink()
+    shard.mkdir()
+
+    with pytest.raises(ValueError, match="shard path .* is not a regular file"):
+        shard_entries(str(tmp_path))
+
+
+def test_current_format_manifest_dtype_must_match_pinned_output_contract(tmp_path):
+    _committed_dataset(tmp_path)
+    manifest_path = tmp_path / "dataset_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["shards"][0]["dtype"]["x"] = "float64"
+    write_text(manifest_path, json.dumps(manifest))
+    commit_dataset(str(tmp_path))
+
+    with pytest.raises(ValueError, match="dtype .* does not match config.output dtype"):
+        list(iter_shards(str(tmp_path)))
+
+
+def test_sidecar_commit_requires_integrity_on_every_shard(tmp_path):
+    _committed_dataset(tmp_path)
+    manifest_path = tmp_path / "dataset_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["shards"][0].pop("sha256")
+    manifest_path.write_text(json.dumps(manifest))
+    commit_dataset(str(tmp_path))
+
+    with pytest.raises(ValueError, match="missing a lowercase SHA-256"):
+        shard_entries(str(tmp_path))
+
+
+def test_sidecar_manifest_count_must_match_entries(tmp_path):
+    _committed_dataset(tmp_path)
+    manifest_path = tmp_path / "dataset_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["count"] = 2
+    manifest_path.write_text(json.dumps(manifest))
+    commit_dataset(str(tmp_path))
+
+    with pytest.raises(ValueError, match="count=2.*1 shard entries"):
+        shard_entries(str(tmp_path))
+
+
+def test_sidecar_manifest_rejects_duplicate_shard_paths(tmp_path):
+    _committed_dataset(tmp_path)
+    manifest_path = tmp_path / "dataset_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["shards"].append(dict(manifest["shards"][0]))
+    manifest["count"] = 2
+    manifest_path.write_text(json.dumps(manifest))
+    commit_dataset(str(tmp_path))
+
+    with pytest.raises(ValueError, match="repeats shard path"):
+        shard_entries(str(tmp_path))
+
+
+def test_sidecar_manifest_rejects_path_alias_for_same_semantic_shard(tmp_path):
+    _committed_dataset(tmp_path)
+    manifest_path = tmp_path / "dataset_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    duplicate = dict(manifest["shards"][0])
+    original = tmp_path / duplicate["path"]
+    duplicate["path"] = duplicate["path"].replace(
+        duplicate["track_id"], f"duplicate_{duplicate['track_id']}")
+    copied = tmp_path / duplicate["path"]
+    copied.write_bytes(original.read_bytes())
+    manifest["shards"].append(duplicate)
+    manifest["count"] = 2
+    config_path = tmp_path / "config.json"
+    config = json.loads(config_path.read_text())
+    config["results"] = {"shards": 2}
+    config_path.write_text(json.dumps(config))
+    manifest_path.write_text(json.dumps(manifest))
+    commit_dataset(str(tmp_path))
+
+    with pytest.raises(ValueError, match="track_id.*does not match"):
+        shard_entries(str(tmp_path))
+
+
+def test_sidecar_manifest_rejects_gapped_track_indices(tmp_path):
+    _committed_dataset(tmp_path)
+    manifest_path = tmp_path / "dataset_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    entry = manifest["shards"][0]
+    entry["path"] = entry["path"].replace("_shard0000.", "_shard0001.")
+    entry["shard_index"] = 1
+    manifest_path.write_text(json.dumps(manifest))
+    commit_dataset(str(tmp_path))
+
+    with pytest.raises(ValueError, match="repeated or gapped shard indices"):
+        shard_entries(str(tmp_path))
+
+
+def test_sidecar_config_shard_count_must_match_manifest(tmp_path):
+    _committed_dataset(tmp_path)
+    config_path = tmp_path / "config.json"
+    config = json.loads(config_path.read_text())
+    config["results"] = {"shards": 2}
+    config_path.write_text(json.dumps(config))
+    commit_dataset(str(tmp_path))
+
+    with pytest.raises(ValueError, match=r"results\.shards=2.*1 entries"):
+        shard_entries(str(tmp_path))
 
 
 def test_curated_adapter_rejects_incomplete_commit(tmp_path):

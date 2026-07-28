@@ -1,6 +1,6 @@
 [project]
 name = "kuration-sdk"
-version = "0.1.0rc4"
+version = "0.1.0rc5.dev0"
 description = "Dataset-agnostic curation SDK: raw source -> curated subset -> training shards."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,97 +32,97 @@ Changelog = "https://github.com/aintropy-ai/kuration-sdk/blob/main/CHANGELOG.md"
 # This evaluation build includes first-party domain operators in the SDK wheel while
 # keeping their heavy runtime dependencies opt-in, lazy, and loud-on-missing.
 [project.optional-dependencies]
-methods = ["scikit-learn>=1.4"]   # feature-space selection methods
-parquet = ["pyarrow>=15"]         # Parquet input adapter / output container
-scale = ["pyarrow>=15"]           # Arrow IPC feature tables and bounded execution
+methods = ["scikit-learn>=1.5"]   # feature-space selection methods
+parquet = ["pyarrow>=23.0.1"]     # Parquet input adapter / output container
+scale = ["pyarrow>=23.0.1"]       # Arrow IPC feature tables and bounded execution
 array = ["h5py>=3.10"]            # tensor shard container
 cloud = ["fsspec>=2024.2"]        # gs:// / s3:// / az:// I/O (plus a backend: gcsfs/s3fs/adlfs)
 s3 = ["fsspec>=2024.2", "s3fs>=2024.2"]      # s3:// I/O
 gcs = ["fsspec>=2024.2", "gcsfs>=2024.2"]    # gs:// I/O
 azure = ["fsspec>=2024.2", "adlfs>=2024.2"]  # az:// I/O
-torch = ["torch>=2.2"]            # PyTorch ShardDataset over a curated dataset (kuration.core.torch)
+torch = ["torch>=2.13"]           # PyTorch ShardDataset over a curated dataset (kuration.core.torch)
 hf = ["datasets>=2.18"]           # HuggingFace datasets input adapter
 zarr = ["zarr>=2.17"]             # Zarr array-store input adapter
 video = ["av>=12"]                # optional CPU MP4 provider
-ray = ["ray>=2.20"]               # optional distributed execution backend
+ray = ["ray>=2.56.1"]             # optional distributed execution backend
 stats = ["matplotlib>=3.8"]        # optional plotting for StatsReport.plot()
-p2p = ["protobuf>=4.25"]          # Open P2P worked example (annotation.proto parsing)
+p2p = ["protobuf>=5.29.6"]        # Open P2P worked example (annotation.proto parsing)
 cli = ["jsonschema>=4.21"]        # kur-validate --json-schema (JSON Schema cross-check)
 pixel-shift = ["opencv-python>=4.9"]  # DIAMOND action-aligned optical-flow operator
 action-state = ["opencv-python>=4.9"] # pixel-shift-backed consistency analyzer
 slam = [
     "av>=12",
-    "torch>=2.2",
-    "torchvision>=0.17",
+    "torch>=2.13",
+    "torchvision>=0.28",
     "huggingface_hub>=0.20",
     "omegaconf>=2.3",
     "addict>=2.4",
     "einops>=0.7",
     "opencv-python>=4.9",
     "imageio>=2.31",
-    "tqdm>=4.65",
-    "pillow>=10",
+    "tqdm>=4.66.3",
+    "pillow>=12.3",
     "safetensors>=0.4",
     "faiss-cpu>=1.8",
 ]                                  # gameplay SLAM + vendored Depth Anything 3
 slam-viz = ["trimesh>=4"]          # kuration.gameplay.slam notebook viewer
 gameplay = [
     "av>=12",
-    "torch>=2.2",
-    "torchvision>=0.17",
+    "torch>=2.13",
+    "torchvision>=0.28",
     "huggingface_hub>=0.20",
     "omegaconf>=2.3",
     "addict>=2.4",
     "einops>=0.7",
     "opencv-python>=4.9",
     "imageio>=2.31",
-    "tqdm>=4.65",
-    "pillow>=10",
+    "tqdm>=4.66.3",
+    "pillow>=12.3",
     "safetensors>=0.4",
     "faiss-cpu>=1.8",
     "trimesh>=4",
 ]                                  # every built-in gameplay capability and visualization runtime
 standard-operators = [
     "av>=12",
-    "torch>=2.2",
-    "torchvision>=0.17",
+    "torch>=2.13",
+    "torchvision>=0.28",
     "huggingface_hub>=0.20",
     "omegaconf>=2.3",
     "addict>=2.4",
     "einops>=0.7",
     "opencv-python>=4.9",
     "imageio>=2.31",
-    "tqdm>=4.65",
-    "pillow>=10",
+    "tqdm>=4.66.3",
+    "pillow>=12.3",
     "safetensors>=0.4",
     "faiss-cpu>=1.8",
     "trimesh>=4",
 ]                                  # compatibility alias for the gameplay extra
 all = [
-    "scikit-learn>=1.4",
-    "pyarrow>=15",
+    "scikit-learn>=1.5",
+    "pyarrow>=23.0.1",
     "h5py>=3.10",
     "fsspec>=2024.2",
     "s3fs>=2024.2",
     "gcsfs>=2024.2",
     "adlfs>=2024.2",
-    "torch>=2.2",
+    "torch>=2.13",
     "datasets>=2.18",
     "zarr>=2.17",
-    "protobuf>=4.25",
+    "protobuf>=5.29.6",
     "jsonschema>=4.21",
     "av>=12",
-    "ray>=2.20",
+    "ray>=2.56.1",
     "matplotlib>=3.8",
-    "torchvision>=0.17",
+    "torchvision>=0.28",
     "huggingface_hub>=0.20",
     "omegaconf>=2.3",
     "addict>=2.4",
     "einops>=0.7",
     "opencv-python>=4.9",
     "imageio>=2.31",
-    "tqdm>=4.65",
-    "pillow>=10",
+    "tqdm>=4.66.3",
+    "pillow>=12.3",
     "safetensors>=0.4",
     "faiss-cpu>=1.8",
     "trimesh>=4",

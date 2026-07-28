@@ -4,9 +4,19 @@ These notes highlight user-visible changes in the current release candidate. The
 [changelog](https://github.com/aintropy-ai/kuration-sdk/blob/main/CHANGELOG.md) is the authoritative
 history for every release.
 
-## 0.1.0rc4
+## Unreleased (`0.1.0rc5.dev0`)
 
-`0.1.0rc4` focuses on correctness, artifact integrity, and explicit extension contracts.
+The current development build concentrates on fail-closed publication and reuse, exact
+cross-executor selection semantics, pinned artifact reads, and consistent source-level error
+handling. Dataset writes are no-clobber by default, persisted reuse requires a strong source
+identity, and unsupported future artifact or job versions fail loudly. See the
+[Unreleased changelog](https://github.com/aintropy-ai/kuration-sdk/blob/main/CHANGELOG.md#unreleased)
+for the complete evolving list.
+
+## Prior `0.1.0rc4` candidate
+
+The `0.1.0rc4` candidate focused on correctness, artifact integrity, and explicit extension
+contracts. It was not tagged or published to PyPI from this repository.
 
 ### New analyzer capabilities
 

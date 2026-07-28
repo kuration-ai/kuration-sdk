@@ -11,9 +11,9 @@ raises with a pointer at `--kinds` or an explicit hand-written schema.
 from __future__ import annotations
 
 import argparse
-import json
 
-from ._common import cli_run, parse_mapping_option
+from ._common import (cli_run, guard_file_output, json_document,
+                      parse_mapping_option)
 
 _ADAPTER_FOR_KIND = {
     "timeseries": "timeseries", "jsonl": "jsonl", "json-rows": "timeseries",
@@ -48,7 +48,9 @@ def infer_source(source: str, *, name: str = "inferred", time: str | None = None
             "code": "list-columns-expanded",
             "message": f"list cells expanded per dimension: {sorted(hints['list_columns'])}",
             "hint": "Confirm the expanded dimension names match the field's meaning."})
-    return {"source": str(source), "adapter_kind": kind, "schema": schema.to_dict(),
+    from ..provenance import publishable_source_id
+    return {"source": publishable_source_id(source), "adapter_kind": kind,
+            "schema": schema.to_dict(),
             "hints": hints, "adapter": adapter, "warnings": warnings}
 
 
@@ -76,7 +78,9 @@ def main() -> None:
         description="Infer a kuration schema and adapter hints from a data sample.")
     ap.add_argument("source", help="One data file, or a directory of .parquet parts.")
     ap.add_argument("--out", metavar="PATH",
-                    help="Write the schema document here; a job may reference it by path.")
+                    help="Write the schema document here; refuses an existing file.")
+    ap.add_argument("--force", action="store_true",
+                    help="Overwrite an existing --out file (never the sampled source).")
     ap.add_argument("--name", default="inferred", help="Schema name (default: inferred).")
     ap.add_argument("--time", help="Time-column override.")
     ap.add_argument("--entity", help="Entity-column override.")
@@ -92,6 +96,11 @@ def main() -> None:
     args = ap.parse_args()
 
     def body():
+        if args.force and not args.out:
+            raise ValueError("--force requires --out")
+        if args.out:
+            guard_file_output(args.out, force=args.force, protected_inputs=(args.source,),
+                              label="schema output")
         if args.sample < 1:
             raise ValueError("--sample must be a positive integer")
         kinds = parse_mapping_option(args.kinds, label="--kinds")
@@ -100,8 +109,9 @@ def main() -> None:
                               sample=args.sample)
         if args.out:
             from ..io import write_text
-            write_text(args.out, json.dumps(result["schema"], indent=2) + "\n")
-        print(json.dumps(result, indent=2) if args.json else render_inference(result))
+            write_text(args.out, json_document(result["schema"], label="inferred schema"))
+        print(json_document(result, label="schema inference").rstrip()
+              if args.json else render_inference(result))
         if args.out and not args.json:
             print(f"wrote schema: {args.out}")
 

@@ -90,3 +90,48 @@ def test_namespaced_container_dispatch(tmp_path):
                        {"x": np.arange(3)}, 3)
     arrays, n = read_shard(path, "acme/test-container")
     assert n == 3 and arrays["x"].tolist() == [0, 1, 2]
+
+
+def test_namespaced_container_is_staged_for_remote_paths():
+    pytest.importorskip("fsspec")
+    observed_paths: list[str] = []
+
+    def writer(path, arrays, n_steps):
+        observed_paths.append(path)
+        assert "://" not in path
+        with open(path, "wb") as stream:
+            np.savez(stream, _n_steps=n_steps, **arrays)
+
+    def reader(path):
+        observed_paths.append(path)
+        assert "://" not in path
+        with np.load(path, allow_pickle=False) as archive:
+            return (
+                {key: np.asarray(archive[key]) for key in archive.files
+                 if key != "_n_steps"},
+                int(archive["_n_steps"]),
+            )
+
+    name = "acme/test-staged-remote-container"
+    register_container(name, extension=".acme", writer=writer, reader=reader)
+    path = write_shard(
+        "memory://custom-container/part", name, {"x": np.arange(3)}, 3)
+    arrays, n_steps = read_shard(path, name)
+
+    assert arrays["x"].tolist() == [0, 1, 2]
+    assert n_steps == 3
+    assert len(observed_paths) == 2
+
+
+def test_container_extension_cannot_escape_the_shard_directory(tmp_path):
+    escaped = tmp_path / "escaped.bin"
+
+    with pytest.raises(ValueError, match="one filename suffix"):
+        register_container(
+            "acme/path-escape-container",
+            extension=".x/../../../escaped.bin",
+            writer=lambda path, arrays, n_steps: None,
+            reader=lambda path: ({}, 0),
+        )
+
+    assert not escaped.exists()

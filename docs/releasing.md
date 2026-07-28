@@ -2,9 +2,10 @@
 
 The CI workflow tests Python 3.11 through 3.14, declared minimum dependencies, core-only installs,
 macOS and Windows smoke paths, and each optional integration at both current and minimum versions.
-It builds the wheel and source distribution once with the pinned tools in
-`.github/constraints/release.txt`, runs `twine check` and `check-wheel-contents`, installs the wheel
-in a clean environment, and records SHA-256 hashes.
+It also resolves the pinned minimum set and audits its complete dependency graph against the
+Python vulnerability database. It builds the wheel and source distribution once with the pinned
+tools in `.github/constraints/release.txt`, runs `twine check` and `check-wheel-contents`, installs
+the wheel in a clean environment, and records SHA-256 hashes.
 
 A published final GitHub release runs `.github/workflows/publish.yml`. That workflow resolves the
 release tag to a commit, requires a successful `CI` workflow for that exact commit, downloads its
@@ -37,6 +38,9 @@ Connect. It never rebuilds a release artifact. No long-lived PyPI API token is s
 5. Tag that commit and publish the final GitHub release. The workflow promotes the CI-built wheel
    and sdist, publishes them to PyPI, and attaches the distributions plus `SHA256SUMS` to the
    GitHub release.
+6. Immediately after the release, advance `project.version` to the next planned `.devN` identity
+   before merging new Unreleased work. CI rejects a non-empty Unreleased section that still builds
+   with an already released changelog version.
 
 The publishing job runs only for a non-prerelease GitHub release and verifies that its tag matches
 `project.version`; a PEP 440 pre-release version also fails if the GitHub release is accidentally

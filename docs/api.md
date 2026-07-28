@@ -5,8 +5,8 @@ and `kuration.gameplay` domain),
 grouped by layer, with its real
 signature. Optional-extra requirements are tagged (`[methods]`, `[parquet]`, `[array]`,
 `[video]`, `[ray]`,
-`[cloud]`, `[torch]`, `[hf]`, `[zarr]`, `[gameplay]`, `[pixel-shift]`, `[action-state]`, `[slam]`,
-`[slam-viz]`). For concepts and recipes see the per-layer docs
+`[cloud]`, `[torch]`, `[hf]`, `[zarr]`, `[scale]`, `[stats]`, `[gameplay]`, `[pixel-shift]`,
+`[action-state]`, `[slam]`, `[slam-viz]`). For concepts and recipes see the per-layer docs
 ([schema](schema.md) · [dsl](dsl.md) · [adapters](adapters.md) · [strategies](strategies.md) ·
 [output](output.md)) and the [usage cookbook](usage.md).
 
@@ -23,28 +23,33 @@ objects as noted below.
 |---|---|---|
 | `__version__` | `str` | installed `kuration-sdk` distribution version |
 | `curate` | `(*, schema, adapter, sources, strategy, segmenter, target_size, seed=0, group_of=None, tags_of=None, test_frac=0.0, workers=1, on_error="skip", streaming=False, progress=None, transforms=(), registry=None, executor="local") -> CurateResult` | score/transform all sources, select a target **count** of segments |
-| `write_dataset` | `(out_dir, *, schema, adapter, sources, strategy, segmenter, spec, encoder=None, train_hours, test_hours=0.0, sample_hz=None, seed=0, group_of=None, tags_of=None, clip_aggregate="max", span_steps=None, span_seconds=None, workers=1, on_error="skip", resume=False, streaming=False, progress=None, transforms=(), registry=None, executor="local", memory_budget=None, batch_size=1024, checkpoint_dir=None, spill_dir=None, approximation="exact", max_in_flight=2) -> dict` | score/transform, fill a train/test **hour budget**, write shards + manifests + config; a memory budget selects the exact bounded checkpoint path |
-| `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local") -> dict` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
-| `dataset_report` | `(segments, *, metrics=None, hist_bins=10) -> dict` | per-metric distribution profile (+ tag/group counts) of a scored pool |
+| `write_dataset` | `(out_dir, *, schema, adapter, sources, strategy, segmenter, spec, encoder=None, train_hours, test_hours=0.0, sample_hz=None, seed=0, group_of=None, tags_of=None, clip_aggregate="max", span_steps=None, span_seconds=None, workers=1, on_error="skip", resume=False, force=False, streaming=False, progress=None, transforms=(), registry=None, executor="local", memory_budget=None, batch_size=1024, checkpoint_dir=None, spill_dir=None, approximation="exact", max_in_flight=2) -> DatasetWriteResult` | score/transform, fill a train/test **hour budget**, write shards + manifests + config; a memory budget selects the exact bounded checkpoint path |
+| `run_experiment` | `(*, schema, adapter, sources, arms, segmenter, target_size, seed=0, baseline=None, group_of=None, tags_of=None, workers=1, on_error="skip", streaming=False, progress=None, executor="local") -> ExperimentResult` | score once over the arms' union, select per arm, JS-divergence vs `baseline` |
+| `Arm` | `(name, strategy, transforms=(), registry=None)` | one experiment arm; `union_define(arms)` merges arm definitions |
+| `dataset_report` | `(segments, *, metrics=None, hist_bins=10) -> DatasetReport` | per-metric distribution profile (+ tag/group counts) of a scored pool |
 | `stats` | `(subject, *, hist_bins=10, max_sources=3, max_ticks_per_source=10000, examples=5, max_values=100000, content=True, verify=False, progress=None, registry=None) -> StatsReport` | unified statistics for a pipeline, count selection, write result, typed report, or existing artifact path |
 | `progress_callback` | `(progress="auto") -> ProgressCallback \| None` | resolve `"auto"`, `"notebook"`, `"terminal"`, `"cli"`, `"off"`, a boolean, or an existing callback; pipeline users normally select this through `.options(progress=...)` |
 | `kuration.core` | module | explicit import facade for the domain-agnostic top-level API |
 | `kuration.gameplay.slam_pipeline` | `(source, output=None, *, depth_model=None, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, runtime_factory=None, join_video=False, tolerance=None, mismatch="error", provider=None, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False, **runtime_options) -> Pipeline` | convenience function—not a class—that reconstructs raw input when needed or opens an existing SLAM manifest, then returns the sole curation pipeline type |
 | `kuration.gameplay.action_state_checker` | `(*, baselines, anomaly_type="action_state") -> Analyzer` | construct the action-state consistency analyzer without a component-name string |
+| `kuration.gameplay.load_baselines_from_reference` | `(reference, *, controls=None) -> dict` | validate an action-state reference report and derive checker baselines, optionally for a control subset |
 | `kuration.gameplay.compare_videos` | `(left, right, *, labels=None, provider=None) -> VideoComparison` | create a synchronized notebook/HTML gameplay review without eagerly importing PyAV or Matplotlib |
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
 cap and stratified splits); `tags_of(segment) -> iterable` overrides declarative tags;
 `sources` contains non-empty string identifiers/URIs (use `str(path)` for `pathlib.Path` values);
 `executor` selects ordered local or optional Ray source work; `workers` caps concurrent local
-workers or submitted Ray tasks (deterministic); `on_error` is `"skip"` (log + collect)
-or `"raise"`; `streaming=True` is the out-of-core path; `progress(event_dict)` receives phase
-events without coupling execution to a particular UI.
+workers or submitted Ray tasks (deterministic); `on_error` is `"skip"` (log + collect, with the
+source removed as a unit across feature, transform, and scorer-buffer reads) or `"raise"`;
+`streaming=True` is the out-of-core path; `progress(event_dict)` receives phase events without
+coupling execution to a particular UI.
 
 - `CurateResult` — dataclass: `selected`, `all_segments`, `schema`, `strategy`, `splits`, `errors`,
   scored `source_tracks`, optional bounded-execution metadata in `execution`, and `seed`.
-- `write_dataset` returns `{"dataset": out_dir, "shards": [entries], "split": {source -> "train"/"test"}, "admitted": set, "results": {...counts}, "errors": [...]}`.
-- `Arm(name, strategy)` — one experiment arm; `union_define(arms) -> dict` merges their `define`s.
+- `DatasetWriteResult` is mapping-compatible and contains `dataset`, `shards`, `split`,
+  `admitted`, `results`, and `errors`; `.stats()` summarizes its written artifact.
+- `Arm(name, strategy, transforms=(), registry=None)` — one experiment arm;
+  `union_define(arms) -> dict` merges their `define`s.
 
 ## Fluent pipeline
 
@@ -61,7 +66,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.slam_motion_diversity` | `(*, axis="slam_path_length", bins=8) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/slam-motion-diversity`; add SLAM motion features and bin one diversity axis |
 | `Pipeline.slam_quality` | `(*, min_score=None, min_tracking_confidence=0.5, translation_ratio=10.0, translation_mad_multiplier=8.0, max_translation_step=None, max_turn_degrees=90.0) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/slam-quality`; add SLAM quality features and optionally filter weak windows |
 | `Pipeline.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params) -> Pipeline` | add a registered bounded scalar-feature transform |
-| `Pipeline.using` | `(registry) -> Pipeline` | resolve adapters, metrics, scorers, encoders, methods, filters, containers, and presets through an explicit `Registry` overlay |
+| `Pipeline.using` | `(registry) -> Pipeline` | resolve adapters, analyzers, containers, encoders, filters, methods, metrics, operators, presets, scorers, and transforms through one explicit `Registry` overlay |
 | registered operator methods | `(**params) -> Pipeline` | every operator is callable by normalized local name (`acme/signal-diversity` → `signal_diversity`) or qualified name (`acme__signal_diversity`); custom modules and plugins use the same flow |
 | `Pipeline.apply` | `(name, **params) -> Pipeline` | compatibility-only string dispatch; normal Python code uses the generated operator method |
 | `Pipeline.semantic` | `(field, semantics, *, dims=None, bits=None, max_rate=None) -> Pipeline` | refine an inferred field as `"position"`, `"angular"`, or `"bitmask"` |
@@ -77,17 +82,17 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.tag` | `(*sources, min_frac=None) -> Pipeline` | declarative tag sources (+ optional tag-coverage floor) |
 | `Pipeline.split` | `(test=0.2) -> Pipeline` | source-level test split |
 | `Pipeline.group` | `(fn) -> Pipeline` | `group_of(source_id) -> key` |
-| `Pipeline.options` | `(**kw) -> Pipeline` | `mode, executor, workers, on_error, seed, streaming, resume, sample_hz, progress`; progress accepts a callback or `"auto"`, `"notebook"`, `"terminal"`, `"cli"`, `"off"` |
+| `Pipeline.options` | `(**kw) -> Pipeline` | closed options: `mode, executor, workers, on_error, seed, streaming, resume, sample_hz, progress, memory_budget, batch_size, checkpoint_dir, spill_dir, approximation, max_in_flight`; progress accepts a callback or `"auto"`, `"notebook"`, `"terminal"`, `"cli"`, `"off"` |
 | `Pipeline.expect` | `(**expectations) -> Pipeline` | attach closed-grammar quality gates evaluated by `preview()` or `review()` |
 | `Pipeline.sample` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | configure selection; exactly one of `n=`/`hours=` (`curate` remains as a compatibility alias) |
-| `Pipeline.curate` | `(method=None, **selection_options) -> Pipeline` | compatibility alias for `Pipeline.sample` |
+| `Pipeline.curate` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | compatibility alias for `Pipeline.sample` |
 | `Pipeline.collect` | `(n=None) -> CurateResult` | terminal — count-path selection |
-| `Pipeline.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, preset_params=None, dry_run=False, inspect_sources=False) -> DatasetWriteResult \| ExecutionPlan` | terminal — write shards + manifests + `config.json`; with `dry_run=True`, validate and estimate without writing |
-| `Pipeline.report` | `(**kw) -> dict` | terminal — feature pass only → `dataset_report` |
+| `Pipeline.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, preset_params=None, force=False, dry_run=False, inspect_sources=False) -> DatasetWriteResult \| ExecutionPlan` | terminal — write shards + manifests + `config.json`; existing artifacts require `force=True`, while `dry_run=True` validates and estimates without writing |
+| `Pipeline.report` | `(**kw) -> DatasetReport` | terminal — feature pass only → `dataset_report` |
 | `Pipeline.stats` | `(**kwargs) -> StatsReport` | terminal — thin sugar for `stats(pipeline, **kwargs)`: input/candidate statistics before selection, candidate-versus-selected statistics after `sample(n=...)`, or a planned-hours report before output |
 | `Pipeline.analyze` | `(name, parameters=None, *, mode=None, inputs=None, batch_size=None, analyzer=None, **options) -> dict` | terminal — run a registered stateful analyzer; `mode="stream"` (default) drives `add_batch` over the segmented tick stream with lazy media, `mode="dataset"` (default for an artifact-backed pipeline) drives `check_dataset` and returns what `run_dataset_analyzer` returns |
 | `Pipeline.check` | `(policy=None, *, verify=False, **expectations) -> QualityGateResult` | terminal — evaluate quality gates without raising; artifact-backed pipelines are gated exactly as `kur-check --policy` gates them, others on a bounded input preview |
-| `Pipeline.experiment` | `(arms: dict, n: int, baseline=None) -> dict` | terminal — multi-arm comparison (`arms` maps name → `Pipeline` or raw strategy dict) |
+| `Pipeline.experiment` | `(arms: dict, n: int, baseline=None) -> ExperimentResult` | terminal — multi-arm comparison (`arms` maps name → `Pipeline` or raw strategy dict) |
 | `Pipeline.head` | `(k=5) -> list[Tick]` | inspector — first `k` ticks of the first source |
 | `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources, expectations}`, no data touched |
 | `Pipeline.preview` | `(*, max_sources=3, max_ticks_per_source=10000, examples=5) -> DatasetPreview` | inspector — bounded field quality, source shape, and representative tick sample |
@@ -117,7 +122,7 @@ See [pipeline.md](pipeline.md) for accepted operator forms and validation behavi
 | `DatasetComparison` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | structured differences between two curated artifacts |
 | `ValidationResult` | dict-compatible; `.to_dict()` and attribute access | programmatic validation result used by the CLI layer |
 | `ExecutionPlan` | `(source, schema, window, strategy, output, options, stages=(), warnings=(), physical_plan=None)` | immutable mapping returned by `Pipeline.explain`; `.to_dict()` serializes and `.render(detailed=False)` formats text |
-| `inspect_dataset` | `(dataset, *, verify=False, container=None) -> DatasetInspection` | inspect manifests/config without original sources; `verify=True` decodes every shard |
+| `inspect_dataset` | `(dataset, *, verify=False, container=None, registry=None) -> DatasetInspection` | inspect manifests/config without original sources; `verify=True` decodes every shard |
 | `preview_dataset` | `(*, schema, adapter, sources, max_sources=3, max_ticks_per_source=10000, examples=5) -> DatasetPreview` | classic-API form of the bounded data preview |
 | `selection_review` | `(result, *, seed=0, examples=10, hist_bins=10) -> SelectionReview` | review an existing `CurateResult` |
 | `hours_selection_review` | `(result) -> HoursSelectionReview` | review an hours-path `DatasetWriteResult` without rescoring |
@@ -174,7 +179,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `HuggingFaceAdapter` | `(schema, *, fields, dataset, split="train", config=None, time_column=None, entity_column=None, globals=None, source_column=None, load_kwargs=None)`; `.sources()` | a HF dataset (`[hf]`) |
 | `ZarrAdapter` | `(schema, *, fields, globals=None)` | a Zarr store (`[zarr]`; remote via `[gcs]`, `[s3]`, or `[azure]`) |
 | `CuratedDatasetAdapter` | `(dataset_dir_or_list, schema=None)`; `.sources()`, `.dataset_of` | kuration's own output, re-curatable |
-| `schema_from_output` | `(output_spec_dict, *, name="curated", sample_hz=None, entity_axis="e") -> SchemaSpec` | derive a schema from a dataset's `config.json` output block |
+| `schema_from_output` | `(output_spec, *, name="curated", sample_hz=None, entity_axis="e") -> SchemaSpec` | derive a schema from a dataset's `config.json` output block |
 | `register_adapter` / `get_adapter` | `(name, factory, **metadata) -> None` / `(name, *, registry=None, **kwargs) -> InputAdapter` | declarative adapter registry |
 | `InputAdapter` | Protocol: `schema` + `ticks(uri)`; optional lazy `iter_ticks(uri)`, `check_source(uri)`, and `sources_are_paths` | the seam to implement for bespoke formats |
 | `VideoAdapter` / `JoinedMediaAdapter` | video-only sources / strict media join over another adapter | lazy MP4 media columns (`[video]` for PyAV provider) |
@@ -183,7 +188,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 
 | name | signature | does |
 |---|---|---|
-| `load_strategy` | `(dict_or_json_path, schema, *, registry=None, available_metrics=()) -> Strategy` | parse + validate a declarative strategy ([strategies.md](strategies.md)) |
+| `load_strategy` | `(name_or_spec, schema, *, registry=None, available_metrics=()) -> Strategy` | parse + validate a declarative strategy ([strategies.md](strategies.md)) |
 | `Strategy` | fields: `define, axes, method, weights, normalize, target, tag_coverage, group_cap, predicates, feature_space, method_params, filters, tags, scorers, resolved` | the loaded strategy (its `.resolved` dict lands in `config.json`) |
 | `bin_segments` | `(segments, axes) -> None` | assign quantile-bin tuples in place (tie-robust, NaN-loud) |
 | `quantile_bins` | `(values, n_bins) -> edges` | raw equal-frequency edges |
@@ -199,7 +204,7 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 |---|---|---|
 | `SegmentScorer` | Protocol: `score(segments, ctx) -> array`; optional `needs_buffers=True` | the learned/whole-pool seam |
 | `register_scorer` / `get_scorer` | `(name, factory, **metadata)` / `(name, *, registry=None, **kwargs)` | registry (`action_residual` ships, `[methods]`) |
-| `apply_scorers` | `(entries, segments, *, schema, adapter, seed=0, progress=None, registry=None) -> None` | run parsed scorers, write outputs into `seg.features` |
+| `apply_scorers` | `(entries, segments, *, schema, adapter, seed=0, progress=None, registry=None, on_error="raise", errors=None) -> None` | run parsed scorers and write outputs into `seg.features`; optional source-level skip applies to second-read buffer failures |
 
 ## Plugins and progress
 
@@ -237,11 +242,11 @@ All take `schema` first and expose `.ticks(source_uri)`, plus a metadata-only
 | `SplitLeakageAnalyzer.add_assignment` | `(source_id, split, *, group=None) -> None` | record one observation; repeating the same assignment is allowed |
 | `SplitLeakageAnalyzer.add_assignments` | `(source_splits, *, source_groups=None) -> None` | record a `{source_id: split}` mapping and optional `{source_id: group}` mapping |
 | `SplitLeakageAnalyzer.summary` | `() -> dict` | return the deterministic, JSON-safe leakage report described below |
-| `register_analyzer` | `(name, factory=None, **metadata)` | register a discoverable analyzer factory directly or as a decorator |
+| `register_analyzer` | `(name, factory=None, *, inputs=(), media_requirements=None, resources=None, lookbehind=0, lookahead=0, ownership=None, **metadata)` | register a discoverable analyzer factory directly or as a decorator |
 | `get_analyzer` | `(name, *, registry=None, **params) -> Analyzer` | validate parameters and construct a user-owned analyzer instance |
 | `run_dataset_analyzer` | `(name, dataset, *, parameters=None, options=None, registry=None) -> dict` | construct a dataset-capable analyzer, run its hook, and validate the boolean `passed` result |
 | `run_stream_analyzer` | `(name, *, schema, adapter, sources, segmenter, parameters=None, options=None, inputs=None, batch_size=None, device="cpu", on_error="raise", progress=None, registry=None, analyzer=None) -> dict` | drive a stream-capable analyzer's `add_batch` hook over a segmented tick stream in one bounded pass (what `Pipeline.analyze()` calls) |
-| `import_dataset` | `(sources, out, *, adapter=None, schema=None, fields=None, time=None, entity=None, hz=None, kinds=None, adapter_options=None, source_id=None, split="train", shard_length=None, container="npz", force=False, registry=None) -> dict` | detect/construct a registered adapter and import its complete array or canonical-tick dataset into a committed Kuration artifact |
+| `import_dataset` | `(sources, out, *, adapter=None, schema=None, fields=None, time=None, entity=None, hz=None, kinds=None, adapter_options=None, source_id=None, split="train", shard_length=None, container="npz", force=False, registry=None) -> dict` | snapshot local sources, detect/construct a registered adapter, and import the complete array or canonical-tick dataset into a committed artifact; generic remote sources fail closed because fsspec cannot bind the read to one generation |
 
 `SplitLeakageAnalyzer` requires `source_id`, `split`, and each supplied `group` to be non-empty
 strings; `group=None` means that no group is known. Split names are not limited to train/test, so
@@ -286,14 +291,14 @@ remain the Python convenience boundary.
 | `SegmentBatch` | `(record_batch)`; `.from_segments(...)`, `.read_ipc(...)` | immutable bounded Arrow record batch with projection, slicing, NumPy views, and atomic IPC |
 | `iter_segment_batches` | `(segments, batch_size, **kwargs) -> Iterator[SegmentBatch]` | convert an iterable while retaining at most one configured Python batch |
 | `CheckpointIdentity` | `(logical_plan_hash, physical_plan_hash, input_fingerprints=(), schema={}, components=(), parameters={})` | complete reuse identity for a physical stage |
-| `PartitionCommit` | `(partition_id, identity, data_file, rows, sha256, columns, ...)` | checksum-protected committed partition metadata |
+| `PartitionCommit` | `(partition_id, identity, data_file, rows, sha256, columns, size_bytes=0, key_range=None, reducer_state=None, errors=())` | checksum-protected committed partition metadata |
 | `StageCheckpoint` | `(root, stage_id, identity)` | validate, reuse, publish, and finalize independent partition commits |
 | `canonical_hash` | `(value) -> str` | deterministic SHA-256 over canonical JSON |
 | `FeatureStageResult` | `(commits, errors, source_tracks, telemetry={})` | bounded feature-island result without a total Python segment pool |
-| `checkpoint_feature_stage` | `(*, schema, adapter, sources, define, registered, segmenter, checkpoint, batch_size=1024, ...) -> FeatureStageResult` | stream segmentation, metrics, predicates, and transforms into checkpoint partitions |
+| `checkpoint_feature_stage` | `(*, schema, adapter, sources, define, registered, segmenter, checkpoint, batch_size=1024, tags_spec=None, predicates=(), transforms=(), registry=None, group_of=None, tags_of=None, on_error="skip", progress=None, max_in_flight=2, memory_budget=None, retain_predicate_failures=False) -> FeatureStageResult` | stream segmentation, metrics, predicates, and transforms into checkpoint partitions |
 | `external_quantile_edges` | `(partitions, feature, n_bins, *, spill_dir=None) -> ndarray` | exact NumPy-compatible quantiles with disk-proportional state |
-| `external_top_k` | `(partitions, *, weights, target_size, normalize="quantile", spill_dir=None) -> list[Segment]` | exact stable top-k that materializes only selected segments |
-| `external_uniform_bins` | `(partitions, *, axes, target_size, seed=0, spill_dir=None) -> list[Segment]` | exact multipass quantile organization and deterministic disk-backed equal-bin selection |
+| `external_top_k` | `(partitions, *, weights, target_size, normalize="quantile", spill_dir=None, predicates=()) -> list[Segment]` | exact stable top-k that materializes only selected segments |
+| `external_uniform_bins` | `(partitions, *, axes, target_size, seed=0, spill_dir=None, predicates=()) -> list[Segment]` | exact multipass quantile organization and deterministic disk-backed equal-bin selection |
 | `iter_external_uniform_priorities` | `(partitions, *, axes, seed=0, spill_dir=None) -> Iterator[tuple[Segment, float]]` | exact disk-backed uniform-bin priorities for hours filling |
 | `iter_external_top_k_priorities` | `(partitions, *, weights, normalize="quantile", spill_dir=None)` | stream every canonical segment with its exact disk-backed normalized priority |
 | `iter_external_span_items` | `(prioritized_segments, source_tracks, *, sample_hz, span_len=None, clip_aggregate="max", group_of=None, spill_dir=None)` | aggregate overlapping segment priorities/features into a bounded span-item stream |
@@ -310,7 +315,9 @@ Media contracts include `MediaSpec`, `FrameRef`, `VideoMetadata`, `MediaProvider
 include `BatchTransform`, `TransformContext`, `register_batch_transform` (`register_transform`
 alias), `get_transform`, `ExecutionBackend`, `ResourceSpec`, and the
 ordered `LocalExecutionBackend` / `RayExecutionBackend` implementations. `apply_transforms`
-executes resolved calls over canonical segments; `get_execution_backend` resolves a backend.
+executes resolved calls over canonical segments; it accepts `on_error="raise"|"skip"` and an
+optional error list, and skip removes the failed source's entire segment set and resets component
+state before the next source. `get_execution_backend` resolves a backend.
 
 | name | signature | does |
 |---|---|---|
@@ -396,7 +403,7 @@ compose bounded trajectory transforms.
 | `iter_shards` | `(dataset, *, split=None, modalities=None, trim=True, container=None, with_meta=False, registry=None, verify=True) -> Iterator[dict]` | shards back as `{modality -> array}` plus `_present` when enabled; checksum/size verification defaults on |
 | `shard_entries` | `(dataset, *, split=None, container=None) -> (entries, container)` | manifest entries (paths rebased if the dataset moved) |
 | `read_shard_arrays` | `(entry, container, *, modalities=None, trim=True, registry=None, verify=True) -> {name: array}` | one shard: verify integrity, trim pad, reshape, restore dtype |
-| `kuration.core.torch.ShardDataset` | `(dataset, *, split=None, modalities=None, trim=True, container=None, transform=None, include_meta=False, verify=True)` | map-style PyTorch `Dataset` over the above (`[torch]`) |
+| `kuration.core.torch.ShardDataset` | `(dataset, *, split=None, modalities=None, trim=True, container=None, transform=None, include_meta=False, verify=True, registry=None)` | map-style PyTorch `Dataset` over the above (`[torch]`) |
 
 `dataset` is a dataset directory, a `dataset_manifest.json` path, or a loaded manifest dict.
 
@@ -423,6 +430,6 @@ compose bounded trajectory transforms.
 | `migrate_job` | `(job) -> dict` | deep-copy and migrate a job dictionary to `JOB_SCHEMA_VERSION` |
 | `migrate_config` | `(config) -> dict` | deep-copy and migrate an artifact config to `ARTIFACT_FORMAT_VERSION` |
 
-Migration is non-mutating for dictionary inputs. A malformed version, non-object input, or a
-future unsupported major version raises `ValueError`. The matching command-line interface is
+Migration is non-mutating for dictionary inputs. A malformed version, non-object input, or any
+unsupported future version (major or minor) raises `ValueError`. The matching command-line interface is
 `kur-migrate`; see [jobs.md](jobs.md) for the serialized job contract.

@@ -267,6 +267,16 @@ def _parse_filter(filt: str):
                      f"'<field>:bit:<NAME>')")
 
 
+def _numeric_filter_value(filt: str, value: str) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"filter '{filt}': value {value!r} is not numeric") from error
+    if not math.isfinite(numeric):
+        raise ValueError(f"filter '{filt}': value {value!r} must be finite")
+    return numeric
+
+
 def _filter_mask(filt: Optional[str], w: WindowBuffer, schema: SchemaSpec,
                  offset: int) -> Optional[np.ndarray]:
     if filt is None:
@@ -294,10 +304,7 @@ def _filter_mask(filt: Optional[str], w: WindowBuffer, schema: SchemaSpec,
             mask = codes == code
         else:
             grid = w.numeric_field(field)[..., 0]
-            try:
-                fv = float(val)
-            except ValueError:
-                raise ValueError(f"filter '{filt}': value {val!r} is not numeric")
+            fv = _numeric_filter_value(filt, val)
             ops = {">": grid > fv, ">=": grid >= fv, "<": grid < fv,
                    "<=": grid <= fv, "==": grid == fv}
             mask = ops[op]
@@ -325,7 +332,9 @@ def _apply_map(mapop: str, grid: np.ndarray, is_vec: bool, fs: FieldSpec,
         if not (is_vec and fs.semantics == "position"):
             raise ValueError("map 'speed' requires a 'position' vector source")
         d = grid[1:] - grid[:-1]
-        hz = schema.sample_hz or 1.0
+        hz = schema.sample_hz
+        if hz is None:
+            raise ValueError("map 'speed' requires schema.sample_hz")
         speed = np.sqrt((d ** 2).sum(axis=-1)) * hz
         if fs.max_rate is not None:
             # Reject teleport/outlier spikes (a per-step rate above the field's declared
@@ -361,7 +370,7 @@ def _resolve_entity_source(rest: str, schema: SchemaSpec):
     return fs, fs.dims.index(dim)
 
 
-def _validate_map(mapop: str, fs: FieldSpec, is_vec: bool) -> bool:
+def _validate_map(mapop: str, fs: FieldSpec, is_vec: bool, schema: SchemaSpec) -> bool:
     """Compile-time check of a map token against the field's semantics. Returns the
     resulting is_vec (whether the stream is still a vector after the map). Raises loudly."""
     if mapop == "abs" or mapop == "delta":
@@ -375,6 +384,8 @@ def _validate_map(mapop: str, fs: FieldSpec, is_vec: bool) -> bool:
     if mapop == "speed":
         if not (is_vec and fs.semantics == "position"):
             raise ValueError("map 'speed' requires a 'position' vector source")
+        if schema.sample_hz is None:
+            raise ValueError("map 'speed' requires schema.sample_hz")
         return False
     if mapop == "angle_delta":
         if fs.semantics != "angular":
@@ -404,10 +415,7 @@ def _validate_filter(filt: str, schema: SchemaSpec) -> None:
                 raise ValueError(
                     f"filter '{filt}': field {field!r} is a vector — comparison filters take "
                     f"scalar fields only (there is no .<dim> filter syntax)")
-            try:
-                float(val)
-            except ValueError:
-                raise ValueError(f"filter '{filt}': value {val!r} is not numeric")
+            _numeric_filter_value(filt, val)
 
 
 def _compile_entity(rest: str, spec: dict, schema: SchemaSpec) -> Callable[[WindowBuffer], float]:
@@ -452,7 +460,7 @@ def _compile_entity(rest: str, spec: dict, schema: SchemaSpec) -> Callable[[Wind
     if mapop is not None:
         if is_cat:
             raise ValueError(f"categorical source {fs.name!r} takes no map")
-        is_vec = _validate_map(mapop, fs, is_vec)
+        is_vec = _validate_map(mapop, fs, is_vec, schema)
     if filt is not None:
         _validate_filter(filt, schema)
     if is_cat and reduce not in _CATEGORICAL_REDUCES:

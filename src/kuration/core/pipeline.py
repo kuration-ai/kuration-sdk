@@ -20,7 +20,7 @@ import math
 import os
 import copy
 import re
-from functools import lru_cache
+from functools import lru_cache, wraps
 from itertools import islice
 from typing import Any, Callable, Optional
 
@@ -35,6 +35,7 @@ from .adapters.timeseries import TimeseriesAdapter
 from .adapters.zarr_store import ZarrAdapter
 from .buffer import Tick
 from .dsl.grammar import compile_metric
+from .results import DatasetReport, ExperimentResult
 from .schema import SchemaSpec
 from .segment import Segmenter
 from ._pipeline_support import (
@@ -55,6 +56,23 @@ from ._pipeline_support import (
 )
 
 __all__ = ["Pipeline", "input"]
+
+
+def _leased_output(method):
+    """Serialize publication to one destination while preserving the public signature."""
+    @wraps(method)
+    def locked(self, path, *args, **kwargs):
+        if kwargs.get("dry_run", False):
+            return method(self, path, *args, **kwargs)
+        from .manifest import (
+            dataset_writer_lease,
+            validate_source_destination_separation,
+        )
+        validate_source_destination_separation(
+            str(path), self.sources, adapter=self.adapter)
+        with dataset_writer_lease(str(path)):
+            return method(self, path, *args, **kwargs)
+    return locked
 
 
 def _unique_sources(sources: list[str], *, context: str) -> list[str]:
@@ -241,7 +259,9 @@ def input(src=None, *, schema=None, adapter=None, sources=None, fields=None,
     op = {"op": "input",
           "args": [] if src is None else [_describe_src(src)],
           "kwargs": {k: _jsonable(v) for k, v in dict(
-              schema=schema, adapter=adapter, sources=sources, fields=fields, time=time,
+              schema=schema, adapter=adapter,
+              sources=_describe_src(sources) if sources is not None else None,
+              fields=fields, time=time,
               entity=entity, hz=hz, kinds=kinds, sample=sample, globals=globals,
               **adapter_kw).items() if v is not None}}
     if isinstance(schema, dict):
@@ -792,7 +812,11 @@ class Pipeline:
         if any(not isinstance(uri, str) or not uri for uri in mapping.values()):
             raise ValueError("join_video mappings must resolve to non-empty video URI strings")
         from .media import JoinedMediaAdapter
-        p = self._next("join_video", videos=mapping, column=column, on=on,
+        recorded_mapping = {
+            _describe_src(source): _describe_src(uri)
+            for source, uri in mapping.items()
+        }
+        p = self._next("join_video", videos=recorded_mapping, column=column, on=on,
                        tolerance=tolerance, mismatch=mismatch)
         p.adapter = JoinedMediaAdapter(p.adapter, mapping, provider=provider, column=column,
                                        on=on, tolerance=tolerance, mismatch=mismatch)
@@ -1321,7 +1345,7 @@ class Pipeline:
                 "options": {**described_options,
                             "mode": self._mode,
                             "overrides": sorted(self._explicit_options)},
-                "sources": [str(s) for s in self.sources],
+                "sources": _describe_src(self.sources),
                 "expectations": dict(self._expectations)}
 
     def preview(self, *, max_sources: int = 3, max_ticks_per_source: int = 10_000,
@@ -1405,7 +1429,7 @@ class Pipeline:
             options["source_estimate"] = self._estimate_sources()
         return ExecutionPlan(source={"kind": type(self.adapter).__name__,
                                      "count": len(self.sources),
-                                     "sources": [str(s) for s in self.sources]},
+                                     "sources": _describe_src(self.sources)},
                              schema=self.schema.to_dict(), window=dict(self._window_desc),
                              strategy=strategy, output=None,
                              options=options, stages=stages,
@@ -1436,7 +1460,7 @@ class Pipeline:
                        transforms=self._transforms, registry=self._registry,
                        executor=self._options["executor"])
 
-    def report(self, **kw) -> dict:
+    def report(self, **kw) -> DatasetReport:
         """Feature pass only (no selection) -> dataset_report over the scored pool."""
         self._check_exec()
         from .report import dataset_report
@@ -1459,14 +1483,17 @@ class Pipeline:
                              if token.startswith("field:")})
         if self._transforms:
             from .transforms import apply_transforms
-            apply_transforms(self._transforms, segments, adapter=self.adapter,
-                             registry=self._registry, progress=self._options["progress"])
+            segments = apply_transforms(
+                self._transforms, segments, adapter=self.adapter,
+                registry=self._registry, progress=self._options["progress"],
+                on_error=self._options["on_error"], errors=_errors)
         if self._scorers:
             from .scorers import apply_scorers, parse_scorers
             apply_scorers(parse_scorers([dict(s) for s in self._scorers]), segments,
                           schema=self.schema, adapter=self.adapter,
                           seed=self._options["seed"], progress=self._options["progress"],
-                          registry=self._registry)
+                          registry=self._registry, on_error=self._options["on_error"],
+                          errors=_errors)
         return dataset_report(segments, **kw)
 
     def stats(self, **kwargs):
@@ -1605,7 +1632,12 @@ class Pipeline:
                                      sources=self.sources)
         return evaluate_quality(report, merged)
 
-    def experiment(self, arms: dict, n: int, baseline: Optional[str] = None) -> dict:
+    def experiment(
+        self,
+        arms: dict,
+        n: int,
+        baseline: Optional[str] = None,
+    ) -> ExperimentResult:
         """Multi-arm comparison over THIS pipeline's sources. `arms` maps name ->
         Pipeline (its compiled strategy) or raw strategy dict."""
         from .strategy import validate_target_size
@@ -1653,19 +1685,21 @@ class Pipeline:
                               progress=self._options["progress"],
                               executor=self._options["executor"])
 
+    @_leased_output
     def output(self, path, *, preset: Optional[str] = None, spec=None,
                container: Optional[str] = None, shard_length: int = 64,
                short_policy: str = "keep", modalities: Optional[dict] = None,
                include=None, exclude=None, encoder=None, span_steps: Optional[int] = None,
                span_seconds: Optional[float] = None, categorical: Optional[str] = None,
-               preset_params: Optional[dict] = None, dry_run: bool = False,
+               preset_params: Optional[dict] = None, force: bool = False, dry_run: bool = False,
                inspect_sources: bool = False):
         """Write shards + manifests + config.json. `.sample(hours=...)` routes through the
         hours-budget `write_dataset`; `.sample(n=...)` selects then writes each chosen
         segment as a sub-track. config.json gains a 'pipeline' key: the operator chain."""
         self._check_exec()
-        if not isinstance(dry_run, bool) or not isinstance(inspect_sources, bool):
-            raise ValueError("dry_run and inspect_sources must be true or false")
+        if (not isinstance(force, bool) or not isinstance(dry_run, bool)
+                or not isinstance(inspect_sources, bool)):
+            raise ValueError("force, dry_run, and inspect_sources must be true or false")
         path = str(path)
         if spec is not None and (preset is not None or modalities is not None or include is not None
                                  or exclude is not None or container is not None
@@ -1769,8 +1803,11 @@ class Pipeline:
                                          "short_policy": short_policy, "container": container},
                                         registry=self._registry)
         spec.validate_schema(self.schema)
-        output_op = {"op": "output", "args": [path], "kwargs": {
-            "preset": preset, "spec": spec.to_dict(), "categorical": categorical}}
+        from .output.containers import validate_container_availability
+        validate_container_availability(spec.container, registry=self._registry)
+        output_op = {"op": "output", "args": [_describe_src(path)], "kwargs": {
+            "preset": preset, "spec": spec.to_dict(), "categorical": categorical,
+            "force": force}}
         if isinstance(encoder, str):
             from .output.base import get_encoder
             encoder = get_encoder(encoder, registry=self._registry)
@@ -1784,6 +1821,15 @@ class Pipeline:
             raise ValueError(f"selection method {strategy.method!r} has no declared "
                              "approximate physical implementation yet; use "
                              "approximation='exact'")
+        if self._hours is None and opt["memory_budget"] is not None:
+            from .output.dataset import _minimum_output_working_bytes
+            output_minimum = _minimum_output_working_bytes(
+                spec, self._segmenter_or_default().window)
+            if opt["memory_budget"] < output_minimum:
+                raise ValueError(
+                    f"memory_budget={opt['memory_budget']} bytes cannot hold one count-output "
+                    f"shard accumulator (estimated minimum {output_minimum} bytes); reduce "
+                    "shard_length or raise memory_budget")
 
         if dry_run:
             if self._hours is None and opt["resume"]:
@@ -1878,38 +1924,33 @@ class Pipeline:
                            warnings=tuple(warnings))
 
         if self._hours is not None:                       # ---- hours-budget path ----
-            from .output.dataset import write_dataset
+            from .output.dataset import _write_dataset_impl
             hours = float(self._hours)
             train_hours, test_hours = hours, self._test_hours
             if self._split_test is not None and not self._test_hours_explicit:
                 train_hours = (1.0 - self._split_test) * hours
                 test_hours = self._split_test * hours
-            result = write_dataset(
+            config_updates = {
+                "pipeline": list(self._ops),
+                "output_request": output_op,
+                "mode": {"name": self._mode, "resolved": self.describe()["options"]},
+                "warnings": [dict(w) for w in self.explain().warnings],
+            }
+            if preset_resolution:
+                config_updates["output_preset"] = preset_resolution
+            return _write_dataset_impl(
                 path, schema=self.schema, adapter=self.adapter, sources=self.sources,
                 strategy=strategy, segmenter=self._segmenter_or_default(), spec=spec,
                 encoder=encoder, train_hours=train_hours, test_hours=test_hours,
                 sample_hz=opt["sample_hz"] or None, seed=opt["seed"],
                 group_of=self._group_of, span_steps=span_steps, span_seconds=span_seconds,
                 workers=opt["workers"], on_error=opt["on_error"], resume=opt["resume"],
-                streaming=opt["streaming"], progress=opt["progress"],
+                force=force, streaming=opt["streaming"], progress=opt["progress"],
                 transforms=self._transforms, registry=self._registry,
                 executor=opt["executor"], memory_budget=opt["memory_budget"],
                 batch_size=opt["batch_size"], checkpoint_dir=opt["checkpoint_dir"],
                 spill_dir=opt["spill_dir"], approximation=opt["approximation"],
-                max_in_flight=opt["max_in_flight"])
-            from .io import read_text
-            from .manifest import write_config
-            cfg = json.loads(read_text(f"{path}/config.json"))
-            cfg["pipeline"] = list(self._ops)
-            cfg["output_request"] = output_op
-            if preset_resolution:
-                cfg["output_preset"] = preset_resolution
-            cfg["mode"] = {"name": self._mode, "resolved": self.describe()["options"]}
-            cfg["warnings"] = [dict(w) for w in self.explain().warnings]
-            write_config(f"{path}/config.json", cfg)
-            from .manifest import commit_dataset
-            commit_dataset(path)
-            return result
+                max_in_flight=opt["max_in_flight"], _config_updates=config_updates)
 
         # ---- count path -------------------------------------------------------------
         if opt["resume"]:
@@ -1931,8 +1972,19 @@ class Pipeline:
                 "memory_budget requires a bounded exact count plan; currently supported only "
                 "for local top-k/uniform-bins without global filters, scorers, tag coverage, "
                 "or group caps (and with PyArrow installed)")
+        from .manifest import (
+            validate_dataset_destination,
+            validate_source_destination_separation,
+        )
+        destination_state = validate_dataset_destination(path, force=force, resume=False)
+        validate_source_destination_separation(path, self.sources, adapter=self.adapter)
+        checkpoint_root = spill_root = None
         from .output.base import PassthroughEncoder
-        from .provenance import build_run_signature
+        from .provenance import (
+            build_run_signature,
+            require_reusable_source_identities,
+            source_identities_allow_reuse,
+        )
         count_signature = build_run_signature(
             schema=self.schema, strategy=strategy, spec=spec,
             segmenter=self._segmenter_or_default(), sources=self.sources,
@@ -1941,12 +1993,72 @@ class Pipeline:
             train_hours=None, test_hours=None, span_len=self._segmenter_or_default().window,
             clip_aggregate="count-selection", group_of=self._group_of, tags_of=None,
             transforms=self._transforms, registry=self._registry)
-        from .manifest import begin_dataset
-        begin_dataset(path)
-        result = self._bounded_count_result(path, strategy) if can_run_bounded else self.collect()
+        source_identities = count_signature["payload"]["sources"]
+        if can_run_bounded and not source_identities_allow_reuse(source_identities):
+            if opt["memory_budget"] is not None:
+                require_reusable_source_identities(
+                    source_identities, purpose="memory-bounded checkpoint reuse")
+            # The exact in-memory collector has no persisted feature cache and is therefore
+            # the safe automatic fallback for logical IDs without content/version evidence.
+            can_run_bounded = False
+        if can_run_bounded:
+            from .work_paths import resolve_bounded_work_paths
+            checkpoint_root, spill_root = resolve_bounded_work_paths(
+                out_dir=path, sources=self.sources, adapter=self.adapter,
+                checkpoint_dir=opt["checkpoint_dir"], spill_dir=opt["spill_dir"])
+        result = self._bounded_count_result(
+            path, strategy, checkpoint_root=checkpoint_root, spill_dir=spill_root
+        ) if can_run_bounded else self.collect()
         if not result.selected:
             raise ValueError("selection is empty — nothing to write (check "
                              "filters/predicates and the segment window)")
+        # Everything used to derive shard paths must be validated before force=True can clear
+        # the prior generation. This also rejects a selected set that short_policy='drop' would
+        # silently turn into a committed zero-shard artifact.
+        from .output.shardwriter import entity_id_token
+        selected_by_source: dict = {}
+        for segment in result.selected:
+            selected_by_source.setdefault(segment.source_id, []).append(segment)
+        predicted_shards = 0
+        for source, segments in selected_by_source.items():
+            expected_track_rows = list(result.source_tracks.get(source, ()))
+            if not expected_track_rows:
+                raise ValueError(f"selected source {source!r} has no scored track metadata")
+            expected_lengths = {int(length) for _, length in expected_track_rows}
+            if len(expected_lengths) != 1:
+                raise ValueError(
+                    f"source {source!r} has inconsistent scored track lengths "
+                    f"{sorted(expected_lengths)}"
+                )
+            expected_ticks = next(iter(expected_lengths))
+            for entity_id, _length in expected_track_rows:
+                entity_id_token(entity_id)
+            for segment in segments:
+                span_length = int(segment.end_idx) - int(segment.start_idx)
+                if span_length < 1 or int(segment.end_idx) > expected_ticks:
+                    raise ValueError(
+                        f"selected segment {segment.start_idx}:{segment.end_idx} for "
+                        f"{source!r} is outside its scored track length {expected_ticks}"
+                    )
+                shards_per_entity = (
+                    span_length // spec.shard_length
+                    if spec.short_policy == "drop"
+                    else math.ceil(span_length / spec.shard_length)
+                )
+                predicted_shards += shards_per_entity * len(expected_track_rows)
+        if predicted_shards == 0:
+            raise ValueError(
+                "selection would emit zero shards: every selected segment is shorter than "
+                f"shard_length={spec.shard_length} with short_policy='drop'; use "
+                "short_policy='keep'/'pad' or reduce shard_length"
+            )
+        from .manifest import (begin_dataset, clear_dataset_resume_marker,
+                               clear_dataset_shards, pin_writing_dataset)
+        begin_dataset(path)
+        if force and destination_state != "absent":
+            clear_dataset_shards(path)
+        clear_dataset_resume_marker(path)
+        pin_writing_dataset(path)
         written = self._write_selected(path, result, spec, encoder, opt["seed"],
                                        signature=count_signature, progress=opt["progress"])
         from .io import read_text
@@ -1978,23 +2090,35 @@ class Pipeline:
             return False
         return True
 
-    def _bounded_count_result(self, out_dir: str, strategy):
+    def _bounded_count_result(self, out_dir: str, strategy, *,
+                              checkpoint_root: str | None = None,
+                              spill_dir: str | None = None):
         """Execute the currently supported exact count plan without a total Python pool."""
         from .bounded import (SizedSegmentPool, checkpoint_feature_stage,
                               resolve_bounded_memory_limits)
-        from .checkpoints import CheckpointIdentity, StageCheckpoint
+        from .checkpoints import (
+            CheckpointIdentity,
+            StageCheckpoint,
+            artifact_checkpoint_summary,
+        )
         from .curate import CurateResult
         from .external import external_top_k, external_uniform_bins
         from .planning import compile_physical_plan
         from .plugins import plugin_provenance
         from .provenance import component_identity, source_descriptor
-        from .io import is_remote
-        spill_dir = self._options["spill_dir"] or (
-            None if is_remote(out_dir) else f"{out_dir}/.kuration/spill")
-        checkpoint_dir = (self._options["checkpoint_dir"]
-                          or f"{out_dir}/.kuration/checkpoints")
+        if checkpoint_root is None:
+            from .work_paths import resolve_bounded_work_paths
+            checkpoint_root, spill_dir = resolve_bounded_work_paths(
+                out_dir=out_dir, sources=self.sources, adapter=self.adapter,
+                checkpoint_dir=self._options["checkpoint_dir"],
+                spill_dir=self._options["spill_dir"])
         physical = compile_physical_plan(
             self, memory_budget=self._options["memory_budget"], spill_path=spill_dir)
+        artifact_physical = {
+            **physical.to_dict(),
+            "spill_path": None,
+            "spill_configured": spill_dir is not None,
+        }
         partition_policy = resolve_bounded_memory_limits(
             schema=self.schema, segmenter=self._segmenter_or_default(),
             memory_budget=self._options["memory_budget"],
@@ -2012,7 +2136,7 @@ class Pipeline:
         registered = sorted(name for name in strategy.referenced_metrics() | transform_inputs
                             if name not in strategy.define and name not in transform_outputs)
         identity = CheckpointIdentity.from_plans(
-            logical, physical,
+            logical, artifact_physical,
             input_fingerprints=tuple(source_descriptor(source, self.adapter)
                                      for source in self.sources),
             schema=self.schema.to_dict(), components=tuple([
@@ -2025,10 +2149,14 @@ class Pipeline:
             parameters={"seed": self._options["seed"],
                         "adapter": component_identity(self.adapter),
                         "partition_policy": {"version": 1, **partition_policy}})
-        checkpoint = StageCheckpoint(checkpoint_dir, physical.stages[0].id, identity)
+        checkpoint = StageCheckpoint(
+            f"{checkpoint_root.rstrip('/')}/{identity.fingerprint}",
+            physical.stages[0].id, identity)
         if self._n is None:  # guarded by output(); keeps this private method type-safe
             raise ValueError("bounded count output requires a target size")
         target_size = self._n
+        from .scoring import _cached_group_callback
+        group_of = _cached_group_callback(self._group_of)
         stage = checkpoint_feature_stage(
             schema=self.schema, adapter=self.adapter, sources=self.sources,
             define=strategy.define, registered=registered,
@@ -2036,10 +2164,11 @@ class Pipeline:
             batch_size=self._options["batch_size"],
             tags_spec=strategy.tags, predicates=strategy.predicates,
             transforms=self._transforms, registry=self._registry,
-            group_of=self._group_of, on_error=self._options["on_error"],
+            group_of=group_of, on_error=self._options["on_error"],
             progress=self._options["progress"],
             max_in_flight=self._options["max_in_flight"],
-            memory_budget=self._options["memory_budget"])
+            memory_budget=self._options["memory_budget"],
+            retain_predicate_failures=bool(strategy.predicates))
         marker = checkpoint.finalize([commit.partition_id for commit in stage.commits])
         if strategy.method == "top-k":
             # Preserve the current reference behavior: `_normalize(..., "none")`
@@ -2047,22 +2176,26 @@ class Pipeline:
             normalize = "quantile" if strategy.normalize == "none" else strategy.normalize
             selected = external_top_k(
                 stage.commits, weights=strategy.weights, target_size=target_size,
-                normalize=normalize, spill_dir=spill_dir)
+                normalize=normalize, spill_dir=spill_dir,
+                predicates=strategy.predicates)
         elif strategy.method == "uniform-bins":
             selected = external_uniform_bins(
                 stage.commits, axes=strategy.axes, target_size=target_size,
-                seed=self._options["seed"], spill_dir=spill_dir)
+                seed=self._options["seed"], spill_dir=spill_dir,
+                predicates=strategy.predicates)
         splits = {}
         if self._split_test:
             from .select import assign_splits
-            source_groups = {source: self._group_of(source) if self._group_of else None
+            source_groups = {source: group_of(source) if group_of else None
                              for source in stage.source_tracks}
             splits = assign_splits(source_groups, self._split_test, self._options["seed"])
         result = CurateResult(selected=selected, all_segments=SizedSegmentPool(
             stage.candidate_rows), schema=self.schema, strategy=strategy,
             splits=splits, errors=list(stage.errors), source_tracks=dict(stage.source_tracks),
             seed=self._options["seed"])
-        result.execution = {"physical_plan": physical.to_dict(), "checkpoint": marker,
+        result.execution = {
+            "physical_plan": artifact_physical,
+            "checkpoint": artifact_checkpoint_summary(marker),
                             "bounded": True, "telemetry": stage.telemetry}
         return result
 
@@ -2073,6 +2206,7 @@ class Pipeline:
         from .io import write_text
         from .manifest import build_config, portable_shard_entries, write_config
         from .output.dataset import _minimum_output_working_bytes
+        from .output.shardwriter import entity_id_token
         from .output.stream import stream_source_shards
         by_source: dict = {}
         for s in result.selected:
@@ -2089,7 +2223,10 @@ class Pipeline:
 
         for source_i, src in enumerate(sorted(by_source, key=str), 1):
             segs = sorted(by_source[src], key=lambda s: s.start_idx)
-            expected_track_rows = list(result.source_tracks.get(src, ()))
+            expected_track_rows = sorted(
+                result.source_tracks.get(src, ()),
+                key=lambda row: entity_id_token(row[0]),
+            )
             if not expected_track_rows:
                 raise ValueError(f"selected source {src!r} has no scored track metadata")
             entity_ids = [entity_id for entity_id, _ in expected_track_rows]

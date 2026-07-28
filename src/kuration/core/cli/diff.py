@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import argparse
-import json
 
-from ._common import cli_run
+from ._common import artifact_root_path, cli_run, guard_file_output, json_document
 
 
 def main() -> None:
@@ -21,12 +20,24 @@ def main() -> None:
     args = parser.parse_args()
 
     def body():
+        if args.html:
+            guard_file_output(
+                args.html,
+                force=None,
+                protected_inputs=(
+                    artifact_root_path(args.left),
+                    artifact_root_path(args.right),
+                ),
+                label="comparison HTML output",
+            )
         from ..inspection import compare_datasets
         comparison = compare_datasets(args.left, args.right, verify=args.verify)
         if args.html:
             from ..html_report import write_html_report
             write_html_report(args.html, comparison, title="kuration dataset comparison")
-        print(json.dumps(comparison.to_dict(), indent=2) if args.json
+        print(json_document(
+            comparison.to_dict(), label="dataset comparison"
+        ).rstrip() if args.json
               else comparison.render())
 
     cli_run(body, debug=args.debug)

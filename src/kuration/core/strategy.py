@@ -3,7 +3,8 @@
 A strategy is a small JSON document describing *how* to turn scored segments into a curated
 set: inline metric definitions (`define`, DSL specs compiled against the schema), optional
 bin axes, and a selection method with its knobs. It is pure data, so the fully-resolved spec
-lands verbatim in `config.json` and any run reproduces from the artifact alone.
+lands verbatim in ``config.json`` as part of an auditable run contract. Replay also requires the
+same immutable or content-addressed sources and compatible component implementations.
 
 Base methods (uniform-bins / weighted / top-k / target-distribution / filter) live here;
 feature-space methods (cluster/k-center/facility/dsir/rare/typical) + pre-pass filters are in
@@ -180,6 +181,10 @@ def _resolve(spec: dict, registry=None) -> Strategy:
         if not isinstance(a["bins"], int) or isinstance(a["bins"], bool) or a["bins"] < 1:
             raise ValueError(f"binning axis {a['metric']!r}: bins must be a positive integer")
         axes.append((a["metric"], a["bins"]))
+    axis_metrics = [metric for metric, _bins in axes]
+    duplicate_axes = sorted({metric for metric in axis_metrics if axis_metrics.count(metric) > 1})
+    if duplicate_axes:
+        raise ValueError(f"duplicate bin axis metric(s) {duplicate_axes}")
     if method in ("uniform-bins", "target-distribution") and not axes:
         raise ValueError(f"method {method!r} requires binning.axes")
 
@@ -373,7 +378,8 @@ def _normalize(arr: np.ndarray, method: str) -> np.ndarray:
 def _weighted_score(segments: list[Segment], weights: dict[str, float], normalize: str) -> np.ndarray:
     n = len(segments)
     score = np.zeros(n, dtype=np.float64)
-    for name, w in weights.items():
+    for name in sorted(weights):
+        w = weights[name]
         vals = np.fromiter((_feature_value(s, name) for s in segments),
                            dtype=np.float64, count=n)
         score += w * _normalize(vals, normalize)
@@ -508,7 +514,7 @@ def select(segments: list[Segment], strategy: Strategy, *, target_size: int,
     target_size = validate_target_size(target_size)
     if not segments:
         return []
-    if strategy.predicates and strategy.method != "filter":
+    if strategy.predicates:
         segments = [s for s in segments if _passes(s, strategy.predicates)]
         if not segments:
             return []
@@ -523,7 +529,7 @@ def select(segments: list[Segment], strategy: Strategy, *, target_size: int,
         order = np.argsort(-prio, kind="stable")[:k]
         selected = [segments[i] for i in order]
     elif strategy.method == "filter":
-        selected = [s for s in segments if _passes(s, strategy.predicates)]
+        selected = list(segments)
     elif strategy.method == "uniform-bins":
         selected = sample_uniform_bins(segments, target_size=target_size, rng=py_rng)
     elif strategy.method == "top-k":

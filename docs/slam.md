@@ -18,12 +18,12 @@ The public facade handles both execution paths:
 Install the reconstruction runtime only when raw frames or videos must run through SLAM:
 
 ```bash
-pip install "kuration-sdk[slam]"
+python -m pip install -e ".[slam]"
 ```
 
-Use `kuration-sdk[gameplay]` to install SLAM together with Pixel Shift, action-state, and
-point-cloud visualization.
-Point-cloud notebook visualization additionally needs `kuration-sdk[slam-viz]`. Consumers that
+Run this from the repository root. Use `.[gameplay]` to install SLAM together with Pixel Shift,
+action-state, and point-cloud visualization. Point-cloud notebook visualization additionally
+needs `.[slam-viz]`. Consumers that
 receive `manifest.json` can use `input_slam()`, the trajectory transforms, and point-cloud
 curation with the base SDK.
 
@@ -137,6 +137,13 @@ manifest = prepare_slam_input("slam-export/manifest.json")  # no model runtime
 manifest = prepare_slam_input(output, "slam-export")         # export only
 ```
 
+Local video references outside the export directory are copied atomically into `media/` under a
+content-derived filename. References already inside the export remain relative, so moving the
+directory preserves video joins without publishing the original host path or filename. A clean
+remote URI such as `gs://bucket/clip.mp4` remains an external dependency and is not copied;
+URIs containing embedded credentials, query/path parameters, or fragments are rejected. Configure
+remote credentials through the media provider instead of recording them in an artifact.
+
 ## Preflight, progress, and CLI
 
 `preflight_slam()` checks input shape, manifest contents, decoder availability, output
@@ -174,6 +181,12 @@ For a model-free end-to-end smoke test:
 ```bash
 kur-slam demo --out slam-demo
 ```
+
+`kur-slam run` and `kur-slam demo` refuse a non-empty output by default. Use `--resume` on `run`
+to reuse a matching reconstruction, or `--force` to update only the files owned by the command;
+`--force` does not delete unrelated files. Output roots that overlap an input manifest or local
+video are rejected before decoding or reconstruction starts. Add `--debug` to any subcommand when
+a full traceback is needed; ordinary failures are a single `error:` line.
 
 ## Registered trajectory components
 

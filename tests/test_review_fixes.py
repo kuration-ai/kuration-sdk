@@ -55,6 +55,10 @@ class MemAdapter:
     def ticks(self, src):
         return self.data[src]
 
+    def source_fingerprint(self, src):
+        from kuration.core.provenance import _state_hash
+        return _state_hash(self.data[src])
+
 
 def _data(n_sources=3, n_ticks=12, n_entities=2):
     return {f"s{L}": [Tick(time=i, entities={e: {"pos": (float(i), float(L + e)),
@@ -284,7 +288,8 @@ def test_dataset_commit_sidecar_rejects_incomplete_or_changed_metadata(tmp_path)
     commit = json.loads((root / "dataset.commit.json").read_text())
     assert manifest["commit_protocol"] == commit["protocol"] == "sidecar-v1"
     assert commit["state"] == "committed"
-    assert set(commit["files"]) == {"dataset_manifest.json", "config.json"}
+    assert set(commit["files"]) == {
+        "dataset_manifest.json", "config.json", ".kuration_output_spec.json"}
 
     shutil.copytree(root, tmp_path / "writing")
     from kuration.core.manifest import begin_dataset
@@ -304,6 +309,12 @@ def test_dataset_commit_sidecar_rejects_incomplete_or_changed_metadata(tmp_path)
     config.write_text(config.read_text() + "\n")
     with pytest.raises(ValueError, match="changed after the commit"):
         shard_entries(str(tmp_path / "changed-after-commit"))
+
+    shutil.copytree(root, tmp_path / "changed-resume-marker")
+    marker = tmp_path / "changed-resume-marker" / ".kuration_output_spec.json"
+    marker.write_text(marker.read_text() + "\n")
+    with pytest.raises(ValueError, match="changed after the commit"):
+        shard_entries(str(tmp_path / "changed-resume-marker"))
 
 
 def test_shard_loader_rejects_missing_modality_and_count_mismatch(tmp_path):

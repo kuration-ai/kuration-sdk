@@ -52,12 +52,15 @@ components.
 ## Install only what the plan needs
 
 ```bash
-pip install kuration-sdk                       # core (numpy only)
-pip install 'kuration-sdk[methods]'             # + scikit-learn selection/filter methods
-pip install 'kuration-sdk[parquet,array]'       # + pyarrow / h5py containers and adapters
-pip install 'kuration-sdk[s3]'                  # + fsspec and the S3 provider backend
-pip install 'kuration-sdk[video,ray]'           # + PyAV media / ordered Ray source backend
+pip install -e .                         # core (numpy only), from a source checkout
+pip install -e '.[methods]'              # + scikit-learn selection/filter methods
+pip install -e '.[parquet,array]'        # + pyarrow / h5py containers and adapters
+pip install -e '.[s3]'                   # + fsspec and the S3 provider backend
+pip install -e '.[video,ray]'            # + PyAV media / ordered Ray source backend
 ```
+
+The PyPI project is a pending public-release gate; these development docs therefore use a source
+checkout rather than claiming an already published distribution.
 
 The NumPy-only core handles ordinary in-memory, CSV, and JSON workflows. Optional dependencies
 are lazy and loud: preflight names the missing extra instead of silently changing behavior.
@@ -122,8 +125,9 @@ write_dataset(
 # -> out/train/<src>_<entity>_<hash12>_shard0000.npz, ..., dataset_manifest.json, config.json
 ```
 
-`config.json` embeds the **resolved job, source/component provenance, and output spec**, so the dataset
-reproduces from its own directory alone.
+`config.json` embeds the **resolved job, source/component provenance, and output spec**, making the
+artifact self-describing for audit and reuse checks. Replaying it still requires the same
+content-addressed or immutable source versions and compatible component implementations.
 
 ## Where to go next
 
@@ -137,8 +141,9 @@ reproduces from its own directory alone.
 
 - **Closed grammar, loud validation.** Every metric token is enumerated and validated against
   the schema at load; unknown tokens raise. No silent fallbacks.
-- **Reproducible from the artifact.** Resolved schema + strategy + output spec live in
-  `config.json`.
+- **Auditable from the artifact.** Resolved schema + strategy + output spec live in
+  `config.json`; replay also needs the same immutable/content-addressed sources and compatible
+  implementations.
 - **Deterministic under parallelism.** Segments are sorted to a canonical order before
   binning/selection, so seeded results are worker-count-independent.
 - **Domain code only at the seams.** `InputAdapter`, `MediaProvider`, `BatchTransform`,

@@ -18,7 +18,7 @@ _COMMON = {
     "executor", "mode",
 }
 _CURATE = {
-    "output", "output_preset", "encoder", "train_hours", "test_hours", "out", "resume",
+    "output", "output_preset", "encoder", "train_hours", "test_hours", "out", "resume", "force",
     "span_steps", "span_seconds", "clip_aggregate", "memory_budget", "batch_size",
     "checkpoint_dir", "spill_dir", "approximation", "max_in_flight",
 }
@@ -75,9 +75,11 @@ def _common_values(job: dict) -> str:
         raise ValueError("executor must be 'local' or 'ray'")
     if job.get("mode") not in {None, "explore", "strict"}:
         raise ValueError("mode must be 'explore' or 'strict'")
-    for flag in ("resume", "streaming"):
+    for flag in ("resume", "force", "streaming"):
         if flag in job and not isinstance(job[flag], bool):
             raise ValueError(f"{flag} must be true or false")
+    if job.get("resume", False) and job.get("force", False):
+        raise ValueError("force=true and resume=true are mutually exclusive")
     plugins = job.get("plugins", [])
     if (not isinstance(plugins, list)
             or any(not isinstance(module, str) or not module for module in plugins)):

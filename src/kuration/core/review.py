@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from .provenance import publishable_source_id
 from .report import dataset_report
 from .results import DatasetPreview, HoursSelectionReview, SelectionReview
 
@@ -78,8 +79,9 @@ def preview_dataset(*, schema, adapter, sources, max_sources: int = 3,
         truncated = truncated or source_truncated
         ticks = ticks[:max_ticks_per_source]
         entities = {entity for tick in ticks for entity in tick.entities}
+        published_source = publishable_source_id(source)
         source_reports.append({
-            "source": str(source), "ticks": len(ticks), "entities": len(entities),
+            "source": published_source, "ticks": len(ticks), "entities": len(entities),
             "time_start": _json_value(ticks[0].time) if ticks else None,
             "time_end": _json_value(ticks[-1].time) if ticks else None,
             "truncated": source_truncated,
@@ -97,7 +99,8 @@ def preview_dataset(*, schema, adapter, sources, max_sources: int = 3,
                     global_present[name] += 1
                     global_values[name].append(tick.globals[name])
             if len(tick_examples) < examples:
-                tick_examples.append({"source": str(source), "time": _json_value(tick.time),
+                tick_examples.append({"source": published_source,
+                                      "time": _json_value(tick.time),
                                       "entities": _json_value(tick.entities),
                                       "globals": _json_value(tick.globals),
                                       "events": _json_value(tick.events)})
@@ -141,7 +144,7 @@ def _statistic_delta(after: dict, before: dict, key: str) -> float | None:
 
 def _segment_example(segment, priority, *, selected: bool | None = None) -> dict:
     value = {
-        "source": segment.source_id,
+        "source": publishable_source_id(segment.source_id),
         "start_idx": segment.start_idx,
         "end_idx": segment.end_idx,
         "time_range": _json_value(segment.time_range),
@@ -289,7 +292,9 @@ def selection_review(result, *, seed: int = 0, examples: int = 10,
         metrics[name] = {"candidate": before, "selected": after,
                          "mean_delta": _statistic_delta(after, before, "mean"),
                          "p50_delta": _statistic_delta(after, before, "p50")}
-    source_counts = Counter(segment.source_id for segment in selected)
+    source_counts = Counter(
+        publishable_source_id(segment.source_id) for segment in selected
+    )
     split_counts = Counter(result.splits.get(segment.source_id, "unsplit")
                            for segment in selected)
     rationale = {"method": result.strategy.method, "weights": result.strategy.weights,

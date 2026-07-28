@@ -412,19 +412,23 @@ def _stack_field_windows(windows):
     return out
 
 
-def apply_transforms(calls, segments, *, adapter, registry, progress=None):
+def apply_transforms(calls, segments, *, adapter, registry, progress=None,
+                     on_error="raise", errors=None):
     """Populate transform outputs while bounding raw-window memory.
 
     Segment metadata still represents the logical pool, but ticks and decoded media can be much
     larger. Re-read sources as streams and retain only the overlap needed for one transform batch
-    instead of caching every source and every segment window.
+    instead of caching every source and every segment window. With ``on_error="skip"``, a
+    transform failure removes that source's entire segment set and appends a portable diagnostic
+    to ``errors`` when supplied, matching the feature and bounded-execution error policy.
     """
     if not calls:
         return segments
+    if on_error not in {"raise", "skip"}:
+        raise ValueError("on_error must be 'raise' or 'skip'")
     by_source: dict[Any, list] = {}
     for seg in segments:
         by_source.setdefault(seg.source_id, []).append(seg)
-    ordered = [s for src in sorted(by_source, key=str) for s in by_source[src]]
     runner = _TransformRunner(calls, adapter=adapter, registry=registry)
     batch_size = max(call["batch_size"] for call in calls)
     lookbehind = max((call.get("lookbehind", 0) for call in calls), default=0)
@@ -432,32 +436,65 @@ def apply_transforms(calls, segments, *, adapter, registry, progress=None):
     from .progress import emit
     emit(progress, "transforms", "start", total=len(calls))
 
+    successful = []
+    failures = 0
     for source in sorted(by_source, key=str):
-        pending_segments, pending_windows, pending_contexts = [], [], []
         source_segments = sorted(by_source[source], key=lambda item: item.start_idx)
-        for index, (segment, window, before, after) in enumerate(_iter_segment_windows(
-                adapter, source, source_segments, lookbehind=lookbehind,
-                lookahead=lookahead)):
-            next_start = (source_segments[index + 1].start_idx
-                          if index + 1 < len(source_segments) else segment.end_idx)
-            owned_length = min(segment.end_idx, next_start) - segment.start_idx
-            pending_segments.append(segment)
-            pending_windows.append(window)
-            pending_contexts.append({"lookbehind": before, "lookahead": after,
-                                     "owned_length": owned_length})
-            if len(pending_segments) == batch_size:
+        try:
+            pending_segments, pending_windows, pending_contexts = [], [], []
+            for index, (segment, window, before, after) in enumerate(_iter_segment_windows(
+                    adapter, source, source_segments, lookbehind=lookbehind,
+                    lookahead=lookahead)):
+                next_start = (source_segments[index + 1].start_idx
+                              if index + 1 < len(source_segments) else segment.end_idx)
+                owned_length = min(segment.end_idx, next_start) - segment.start_idx
+                pending_segments.append(segment)
+                pending_windows.append(window)
+                pending_contexts.append({"lookbehind": before, "lookahead": after,
+                                         "owned_length": owned_length})
+                if len(pending_segments) == batch_size:
+                    runner.apply(pending_segments, pending_windows, contexts=pending_contexts,
+                                 progress=None)
+                    pending_segments, pending_windows, pending_contexts = [], [], []
+            if pending_segments:
                 runner.apply(pending_segments, pending_windows, contexts=pending_contexts,
                              progress=None)
-                pending_segments, pending_windows, pending_contexts = [], [], []
-        if pending_segments:
-            runner.apply(pending_segments, pending_windows, contexts=pending_contexts,
-                         progress=None)
+        except Exception as error:
+            if on_error == "raise":
+                raise
+            import sys
+            from .scoring import _redact_diagnostic
+
+            failures += 1
+            # A component may keep mutable/model state. Once a source raises, do not let
+            # partially mutated state contaminate the next source that the skip policy retains.
+            runner = _TransformRunner(calls, adapter=adapter, registry=registry)
+            safe_source = _redact_diagnostic(source)
+            safe_error = _redact_diagnostic(repr(error))
+            print(f"  [skip] transform source {safe_source!r}: {safe_error}", file=sys.stderr)
+            if errors is not None:
+                errors.append({
+                    "source": safe_source,
+                    "error": safe_error,
+                    "error_type": f"{type(error).__module__}.{type(error).__qualname__}",
+                    "message": _redact_diagnostic(str(error)),
+                    "phase": "transforms",
+                })
+            continue
+        successful.extend(source_segments)
+
+    if failures and isinstance(segments, list):
+        segments[:] = successful
+    if failures and not successful:
+        raise RuntimeError(
+            "segment pool is EMPTY: every source failed transform execution")
 
     for call_i, call in enumerate(calls, 1):
         emit(progress, "transforms", "advance", current=call_i, total=len(calls),
-             source=call["name"], status="ok")
-    emit(progress, "transforms", "complete", current=len(calls), total=len(calls))
-    return ordered
+             source=call["name"], status="partial" if failures else "ok")
+    emit(progress, "transforms", "complete", current=len(calls), total=len(calls),
+         detail=f"{failures} source(s) skipped" if failures else None)
+    return successful
 
 
 def source_tick_stream(adapter, source):

@@ -200,22 +200,34 @@ def test_analyze_accepts_a_per_use_input_remapping():
     assert result["inputs"] == ["field:signal"]
 
 
-def test_analyze_skips_and_logs_a_failing_source_when_asked():
+def test_analyze_skips_and_logs_a_failing_source_when_asked(capsys):
+    secret_source = "/private/customer-analyzer/clip.bin"
+
     class Exploding(WindowMeanAnalyzer):
         def add_batch(self, batch, ctx, *, note=None):
-            if batch["segment_ids"][0][0] == "clip-b":
-                raise RuntimeError("clip-b is unreadable")
+            if batch["segment_ids"][0][0] == secret_source:
+                raise RuntimeError(f"{secret_source} is unreadable")
             super().add_batch(batch, ctx, note=note)
 
-    result = _pipeline().options(on_error="skip").analyze(
+    pipeline = input(
+        {"clip-a": _rows(), secret_source: _rows(start=100.0)},
+        schema=SCHEMA,
+        fields={"value": "value"},
+        time="t",
+    ).window(4, stride=2)
+    result = pipeline.options(on_error="skip").analyze(
         "test/window-mean", analyzer=Exploding())
     assert result["sources_analyzed"] == 1
-    assert [error["source"] for error in result["errors"]] == ["clip-b"]
+    assert len(result["errors"]) == 1
+    assert "clip.bin-" in result["errors"][0]["source"]
     assert result["errors"][0]["error_type"] == "RuntimeError"
     assert result["errors"][0]["phase"] == "analyze"
+    assert "customer-analyzer" not in str(result)
+    assert "customer-analyzer" not in capsys.readouterr().err
 
-    with pytest.raises(RuntimeError, match="clip-b is unreadable"):
-        _pipeline().analyze("test/window-mean", analyzer=Exploding())
+    with pytest.raises(RuntimeError, match="customer-analyzer"):
+        pipeline.options(on_error="raise").analyze(
+            "test/window-mean", analyzer=Exploding())
 
 
 # ---------------------------------------------------------------------------------------

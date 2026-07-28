@@ -12,7 +12,7 @@ import math
 from collections import Counter
 from typing import Any, Optional
 
-from ..select import assign_splits
+from ..select import _stable_value_order, assign_splits
 
 
 def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
@@ -88,7 +88,7 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
         sp = split.get(it["source_id"])
         if sp is None or secs[sp] >= target[sp]:
             return False
-        g = it["group"] if it["group"] is not None else "\x00"
+        g = it["group"]
         if group_secs[g] + it["seconds"] > max_per_group:
             return False
         secs[sp] += it["seconds"]
@@ -103,7 +103,8 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
     if tag_coverage and total > 0:
         reserve_cap = tag_coverage.get("min_tag_frac", 0.005) * total
         reserved, covered = 0.0, set()
-        for tag in sorted({t for it in items for t in it.get("tags", ())}):
+        for tag in _stable_value_order(
+                t for it in items for t in it.get("tags", ())):
             if tag in covered or reserved >= reserve_cap:
                 continue
             for it in by_prio:
@@ -127,7 +128,7 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
     rejected_group_cap = 0
     if math.isfinite(max_per_group):
         for it in items:
-            g = it["group"] if it["group"] is not None else "\x00"
+            g = it["group"]
             if (it["id"] not in admitted and math.isfinite(it["priority"])
                     and group_secs[g] + it["seconds"] > max_per_group):
                 rejected_group_cap += 1
@@ -159,7 +160,7 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
         elif not math.isfinite(priority):
             reason, bucket = "nonfinite-priority", "rejected"
         else:
-            group = item["group"] if item["group"] is not None else "\x00"
+            group = item["group"]
             if math.isfinite(max_per_group) and group_secs[group] + item["seconds"] > max_per_group:
                 reason = "group-cap"
             elif secs[item_split] >= target[item_split]:
@@ -175,11 +176,24 @@ def fill_to_hours(items: list[dict], *, train_hours: float, test_hours: float,
             summary["min"] = priority if summary["min"] is None else min(summary["min"], priority)
             summary["max"] = priority if summary["max"] is None else max(summary["max"], priority)
         if len(decision_examples[bucket]) < 20:
+            from ..provenance import publishable_source_id
+            published_source = publishable_source_id(item["source_id"])
+
+            def redact_source(value):
+                if value == item["source_id"]:
+                    return published_source
+                if isinstance(value, list):
+                    return [redact_source(child) for child in value]
+                if isinstance(value, dict):
+                    return {key: redact_source(child) for key, child in value.items()}
+                return value
+
             decision_examples[bucket].append({
-                "id": jsonable(item["id"]), "source": item["source_id"],
+                "id": redact_source(jsonable(item["id"])), "source": published_source,
                 "split": item_split, "priority": priority if math.isfinite(priority) else None,
-                "seconds": item["seconds"], "group": jsonable(item["group"]),
-                "tags": jsonable(item.get("tags", ())), "start": item.get("start"),
+                "seconds": item["seconds"], "group": redact_source(jsonable(item["group"])),
+                "tags": redact_source(jsonable(item.get("tags", ()))),
+                "start": item.get("start"),
                 "end": item.get("end"), "decision": reason,
             })
     for summary in priority_stats.values():

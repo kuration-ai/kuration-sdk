@@ -15,6 +15,7 @@ is just one app encoder + (npz/hdf5) container, not something the SDK knows abou
 """
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 from typing import Optional
 
@@ -32,6 +33,27 @@ _OUTPUT_KEYS = {"modalities", "shard_length", "short_policy", "container",
 _MODALITY_KEYS = {"dtype", "shape", "source"}
 
 
+def validate_modality_name(name: object, *, allow_presence_mask: bool = False) -> str:
+    """Return a safe portable modality name or raise ``ValueError``.
+
+    Modality names become container keys and, for plain-array exports, filename components.
+    Keep one validation contract on both the write and read boundaries so a recommitted
+    artifact cannot bypass the writer's path-safety rules.
+    """
+    if not isinstance(name, str) or not name:
+        raise ValueError("modality names must be non-empty strings")
+    if name in {".", ".."}:
+        raise ValueError(f"modality name {name!r} is not a safe path component")
+    if any(character in name for character in ("/", "\\")):
+        raise ValueError(f"modality name {name!r} must not contain path separators")
+    if any(unicodedata.category(character) == "Cc" for character in name):
+        raise ValueError(f"modality name {name!r} must not contain NUL or control characters")
+    if name in _RESERVED_MODALITY_NAMES and not (
+            allow_presence_mask and name == "_present"):
+        raise ValueError(f"modality name {name!r} is reserved for container metadata")
+    return name
+
+
 @dataclass(frozen=True)
 class Modality:
     name: str
@@ -41,11 +63,7 @@ class Modality:
     src_arg: str
 
     def __post_init__(self) -> None:
-        if (not isinstance(self.name, str) or not self.name
-                or any(char in self.name for char in ("/", "\\", "\x00"))):
-            raise ValueError("modality names must be non-empty, container-safe strings")
-        if self.name in _RESERVED_MODALITY_NAMES:
-            raise ValueError(f"modality name {self.name!r} is reserved for container metadata")
+        validate_modality_name(self.name)
         if self.src_kind not in _SRC_KINDS:
             raise ValueError(f"modality {self.name!r}: source kind must be {sorted(_SRC_KINDS)}")
         if not isinstance(self.src_arg, str) or not self.src_arg:

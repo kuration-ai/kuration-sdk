@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
-from ._common import cli_run
+from ._common import artifact_root_path, cli_run, guard_file_output, json_document
 
 
 def _read_object(path: str | None, *, label: str) -> dict:
@@ -46,12 +46,26 @@ def main() -> None:
             raise ValueError("provide --policy and/or --analyzer")
         if (args.analyzer_config or args.analyzer_options) and not args.analyzer:
             raise ValueError("--analyzer-config/--analyzer-options require --analyzer")
+        if args.html and not args.policy:
+            raise ValueError("--html currently requires --policy")
         if args.verify and not args.policy:
             # --verify decodes every shard before the *policy* is evaluated; an analyzer
             # reads the manifest only (see analyzers.check_dataset), so a bare --verify in
             # analyzer-only mode would silently do nothing. Say so instead of ignoring it.
             raise ValueError("--verify requires --policy (analyzer-only checks read the "
                               "manifest, not decoded shard contents)")
+        if args.html:
+            guard_file_output(
+                args.html,
+                force=None,
+                protected_inputs=(
+                    artifact_root_path(args.dataset),
+                    *(path for path in (
+                        args.policy, args.analyzer_config, args.analyzer_options
+                    ) if path),
+                ),
+                label="quality-check HTML output",
+            )
         gates = None
         analyzer_result = None
         report = None
@@ -74,8 +88,8 @@ def main() -> None:
                 options=_read_object(args.analyzer_options, label="analyzer options"),
             )
         if args.html:
-            if report is None or gates is None:
-                raise ValueError("--html currently requires --policy")
+            if report is None or gates is None:  # guarded by the option check above
+                raise RuntimeError("quality policy result is unavailable")
             from ..html_report import write_html_report
             write_html_report(args.html, report, gates, title="kuration quality check")
         if args.json:
@@ -86,7 +100,7 @@ def main() -> None:
                 rendered = gates.to_dict()
             else:
                 rendered = analyzer_result
-            print(json.dumps(rendered, indent=2))
+            print(json_document(rendered, label="dataset check result").rstrip())
         else:
             if gates is not None:
                 print(gates.render())
@@ -95,7 +109,9 @@ def main() -> None:
                 if gates is not None:
                     print()
                 print(f"analyzer {args.analyzer}: {status}")
-                print(json.dumps(analyzer_result["summary"], indent=2))
+                print(json_document(
+                    analyzer_result["summary"], label="analyzer summary"
+                ).rstrip())
         if (gates is not None and not gates.passed) or (
             analyzer_result is not None and not analyzer_result["passed"]
         ):

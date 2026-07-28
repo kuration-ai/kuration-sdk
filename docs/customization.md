@@ -183,5 +183,7 @@ contract testing, discovery, and plugin-packaging examples. The runnable compani
 [`examples/05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py).
 
 Artifacts and manifests carry `artifact_format_version`; jobs carry `job_schema_version`.
-Unversioned documents are legacy `0.0`, current documents are `1.0`, and unsupported future
-major versions are rejected. Use `migrate()` or `kur-migrate` for deterministic upgrades.
+Unversioned documents are legacy `0.0`. The current artifact format is `1.2` and the current job
+schema is `1.0`; documents newer than the corresponding supported version are rejected, including
+future minor versions. Use `migrate()` or `kur-migrate` for deterministic upgrades where a
+migration is available.

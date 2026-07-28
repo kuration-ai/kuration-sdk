@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import argparse
-import json
+
+from ._common import cli_run, json_document
 
 
 def main() -> None:
@@ -20,7 +21,10 @@ def main() -> None:
 
         results = check_plugins(args.target)
         if args.json:
-            print(json.dumps([result.to_dict() for result in results], indent=2))
+            print(json_document(
+                [result.to_dict() for result in results],
+                label="plugin validation results",
+            ).rstrip())
         elif results:
             print("\n\n".join(result.render() for result in results))
         else:
@@ -28,7 +32,6 @@ def main() -> None:
         if any(not result.passed for result in results):
             raise SystemExit(2)
 
-    from ._common import cli_run
     cli_run(body, debug=args.debug)
 
 

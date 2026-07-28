@@ -313,9 +313,10 @@ def test_export_writes_arrays_and_an_index(tmp_path, fmt):
 
     for entry in index["entries"]:
         for path in entry["files"]:
-            assert Path(path).exists()
-        arrays = (dict(np.load(entry["files"][0])) if fmt == "npz"
-                  else {"x": np.load(next(p for p in entry["files"] if p.endswith("__x.npy")))})
+            assert (dest / path).exists()
+        arrays = (dict(np.load(dest / entry["files"][0])) if fmt == "npz"
+                  else {"x": np.load(dest / next(
+                      p for p in entry["files"] if p.endswith("__x.npy")))})
         # Trimming is on by default, so rows match the manifest's n_steps exactly.
         assert len(arrays["x"]) == entry["n_steps"]
 
@@ -331,7 +332,7 @@ def test_export_filters_by_split_and_modality(tmp_path):
     assert index["split"] == "train"
     for entry in index["entries"]:
         assert entry["modalities"] == ["x"]
-        assert list(np.load(entry["files"][0])) == ["x"]
+        assert list(np.load(dest / entry["files"][0])) == ["x"]
 
 
 def test_export_says_so_when_a_split_matches_nothing(tmp_path):
@@ -347,7 +348,7 @@ def test_export_parquet_roundtrips_every_modality(tmp_path):
     dest = tmp_path / "parquet"
     _run("kuration.core.cli.export", str(out), "--out", str(dest), "--format", "parquet")
     index = json.loads((dest / "export_index.json").read_text())
-    table = pq.read_table(index["entries"][0]["files"][0])
+    table = pq.read_table(dest / index["entries"][0]["files"][0])
     assert table.num_rows == index["entries"][0]["n_steps"]
     assert "x" in table.schema.names
 

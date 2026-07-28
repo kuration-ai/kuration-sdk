@@ -12,7 +12,6 @@ a moved/copied dataset dir works (stale manifest paths are rebased onto the give
 """
 from __future__ import annotations
 
-import json
 from typing import Optional, Union
 
 import numpy as np
@@ -70,24 +69,26 @@ class CuratedDatasetAdapter:
         self._registry = registry
         self._config: dict = {}        # shard path -> originating resolved config
         self._entries: dict = {}       # shard path -> rebased manifest entry
+        self._snapshot: dict = {}      # shard path -> commit-pinned originating generation
         self.dataset_of: dict = {}     # shard path -> originating dataset dir
         self._shards: list = []
-        from ..io import read_text
-        from ..loaders import rebase_entries
-        loaded = [(d, json.loads(read_text(f"{d}/config.json")),
-                   json.loads(read_text(f"{d}/dataset_manifest.json"))) for d in dirs]
-        from ..loaders import _verify_commit
-        from ..versioning import check_version
-        for _d, cfg, manifest in loaded:
-            _verify_commit(str(_d).rstrip("/"), manifest)
-            check_version(cfg.get("artifact_format_version"), kind="artifact")
-            check_version(manifest.get("artifact_format_version"), kind="artifact")
-        first_cfg = loaded[0][1]
+        from ..loaders import _resolve_operation_snapshot
+        loaded = []
+        for directory in dirs:
+            snapshot = _resolve_operation_snapshot(str(directory).rstrip("/"), None)
+            if snapshot.config is None:
+                raise ValueError(f"curated dataset {directory!r} has no config.json")
+            loaded.append((directory, snapshot))
+        first_cfg = loaded[0][1].config
+        assert first_cfg is not None
         self.schema = schema or schema_from_output(
             first_cfg["output"], sample_hz=(first_cfg.get("schema") or {}).get("sample_hz"))
         self._fields = list(self.schema.fields)
         reference_modalities = first_cfg["output"].get("modalities") or {}
-        for d, cfg, man in loaded:
+        from ..loaders import _assert_snapshot_current, _snapshot_entries
+        for d, snapshot in loaded:
+            cfg = snapshot.config
+            assert cfg is not None
             missing = [f for f in self._fields
                        if f not in (cfg["output"].get("modalities") or {})]
             if missing:
@@ -107,12 +108,16 @@ class CuratedDatasetAdapter:
                                  f"{incompatible}")
             # Rebase manifest paths onto the dir the caller gave us — a moved/copied
             # dataset's recorded (write-time) paths would otherwise dangle.
-            for e in rebase_entries(man["shards"], d):
+            for e in _snapshot_entries(snapshot):
                 self._shards.append(e["path"])
-                self._container[e["path"]] = cfg["output"]["container"]
+                self._container[e["path"]] = snapshot.container
                 self._config[e["path"]] = cfg
                 self._entries[e["path"]] = e
+                self._snapshot[e["path"]] = snapshot
                 self.dataset_of[e["path"]] = d
+            _assert_snapshot_current(snapshot, operation="curated adapter construction")
+        for _directory, snapshot in loaded:
+            _assert_snapshot_current(snapshot, operation="curated adapter construction")
         self._datasets = [str(d) for d in dirs]
 
     def sources(self) -> list:
@@ -134,15 +139,24 @@ class CuratedDatasetAdapter:
         kuration's own writes, so no data read here."""
         if shard_path not in self._container:
             raise KeyError(f"unknown shard {shard_path!r} — not in this adapter's manifests")
+        from ..loaders import _assert_snapshot_current, _validate_snapshot_shard
+        snapshot = self._snapshot[shard_path]
+        _assert_snapshot_current(snapshot, operation="curated source preflight")
+        _validate_snapshot_shard(snapshot, self._entries[shard_path])
         from ..io import exists
         if not exists(shard_path):
             raise ValueError(f"manifest shard {shard_path!r} does not exist — was the dataset "
                              f"dir moved or partially deleted?")
+        _assert_snapshot_current(snapshot, operation="curated source preflight")
 
     def ticks(self, shard_path: str) -> list[Tick]:
         if shard_path not in self._container:
             raise KeyError(f"unknown shard {shard_path!r} — not in this adapter's manifests")
+        from ..loaders import _assert_snapshot_current, _validate_snapshot_shard
+        snapshot = self._snapshot[shard_path]
+        _assert_snapshot_current(snapshot, operation="curated shard read")
         entry = self._entries[shard_path]
+        _validate_snapshot_shard(snapshot, entry)
         if entry.get("n_steps") is None:             # legacy manifest without in-band contract
             arrays, n = _load_shard(shard_path, self._container[shard_path],
                                     registry=self._registry)
@@ -151,6 +165,8 @@ class CuratedDatasetAdapter:
             arrays = read_shard_arrays(entry, self._container[shard_path], trim=True,
                                        registry=self._registry, verify=True)
             n = int(entry["n_steps"])
+        _validate_snapshot_shard(snapshot, entry)
+        _assert_snapshot_current(snapshot, operation="curated shard read")
         missing = [f for f in self._fields if f not in arrays]
         if missing:
             raise KeyError(f"shard {shard_path!r} lacks modalities {missing} required by "
@@ -185,6 +201,7 @@ class CuratedDatasetAdapter:
                 else:
                     ent[fn] = float(np.ravel(x)[0]) if np.ndim(x) else float(x)
             out.append(Tick(time=t, entities={0: ent}))
+        _assert_snapshot_current(snapshot, operation="curated shard read")
         return out
 
 

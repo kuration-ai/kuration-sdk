@@ -31,7 +31,7 @@ class ShardDataset:
                  modalities: Optional[Sequence[str]] = None, trim: bool = True,
                  container: Optional[str] = None,
                  transform: Optional[Callable[[dict], dict]] = None,
-                 include_meta: bool = False, verify: bool = True):
+                 include_meta: bool = False, verify: bool = True, registry=None):
         try:
             import torch
         except ImportError as e:
@@ -43,6 +43,7 @@ class ShardDataset:
         self.trim = trim
         self.transform = transform
         self.include_meta = include_meta
+        self.registry = registry
         if not isinstance(verify, bool):
             raise ValueError("verify must be true or false")
         self.verify = verify
@@ -54,7 +55,7 @@ class ShardDataset:
         entry = self.entries[i]
         arrays = read_shard_arrays(
             entry, self.container, modalities=self.modalities, trim=self.trim,
-            verify=self.verify)
+            verify=self.verify, registry=self.registry)
         item: dict[str, Any] = {
             k: self._torch.from_numpy(np.ascontiguousarray(v)) for k, v in arrays.items()}
         if self.include_meta:

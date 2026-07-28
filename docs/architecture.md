@@ -158,20 +158,27 @@ together and writes `dataset_manifest.json` + `config.json`.
   hours), not seeded by a random draw — and the budget unit is the non-overlapping track, not
   the overlapping analysis window (you can't budget hours over overlapping windows without
   double-counting; this is why the fill lives in the output layer, where the unit exists).
-- **Reproducible from the artifact.** Resolved schema + strategy + output spec all live in
-  `config.json`; a rerun against the same sources reproduces the dataset.
+- **Auditable from the artifact.** Resolved schema + strategy + output spec all live in
+  `config.json`. A replay also requires the same content-addressed or immutable source versions
+  and compatible component implementations.
 
 ## Extension points
 
 | to support… | implement / register | not |
 |---|---|---|
+| a new dataset's fields | a `SchemaSpec` (data) | any code |
 | a new raw format | an `InputAdapter` (`ticks` → `Tick`s) | editing the engine |
 | a new media decoder | a `MediaProvider` (`probe`/`iter_refs`/`decode_batch`) | eager frame fields |
 | a bounded model/device feature | a registered `BatchTransform` | repurposing the metric DSL |
 | a derived output tensor | an `OutputEncoder` (`timestep`/`encode_batch`) | core output code |
 | a per-segment metric the grammar can't express | `@register_metric` over a `WindowBuffer` | a grammar change |
 | a **whole-pool / learned / influence** metric | a `SegmentScorer` (`score(segments, ctx)`) | the closed grammar |
+| a stateful stream or artifact audit | `register_analyzer` | pretending it is a segment metric |
+| reusable fluent composition | `register_operator` | a second pipeline implementation |
+| a new pool-ranking algorithm | `register_method` | branching in selection core |
+| a reusable pre-selection exclusion | `register_filter` | an undocumented predicate |
 | a new on-disk container | `register_container` | the writer |
+| a reusable output policy | `register_preset` | bypassing `OutputSpec` validation |
 
 ### Plugin discovery
 
@@ -202,7 +209,6 @@ Events always contain `phase` and `event`; phases include `provenance`, `scoring
 `selection`, and `writing`, while events are `start`, `advance`, and `complete`. Advance events include
 `current`, `total`, and where applicable `source` and `status`. Pipeline users pass the same
 callback through `.options(progress=...)`.
-| a new dataset's fields | a `SchemaSpec` (data) | any code |
 
 ### Two scoring seams, two shapes
 
@@ -238,19 +244,33 @@ metrics must be importable at module scope; one registered only in `__main__` ra
 registered metric" in every worker, which surfaces as all sources skipped + the loud
 empty-pool error. Rule of thumb: put `@register_metric` functions in an importable module.)
 
-A source that raises during scoring is **skipped-and-logged** (`on_error="skip"`: stderr line
-+ collected in the result's `errors` + a summary), never silently dropped; `on_error="raise"`
-restores fail-fast. Total failure is still loud: if the pool ends up **empty** (every source
-skipped, or every source shorter than the window), scoring raises rather than letting an
+A source that raises during scoring, a transform reread, or scorer-buffer materialization is
+**skipped-and-logged** (`on_error="skip"`: stderr line + collected in the result's `errors` +
+a summary), never silently dropped. The source is the isolation unit, including any partially
+computed transform rows; transform component state is rebuilt before another source continues.
+`on_error="raise"` restores fail-fast. A whole-pool model failure that cannot be attributed to
+one source still raises. Total failure is loud: if the pool ends up **empty** (every source
+skipped, or every source shorter than the window), execution raises rather than letting an
 empty-but-valid-looking dataset propagate. `write_dataset(resume=True)` reuses a shard only when
 the file matches the byte size and SHA-256 in the previous committed manifest; missing, legacy,
 or modified shards are deterministically rebuilt. Two guards make that sound:
 local shards use same-directory temp files plus replace, and remote shards publish a completed
-attempt object before moving it into place. The resolved output spec is fingerprinted in
-`.kuration_output_spec.json`, so resuming with a different spec raises. A separate
+attempt object before moving it into place. The complete run and resolved output spec are
+fingerprinted in `.kuration_output_spec.json`; the final commit pins that marker's checksum, so
+a missing, tampered, or legacy-unpinned marker cannot authorize shard reuse. A separate
 `dataset.commit.json` changes to `state=writing` before shard replacement and is published last
-as `state=committed` with manifest/config checksums; readers therefore reject interrupted or
-mixed-generation metadata while resume can still checksum prior entries.
+as `state=committed` with manifest/config/resume-metadata checksums; readers therefore reject
+interrupted or mixed-generation metadata while resume can still checksum prior entries. A
+destination-scoped writer lease covers planning through final commit; bounded checkpoints use a
+run-fingerprint namespace rather than overwriting another run's cache. Resume and persisted
+checkpoint reuse require an adapter fingerprint, local content hash, or immutable remote object
+version; mutable logical IDs and metadata-only remote listings cannot authorize stale reuse.
+
+One reader operation likewise stays on one generation: it captures the exact commit bytes,
+checks them before and after each shard, and verifies shard bytes from one private snapshot.
+Current manifests must agree with the commit-pinned output config's modality names, shapes, and
+dtypes. Local current-format shard paths must remain ordinary non-symlink files beneath the
+dataset root.
 
 The hot path (binning) stays vectorized rather than parallelized — IPC would cost more than the
 compute.
@@ -289,7 +309,8 @@ it keyed on features by name — so it ported almost verbatim. The work was at t
 
 1. The core imports no domain. Domain enters only via adapter / encoder / registered metric.
 2. Unknown grammar tokens raise at load. No silent fallbacks.
-3. `config.json` fully determines a rerun (schema + strategy + output spec embedded).
+3. `config.json` records the resolved run contract; replay additionally requires the same
+   content-addressed or immutable sources and compatible component implementations.
 4. Canonical segment sort precedes binning/selection (determinism).
 5. Splits are source-level (leakage-free): a whole source goes to one split.
 ## Physical planning and bounded feature tables

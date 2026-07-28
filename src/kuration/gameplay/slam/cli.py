@@ -5,10 +5,11 @@ import argparse
 from collections.abc import Mapping
 import importlib
 import inspect
-import json
 from pathlib import Path
 import sys
 
+from ...core.cli._common import _storage_path_relation, cli_run, json_document
+from ._paths import local_path
 from .pointcloud import curate_point_cloud
 from .preflight import preflight_slam
 from .runner import prepare_slam_input
@@ -95,6 +96,56 @@ def _decoder_options(args) -> dict:
     }
 
 
+def _source_paths(source) -> tuple[str | Path, ...]:
+    if isinstance(source, Mapping):
+        return tuple(
+            value for value in source.values() if isinstance(value, (str, Path))
+        )
+    return (source,) if isinstance(source, (str, Path)) else ()
+
+
+def _output_root(value: str) -> Path:
+    if not value.strip():
+        raise ValueError("--out must be a non-empty local path")
+    root = local_path(value, name="kur-slam --out")
+    resolved = root.resolve(strict=False)
+    if resolved == Path(resolved.anchor):
+        raise ValueError("kur-slam --out must not be the filesystem root")
+    return root
+
+
+def _guard_output_root(
+    root: Path,
+    *,
+    source,
+    force: bool,
+    resume: bool,
+) -> None:
+    """Protect source trees and existing results before reconstruction begins."""
+    if force and resume:
+        raise ValueError("--force and --resume are mutually exclusive")
+    if root.is_symlink():
+        raise ValueError(f"output root {str(root)!r} must not be a symlink")
+    for source_path in _source_paths(source):
+        relation = _storage_path_relation(root, source_path)
+        if relation is not None:
+            raise ValueError(
+                f"output root {str(root)!r} overlaps input path {str(source_path)!r} "
+                f"({relation}); choose an output outside the input tree"
+            )
+    if not root.exists():
+        return
+    if not root.is_dir():
+        raise FileExistsError(
+            f"output root {str(root)!r} exists and is not a directory"
+        )
+    if any(root.iterdir()) and not force and not resume:
+        raise FileExistsError(
+            f"output root {str(root)!r} is not empty; pass --force to update the "
+            "command-owned files or --resume to reuse a matching reconstruction"
+        )
+
+
 def _add_source(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--manifest", help="Existing SLAM manifest or export directory.")
     parser.add_argument(
@@ -132,6 +183,8 @@ def _parser() -> argparse.ArgumentParser:
     preflight.add_argument("--out", help="Preparation output directory for raw input.")
     preflight.add_argument("--require-gpu", action="store_true")
     preflight.add_argument("--json", action="store_true", dest="as_json")
+    preflight.add_argument("--debug", action="store_true",
+                           help="Show full tracebacks on failure.")
 
     run = commands.add_parser("run", help="Prepare input and write a curated selection manifest.")
     _add_source(run)
@@ -145,18 +198,29 @@ def _parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--seed", type=int, default=0)
     run.add_argument("--resume", action="store_true")
+    run.add_argument(
+        "--force",
+        action="store_true",
+        help="Update command-owned files in a non-empty output; unrelated files are retained.",
+    )
     run.add_argument("--cache-key")
     run.add_argument("--require-gpu", action="store_true")
     run.add_argument("--quiet", action="store_true")
+    run.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
 
     demo = commands.add_parser("demo", help="Run the model-free offline golden path.")
     demo.add_argument("--out", required=True)
+    demo.add_argument(
+        "--force",
+        action="store_true",
+        help="Update command-owned files in a non-empty output; unrelated files are retained.",
+    )
     demo.add_argument("--quiet", action="store_true")
+    demo.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+def _run(args: argparse.Namespace) -> int:
     if args.command == "preflight":
         source = _source(args)
         report = preflight_slam(
@@ -171,13 +235,18 @@ def main(argv: list[str] | None = None) -> int:
             decoder_options=_decoder_options(args),
             require_gpu=args.require_gpu,
         )
-        print(json.dumps(report.to_dict(), indent=2) if args.as_json else report.render())
+        print(
+            json_document(report.to_dict(), label="SLAM preflight report").rstrip()
+            if args.as_json
+            else report.render()
+        )
         return 0 if report.ready else 2
 
     if args.command == "demo":
         from .demo import write_demo_reconstruction
 
-        root = Path(args.out)
+        root = _output_root(args.out)
+        _guard_output_root(root, source=None, force=args.force, resume=False)
         manifest = write_demo_reconstruction(root / "slam-export")
         result = curate_slam_gameplay(
             manifest,
@@ -195,11 +264,12 @@ def main(argv: list[str] | None = None) -> int:
             max_points=500,
             output=root / "scene_pointcloud.npz",
         )
-        print(json.dumps(result.to_dict(), indent=2))
+        print(json_document(result.to_dict(), label="SLAM curation result").rstrip())
         return 0
 
     source = _source(args)
-    root = Path(args.out)
+    root = _output_root(args.out)
+    _guard_output_root(root, source=source, force=args.force, resume=args.resume)
     progress = _progress(args.quiet)
     runner_options = _runtime_options(
         args.runtime_factory,
@@ -227,8 +297,20 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         progress=progress,
     )
-    print(json.dumps(result.to_dict(), indent=2))
+    print(json_document(result.to_dict(), label="SLAM curation result").rstrip())
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    status = 0
+
+    def body() -> None:
+        nonlocal status
+        status = _run(args)
+
+    cli_run(body, debug=args.debug)
+    return status
 
 
 if __name__ == "__main__":  # pragma: no cover

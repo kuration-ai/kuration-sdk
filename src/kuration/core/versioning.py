@@ -4,9 +4,10 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+import re
 from typing import Any
 
-ARTIFACT_FORMAT_VERSION = "1.1"
+ARTIFACT_FORMAT_VERSION = "1.2"
 JOB_SCHEMA_VERSION = "1.0"
 LEGACY_VERSION = "0.0"
 
@@ -24,6 +25,19 @@ ARTIFACT_SEMANTIC_CHANGES: dict[str, tuple[str, ...]] = {
         "silently pooled them, so a per-entity categorical metric scores (and selects) "
         "differently",
     ),
+    "1.2": (
+        "selection semantics: bounded uniform-bin selection now uses canonical bin order rather "
+        "than partition encounter order, so bounded and materialized execution select the same "
+        "segments regardless of source or partition ordering",
+        "experiment semantics: each arm now enforces tag coverage only for its own declarative "
+        "tag sources, so adding an unrelated arm cannot change another arm's selection",
+        "tag-coverage semantics: min_tag_frac=0 now means no tag floor, positive fractional "
+        "count floors round up, and coverage cannot restore predicate-failing candidates; "
+        "1.1 count selection still forced one item per tag",
+        "group/tag identity semantics: disk-backed hours fills now use Python hash/equality "
+        "like the in-memory path, so values such as 1, true, and '1' no longer diverge by "
+        "execution mode",
+    ),
 }
 JOB_SEMANTIC_CHANGES: dict[str, tuple[str, ...]] = {}
 
@@ -32,7 +46,8 @@ JOB_SEMANTIC_CHANGES: dict[str, tuple[str, ...]] = {}
 # unversioned document by themselves.
 _JOB_MARKERS = {
     "command", "adapter", "sources", "segmenter", "arms", "baseline", "target_size",
-    "output_preset", "encoder", "train_hours", "test_hours", "out", "resume", "streaming",
+    "output_preset", "encoder", "train_hours", "test_hours", "out", "resume", "force",
+    "streaming",
     "executor", "mode", "workers", "on_error", "span_steps", "span_seconds",
     "clip_aggregate", "memory_budget", "batch_size", "checkpoint_dir", "spill_dir",
     "approximation", "max_in_flight", "include_plugin_entry_points",
@@ -46,20 +61,24 @@ _ARTIFACT_MARKERS = {
 }
 
 
-def _major(value: str) -> int:
-    try:
-        return int(str(value).split(".", 1)[0])
-    except (TypeError, ValueError) as e:
-        raise ValueError(f"malformed format version {value!r}; expected '<major>.<minor>'") from e
+def _parse_version(value: Any) -> tuple[int, int]:
+    text = str(value)
+    match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", text)
+    if match is None:
+        raise ValueError(
+            f"malformed format version {value!r}; expected canonical '<major>.<minor>' "
+            "with non-negative integers"
+        )
+    return int(match.group(1)), int(match.group(2))
+
+
+def _major(value: Any) -> int:
+    """Return a canonical format version's major component."""
+    return _parse_version(value)[0]
 
 
 def _version_key(value: str) -> tuple[int, int]:
-    parts = str(value).split(".")
-    try:
-        major, minor = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
-    except (TypeError, ValueError) as e:
-        raise ValueError(f"malformed format version {value!r}; expected '<major>.<minor>'") from e
-    return major, minor
+    return _parse_version(value)
 
 
 def migration_notes(value: Any, *, kind: str = "artifact") -> list[str]:
@@ -72,6 +91,7 @@ def migration_notes(value: Any, *, kind: str = "artifact") -> list[str]:
         raise ValueError(f"unknown document kind {kind!r}; expected 'artifact' or 'job'")
     table = ARTIFACT_SEMANTIC_CHANGES if kind == "artifact" else JOB_SEMANTIC_CHANGES
     current = ARTIFACT_FORMAT_VERSION if kind == "artifact" else JOB_SCHEMA_VERSION
+    check_version(value, kind=kind)
     declared = _version_key(LEGACY_VERSION if value is None else str(value))
     notes: list[str] = []
     for version in sorted(table, key=_version_key):
@@ -81,9 +101,11 @@ def migration_notes(value: Any, *, kind: str = "artifact") -> list[str]:
 
 
 def check_version(value: Any, *, kind: str) -> str:
+    if kind not in {"artifact", "job"}:
+        raise ValueError(f"unknown document kind {kind!r}; expected 'artifact' or 'job'")
     current = ARTIFACT_FORMAT_VERSION if kind == "artifact" else JOB_SCHEMA_VERSION
     value = LEGACY_VERSION if value is None else str(value)
-    if _major(value) > _major(current):
+    if _version_key(value) > _version_key(current):
         raise ValueError(f"unsupported future {kind} format {value}; this SDK supports {current}")
     return value
 
@@ -91,7 +113,7 @@ def check_version(value: Any, *, kind: str) -> str:
 def migrate_job(job: dict) -> dict:
     """Return a deep-copied job updated to the current job-schema version.
 
-    A malformed or unsupported future major version raises ``ValueError``.
+    A malformed or unsupported future version raises ``ValueError``.
     """
     check_version(job.get("job_schema_version"), kind="job")
     out = copy.deepcopy(job)
@@ -102,7 +124,7 @@ def migrate_job(job: dict) -> dict:
 def migrate_config(config: dict) -> dict:
     """Return a deep-copied config updated to the current artifact version.
 
-    A malformed or unsupported future major version raises ``ValueError``.
+    A malformed or unsupported future version raises ``ValueError``.
     """
     check_version(config.get("artifact_format_version"), kind="artifact")
     out = copy.deepcopy(config)
@@ -140,9 +162,42 @@ def migrate(value, out=None):
 
     Structural only — see ``document_migration_notes`` for semantic changes the bump implies.
     """
-    source = json.loads(Path(value).read_text()) if isinstance(value, (str, Path)) else value
+    if isinstance(value, (str, Path)):
+        path = Path(value)
+
+        def reject_constant(token: str) -> None:
+            raise ValueError(
+                f"migration input {str(path)!r} is not valid JSON: "
+                f"non-finite numeric token {token!r} is unsupported"
+            )
+
+        def unique_object(pairs):
+            parsed = {}
+            for key, item in pairs:
+                if key in parsed:
+                    raise ValueError(
+                        f"migration input {str(path)!r} is ambiguous JSON: "
+                        f"duplicate object key {key!r}"
+                    )
+                parsed[key] = item
+            return parsed
+
+        source = json.loads(
+            path.read_text(),
+            parse_constant=reject_constant,
+            object_pairs_hook=unique_object,
+        )
+    else:
+        source = value
     kind = document_kind(source)
     result = migrate_job(source) if kind == "job" else migrate_config(source)
     if out is not None:
-        Path(out).write_text(json.dumps(result, indent=2) + "\n")
+        try:
+            encoded = json.dumps(result, indent=2, allow_nan=False) + "\n"
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"migrated document cannot be represented as strict JSON: {error}"
+            ) from error
+        from .io import write_text
+        write_text(out, encoded)
     return result

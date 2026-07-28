@@ -5,6 +5,8 @@ objects remain module-level because in-memory adapters must be pickleable.
 """
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -41,22 +43,61 @@ METHOD_ALIASES = {
 
 
 def jsonable(value):
-    """Return a compact JSON-safe provenance representation."""
-    if value is None or isinstance(value, (bool, int, float, str)):
+    """Return a compact, stable, publishable provenance representation."""
+    if value is None or isinstance(value, (bool, int, float)):
         return value
+    if isinstance(value, str):
+        looks_private = (
+            "://" in value
+            or value.startswith(("/", "\\", "file://"))
+            or (len(value) >= 3 and value[1] == ":" and value[2] in "\\/")
+        )
+        if looks_private:
+            from .provenance import publishable_source_id
+            return publishable_source_id(value)
+        return value
+    if isinstance(value, Path):
+        from .provenance import publishable_source_id
+        return publishable_source_id(value)
+    if isinstance(value, np.generic):
+        return jsonable(value.item())
+    if isinstance(value, np.ndarray):
+        return {
+            "type": "numpy.ndarray",
+            "shape": list(value.shape),
+            "dtype": str(value.dtype),
+            "content_sha256": hashlib.sha256(value.tobytes(order="C")).hexdigest(),
+        }
+    if isinstance(value, bytes):
+        return {
+            "type": "bytes",
+            "size": len(value),
+            "content_sha256": hashlib.sha256(value).hexdigest(),
+        }
     if isinstance(value, (list, tuple)):
         return [jsonable(item) for item in value]
     if isinstance(value, dict):
-        return {str(key): jsonable(item) for key, item in value.items()}
-    rendered = repr(value)
-    return rendered if len(rendered) <= 200 else rendered[:200] + "..."
+        return {str(jsonable(key)): jsonable(item) for key, item in value.items()}
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return jsonable(to_dict())
+    from .provenance import component_identity
+    try:
+        identity = component_identity(value)
+    except Exception:
+        identity = {
+            "type": f"{type(value).__module__}.{type(value).__qualname__}",
+            "identity": "unavailable",
+        }
+    return {"component": identity}
 
 
 def describe_src(src) -> Any:
+    from .provenance import publishable_source_id
     if isinstance(src, str):
-        return src
+        return publishable_source_id(src)
     if isinstance(src, (list, tuple)) and src and all(isinstance(item, str) for item in src):
-        return list(src)
+        return [publishable_source_id(item) for item in src]
     return f"<in-memory {type(src).__name__}>"
 
 

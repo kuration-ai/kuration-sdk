@@ -132,8 +132,11 @@ class _NonOverwritingMoveFilesystem:
     def exists(self, path):
         return path in self.objects
 
-    def rm(self, path):
+    def rm_file(self, path):
         self.objects.pop(path, None)
+
+    def _strip_protocol(self, path):
+        return path
 
     def mv(self, source, destination):
         if destination in self.objects:

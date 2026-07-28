@@ -9,18 +9,20 @@ comparison JSON.
 from __future__ import annotations
 
 import argparse
-import json
-from pathlib import Path
 
 from ..experiment import Arm, run_experiment
-from ._common import cli_progress_for, cli_run, read_job
+from ._common import (cli_progress_for, cli_run, guard_file_output, json_document,
+                      read_job)
 from .job import resolve_job
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Multi-arm curation comparison from a JSON job spec.")
     ap.add_argument("job", help="Path to the job JSON.")
-    ap.add_argument("--out", default=None, help="Write the full comparison JSON here.")
+    ap.add_argument("--out", default=None,
+                    help="Write the full comparison JSON here (refuses an existing file).")
+    ap.add_argument("--force", action="store_true",
+                    help="Overwrite an existing --out file (never the input job).")
     ap.add_argument("--debug", action="store_true", help="Show full tracebacks on failure.")
     ap.add_argument("--quiet", action="store_true", help="Suppress interactive progress output.")
     args = ap.parse_args()
@@ -28,10 +30,46 @@ def main() -> None:
 
 
 def _run(args) -> None:
+    if args.force and not args.out:
+        raise ValueError("--force requires --out")
+    if args.out:
+        guard_file_output(args.out, force=args.force, protected_inputs=(args.job,),
+                          label="experiment output")
     job = read_job(args.job)
+    raw_arms = job.get("arms")
+    raw_arms = raw_arms if isinstance(raw_arms, (list, tuple)) else ()
+    referenced = [
+        arm.get("strategy")
+        for arm in raw_arms
+        if isinstance(arm, dict) and isinstance(arm.get("strategy"), str)
+    ]
+    if isinstance(job.get("schema"), str):
+        referenced.append(job["schema"])
+    raw_sources = job.get("sources")
+    raw_sources = raw_sources if isinstance(raw_sources, (list, tuple)) else ()
+    if args.out:
+        guard_file_output(
+            args.out,
+            force=args.force,
+            protected_inputs=(
+                args.job,
+                *(source for source in raw_sources if isinstance(source, str)),
+                *referenced,
+            ),
+            label="experiment output",
+        )
     resolved = resolve_job(job)
     if resolved.kind != "experiment":
         raise ValueError(f"kur-experiment requires an experiment job, got {resolved.kind!r}")
+    if resolved.sources is None:
+        raise RuntimeError("resolved experiment job is missing its sources")
+    if args.out:
+        guard_file_output(
+            args.out,
+            force=args.force,
+            protected_inputs=(args.job, *resolved.sources, *referenced),
+            label="experiment output",
+        )
     arms = [Arm(name, strategy) for name, strategy in resolved.arms]
 
     out = run_experiment(schema=resolved.schema, adapter=resolved.adapter,
@@ -53,7 +91,8 @@ def _run(args) -> None:
         shown = "  ".join(f"{m}={js:.3f}" for m, js in top)
         print(f"  {name:<16} n={a['n_selected']:5d}  top JS-vs-{base}: {shown}")
     if args.out:
-        Path(args.out).write_text(json.dumps(out, indent=2))
+        from ..io import write_text
+        write_text(args.out, json_document(out, label="experiment comparison"))
         print(f"\nwrote {args.out}")
 
 

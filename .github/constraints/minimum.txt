@@ -1,19 +1,19 @@
 numpy==1.24.0
-scikit-learn==1.4.0
-pyarrow==15.0.0
+scikit-learn==1.5.0
+pyarrow==23.0.1
 h5py==3.10.0
 fsspec==2024.2.0
-protobuf==4.25.0
+protobuf==5.29.6
 jsonschema==4.21.0
-torch==2.2.0
-torchvision==0.17.0
+torch==2.13.0
+torchvision==0.28.0
 huggingface-hub==0.20.0
 omegaconf==2.3.0
 addict==2.4.0
 einops==0.7.0
 imageio==2.31.0
-tqdm==4.65.0
-pillow==10.0.0
+tqdm==4.66.3
+pillow==12.3.0
 safetensors==0.4.0
 faiss-cpu==1.8.0
 trimesh==4.0.0
@@ -22,7 +22,7 @@ zarr==2.17.0
 # Zarr 2.17 imports codec symbols removed from the newer NumCodecs 0.16 line.
 numcodecs==0.12.1
 av==12.0.0
-ray==2.20.0
+ray==2.56.1
 matplotlib==3.8.0
 opencv-python==4.9.0.80
 s3fs==2024.2.0

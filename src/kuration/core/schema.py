@@ -4,7 +4,8 @@ This is what makes the closed grammar (`dsl/grammar.py`) dataset-agnostic withou
 opening it up: instead of hardcoding which fields exist (the way a CS2-specific DSL
 would), the grammar validates every source/map/filter/scope token against a schema
 supplied as data. A schema is pure JSON, validated loudly at load, and embedded in a
-run's `config.json` so a dataset reproduces from its own artifact.
+run's ``config.json`` as part of its auditable contract. Replay also requires the same immutable
+or content-addressed sources and compatible component implementations.
 
 Field `semantics` tags are the load-bearing idea: they let *universal* maps stay safe
 without naming fields. A field tagged `position` is the only thing `speed` and the
@@ -49,6 +50,24 @@ def _identifier(value, *, label: str) -> str:
     return value
 
 
+def _validated_bits(field_name: str, values) -> FrozenDict:
+    try:
+        raw = dict(values)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"field {field_name!r}: bits must be a mapping") from error
+    bits = {}
+    for bit_name, bit_value in raw.items():
+        bit_name = _identifier(
+            bit_name, label=f"field {field_name!r} bit name"
+        )
+        if type(bit_value) is not int or bit_value <= 0:
+            raise ValueError(
+                f"field {field_name!r}: bit {bit_name!r} must have a positive integer "
+                f"value, got {bit_value!r}")
+        bits[bit_name] = bit_value
+    return FrozenDict(bits)
+
+
 @dataclass(frozen=True)
 class FieldSpec:
     name: str
@@ -79,7 +98,7 @@ class FieldSpec:
             raise ValueError(f"field {self.name!r}: position semantics need a >=2-D vector")
         if self.semantics == "angular" and self.kind not in {"scalar", "vector"}:
             raise ValueError(f"field {self.name!r}: angular semantics need scalar/vector")
-        bits = FrozenDict({str(k): int(v) for k, v in dict(self.bits).items()})
+        bits = _validated_bits(self.name, self.bits)
         if self.semantics == "bitmask" and (self.kind != "scalar" or not bits):
             raise ValueError(f"field {self.name!r}: bitmask semantics need a scalar and bits")
         if bits and self.semantics != "bitmask":
@@ -190,7 +209,7 @@ def _field_from_dict(name: str, d: dict) -> FieldSpec:
         raise ValueError(
             f"field {name!r}: semantics must be one of {sorted(s for s in _SEMANTICS if s)} "
             f"or absent, got {semantics!r}")
-    bits = {str(k): int(v) for k, v in (d.get("bits") or {}).items()}
+    bits = _validated_bits(name, d.get("bits") or {})
     max_rate = d.get("max_rate")
     if max_rate is not None:
         try:

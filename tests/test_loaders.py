@@ -41,7 +41,7 @@ def test_loader_does_not_hide_malformed_config(tmp_path):
     (tmp_path / "dataset_manifest.json").write_text(json.dumps({
         "artifact_format_version": ARTIFACT_FORMAT_VERSION, "shards": []}))
     (tmp_path / "config.json").write_text("{")
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(ValueError, match="not valid JSON"):
         shard_entries(str(tmp_path))
 
 
@@ -136,7 +136,7 @@ def test_read_shard_reshapes_flattened_parquet_tensor(tmp_path):
     img = np.arange(L * 2 * 2, dtype="float32").reshape(L, 2, 2)
     path = write_shard(str(tmp_path / "s"), "parquet", {"img": img}, n_steps=L)
     entry = {"path": path, "shape": {"img": [2, 2]}, "n_steps": L}
-    back = read_shard_arrays(entry, "parquet")["img"]
+    back = read_shard_arrays(entry, "parquet", verify=False)["img"]
     assert back.shape == (L, 2, 2) and np.allclose(back, img)
 
 
@@ -149,3 +149,67 @@ def test_torch_shard_dataset(tmp_path):
     item = ds[0]
     assert isinstance(item["obs"], torch.Tensor) and item["obs"].shape[1] == 2
     assert item["_meta"]["split"] == "train"
+
+
+def test_torch_shard_dataset_uses_isolated_custom_container_registry(tmp_path):
+    torch = pytest.importorskip("torch")
+    from kuration.core.checkpoints import canonical_hash
+    from kuration.core.io import write_text
+    from kuration.core.manifest import commit_dataset, portable_shard_entries
+    from kuration.core.output.containers import Container
+    from kuration.core.output.shardwriter import write_track
+    from kuration.core.output.track import Track
+    from kuration.core.registry import Registry, default_registry
+    from kuration.core.torch import ShardDataset
+    from kuration.core.versioning import ARTIFACT_FORMAT_VERSION
+
+    def writer(path, arrays, n_steps):
+        with open(path, "wb") as stream:
+            np.savez(stream, _n_steps=n_steps, **arrays)
+
+    def reader(path):
+        with np.load(path, allow_pickle=False) as archive:
+            return (
+                {name: np.asarray(archive[name]) for name in archive.files
+                 if name != "_n_steps"},
+                int(archive["_n_steps"]),
+            )
+
+    registry = Registry(default_registry)
+    registry.register_container(
+        "test/isolated-torch", Container(".torchtest", writer, reader))
+    spec = OutputSpec.from_dict({
+        "container": "test/isolated-torch",
+        "shard_length": 2,
+        "modalities": {
+            "act": {"dtype": "float32", "shape": [], "source": "field:act"},
+        },
+    }, registry=registry)
+    entries = write_track(
+        str(tmp_path),
+        Track("source", 0, [{"act": 1.0}, {"act": 2.0}]),
+        spec,
+        schema=SCHEMA,
+        split="train",
+        registry=registry,
+    )
+    manifest = {
+        "artifact_format_version": ARTIFACT_FORMAT_VERSION,
+        "commit_protocol": "sidecar-v1",
+        "count": len(entries),
+        "shards": portable_shard_entries(str(tmp_path), entries),
+    }
+    config = {
+        "artifact_format_version": ARTIFACT_FORMAT_VERSION,
+        "output": spec.to_dict(),
+        "results": {"shards": len(entries)},
+        "provenance": {"fingerprint": canonical_hash({"test": "torch-registry"})},
+    }
+    write_text(tmp_path / "dataset_manifest.json", json.dumps(manifest))
+    write_text(tmp_path / "config.json", json.dumps(config))
+    commit_dataset(str(tmp_path))
+
+    item = ShardDataset(str(tmp_path), registry=registry)[0]
+
+    assert isinstance(item["act"], torch.Tensor)
+    assert item["act"].tolist() == [1.0, 2.0]

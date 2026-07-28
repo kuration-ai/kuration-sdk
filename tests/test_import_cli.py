@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import csv
+import warnings
 
 import numpy as np
 import pytest
@@ -15,6 +16,7 @@ from kuration import (
     inspect_dataset,
     iter_shards,
     register_adapter,
+    shard_entries,
 )
 
 
@@ -123,6 +125,23 @@ def test_import_dataset_rejects_shape_drift_and_existing_destination(tmp_path):
         import_dataset(first, destination)
 
 
+def test_existing_destination_is_rejected_before_plugins_or_sources_are_touched(
+        tmp_path, monkeypatch):
+    source = tmp_path / "source.npz"
+    _source(source)
+    destination = tmp_path / "dataset"
+    import_dataset(source, destination)
+
+    def unexpected_plugin_load():
+        raise AssertionError("plugins must not load before the destination guard")
+
+    monkeypatch.setattr("kuration.core.plugins.load_plugins", unexpected_plugin_load)
+    missing_source = tmp_path / "must-not-be-inspected.npz"
+
+    with pytest.raises(FileExistsError, match="already contains.*force=True"):
+        import_dataset(missing_source, destination)
+
+
 def test_kur_import_cli_creates_analyzable_artifact(tmp_path):
     source = tmp_path / "gameplay.npz"
     _source(source)
@@ -193,6 +212,26 @@ def test_import_auto_detects_timeseries_adapter_and_infers_csv_schema(tmp_path):
     assert inspect_dataset(tmp_path / "dataset", verify=True).verification["valid"] is True
 
 
+def test_partitioned_parquet_import_maps_snapshot_members_to_logical_sources(tmp_path):
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    source = tmp_path / "parts"
+    source.mkdir()
+    pq.write_table(
+        pa.table({"t": [0, 1], "id": ["device", "device"], "signal": [1.0, 2.0]}),
+        source / "part-0.parquet",
+    )
+
+    result = import_dataset(source, tmp_path / "dataset")
+
+    assert result["sources"] == 1
+    arrays = next(iter_shards(tmp_path / "dataset"))
+    np.testing.assert_array_equal(arrays["signal"], [1.0, 2.0])
+    config = json.loads((tmp_path / "dataset" / "config.json").read_text())
+    assert config["import"]["sources"][0]["source"] == "part-0.parquet"
+    assert "kuration-tree-snapshot" not in json.dumps(config)
+
+
 def test_import_uses_registered_plugin_detector_and_array_hook(tmp_path):
     source = tmp_path / "episode.smart"
     with source.open("wb") as stream:
@@ -209,6 +248,20 @@ def test_import_uses_registered_plugin_detector_and_array_hook(tmp_path):
     arrays = next(iter_shards(tmp_path / "dataset"))
     assert arrays["frames"].shape == (3, 2, 2, 3)
     assert arrays["actions"].shape == (3, 4)
+
+
+@pytest.mark.parametrize("bad_name", [1, "../frames"])
+def test_adapter_array_import_rejects_non_string_reserved_and_unsafe_names(
+        tmp_path, bad_name):
+    from kuration.core.importing import _load_adapter_arrays
+
+    class BadNames:
+        @staticmethod
+        def import_arrays(_source):
+            return {bad_name: np.ones(2), "1": np.zeros(2)}
+
+    with pytest.raises(ValueError, match="array name"):
+        _load_adapter_arrays(BadNames, str(tmp_path / "source.custom"))
 
 
 def test_import_auto_detects_hdf5_and_preserves_tensor_shapes(tmp_path):
@@ -310,8 +363,8 @@ def test_import_refuses_to_drop_event_streams(tmp_path):
                        fields={"signal": "signal"}, time="t", entity="id")
 
 
-def test_import_retry_after_partial_failure_is_distinguishable_and_cleanable(tmp_path):
-    """Finding 4: a failed import left an uncommitted manifest and orphan shards."""
+def test_import_contract_failure_is_side_effect_free_and_retryable(tmp_path):
+    """All source contracts are checked before the import publication boundary."""
     from kuration.core.manifest import dataset_state
 
     good = tmp_path / "a.npz"
@@ -324,23 +377,104 @@ def test_import_retry_after_partial_failure_is_distinguishable_and_cleanable(tmp
     with pytest.raises(ValueError, match="different modality contract"):
         import_dataset([good, drifted], destination)
 
-    assert dataset_state(str(destination)) == "writing"
-    orphans = sorted(path.name for path in (destination / "train").glob("*"))
-    assert orphans, "the failed attempt should have left shard files behind"
+    assert dataset_state(str(destination)) == "absent"
+    assert not destination.exists()
 
-    with pytest.raises(FileExistsError, match="failed part-way"):
-        import_dataset(good, destination)
-
-    with pytest.warns(RuntimeWarning, match="removed 1 shard file"):
-        result = import_dataset(good, destination, force=True)
-
-    assert result["replaced_shards"] == 1
+    result = import_dataset(good, destination)
+    assert "replaced_shards" not in result
     assert dataset_state(str(destination)) == "committed"
     assert inspect_dataset(destination, verify=True).verification["valid"] is True
     assert sorted(path.name for path in (destination / "train").glob("*")) == [
         entry["path"].rsplit("/", 1)[-1]
         for entry in json.loads((destination / "dataset_manifest.json").read_text())["shards"]
     ]
+
+
+def test_forced_import_contract_failure_preserves_committed_destination(tmp_path):
+    good = tmp_path / "good.npz"
+    incompatible = tmp_path / "incompatible.npz"
+    _source(good)
+    np.savez(incompatible, frames=np.zeros((5, 9, 9, 3), dtype=np.uint8),
+             actions=np.zeros((5, 4), dtype=np.float32))
+    destination = tmp_path / "dataset"
+    import_dataset(good, destination)
+    before = {
+        str(path.relative_to(destination)): path.read_bytes()
+        for path in destination.rglob("*") if path.is_file()
+    }
+
+    with pytest.raises(ValueError, match="different modality contract"):
+        import_dataset([good, incompatible], destination, force=True)
+
+    after = {
+        str(path.relative_to(destination)): path.read_bytes()
+        for path in destination.rglob("*") if path.is_file()
+    }
+    assert after == before
+    assert inspect_dataset(destination, verify=True).verification["valid"] is True
+
+
+def test_forced_import_rejects_its_own_shard_as_a_source_without_mutation(tmp_path):
+    from kuration.core.manifest import dataset_state
+
+    source = tmp_path / "source.npz"
+    np.savez(source, x=np.arange(6, dtype=np.float32))
+    destination = tmp_path / "dataset"
+    import_dataset(source, destination)
+    shard = next((destination / "train").glob("*.npz"))
+    before = {
+        str(path.relative_to(destination)): path.read_bytes()
+        for path in destination.rglob("*") if path.is_file()
+    }
+
+    with pytest.raises(ValueError, match="overlaps output.*separate output path"):
+        import_dataset(shard, destination, force=True)
+    assert dataset_state(str(destination)) == "committed"
+    assert {
+        str(path.relative_to(destination)): path.read_bytes()
+        for path in destination.rglob("*") if path.is_file()
+    } == before
+
+    alias = tmp_path / "shard-alias.npz"
+    alias.symlink_to(shard)
+    with pytest.raises(ValueError, match="overlaps output.*separate output path"):
+        import_dataset(alias, destination, force=True)
+    assert dataset_state(str(destination)) == "committed"
+    assert {
+        str(path.relative_to(destination)): path.read_bytes()
+        for path in destination.rglob("*") if path.is_file()
+    } == before
+
+
+def test_forced_import_is_safe_when_warnings_are_errors(tmp_path):
+    source = tmp_path / "source.npz"
+    np.savez(source, x=np.arange(6, dtype=np.float32))
+    destination = tmp_path / "dataset"
+    import_dataset(source, destination)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = import_dataset(source, destination, force=True)
+
+    assert result["replaced_shards"] == 1
+    assert inspect_dataset(destination, verify=True).verification["valid"] is True
+
+
+def test_forced_remote_import_rejects_its_own_shard_without_mutation(tmp_path):
+    from kuration.core.manifest import dataset_state
+
+    pytest.importorskip("fsspec")
+    source = tmp_path / "remote-source.npz"
+    np.savez(source, x=np.arange(6, dtype=np.float32))
+    destination = "memory://import-overlap/dataset"
+    import_dataset(source, destination)
+    entries, _container = shard_entries(destination)
+
+    with pytest.raises(ValueError, match="overlaps output.*separate output path"):
+        import_dataset(entries[0]["path"], destination, force=True)
+
+    assert dataset_state(destination) == "committed"
+    assert shard_entries(destination)[0]
 
 
 def test_import_committed_destination_keeps_its_own_message(tmp_path):
@@ -384,6 +518,172 @@ def test_import_fingerprint_covers_source_id_and_presence_mask(tmp_path):
     assert fingerprint(without) != fingerprint(with_mask)
 
 
+def test_array_import_pins_validated_bytes_across_pathname_aba_swap(
+        tmp_path, monkeypatch):
+    """A same-contract replacement cannot feed different bytes to the publication read."""
+    from kuration.core import importing as importing_module
+
+    source = tmp_path / "source.npz"
+    replacement = tmp_path / "replacement.npz"
+    held = tmp_path / "held.npz"
+    expected = np.arange(12, dtype=np.float32).reshape(3, 4)
+    substituted = np.full((3, 4), 99.0, dtype=np.float32)
+    np.savez(source, actions=expected)
+    np.savez(replacement, actions=substituted)
+
+    original_loader = importing_module._load_adapter_arrays
+    calls = 0
+
+    def swap_only_during_publication_read(factory, path):
+        nonlocal calls
+        calls += 1
+        if calls != 2:
+            return original_loader(factory, path)
+        source.replace(held)
+        replacement.replace(source)
+        try:
+            return original_loader(factory, path)
+        finally:
+            source.replace(replacement)
+            held.replace(source)
+
+    monkeypatch.setattr(
+        importing_module,
+        "_load_adapter_arrays",
+        swap_only_during_publication_read,
+    )
+
+    import_dataset(source, tmp_path / "dataset")
+
+    assert calls == 2
+    arrays = next(iter_shards(tmp_path / "dataset"))
+    np.testing.assert_array_equal(arrays["actions"], expected)
+
+
+def test_tick_import_pins_inferred_bytes_across_pathname_aba_swap(
+        tmp_path, monkeypatch):
+    """Schema inference and the later tick read consume one staged local generation."""
+    from kuration.core.adapters.timeseries import TimeseriesAdapter
+
+    source = tmp_path / "source.csv"
+    replacement = tmp_path / "replacement.csv"
+    held = tmp_path / "held.csv"
+    source.write_text("t,id,signal\n0,a,1\n1,a,2\n")
+    replacement.write_text("t,id,signal\n0,a,91\n1,a,92\n")
+    original_iter_ticks = TimeseriesAdapter.iter_ticks
+
+    def swap_during_tick_read(self, path):
+        source.replace(held)
+        replacement.replace(source)
+        try:
+            yield from original_iter_ticks(self, path)
+        finally:
+            source.replace(replacement)
+            held.replace(source)
+
+    monkeypatch.setattr(TimeseriesAdapter, "iter_ticks", swap_during_tick_read)
+
+    import_dataset(source, tmp_path / "dataset")
+
+    arrays = next(iter_shards(tmp_path / "dataset"))
+    np.testing.assert_array_equal(arrays["signal"], [1.0, 2.0])
+
+
+def test_import_snapshot_pins_intermediate_ancestor_before_symlink_swap(
+        tmp_path, monkeypatch):
+    """Opening later components stays relative to the already-open ancestor descriptor."""
+    from kuration.core import io as io_module
+
+    trusted = tmp_path / "trusted-input-ancestor"
+    source = trusted / "inner" / "source.npz"
+    outside = tmp_path / "outside-input-ancestor"
+    substituted_source = outside / "inner" / "source.npz"
+    held = tmp_path / "held-input-ancestor"
+    source.parent.mkdir(parents=True)
+    substituted_source.parent.mkdir(parents=True)
+    expected = np.arange(12, dtype=np.float32).reshape(3, 4)
+    np.savez(source, actions=expected)
+    np.savez(substituted_source, actions=np.full((3, 4), 77.0, dtype=np.float32))
+
+    real_open = io_module.os.open
+    swapped = False
+
+    def swap_after_ancestor_open(path, flags, mode=0o777, *, dir_fd=None):
+        nonlocal swapped
+        if dir_fd is None:
+            descriptor = real_open(path, flags, mode)
+        else:
+            descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == trusted.name and dir_fd is not None and not swapped:
+            trusted.replace(held)
+            trusted.symlink_to(outside, target_is_directory=True)
+            swapped = True
+        return descriptor
+
+    monkeypatch.setattr(io_module.os, "open", swap_after_ancestor_open)
+    try:
+        import_dataset(source, tmp_path / "dataset")
+    finally:
+        if trusted.is_symlink():
+            trusted.unlink()
+        if held.exists():
+            held.replace(trusted)
+
+    assert swapped is True
+    arrays = next(iter_shards(tmp_path / "dataset"))
+    np.testing.assert_array_equal(arrays["actions"], expected)
+
+
+def test_generic_remote_import_fails_before_unconditioned_read_or_publication(
+        tmp_path, monkeypatch):
+    """An info/read/info sequence cannot exclude ABA without a conditional generation read."""
+    fsspec = pytest.importorskip("fsspec")
+    import io
+
+    payload = io.BytesIO()
+    np.savez(payload, actions=np.ones((3, 4), dtype=np.float32))
+    source = "memory://weak-import/source.npz"
+    fsspec.filesystem("memory").pipe(source, payload.getvalue())
+    destination = tmp_path / "dataset"
+
+    def unexpected_remote_setup(*_args, **_kwargs):
+        raise AssertionError("remote source must be rejected before plugins or detection")
+
+    monkeypatch.setattr(
+        "kuration.core.adapters.base.detect_adapter",
+        unexpected_remote_setup,
+    )
+    monkeypatch.setattr("kuration.core.plugins.load_plugins", unexpected_remote_setup)
+    with pytest.raises(ValueError, match="cannot be generation-pinned.*generic fsspec"):
+        import_dataset(source, destination)
+
+    assert not destination.exists()
+
+
+def test_local_import_fails_before_detection_without_secure_ancestor_open(
+        tmp_path, monkeypatch):
+    from kuration.core import io as io_module
+
+    source = tmp_path / "source.npz"
+    np.savez(source, actions=np.ones((3, 4), dtype=np.float32))
+    destination = tmp_path / "dataset"
+    monkeypatch.setattr(io_module, "_HAS_POSIX_DESCRIPTOR_OPEN", False)
+
+    def unexpected_remote_setup(*_args, **_kwargs):
+        raise AssertionError("unsupported local import must fail before plugins or detection")
+
+    monkeypatch.setattr("kuration.core.plugins.load_plugins", unexpected_remote_setup)
+    monkeypatch.setattr(
+        "kuration.core.adapters.base.detect_adapter",
+        unexpected_remote_setup,
+    )
+
+    with pytest.raises(ValueError, match="local import requires POSIX descriptor-relative"):
+        import_dataset(source, destination)
+
+    assert not destination.exists()
+
+
 def test_parquet_export_rejects_flattened_column_collision(tmp_path):
     """Finding 6: `x` (T,2) flattened over a sibling modality literally named `x_0`."""
     pytest.importorskip("pyarrow")
@@ -417,14 +717,14 @@ def test_parquet_dataset_detection_is_local_and_bounded(tmp_path, monkeypatch):
 
 
 def test_import_points_remote_directories_at_an_explicit_adapter(tmp_path, monkeypatch):
-    """Finding 7: detection never lists a remote tree; say so instead of a bare failure."""
+    """Remote trees fail before detection because no generic read pins one generation."""
     from kuration.core.adapters import base
 
     def _no_match(source_uri, *, registry=None):
         raise ValueError(f"no registered input adapter recognized {source_uri!r};")
 
     monkeypatch.setattr(base, "detect_adapter", _no_match)
-    with pytest.raises(ValueError, match="are not auto-detected"):
+    with pytest.raises(ValueError, match="cannot be generation-pinned"):
         import_dataset("gs://bucket/parts", tmp_path / "dataset")
     with pytest.raises(ValueError, match="^no registered input adapter"):
         import_dataset(tmp_path / "local.bin", tmp_path / "dataset")

@@ -28,6 +28,8 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
     if spec.presence_mask:
         shape["_present"] = []
         dtype["_present"] = "bool"
+    from ..provenance import publishable_source_id
+    published_source_id = publishable_source_id(source_id)
     st: dict = {}
     for j in jobs:
         split = _safe_split(j["split"])
@@ -48,7 +50,7 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
                                              "source_id": source_id,
                                              "entity_id": s["eid"]},
                "media_provider": media_provider}
-        name = track_name(source_id, s["eid"], s["suffix"])
+        name = track_name(published_source_id, s["eid"], s["suffix"])
         base = f"{out_dir}/{s['split']}/{name}_shard{s['shard']:04d}" + ("_padded" if padded else "")
         candidate = base + ext
         previous = (resume_entries or {}).get(candidate)
@@ -64,10 +66,12 @@ def stream_source_shards(out_dir: str, source_id: str, tick_iter, jobs: list[dic
             path = write_shard(base, spec.container, _build_arrays(piece, spec, encoder, ctx),
                                real_len, registry=registry)
             integrity = file_integrity(path)
-        s["entries"].append({"path": path, "source_id": source_id,
+        s["entries"].append({"path": path, "source_id": published_source_id,
                              "entity_id": entity_id_token(s["eid"]),
-                             "split": s["split"], "shard_index": s["shard"], "n_steps": real_len,
-                             "padded": padded, "shape": shape, "dtype": dtype, **integrity})
+                             "split": s["split"], "track_id": name,
+                             "shard_index": s["shard"], "n_steps": real_len,
+                             "padded": padded, "shape": shape, "dtype": dtype,
+                             **integrity})
         s["shard"] += 1
         s["buf"] = []
 

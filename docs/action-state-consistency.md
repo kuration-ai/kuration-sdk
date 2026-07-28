@@ -15,10 +15,11 @@ Only `action_state` composes with the built-in pixel-shift measurement API.
 ## Install
 
 ```bash
-pip install "kuration-sdk[action-state]"
+python -m pip install -e ".[action-state]"
 ```
 
-Use `kuration-sdk[gameplay]` to install this analyzer together with Pixel Shift and SLAM.
+Run this from the repository root. Use `.[gameplay]` to install this analyzer together with
+Pixel Shift and SLAM.
 The analyzer, validation, and aggregation code ships in the base SDK. The extra installs
 OpenCV for measurements made from frames. For repository development:
 
@@ -233,8 +234,7 @@ against). Every other keyword `add_segment()` accepts (`color_space`, `lookbehin
 pixel_shift's own instance-finding — see its README for what each means.
 
 If OpenCV is absent, analyzer construction and baseline processing still work. An operation
-that actually measures optical flow raises a clear error naming
-`pip install "kuration-sdk[action-state]"`.
+that actually measures optical flow raises a clear error naming the `action-state` extra.
 
 ### Using the generic core directly
 

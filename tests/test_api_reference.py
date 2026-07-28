@@ -23,6 +23,14 @@ def test_api_reference_covers_every_top_level_export():
     assert not missing, f"docs/api.md is missing kuration exports: {missing}"
 
 
+def test_api_reference_covers_every_gameplay_facade_export():
+    import kuration.gameplay as gameplay
+
+    text = REFERENCE.read_text()
+    missing = [name for name in gameplay.__all__ if not _mentions_identifier(text, name)]
+    assert not missing, f"docs/api.md is missing kuration.gameplay exports: {missing}"
+
+
 def test_api_reference_covers_every_public_pipeline_method():
     tree = ast.parse((ROOT / "src" / "kuration" / "core" / "pipeline.py").read_text())
     pipeline = next(
@@ -90,8 +98,17 @@ def test_primary_api_signatures_match_the_reference():
         "dataset_report": kuration.dataset_report,
         "input": kuration.input,
         "Pipeline.sample": kuration.Pipeline.sample,
+        "Pipeline.curate": kuration.Pipeline.curate,
         "Pipeline.output": kuration.Pipeline.output,
         "Pipeline.review": kuration.Pipeline.review,
+        "schema_from_output": kuration.schema_from_output,
+        "load_strategy": kuration.load_strategy,
+        "register_analyzer": kuration.register_analyzer,
+        "Arm": kuration.Arm,
+        "PartitionCommit": kuration.PartitionCommit,
+        "checkpoint_feature_stage": kuration.checkpoint_feature_stage,
+        "external_top_k": kuration.external_top_k,
+        "external_uniform_bins": kuration.external_uniform_bins,
         "SplitLeakageAnalyzer": kuration.SplitLeakageAnalyzer,
         "SplitLeakageAnalyzer.add_assignment": kuration.SplitLeakageAnalyzer.add_assignment,
         "SplitLeakageAnalyzer.add_assignments": kuration.SplitLeakageAnalyzer.add_assignments,

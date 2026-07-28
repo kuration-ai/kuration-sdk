@@ -324,6 +324,9 @@ def checkpoint_feature_stage(*, schema, adapter, sources: Iterable, define: dict
         except Exception as error:
             if on_error == "raise":
                 raise RuntimeError(f"bounded feature source {source!r} failed: {error!r}") from error
+            # A transform may retain mutable/model state. Reconstruct it after any failed
+            # source so source-level skip isolation also isolates component state.
+            transform_runner = None
             from .scoring import _redact_diagnostic
             errors.append({
                 "source": _redact_diagnostic(source) if isinstance(source, str) else source,

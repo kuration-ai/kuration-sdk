@@ -36,6 +36,21 @@ jobs:
                   "release blocked: project.license is missing from pyproject.toml; "
                   "record the company-approved license before publishing"
               )
+          authors = project.get("authors")
+          if (
+              not isinstance(authors, list)
+              or not authors
+              or any(
+                  not isinstance(author, dict)
+                  or not isinstance(author.get("name"), str)
+                  or not author["name"].strip()
+                  for author in authors
+              )
+          ):
+              raise SystemExit(
+                  "release blocked: project.authors must contain at least one approved "
+                  "non-empty author name before publishing"
+              )
           if not Path("LICENSE").is_file():
               raise SystemExit(
                   "release blocked: root LICENSE file is missing; add the text for the "
@@ -130,11 +145,18 @@ jobs:
           assert "site-packages" in str(Path(kuration.__file__).resolve())
           assert kuration.__version__ == version("kuration-sdk")
           PY
-          for command in kur-curate kur-experiment kur-report kur-validate kur-list \
-                         kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check \
-                         kur-plugin-check; do
+          while IFS= read -r command; do
             /tmp/kuration-release-smoke/bin/"$command" --help
-          done
+          done < <(
+            /tmp/kuration-release-smoke/bin/python - <<'PY'
+          from importlib.metadata import distribution
+
+          scripts = distribution("kuration-sdk").entry_points
+          for entry_point in sorted(scripts, key=lambda item: item.name):
+              if entry_point.group == "console_scripts":
+                  print(entry_point.name)
+          PY
+          )
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-distributions-${{ github.run_id }}

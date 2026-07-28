@@ -103,16 +103,17 @@ evidence result. `compare_videos()` remains the explicit whole-video tool.
 ## Installation
 
 ```bash
-pip install kuration-sdk
-pip install "kuration-sdk[gameplay]"
+pip install -e .
+pip install -e ".[gameplay]"
 ```
 
 Granular extras remain available:
 
 ```bash
-pip install "kuration-sdk[pixel-shift]"
-pip install "kuration-sdk[action-state]"
-pip install "kuration-sdk[slam]"
+pip install -e ".[pixel-shift]"
+pip install -e ".[action-state]"
+pip install -e ".[slam]"
 ```
 
-The `standard-operators` extra remains a compatibility alias for `gameplay`.
+Run these commands from a source checkout until the public PyPI launch. The
+`standard-operators` extra remains a compatibility alias for `gameplay`.

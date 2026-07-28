@@ -2,8 +2,9 @@
 
 A **strategy** is a small JSON document describing *how* to turn scored segments into a
 curated set: inline metric definitions, optional bin axes, and a selection method with its
-knobs. It is pure data, so the resolved strategy lands in `config.json` and a run reproduces
-from the artifact alone.
+knobs. It is pure data, so the resolved strategy lands in `config.json` as part of an auditable,
+self-describing run contract. Replay also requires the same immutable/content-addressed sources
+and compatible component implementations.
 
 ```python
 from kuration import load_strategy
@@ -177,7 +178,8 @@ escape hatch (and overrides the declarative tags).
 
 - **tag coverage** — after the base pick, add or swap segments within `target_size` until every
   feasible categorical `tag` reaches a floor count (preferring underrepresented bins), so a rare
-  label isn't dropped without expanding the count budget. In
+  label isn't dropped without expanding the count budget. The floor is rounded up and coverage
+  draws only from the predicate-passing pool, so it cannot restore a filtered segment. In
   `write_dataset` this is a budget **reserve**: each tag's highest-priority track is admitted
   first, bounded by `min_tag_frac` of the hour budget.
 - **group cap** — drop excess from any `group` exceeding its fair share × `max_group_overshoot`,

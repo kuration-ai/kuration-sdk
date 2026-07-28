@@ -73,6 +73,7 @@ def _output():
 
 def test_export_and_adapter_round_trip(tmp_path):
     video = tmp_path / "clip one.mp4"
+    video.write_bytes(b"portable-video")
     manifest_path = export_slam_output(
         _output(),
         tmp_path / "export",
@@ -94,7 +95,10 @@ def test_export_and_adapter_round_trip(tmp_path):
     adapter = SLAMTrajectoryAdapter(manifest=manifest_path)
     assert adapter.sources() == ["clip one"]
     assert adapter.schema.sample_hz == 2.0
-    assert adapter.video_mapping == {"clip one": str(video)}
+    bundled_video = Path(adapter.video_mapping["clip one"])
+    assert bundled_video.parent == manifest_path.parent / "media"
+    assert bundled_video.name.startswith("video-")
+    assert bundled_video.read_bytes() == b"portable-video"
     ticks = adapter.ticks("clip one")
     assert [tick.time for tick in ticks] == [0.0, 0.5, 1.0]
     assert ticks[2].entities[0]["camera_position"] == (1.0, 1.0, 0.0)
@@ -530,18 +534,20 @@ def test_prepare_video_mapping_decodes_runs_and_exports_alignment(tmp_path):
             assert frames["clip one"].shape == (3, 2, 2, 3)
             return _output()
 
+    video = tmp_path / "gameplay.mp4"
+    video.write_bytes(b"gameplay")
     manifest = prepare_slam_input(
-        {"clip one": "gameplay.mp4"},
+        {"clip one": str(video)},
         tmp_path / "prepared-video",
         runner_options={"depth_model": "depth", "runtime_factory": FakeRuntime},
         decoder_options={"provider": Provider()},
     )
     document = json.loads(manifest.read_text())
     assert document["timebase"] == "timestamp"
-    # A CWD-relative video path is absolutized at export time: the adapter resolves relative
-    # manifest references against the manifest directory, so recording it verbatim would break
-    # re-ingestion from any other working directory.
-    assert document["clips"]["clip one"]["video"] == str(Path("gameplay.mp4").absolute())
+    reference = document["clips"]["clip one"]["video"]
+    assert Path(reference).parent == Path("media")
+    assert video.name not in reference
+    assert (manifest.parent / reference).read_bytes() == b"gameplay"
     adapter = SLAMTrajectoryAdapter(manifest=manifest)
     assert [tick.time for tick in adapter.ticks("clip one")] == [0.0, 0.25, 0.5]
 
@@ -557,6 +563,8 @@ def test_offline_golden_path_writes_quality_selection_and_curated_cloud(tmp_path
     )
     document = json.loads(result.selection.read_text())
     assert document["format"] == "kuration-slam-selection"
+    assert str(manifest.resolve()) not in document["source_manifest"]
+    assert not Path(document["source_manifest"]).is_absolute()
     assert len(document["segments"]) == result.selected_count == 6
     assert document["selection"]["candidates"] == result.candidate_count
     assert all("slam_quality_score" in row["features"] for row in document["segments"])

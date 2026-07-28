@@ -27,6 +27,7 @@ from kuration.gameplay.slam import (
     load_slam_output,
     prepare_slam_input,
 )
+from kuration.gameplay.slam.cli import main as cli_main
 from kuration.gameplay.slam.demo import write_demo_reconstruction
 from kuration.gameplay.slam.export import _times_for_clip
 
@@ -535,7 +536,9 @@ def test_replica_creation_is_serialized_by_the_model_lock():
     assert not thread.is_alive()
 
 
-def test_export_keeps_in_tree_videos_relative_and_absolutizes_the_rest(tmp_path, monkeypatch):
+def test_export_keeps_in_tree_videos_relative_and_bundles_external_files(
+    tmp_path, monkeypatch
+):
     destination = tmp_path / "export"
     inside = destination / "media" / "clip.mp4"
     inside.parent.mkdir(parents=True)
@@ -548,13 +551,26 @@ def test_export_keeps_in_tree_videos_relative_and_absolutizes_the_rest(tmp_path,
     assert json.loads(manifest.read_text())["clips"]["clip"]["video"] \
         == str(Path("media") / "clip.mp4")
 
-    outside = tmp_path / "elsewhere" / "clip.mp4"
+    outside = tmp_path / "elsewhere" / "customer-secret-match.mp4"
     outside.parent.mkdir()
-    outside.write_bytes(b"")
+    outside.write_bytes(b"external-video")
     manifest = export_slam_output(
-        _output(), destination, sample_hz=1.0, videos={"clip": "elsewhere/clip.mp4"}
+        _output(),
+        destination,
+        sample_hz=1.0,
+        videos={"clip": "elsewhere/customer-secret-match.mp4"},
     )
-    assert json.loads(manifest.read_text())["clips"]["clip"]["video"] == str(outside)
+    reference = json.loads(manifest.read_text())["clips"]["clip"]["video"]
+    assert Path(reference).parent == Path("media")
+    assert Path(reference).name.startswith("video-")
+    assert outside.name not in Path(reference).name
+    assert (destination / reference).read_bytes() == b"external-video"
+    renamed = tmp_path / "renamed.mp4"
+    renamed.write_bytes(outside.read_bytes())
+    repeated = export_slam_output(
+        _output(), destination, sample_hz=1.0, videos={"clip": renamed}
+    )
+    assert json.loads(repeated.read_text())["clips"]["clip"]["video"] == reference
 
     manifest = export_slam_output(
         _output(), destination, sample_hz=1.0, videos={"clip": "gs://bucket/clip.mp4"}
@@ -563,6 +579,26 @@ def test_export_keeps_in_tree_videos_relative_and_absolutizes_the_rest(tmp_path,
 
     with pytest.raises(ValueError, match="non-empty path or URI"):
         export_slam_output(_output(), destination, sample_hz=1.0, videos={"clip": ""})
+    with pytest.raises(ValueError, match="does not exist"):
+        export_slam_output(
+            _output(),
+            destination,
+            sample_hz=1.0,
+            videos={"clip": tmp_path / "missing.mp4"},
+        )
+    with pytest.raises(ValueError, match="regular file"):
+        export_slam_output(
+            _output(), destination, sample_hz=1.0, videos={"clip": tmp_path}
+        )
+    for unsafe in (
+        "https://user:password@example.test/clip.mp4",
+        "gs://bucket/clip.mp4?X-Goog-Signature=secret",
+        "s3://bucket/clip.mp4#token",
+    ):
+        with pytest.raises(ValueError, match="credential|query parameters"):
+            export_slam_output(
+                _output(), destination, sample_hz=1.0, videos={"clip": unsafe}
+            )
 
 
 def test_cwd_relative_video_reingests_from_a_different_working_directory(tmp_path, monkeypatch):
@@ -594,9 +630,14 @@ def test_cwd_relative_video_reingests_from_a_different_working_directory(tmp_pat
     provider = Provider()
     pipeline = input_slam(manifest, join_video=True, provider=provider)
 
-    assert provider.probed == [str(video)]
-    assert pipeline.adapter.videos == {"clip": str(video)}
-    assert SLAMTrajectoryAdapter(manifest=manifest).video_mapping == {"clip": str(video)}
+    bundled = manifest.parent / json.loads(manifest.read_text())["clips"]["clip"]["video"]
+    assert bundled.parent == manifest.parent / "media"
+    assert bundled.read_bytes() == video.read_bytes()
+    assert provider.probed == [str(bundled)]
+    assert pipeline.adapter.videos == {"clip": str(bundled)}
+    assert SLAMTrajectoryAdapter(manifest=manifest).video_mapping == {
+        "clip": str(bundled)
+    }
 
 
 def test_unrecordable_runtime_option_is_rejected_instead_of_dropped():
@@ -654,6 +695,114 @@ def test_selection_json_is_written_through_the_atomic_writer(tmp_path, monkeypat
     assert calls == [destination]
     assert json.loads(result.selection.read_text())["format"] == "kuration-slam-selection"
     assert not list(destination.parent.glob("*.tmp"))
+
+
+def test_slam_cli_no_clobber_force_and_strict_json(tmp_path, capsys):
+    destination = tmp_path / "demo"
+
+    assert cli_main(["demo", "--out", str(destination), "--quiet"]) == 0
+    first = capsys.readouterr()
+    result = json.loads(
+        first.out,
+        parse_constant=lambda value: pytest.fail(f"non-standard JSON token {value}"),
+    )
+    assert result["selected_count"] > 0
+
+    marker = destination / "caller-owned.txt"
+    marker.write_text("keep")
+    with pytest.raises(SystemExit) as blocked:
+        cli_main(["demo", "--out", str(destination), "--quiet"])
+    assert blocked.value.code == 1
+    failure = capsys.readouterr()
+    assert failure.out == ""
+    assert failure.err.count("\n") == 1
+    assert failure.err.startswith("error: FileExistsError:")
+    assert "--force" in failure.err
+    assert "Traceback" not in failure.err
+
+    assert cli_main(
+        ["demo", "--out", str(destination), "--quiet", "--force"]
+    ) == 0
+    json.loads(capsys.readouterr().out)
+    assert marker.read_text() == "keep"
+
+
+def test_slam_cli_resume_reuses_output_but_default_refuses_it(tmp_path, capsys):
+    manifest = write_demo_reconstruction(tmp_path / "source", frames_per_clip=24)
+    destination = tmp_path / "run"
+    arguments = [
+        "run",
+        "--manifest",
+        str(manifest),
+        "--out",
+        str(destination),
+        "--window",
+        "8",
+        "--stride",
+        "4",
+        "--count",
+        "2",
+        "--min-quality",
+        "0",
+        "--quiet",
+    ]
+
+    assert cli_main(arguments) == 0
+    capsys.readouterr()
+    with pytest.raises(SystemExit):
+        cli_main(arguments)
+    assert "--force" in capsys.readouterr().err
+
+    assert cli_main([*arguments, "--resume"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["selected_count"] == 2
+
+
+def test_slam_cli_rejects_input_overlap_before_work(tmp_path, capsys):
+    destination = tmp_path / "work"
+    destination.mkdir()
+    video = destination / "input.mp4"
+    video.write_bytes(b"do-not-touch")
+
+    with pytest.raises(SystemExit) as blocked:
+        cli_main([
+            "run",
+            "--video",
+            f"clip={video}",
+            "--out",
+            str(destination),
+            "--force",
+            "--quiet",
+        ])
+
+    assert blocked.value.code == 1
+    failure = capsys.readouterr()
+    assert "overlaps input path" in failure.err
+    assert "Traceback" not in failure.err
+    assert video.read_bytes() == b"do-not-touch"
+    assert not (destination / "slam-export").exists()
+
+
+def test_slam_cli_failure_is_one_line_unless_debug_requested(tmp_path, capsys):
+    arguments = [
+        "run",
+        "--manifest",
+        str(tmp_path / "missing.json"),
+        "--out",
+        str(tmp_path / "out"),
+        "--runtime-factory",
+        "invalid-factory",
+        "--quiet",
+    ]
+    with pytest.raises(SystemExit):
+        cli_main(arguments)
+    failure = capsys.readouterr()
+    assert failure.err.count("\n") == 1
+    assert failure.err.startswith("error: ValueError:")
+    assert "Traceback" not in failure.err
+
+    with pytest.raises(ValueError, match="module:attribute"):
+        cli_main([*arguments, "--debug"])
 
 
 def test_vendored_depth_export_helpers_are_an_explicit_stub():

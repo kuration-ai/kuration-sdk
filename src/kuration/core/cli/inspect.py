@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import argparse
-import json
 
-from ._common import cli_run
+from ._common import artifact_root_path, cli_run, guard_file_output, json_document
 
 
 def render_inspection(report: dict) -> str:
@@ -52,12 +51,21 @@ def main() -> None:
     args = parser.parse_args()
 
     def body():
+        if args.html:
+            guard_file_output(
+                args.html,
+                force=None,
+                protected_inputs=(artifact_root_path(args.dataset),),
+                label="inspection HTML output",
+            )
         from ..inspection import inspect_dataset
         report = inspect_dataset(args.dataset, verify=args.verify)
         if args.html:
             from ..html_report import write_html_report
             write_html_report(args.html, report, title="kuration dataset inspection")
-        print(json.dumps(report.to_dict(), indent=2) if args.json
+        print(json_document(
+            report.to_dict(), label="dataset inspection"
+        ).rstrip() if args.json
               else render_inspection(report))
         if args.verify and not report["verification"]["valid"]:
             raise SystemExit(2)

@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 
 from ..importing import import_dataset
-from ._common import cli_run, parse_mapping_option
+from ._common import cli_run, json_document, parse_mapping_option
 
 
 def main() -> None:
@@ -88,7 +87,7 @@ def main() -> None:
             force=args.force,
         )
         if args.json:
-            print(json.dumps(result, indent=2))
+            print(json_document(result, label="dataset import result").rstrip())
         else:
             print(
                 f"imported with {result['adapter']}: {result['sources']} source(s), "

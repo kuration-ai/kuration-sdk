@@ -317,7 +317,8 @@ def test_internal_transform_type_error_is_not_retried():
     pipeline = (input([{"value": float(i)} for i in range(4)])
                 .window(2, stride=2)
                 .transform("tests/internal-type-error")
-                .sample("top-k", n=2, weights={"broken": 1.0}))
+                .sample("top-k", n=2, weights={"broken": 1.0})
+                .options(on_error="raise"))
     with pytest.raises(TypeError, match="plugin implementation failed"):
         pipeline.collect()
     assert InternalTypeError.calls == 1

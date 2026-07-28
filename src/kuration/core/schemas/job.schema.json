@@ -150,6 +150,7 @@
     "workers": {"type": "integer", "minimum": 1},
     "on_error": {"enum": ["skip", "raise"]},
     "resume": {"type": "boolean"},
+    "force": {"type": "boolean"},
     "streaming": {"type": "boolean"},
     "executor": {"enum": ["local", "ray"]},
     "mode": {"enum": ["explore", "strict"]},

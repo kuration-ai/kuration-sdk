@@ -48,10 +48,11 @@ This operator measures optical flow with `cv2`, which is not part of Kuration's 
 dependencies. The implementation ships in the SDK wheel; install its runtime extra with:
 
 ```bash
-pip install "kuration-sdk[pixel-shift]"
+python -m pip install -e ".[pixel-shift]"
 ```
 
-Use `kuration-sdk[gameplay]` to install this operator together with action-state and SLAM.
+Run this from the repository root. Use `.[gameplay]` to install this operator together with
+action-state and SLAM.
 `cv2` is imported lazily, only inside functions that touch a frame, so importing Kuration
 and discovering the built-in operator remain safe without OpenCV.
 

@@ -11,9 +11,9 @@ written, so a scaffold that lands on disk is a job `kur-validate` accepts.
 from __future__ import annotations
 
 import argparse
-import json
 
-from ._common import cli_run, parse_mapping_option
+from ._common import (cli_run, guard_file_output, json_document,
+                      parse_mapping_option)
 from .infer_schema_cli import infer_source
 
 
@@ -103,11 +103,16 @@ def main() -> None:
     args = ap.parse_args()
 
     def body():
-        from ..io import exists, write_text
-        if exists(args.out) and not args.force:
-            raise FileExistsError(f"{args.out} already exists; pass --force to overwrite")
+        from ..io import write_text
+        guard_file_output(args.out, force=args.force,
+                          protected_inputs=(*args.sources, args.dataset_out),
+                          label="job output")
+        from ..manifest import validate_source_destination_separation
+        validate_source_destination_separation(args.dataset_out, args.sources)
         if args.window < 1:
             raise ValueError("--window must be a positive integer")
+        if args.sample < 1:
+            raise ValueError("--sample must be a positive integer")
         stride = args.stride if args.stride is not None else args.window
         if stride < 1:
             raise ValueError("--stride must be a positive integer")
@@ -120,9 +125,10 @@ def main() -> None:
         # A scaffold that cannot be resolved is worse than none: fail before writing.
         from .job import resolve_job
         resolve_job(job, enumerate_sources=False)
-        write_text(args.out, json.dumps(job, indent=2) + "\n")
+        encoded = json_document(job, label="inferred job")
+        write_text(args.out, encoded)
         if args.json:
-            print(json.dumps(job, indent=2))
+            print(encoded.rstrip())
         else:
             axis = job["strategy"]["binning"]["axes"][0]
             print(f"wrote job: {args.out}\n"

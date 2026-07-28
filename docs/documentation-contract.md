@@ -58,6 +58,7 @@ The target structure below mostly reuses the existing pages. New pages are marke
 | Concepts | `docs/overview.md`, `docs/schema.md`, `docs/dsl.md`, `docs/strategies.md` | mental model and core data contracts |
 | Inputs and outputs | `docs/adapters.md`, `docs/output.md` | supported storage, mapping, encoding, and artifacts |
 | Extension guides | `docs/operators.md`, `docs/customization.md`, relevant sections of `docs/architecture.md` | reusable operators, supported seams, registries, plugins, and design constraints |
+| Design thesis | `DESIGN.md` (repo root) | the cross-cutting progressive-disclosure thesis and decision ladder every layer instantiates; read before adding a seam |
 | Operations | `docs/jobs.md`, scale/reliability recipes in `docs/usage.md` | validation, CLI runs, streaming, parallelism, resume, cloud I/O |
 | Reference | `docs/api.md`, shipped `job.schema.json` | exact Python and job-spec contracts |
 | Roadmap | `ROADMAP.md`, linked detailed plans | release gates and sequenced future direction |
@@ -72,6 +73,9 @@ full explanation. In particular:
 - `docs/jobs.md` explains the job format; `src/kuration/core/schemas/job.schema.json` is the
   machine-readable key and validation authority.
 - `docs/architecture.md` explains design decisions, not ordinary usage.
+- `DESIGN.md` states the one cross-cutting thesis (progressive disclosure) and its decision
+  ladder; it links to `docs/architecture.md`, `docs/customization.md`, and `docs/operators.md`
+  for the per-layer explanations rather than repeating them.
 
 ## Supported public interface
 
