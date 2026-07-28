@@ -4,12 +4,24 @@ These notes highlight user-visible changes in the current release candidate. The
 [changelog](https://github.com/aintropy-ai/kuration-sdk/blob/main/CHANGELOG.md) is the authoritative
 history for every release.
 
-## Unreleased (`0.1.0rc5.dev0`)
+## Current `0.1.0rc5` candidate (`0.1.0rc5.dev0` development build)
 
-The current development build concentrates on fail-closed publication and reuse, exact
-cross-executor selection semantics, pinned artifact reads, and consistent source-level error
-handling. Dataset writes are no-clobber by default, persisted reuse requires a strong source
-identity, and unsupported future artifact or job versions fail loudly. See the
+The changes on this branch target `0.1.0rc5`. The candidate:
+
+- separates the dataset-agnostic implementation into `kuration.core` and ships pixel shift,
+  action-state consistency, and SLAM together under the maintained `kuration.gameplay` domain;
+- adds direct fluent operator methods, lifecycle statistics and evidence, synchronized video
+  review, smart dataset import, artifact export, checkpoint maintenance, and the unified `kur`
+  command;
+- makes analyzers first-class fluent terminals, including bounded tick-stream execution and
+  artifact-backed checks;
+- integrates native SLAM reconstruction, portable exports, trajectory quality/diversity
+  curation, point-cloud reduction, preflight, and `kur-slam`; and
+- strengthens fail-closed publication and reuse, exact cross-executor selection semantics,
+  pinned artifact reads, source-level error handling, and boundary validation.
+
+Dataset writes are no-clobber by default, persisted reuse requires a strong source identity,
+and unsupported future artifact or job versions fail loudly. See the
 [Unreleased changelog](https://github.com/aintropy-ai/kuration-sdk/blob/main/CHANGELOG.md#unreleased)
 for the complete evolving list.
 

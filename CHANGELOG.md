@@ -5,6 +5,8 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+Target release: `0.1.0rc5` (current development identity: `0.1.0rc5.dev0`).
+
 - Development builds now use the distinct `0.1.0rc5.dev0` identity instead of reusing the
   prior `0.1.0rc4` candidate identity. `ARTIFACT_FORMAT_VERSION` is `1.2` for the corrected
   bounded/materialized uniform-bin ordering, experiment-arm tag isolation, and zero
