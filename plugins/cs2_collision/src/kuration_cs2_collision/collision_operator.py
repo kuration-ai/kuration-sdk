@@ -1,0 +1,373 @@
+"""The `aintropy/cs2-collision` batch transform + operator pair.
+
+Ported from the reference `collision_pipeline_fused.py` pipeline (itself a fused,
+in-memory-only combination of `action_state_analyzer.py`'s per-tick anomaly scan and
+`collision_classifier.py`'s raycast classification) -- the reference scripts are
+untouched; only their per-tick scan/classify math is reproduced here.
+
+Format-agnostic by design: this transform only ever reads the canonical schema fields
+`position` (vector, semantics="position") and `angle` (vector, dims=("yaw","pitch"),
+semantics="angular") plus `hp`/`btn_mask`/`flags` (scalars). Any InputAdapter that maps
+its own raw fields onto those same canonical names -- the ASG `data.json` adapter today,
+a TeaPearce-style adapter later -- can drive this same operator unmodified. Per-map
+geometry and the learned anomaly baseline (`dist_path`) are supplied as operator
+parameters, not hardcoded, since both are dataset-specific.
+
+Kuration's batch-transform stage runs single-process and sequential (never inside a
+ProcessPoolExecutor -- that's only used for the metric-scoring stage), with one
+transform instance constructed once per pipeline run and reused across every source in
+that run. That's what makes the in-memory `self._mesh_cache` dict in `__init__` safe:
+it is never silently reset mid-run the way it would be behind a process pool.
+"""
+from __future__ import annotations
+
+import json
+import math
+
+import numpy as np
+
+from .mesh_cache import cast_proximity_rays, load_mesh_cached, wall_stopped
+from .physics import (
+    BIT_A,
+    BIT_D,
+    BIT_W,
+    FEATURES,
+    FL_DUCKING,
+    FL_ONGROUND,
+    MAX_DYAW_LEARN,
+    MOVE_BITS,
+    condition_key,
+    is_skip_flags,
+    to_local,
+    wrap_angle,
+    yaw_average,
+    z_score,
+)
+
+COMPONENT_NAME = "aintropy/cs2-collision"
+
+COLLISION_TYPES = ("head_on", "angled", "W_slide", "WA_slide", "slide_end", "slide_constrained")
+
+OUTPUT_KEYS = (
+    "collision_count",
+    "head_on_count",
+    "angled_count",
+    "w_slide_count",
+    "wa_slide_count",
+    "slide_end_count",
+    "slide_constrained_count",
+    "max_anomaly_score",
+    "min_dist_to_wall_hu",
+)
+
+_TYPE_TO_OUTPUT_KEY = {
+    "head_on": "head_on_count",
+    "angled": "angled_count",
+    "W_slide": "w_slide_count",
+    "WA_slide": "wa_slide_count",
+    "slide_end": "slide_end_count",
+    "slide_constrained": "slide_constrained_count",
+}
+
+COLLISION_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "map_for_source": {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "description": "source_id -> map_name",
+        },
+        "map_registry": {
+            "type": "object",
+            "additionalProperties": {"type": "array", "items": {"type": "string"}},
+            "description": "map_name -> geometry file path(s) (.bsp / .glb / .nav)",
+        },
+        "dist_path": {"type": "string", "description": "path to a fitted action_state_dist.json"},
+        "disk_cache_dir": {"type": "string"},
+        "min_score": {"type": "number", "minimum": 0},
+        "proximity": {"type": "number", "minimum": 0},
+        "min_approach": {"type": "number", "minimum": 0},
+        "max_residual": {"type": "number", "minimum": 0},
+        "slide_angle": {"type": "number", "minimum": 0, "maximum": 180},
+        "max_slide_speed": {"type": "number", "minimum": 0},
+        "min_release_accel": {"type": "number", "minimum": 0},
+        "max_release_vn": {"type": "number", "minimum": 0},
+    },
+    "required": ["map_for_source", "map_registry", "dist_path"],
+    "additionalProperties": False,
+}
+
+# Defaults mirror collision_pipeline_fused.py's argparse defaults exactly.
+_DEFAULTS = dict(
+    disk_cache_dir=".kuration_cs2_collision_cache",
+    min_score=2.0,
+    proximity=40.0,
+    min_approach=250.0,
+    max_residual=20.0,
+    slide_angle=75.0,
+    max_slide_speed=400.0,
+    min_release_accel=100.0,
+    max_release_vn=100.0,
+)
+
+
+def _extract_features(pm2, pm1, p0) -> dict:
+    """Ported from action_state_analyzer.py's _extract_features. pm2/pm1/p0 are
+    (pos: np.ndarray(3,), yaw, pitch, hp, btn_mask, flags) tuples for t-2, t-1, t."""
+    pos0, pos1, pos2 = p0[0], pm1[0], pm2[0]
+    yaw0, yaw1, yaw2 = p0[1], pm1[1], pm2[1]
+    pitch0, pitch1 = p0[2], pm1[2]
+
+    dx10, dy10, dz10 = pos0[0] - pos1[0], pos0[1] - pos1[1], pos0[2] - pos1[2]
+    dx21, dy21, dz21 = pos1[0] - pos2[0], pos1[1] - pos2[1], pos1[2] - pos2[2]
+
+    dyaw10 = abs(wrap_angle(yaw0 - yaw1))
+    dyaw21 = abs(wrap_angle(yaw1 - yaw2))
+
+    yaw10 = yaw_average(yaw1, yaw0)
+    yaw21 = yaw_average(yaw2, yaw1)
+
+    vf0, vr0, vu0 = to_local(dx10, dy10, dz10, yaw10)
+    vf1, vr1, vu1 = to_local(dx21, dy21, dz21, yaw21)
+
+    spd0 = math.sqrt(vf0 ** 2 + vr0 ** 2)
+
+    d_yaw = wrap_angle(yaw0 - yaw1)
+    d_pitch = wrap_angle(pitch0 - pitch1)
+    delta_hp = float(p0[3] - pm1[3])
+
+    exp_x, exp_y, exp_z = pos1[0] + dx21, pos1[1] + dy21, pos1[2] + dz21
+    pos_error = math.sqrt(
+        (pos0[0] - exp_x) ** 2 + (pos0[1] - exp_y) ** 2 + (pos0[2] - exp_z) ** 2
+    )
+
+    return {
+        "v_fwd": vf0, "v_right": vr0, "v_up": vu0,
+        "speed_2d": spd0,
+        "dv_fwd": vf0 - vf1, "dv_right": vr0 - vr1, "dv_up": vu0 - vu1,
+        "d_yaw": d_yaw, "d_pitch": d_pitch,
+        "delta_hp": delta_hp,
+        "pos_error": pos_error,
+        "_dyaw10": dyaw10, "_dyaw21": dyaw21,
+    }
+
+
+def _score_and_classify_window(
+    pos, yaw, pitch, hp, btn, flags,
+    pos_before, yaw_before, pitch_before, hp_before, btn_before, flags_before,
+    mesh, dist, *, min_score, proximity, min_approach, max_residual,
+    slide_angle, max_slide_speed, min_release_accel, max_release_vn,
+) -> dict:
+    """Score + classify every tick in one window (a slice of one source's continuous
+    tick sequence). Ported from _scan_one_player (scoring) + _classify_one_player
+    (raycast classification), fused into one per-tick pass since scanning happens over
+    the same window arrays the classifier would otherwise need to re-look-up."""
+    have_history = pos_before is not None
+    T = len(hp)
+
+    def rec(i):
+        if i < 0:
+            if not have_history:
+                return None
+            j = i + 2
+            return (pos_before[j], float(yaw_before[j]), float(pitch_before[j]),
+                    float(hp_before[j]), int(btn_before[j]), int(flags_before[j]))
+        return (pos[i], float(yaw[i]), float(pitch[i]), float(hp[i]), int(btn[i]), int(flags[i]))
+
+    ray_cache: dict = {}
+    max_anomaly = 0.0
+    min_dist = math.inf
+    counts = {t: 0 for t in COLLISION_TYPES}
+    total = 0
+
+    for i in range(T):
+        p0 = rec(i)
+        pm1 = rec(i - 1)
+        pm2 = rec(i - 2)
+        if pm1 is None or pm2 is None:
+            continue
+
+        pos0, yaw0, pitch0, hp0, btn0, flags0 = p0
+        _, _, _, hp1, _, flags1 = pm1
+        _, _, _, hp2, _, flags2 = pm2
+
+        if hp0 <= 0 or hp1 <= 0 or hp2 <= 0:
+            continue
+        if is_skip_flags(flags0) or is_skip_flags(flags1) or is_skip_flags(flags2):
+            continue
+
+        f = _extract_features(pm2, pm1, p0)
+
+        mb0 = btn0 & MOVE_BITS
+        og0 = bool(flags0 & FL_ONGROUND)
+        dk0 = bool(flags0 & FL_DUCKING)
+        ckey = condition_key(mb0, og0, dk0)
+        st = dist.get(ckey)
+        if st is None and not og0:
+            st = dist.get(condition_key(mb0, True, dk0))
+        if st is None:
+            continue
+
+        fast_turn = f["_dyaw10"] > MAX_DYAW_LEARN
+        z_scores = {}
+        for feat in FEATURES:
+            if fast_turn and feat in ("v_fwd", "v_right", "dv_fwd", "dv_right"):
+                z_scores[feat] = 0.0
+            else:
+                z_scores[feat] = abs(z_score(f[feat], st.get(feat)))
+        score = max(z_scores.values())
+        max_anomaly = max(max_anomaly, score)
+        if score < min_score:
+            continue
+        anomalous = {feat for feat in FEATURES if z_scores[feat] >= min_score}
+
+        if not ({"dv_fwd", "dv_right", "v_fwd", "speed_2d"} & anomalous):
+            continue
+        if not (btn0 & BIT_W):
+            continue
+
+        pos1_arr, pos2_arr = pm1[0], pm2[0]
+        vel_curr = pos0 - pos1_arr
+        vel_prev = pos1_arr - pos2_arr
+
+        cache_key = (int(pos0[0]) >> 3, int(pos0[1]) >> 3, int(yaw0 / 5))
+        if cache_key in ray_cache:
+            hit, dist_hu, wall_normal = ray_cache[cache_key]
+        else:
+            hit, dist_hu, wall_normal = cast_proximity_rays(mesh, pos0, yaw0, proximity)
+            ray_cache[cache_key] = (hit, dist_hu, wall_normal)
+        if not hit:
+            continue
+
+        flagged, vn_prev_hus, vn_curr_hus = wall_stopped(
+            vel_prev, vel_curr, wall_normal, min_approach, max_residual)
+        sp_prev_hus = math.hypot(vel_prev[0], vel_prev[1]) * 64
+        sp_curr_hus = math.hypot(vel_curr[0], vel_curr[1]) * 64
+
+        is_wall_release = (
+            not flagged and max_residual < sp_prev_hus < max_slide_speed
+            and vn_prev_hus <= max_release_vn
+        )
+        if not flagged and not is_wall_release:
+            continue
+
+        approach_angle = (
+            math.degrees(math.acos(min(1.0, vn_prev_hus / sp_prev_hus)))
+            if sp_prev_hus > 0 else 90.0
+        )
+
+        if "d_yaw" in anomalous and ("d_pitch" in anomalous or is_wall_release):
+            continue
+
+        strafing = bool(btn0 & (BIT_A | BIT_D))
+        if not is_wall_release:
+            if approach_angle > 60.0 and "dv_right" not in anomalous and "v_right" not in anomalous:
+                if not (strafing and ("dv_fwd" in anomalous or "v_fwd" in anomalous)):
+                    continue
+
+        if is_wall_release:
+            collision_type = (
+                "slide_end" if sp_curr_hus - sp_prev_hus >= min_release_accel
+                else "slide_constrained"
+            )
+        elif approach_angle <= 30.0:
+            collision_type = "head_on"
+        elif approach_angle <= slide_angle:
+            collision_type = "angled"
+        elif btn0 & (BIT_A | BIT_D):
+            collision_type = "WA_slide"
+        else:
+            collision_type = "W_slide"
+
+        counts[collision_type] += 1
+        total += 1
+        min_dist = min(min_dist, dist_hu)
+
+    out = {"collision_count": float(total), "max_anomaly_score": float(max_anomaly),
+           "min_dist_to_wall_hu": float(min_dist) if min_dist != math.inf else -1.0}
+    for t, key in _TYPE_TO_OUTPUT_KEY.items():
+        out[key] = float(counts[t])
+    return out
+
+
+class CollisionMechanics:
+    """Kuration batch transform: per-window collision counts/anomaly score."""
+
+    def __init__(
+        self, *, map_for_source, map_registry, dist_path,
+        disk_cache_dir=_DEFAULTS["disk_cache_dir"],
+        min_score=_DEFAULTS["min_score"],
+        proximity=_DEFAULTS["proximity"],
+        min_approach=_DEFAULTS["min_approach"],
+        max_residual=_DEFAULTS["max_residual"],
+        slide_angle=_DEFAULTS["slide_angle"],
+        max_slide_speed=_DEFAULTS["max_slide_speed"],
+        min_release_accel=_DEFAULTS["min_release_accel"],
+        max_release_vn=_DEFAULTS["max_release_vn"],
+    ):
+        # No **kwargs catch-all here on purpose: transforms.py's _construct() probes
+        # whether a factory's signature *binds* a `device=` kwarg to decide whether to
+        # pass one, and a catch-all would make that probe succeed unintentionally
+        # (see PixelShift, which avoids this the same way -- explicit params, no **kwargs).
+        self.map_for_source = dict(map_for_source)
+        self.map_registry = {k: list(v) for k, v in map_registry.items()}
+        with open(dist_path) as f:
+            self.dist = json.load(f)
+        self.disk_cache_dir = disk_cache_dir
+        self._thresholds = dict(
+            min_score=min_score, proximity=proximity, min_approach=min_approach,
+            max_residual=max_residual, slide_angle=slide_angle,
+            max_slide_speed=max_slide_speed, min_release_accel=min_release_accel,
+            max_release_vn=max_release_vn,
+        )
+        self._mesh_cache: dict = {}
+
+    def _mesh_for(self, source_id: str):
+        map_name = self.map_for_source[source_id]
+        mesh = self._mesh_cache.get(map_name)
+        if mesh is None:
+            mesh = load_mesh_cached(map_name, self.map_registry[map_name],
+                                    disk_cache_dir=self.disk_cache_dir)
+            self._mesh_cache[map_name] = mesh
+        return mesh
+
+    def transform_batch(self, batch, ctx):
+        pos = batch["field:position"]
+        angle = batch["field:angle"]
+        hp = batch["field:hp"]
+        btn = batch["field:btn_mask"]
+        flags = batch["field:flags"]
+
+        if hasattr(ctx, "before"):
+            pos_before_batch = ctx.before("field:position")
+            angle_before_batch = ctx.before("field:angle")
+            hp_before_batch = ctx.before("field:hp")
+            btn_before_batch = ctx.before("field:btn_mask")
+            flags_before_batch = ctx.before("field:flags")
+        else:
+            n = len(batch["segment_ids"])
+            pos_before_batch = batch.get("lookbehind:field:position", [None] * n)
+            angle_before_batch = batch.get("lookbehind:field:angle", [None] * n)
+            hp_before_batch = batch.get("lookbehind:field:hp", [None] * n)
+            btn_before_batch = batch.get("lookbehind:field:btn_mask", [None] * n)
+            flags_before_batch = batch.get("lookbehind:field:flags", [None] * n)
+
+        rows = []
+        for i, (source_id, _, _) in enumerate(batch["segment_ids"]):
+            mesh = self._mesh_for(source_id)
+            ang = angle[i]
+            ang_before = angle_before_batch[i]
+            rows.append(_score_and_classify_window(
+                pos[i], ang[:, 0], ang[:, 1], hp[i], btn[i], flags[i],
+                pos_before_batch[i],
+                ang_before[:, 0] if ang_before is not None else None,
+                ang_before[:, 1] if ang_before is not None else None,
+                hp_before_batch[i], btn_before_batch[i], flags_before_batch[i],
+                mesh, self.dist, **self._thresholds,
+            ))
+        return {key: np.array([r[key] for r in rows], dtype=np.float64) for key in OUTPUT_KEYS}
+
+
+def collision_mechanics(pipeline, **params):
+    """Compose the registered transform into a fluent pipeline call."""
+    return pipeline.transform(COMPONENT_NAME, **params)
