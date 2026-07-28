@@ -34,6 +34,7 @@ The method is resolved from the registered component name:
 |---|---|---|
 | `acme/signal-diversity` | `.signal_diversity(...)` | `.acme__signal_diversity(...)` |
 | `aintropy/pixel-shift` | `.pixel_shift(...)` | `.aintropy__pixel_shift(...)` |
+| `aintropy/action-state-consistency` | `.action_state_consistency(...)` | `.aintropy__action_state_consistency(...)` |
 
 Hyphens and dots become underscores in the readable spelling. If two namespaces expose the same
 local name, the short spelling fails with the qualified alternatives instead of choosing one (an
@@ -217,6 +218,7 @@ operator's execution path needs them.
 | registered operator | fluent method | expands to | execution dependency |
 |---|---|---|---|
 | `aintropy/pixel-shift` | `.pixel_shift(controls=None, boundary="exclude")` | the bounded transform of the same name | OpenCV via `[pixel-shift]` |
+| `aintropy/action-state-consistency` | `.action_state_consistency(baselines=..., controls=None, ...)` | the analyzer of the same name plus pipeline metadata attachment | OpenCV via `[action-state]` |
 | `aintropy/slam-motion-diversity` | `.slam_motion_diversity(axis="slam_path_length", bins=8)` | `aintropy/slam-motion` plus a bin axis | NumPy for a precomputed trajectory |
 | `aintropy/slam-quality` | `.slam_quality(min_score=None, **quality_options)` | `aintropy/slam-quality` plus an optional predicate | NumPy for a precomputed trajectory |
 
@@ -234,15 +236,13 @@ pipeline = (
 )
 ```
 
-Pixel Shift additionally needs DIAMOND-compatible action rows and aligned video frames. The SLAM
-operators expect the trajectory schema produced by `gameplay.slam_pipeline(...)` or
-`gameplay.input_slam(...)`. See [Pixel Shift](pixel-shift.md) and [SLAM](slam.md) for those input
-contracts.
-
-Action-state consistency is intentionally an `analyzer`, not a pipeline operator: it accumulates
-evidence across multiple segments in a user-owned object. Construct it with
-`gameplay.action_state_checker(...)`; see
-[Action-state consistency](action-state-consistency.md).
+Pixel Shift and action-state consistency need DIAMOND-compatible action rows and aligned video
+frames. Action-state remains stateful internally: its direct operator explicitly drives the
+registered analyzer once and attaches the verdict rather than pretending it is a segment
+feature. The SLAM operators expect the trajectory schema produced by
+`gameplay.slam_pipeline(...)` or `gameplay.input_slam(...)`. See
+[Pixel Shift](pixel-shift.md), [Action-state consistency](action-state-consistency.md), and
+[SLAM](slam.md) for those input contracts.
 
 The ordinary core operations—`.window()`, `.measure()`, `.transform()`, `.filter()`, `.bin()`,
 `.score()`, `.tag()`, `.sample()`, and the rest—are listed with exact signatures in the

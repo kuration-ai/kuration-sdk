@@ -300,6 +300,10 @@ def test_register_adds_the_real_builtin_analyzer():
                                        "tick_stream": True, "dataset": True}
     assert descriptor.package == "kuration-sdk"
     assert descriptor.extra == "action-state"
+    assert asc.OPERATOR_NAME in default_registry.names("operator")
+    operator = default_registry.descriptor("operator", asc.OPERATOR_NAME)
+    assert operator.capabilities["pipeline_metadata"] is True
+    assert operator.parameters["required"] == ("baselines",)
     assert "aintropy/consistency-check" not in default_registry.names("transform")
     assert "aintropy/consistency-check" not in default_registry.names("operator")
 

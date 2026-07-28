@@ -7,13 +7,14 @@ built on top of it, checking the SDK's pixel-shift measurements against user-sup
 baselines.
 
 register() exposes the real ActionStateConsistencyChecker through kuration-sdk's analyzer
-registry. Analyzer factories are discoverable direct APIs for user-owned, cross-segment
-state; they are not falsely represented as stateless pipeline transforms. Registration
-does not construct the checker, so discovery remains safe without the optional
+registry and a companion pipeline operator that explicitly drives it and attaches the result.
+The stateful check is not falsely represented as a stateless transform or selection feature.
+Registration does not construct the checker, so discovery remains safe without the optional
 pixel-shift dependency installed.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from .action_state import (
@@ -32,11 +33,105 @@ from .anomaly_checker import (
 )
 
 ANALYZER_NAME = "aintropy/action-state-consistency"
+OPERATOR_NAME = ANALYZER_NAME
+
+ACTION_STATE_OPERATOR_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "anomaly_type": {
+            "type": "string",
+            "const": "action_state",
+            "default": "action_state",
+        },
+        "baselines": deepcopy(
+            ACTION_STATE_ANALYZER_PARAMETERS["properties"]["baselines"]
+        ),
+        "controls": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": True,
+            "items": {"type": "string", "minLength": 1},
+        },
+        "boundary": {
+            "type": "string",
+            "enum": ["exclude", "error", "assume-inactive"],
+            "default": "exclude",
+        },
+        "mode": {"type": "string", "enum": ["stream", "dataset"]},
+        "inputs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1},
+        },
+        "batch_size": {"type": "integer", "minimum": 1},
+        "frames": {"type": "string", "minLength": 1},
+        "actions": {"type": "string", "minLength": 1},
+        "color_space": {"type": "string", "minLength": 1},
+        "verify": {"type": "boolean"},
+        "metadata_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+            "default": "action_state_consistency",
+        },
+        "replace": {"type": "boolean", "default": False},
+    },
+    "required": ["baselines"],
+    "additionalProperties": False,
+}
+
+
+def attach_action_state_consistency(
+    pipeline,
+    *,
+    baselines: dict,
+    anomaly_type: str = "action_state",
+    controls=None,
+    boundary: str = "exclude",
+    mode: str | None = None,
+    inputs=None,
+    batch_size: int | None = None,
+    frames: str | None = None,
+    actions: str | None = None,
+    color_space: str | None = None,
+    verify: bool | None = None,
+    metadata_key: str = "action_state_consistency",
+    replace: bool = False,
+):
+    """Run action-state consistency and retain the verdict on a derived pipeline."""
+    resolved = mode or ("dataset" if pipeline._artifact_datasets() else "stream")
+    dataset_options = {
+        "frames": frames,
+        "actions": actions,
+        "color_space": color_space,
+        "verify": verify,
+    }
+    supplied_dataset_options = {
+        key: value for key, value in dataset_options.items() if value is not None
+    }
+    if resolved == "stream" and supplied_dataset_options:
+        raise ValueError(
+            "frames/actions/color_space/verify apply only to action-state dataset mode; "
+            "stream mode resolves media and action inputs from the pipeline schema"
+        )
+    options: dict[str, Any] = {"boundary": boundary, **supplied_dataset_options}
+    if controls is not None:
+        options["controls"] = controls
+    return pipeline.enrich(
+        ANALYZER_NAME,
+        {"anomaly_type": anomaly_type, "baselines": baselines},
+        namespace="gameplay",
+        key=metadata_key,
+        replace=replace,
+        mode=mode,
+        inputs=inputs,
+        batch_size=batch_size,
+        **options,
+    )
 
 
 def register() -> None:
-    """Idempotently register the real stateful action-state analyzer."""
-    from kuration import default_registry, register_analyzer
+    """Idempotently register the analyzer and pipeline-preserving companion operator."""
+    from kuration import default_registry, register_analyzer, register_operator
     from .._registration import needs_registration
 
     common: dict[str, Any] = {
@@ -47,8 +142,6 @@ def register() -> None:
         "install_hint": 'pip install "kuration-sdk[action-state]"',
         "documentation": "https://aintropy-ai.github.io/kuration-sdk/"
                          "action-state-consistency/",
-        "capabilities": {"stateful": True, "cross_segment": True,
-                         "tick_stream": True, "dataset": True},
     }
     if needs_registration(
         default_registry,
@@ -71,17 +164,41 @@ def register() -> None:
             media_requirements={"kind": "video-frame", "layout": "HWC"},
             lookbehind={"field:action": 1},
             lookahead=3,
+            capabilities={"stateful": True, "cross_segment": True,
+                          "tick_stream": True, "dataset": True},
+            **common,
+        )
+    if needs_registration(
+        default_registry,
+        "operator",
+        OPERATOR_NAME,
+        attach_action_state_consistency,
+    ):
+        register_operator(
+            OPERATOR_NAME,
+            attach_action_state_consistency,
+            description="Check action-state consistency and attach the verdict to pipeline "
+                        "metadata",
+            parameters=ACTION_STATE_OPERATOR_PARAMETERS,
+            capabilities={
+                "stateful": True,
+                "cross_segment": True,
+                "pipeline_metadata": True,
+            },
             **common,
         )
 
 
 __all__ = [
     "ACTION_STATE_ANALYZER_PARAMETERS",
+    "ACTION_STATE_OPERATOR_PARAMETERS",
     "ANALYZER_NAME",
     "ANOMALY_TYPES",
     "ActionStateConsistencyChecker",
     "AnomalyChecker",
+    "OPERATOR_NAME",
     "action_state_consistency",
+    "attach_action_state_consistency",
     "load_baselines_from_reference",
     "register",
     "validate_action_state_baselines",

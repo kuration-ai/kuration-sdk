@@ -95,6 +95,7 @@ custom domains and plugins follow the same registered-operator mechanism.
 |---|---|---|
 | `.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None)` | a `JoinedMediaAdapter` with a resolved source→video mapping and lazy media column |
 | `.pixel_shift` | `(*, controls=None, boundary="exclude")` | the built-in `aintropy/pixel-shift` operator |
+| `.action_state_consistency` | `(*, baselines, anomaly_type="action_state", controls=None, boundary="exclude", mode=None, inputs=None, batch_size=None, metadata_key="action_state_consistency", replace=False, **dataset_options)` | runs the built-in analyzer once and returns a pipeline carrying its verdict under `metadata["gameplay"][metadata_key]` |
 | `.slam_motion_diversity` | `(*, axis="slam_path_length", bins=8)` | the built-in `aintropy/slam-motion-diversity` operator |
 | `.slam_quality` | `(*, min_score=None, **quality_options)` | the built-in `aintropy/slam-quality` operator |
 | `.window` | `(window, stride=None, unit="steps")` | the `Segmenter` (stride defaults to `window`) |
@@ -112,6 +113,8 @@ custom domains and plugins follow the same registered-operator mechanism.
 | `.as_position/.as_angular/.as_bitmask` | semantic convenience wrappers | `.semantic(...)` |
 | `.at_rate` | `(hz)` | `SchemaSpec.sample_hz` |
 | `.using` | `(Registry)` | explicit component-resolution overlay |
+| `.with_metadata` | `(namespace, key, value, *, replace=False)` | caller-owned, namespaced strict-JSON metadata on a new pipeline |
+| `.enrich` | `(analyzer_name, parameters=None, *, namespace=None, key=None, replace=False, mode=None, inputs=None, batch_size=None, analyzer=None, **options)` | runs a registered analyzer once and attaches its result, descriptor, request, and input-basis fingerprint to a new pipeline |
 | `.apply` | `(name, **params)` | compatibility-only string dispatch; prefer the generated direct method |
 
 `.measure`'s four forms:
@@ -260,22 +263,48 @@ retain the compatible reference implementation and appear as materialization war
 | `.check` | `(policy=None, *, verify=False, **expectations)` | `evaluate_quality` over the cheapest evidence this pipeline can produce — the fluent `kur-check --policy` |
 | `.experiment` | `(arms, n, baseline=None)` | `run_experiment`; `arms` maps name → `Pipeline` (its compiled strategy) or a raw strategy dict |
 
-### `.analyze()` — stateful analyzers without a job spec
+### Stateful analyzers: retain or return the result
 
 An analyzer accumulates evidence across segments, so it cannot honestly be a per-segment
-selection stage — but it is still an ordinary pipeline terminal. `.analyze()` drives one, and
-picks its mode from the pipeline's own shape (override with `mode=`):
+selection stage. A domain method such as `.action_state_consistency(...)` is the normal
+pipeline-preserving spelling: it drives the analyzer once and returns a new pipeline with the
+result attached.
 
 ```python
-result = (input({"clip1": rows})
-          .join_video({"clip1": "clip1.mp4"})
-          .window(64, stride=32)
-          .options(streaming=True)
-          .analyze("aintropy/action-state-consistency",
-                   {"anomaly_type": "action_state", "baselines": baselines},
-                   controls=["W"]))
-print(result["passed"], result["summary"])
+pipeline = (
+    input({"clip1": rows})
+    .join_video({"clip1": "clip1.mp4"})
+    .window(64, stride=32)
+    .options(streaming=True)
+    .action_state_consistency(baselines=baselines, controls=["W"])
+)
+verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
+print(verdict["passed"], verdict["summary"])
 ```
+
+The pipeline remains usable: continue with `.measure()`, `.filter()`, `.sample()`, `.output()`,
+or any other downstream operation. Caller metadata uses the same carrier:
+`pipeline.with_metadata("project", "review", {"owner": "training"})`. Metadata is defensively
+copied, strict JSON, preserved by immutable chaining, and included in written `config.json`
+after private path values are made publishable. A repeated namespace/key is a loud error unless
+`replace=True`.
+
+Materialized analyzer evidence is bound to the input/schema/media/window/registry state that
+produced it. Downstream selection and output calls preserve it; attempts to change that upstream
+basis afterwards raise instead of silently making the result stale.
+
+Use generic `.enrich(name, ...)` when a domain has no convenience operator. Use `.analyze(...)`
+when the detached result itself is the goal:
+
+```python
+result = pipeline.analyze(
+    "aintropy/action-state-consistency",
+    {"anomaly_type": "action_state", "baselines": baselines},
+    controls=["W"],
+)
+```
+
+Both return policies use the same driver:
 
 - **Tick-stream mode** (default for a raw pipeline) drives the analyzer's `add_batch` hook over
   this pipeline's segmented tick stream, using the same bounded batch/decode machinery as

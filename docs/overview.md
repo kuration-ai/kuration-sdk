@@ -47,7 +47,9 @@ operate on written artifacts. This separation lets a team answer three different
 
 The fluent `Pipeline` is the default authoring interface. The explicit `curate(...)` and
 `write_dataset(...)` functions expose the same engine for declarative jobs and custom low-level
-components.
+components. Input-backed enrichments also return a pipeline and retain their namespaced result
+in `pipeline.metadata`; inspectors and terminals return detached results only when that result is
+the purpose of the call.
 
 ## Install only what the plan needs
 

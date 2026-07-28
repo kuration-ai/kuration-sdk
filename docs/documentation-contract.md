@@ -146,10 +146,12 @@ All non-underscore methods intentionally exposed by `Pipeline` are public:
 
 - Schema and resolution: `using`, `semantic`, `as_position`, `as_angular`, `as_bitmask`,
   `at_rate`.
-- Pipeline construction: `window`, `join_video`, `transform`, `measure`, `filter`, `bin`,
+- Pipeline construction and enrichment: `window`, `join_video`, `transform`, `measure`, `filter`, `bin`,
   `score`, `tag`, `split`, `group`, `options`, `expect`, `sample`, plus direct methods generated
-  for registered operators; `apply`, `organize`, and `curate` remain compatibility aliases.
-- Inspection: `head`, `describe`, `preview`, `review`, `explain`.
+  for registered operators; `with_metadata` and `enrich` retain input-backed state on a
+  pipeline; `apply`, `organize`, and `curate` remain compatibility aliases.
+- Inspection: the defensive `metadata` property, `head`, `describe`, `preview`, `review`,
+  `explain`.
 - Terminals: `collect`, `report`, `stats`, `analyze`, `check`, `experiment`, `output`.
 
 Registered operator methods normalize the local component name (`acme/signal-diversity` becomes

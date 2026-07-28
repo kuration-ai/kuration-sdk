@@ -78,6 +78,7 @@ def test_operator_guides_cover_every_bundled_gameplay_operator():
 
     expected = {
         "aintropy/pixel-shift": "pixel_shift",
+        "aintropy/action-state-consistency": "action_state_consistency",
         "aintropy/slam-motion-diversity": "slam_motion_diversity",
         "aintropy/slam-quality": "slam_quality",
     }

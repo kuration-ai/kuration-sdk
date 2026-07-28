@@ -1,4 +1,4 @@
-# DESIGN.md — the progressive-disclosure thesis
+# DESIGN.md — the progressive-disclosure and pipeline-carrier thesis
 
 ## What this document is
 
@@ -14,8 +14,8 @@ works this way"), not the build log (`PLAN.md` owns "what shipped, in what phase
 usage documentation (`docs/usage.md`, `docs/pipeline.md` own "how to call this"). Where those
 documents already say something well, this one cites and links rather than re-explains
 (`docs/documentation-contract.md`: "Content has one canonical home"). What's new here is
-the cross-cutting synthesis and the tensions that surface only once you read all of them
-together.
+the cross-cutting synthesis, including the pipeline-carrier direction adopted after the first
+gameplay analyzers exposed a gap between fluent configuration and stateful enrichment.
 
 ## The thesis
 
@@ -23,6 +23,13 @@ together.
 > knowing almost nothing about how it works. An expert should be able to replace or extend any
 > single stage without forking the engine or learning the rest. Both must be the *same*
 > pipeline, not two implementations that drift.
+
+For input-backed work, this has a second, equally important consequence:
+
+> The `Pipeline` is the durable carrier of the work in progress. An operation that augments,
+> qualifies, or interprets input data should return a new `Pipeline` and keep its result on that
+> pipeline. A detached result is appropriate only when the caller explicitly asks to inspect,
+> analyze, compare, publish, or otherwise terminate the pipeline.
 
 This is stated at the API level in `docs/pipeline.md` (the fluent API "calls the existing
 engine... the explicit APIs remain available"), turned into documentation *policy* in
@@ -47,7 +54,8 @@ the table to consult when deciding where a new piece of behavior belongs.
 | Bounded model/device compute | `.transform(name="...")` | `BatchTransform` + `register_batch_transform` | needs custom NumPy/model code over declared `field:`/`feature:`/`media:` roles — declarative strategy can't express arbitrary compute |
 | Selection | `.bin()/.filter()/.sample(n=…/hours=…)` | raw `Strategy` dict / `load_strategy()` | strategy stays pure data so it round-trips through `config.json` and reproduces from the artifact alone (`strategies.md`) |
 | Reusable curation decisions | generated fluent method (`pipeline.pixel_shift(...)`; `.apply(name, **params)` is the compatibility spelling for serialized integrations) | `register_operator` | an operator is "a composition seam, not a native execution-stage seam" (`pipeline.md`) — see Limits below |
-| Stateful / cross-segment checks | `.analyze(name, parameters=...)` | `get_analyzer()` + drive `add_batch`/`check_dataset` by hand | the SDK never implicitly schedules an analyzer as a pipeline stage — it's user-owned state, not a stateless transform (`analyzers.py` docstring) |
+| Stateful / cross-segment checks | generated domain method that runs the named analyzer and returns a pipeline with namespaced metadata (for example `.action_state_consistency(...)`) | `.analyze(name, parameters=...)` for a detached result, or `get_analyzer()` + drive `add_batch`/`check_dataset` by hand | stateful work is still explicit and uses the analyzer lifecycle; the default domain spelling preserves the pipeline while `analyze` remains the intentional result boundary |
+| Pipeline enrichment metadata | immutable, JSON-safe `pipeline.metadata`, populated by pipeline-returning methods | the registered analyzer/transform result plus a generic metadata-attachment primitive | enrichment must survive further fluent calls without becoming a schema field, selection feature, or ad hoc side object |
 | Output | `.output(path, preset="…")` (resolved by `output_preset`) | custom `OutputEncoder` / `containers.write_shard` branch | mirrors the input side: declarative `OutputSpec` + pluggable encoder + generic `ShardWriter` (`output.md`) |
 | Orchestration | JSON job + `kur-curate`/`kur-init`/`kur-preview` | `curate(...)` / `write_dataset(...)` called directly in Python | "every supported job-spec execution key maps onto its kwargs, so graduating from a job file to Python is mechanical" (`jobs.md`) |
 
@@ -77,7 +85,9 @@ subclass. `kuration.gameplay` is the SDK's own proof of this, registered through
 1. `import kuration.gameplay` runs `register()` immediately at import
    (`src/kuration/gameplay/__init__.py`), which calls `pixel_shift.register()`,
    `action_state_consistency.register()`, `slam.register()`, and registers a gameplay
-   stats enricher.
+   stats enricher. The gameplay package owns the method implementations and registration:
+   importing `kuration` alone must never define or eagerly register gameplay methods (normal
+   plugin discovery may later load the same registrations).
 2. `pixel_shift.register()` calls `register_batch_transform(...)` **and**
    `register_operator(...)` under the name `aintropy/pixel-shift`
    (`gameplay/pixel_shift/__init__.py`).
@@ -93,6 +103,112 @@ subclass. `kuration.gameplay` is the SDK's own proof of this, registered through
 So an expert who writes `register_batch_transform` + `register_operator` against the low-level
 seams hands a beginner a plain fluent method, with zero new concepts to learn and zero risk of
 silently shadowing something that already existed.
+
+## The pipeline is the carrier of input-backed state
+
+The fluent API originally treated `Pipeline` mainly as an immutable execution-plan builder.
+That is necessary but not sufficient for domain workflows. A gameplay check can read the same
+input, window, media join, options, and registry view as the rest of the chain; returning a loose
+dict at that point makes the caller manually keep two related objects synchronized. The default
+domain API should instead keep that interpretation on the pipeline that produced it.
+
+There are three distinct boundaries:
+
+| boundary | reads input? | returns | examples |
+|---|---:|---|---|
+| **configuration** | no | a new `Pipeline` | `.window()`, `.transform()`, `.filter()`, `.sample()` |
+| **enrichment** | possibly | a new `Pipeline` carrying materialized metadata | gameplay `.action_state_consistency(...)`; future domain audits or classifications |
+| **observation / terminal** | possibly | a result, visualization, or artifact | `.analyze()`, `.stats()`, `.report()`, `.collect()`, `.output()`, `.check()`, `.experiment()` |
+
+An enrichment is allowed to execute eagerly when its result cannot exist without reading data,
+but the method name and documentation must say that it reads input. It must not silently change
+the adapter, schema, source list, segmenter, selection strategy, or output destination. It returns
+an immutable clone whose metadata contains the new evidence. Downstream selection and output
+calls preserve it. Any later call that changes the input/schema/media join/window/registry view on
+which the evidence depended must fail loudly or mark the attachment stale; it may never present
+old evidence as if it described the new plan. Calling `.analyze(...)` remains valid and
+intentionally different: it is the generic, explicit request to leave the pipeline and receive
+the analyzer result directly.
+
+### `Pipeline.metadata` contract
+
+The public field is `pipeline.metadata`, not a `SchemaSpec.fields` entry and not a segment
+feature. That distinction is load-bearing:
+
+- **Schema fields** describe values available at each input tick.
+- **Segment features** are finite scalars that selection can filter, bin, weight, or score.
+- **Pipeline metadata** describes the pipeline or a whole-source/cross-segment interpretation of
+  its input. It is not automatically a selection signal.
+
+`Pipeline.metadata` is a read-only property that returns a defensive deep copy of an internal,
+JSON-safe mapping.
+Enrichments write under a stable namespace, normally
+`metadata["<domain>"]["<capability>"]`; sibling capabilities must not share an unstructured
+top-level bag. Reusing an occupied key raises unless the caller explicitly asks to replace it.
+Every attachment records enough identity to explain where it came from: stable component name
+and descriptor/fingerprint, execution mode, normalized public parameters (or a digest/reference
+when values are large or sensitive), result summary, warnings/errors, and the source/pipeline
+identity against which it was computed.
+
+The source/pipeline identity is also the staleness guard. The implementation allows
+ordinary downstream decisions (`filter`, `bin`, `score`, `tag`, `split`, `group`, `sample`,
+expectations, and output-only options) to preserve an attachment, while rejecting upstream
+changes such as a new media join, window, schema/rate refinement, input-role remapping, or
+registry switch after materialization. Broader dependency-aware invalidation can come later;
+silently stale metadata cannot.
+
+Large per-instance ledgers do not belong inline. Store a bounded summary plus an explicit
+artifact/reference or keep the detailed analyzer instance on the expert path. Publication also
+remains explicit: `.describe()` may expose the in-memory metadata, while `.output()` must apply
+the same path/privacy and JSON-safety rules as existing provenance before placing a publishable
+subset in an artifact. Attaching metadata must never leak local source paths merely because a
+pipeline is later written.
+
+### Domain methods, not domain subclasses
+
+A maintained domain capability that enriches input should have a direct generated method on the
+ordinary `Pipeline`. Its implementation and registration live only in the domain package and
+are activated by the domain import or the ordinary plugin-discovery path; core provides only the
+generic metadata and execution plumbing.
+
+For action-state consistency, the intended surface is:
+
+```python
+import kuration.gameplay  # registers the method; `import kuration` alone does not
+from kuration import input
+
+pipeline = (
+    input(rows, schema=schema)
+    .join_video(videos)
+    .window(64, stride=32)
+    .action_state_consistency(
+        baselines=baselines,
+        controls=["W"],
+    )
+)
+
+verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
+```
+
+The method should reuse the registered `aintropy/action-state-consistency` analyzer and the same
+bounded stream/dataset drivers as `.analyze(...)`; it must not implement a second measurement
+loop. Registering the same stable component name as an operator is acceptable because registry
+kinds are distinct. The operator expansion must end in a generic pipeline metadata-attachment
+primitive so it still obeys the immutable operator contract and its call remains visible in
+`_ops`/provenance.
+
+The detached form remains available when the result itself is the goal:
+
+```python
+result = pipeline.analyze(
+    "aintropy/action-state-consistency",
+    {"anomaly_type": "action_state", "baselines": baselines},
+    controls=["W"],
+)
+```
+
+This is not two analysis implementations. It is one analyzer and one driver with two return
+policies: attach-to-pipeline (domain default) or return-result (generic terminal).
 
 ## Cost discipline is part of the same promise
 
@@ -144,14 +260,112 @@ Progressive disclosure is bounded, and the bounds are load-bearing, not accident
   validated operations. The deeper seams (`BatchTransform`, `SegmentScorer`, a custom
   `InputAdapter`) are where genuinely new execution behavior belongs; `register_operator` is
   packaging, not new capability.
-- **Analyzers are never implicit.** Unlike every other registered kind, an analyzer is not
-  scheduled automatically by any pipeline stage — "the caller owns the instance and its update
-  lifecycle" (`analyzers.py` docstring). This is intentional: cross-segment, stateful checks are
-  not safely composable the way stateless per-segment/whole-pool scoring is.
+- **Analyzers are never implicit selection stages.** Cross-segment, stateful checks are not
+  safely composable as stateless per-segment/whole-pool scores. A named domain enrichment may
+  explicitly drive an analyzer and attach its result to a returned pipeline, but it must reuse
+  the analyzer lifecycle, disclose the input read, and never make its verdict a selection
+  feature without a separate explicit conversion.
 - **`kur-init`'s scaffold is a starting point, explicitly not a recommendation** — "it picks
   the first scalar field as a binning axis because it cannot know which metric matters. Edit
   `strategy` before trusting a run" (`jobs.md`). The beginner path is honest about being
   a beginner path.
+
+## Adherence audit (2026-07-28)
+
+This audit covers the public core surface, maintained gameplay package, examples, tests, and
+documentation. It intentionally excludes vendored SLAM model internals: those are an embedded
+runtime implementation, not kuration API design.
+
+### Core
+
+| area | status | finding |
+|---|---|---|
+| `input()` and fluent configuration (`pipeline.py`) | adheres | input, schema refinement, media joins, segmentation, features, selection, expectations, and execution options all preserve the single immutable pipeline |
+| registered operators (`pipeline.py`, `registry.py`) | adheres | generated methods return a derived `Pipeline`, retain registry identity/provenance, and reject method-name collisions |
+| transforms/scorers/metrics | adheres | they contribute segment features inside execution rather than inventing domain result containers |
+| inspectors (`head`, `describe`, `preview`, `explain`) | intentional boundary | they explicitly ask to observe pipeline state or bounded input and therefore return inspection values |
+| terminals (`collect`, `review`, `output`, `report`, `stats`, `check`, `experiment`) | intentional boundary | each method names the result/artifact it produces; detached output is the point of the call |
+| analyzer drivers, `enrich`, and `analyze` | adheres | one driver owns stateful execution; `enrich` attaches the result to a pipeline while `analyze` intentionally returns it |
+| classic functional APIs and CLI commands | adheres as escape hatches | `curate`, `write_dataset`, analyzer drivers, reports, and CLI outputs are deliberately explicit non-fluent/result surfaces |
+
+`Pipeline.metadata` is defensively copied, preserved by cloning, described and published with
+the pipeline, and populated through strict-JSON `with_metadata`/`enrich` primitives.
+
+### Gameplay
+
+| capability | current primary surface | status | direction |
+|---|---|---|---|
+| Pixel Shift segment features | `.pixel_shift(...) -> Pipeline` | adheres | keep; it is the model for domain registration and lazy optional dependencies |
+| Pixel Shift per-instance evidence | `PixelShiftReport` side object | partial | keep as an expert detailed-ledger API; add pipeline metadata only if a bounded summary/reference has a concrete downstream use |
+| Action-state consistency | `.action_state_consistency(...) -> Pipeline` | adheres | the companion operator runs the existing analyzer driver and attaches its result under `metadata["gameplay"]["action_state_consistency"]`; `.analyze()` and `action_state_checker()` remain deeper paths |
+| SLAM trajectory input | `input_slam(...) -> Pipeline`, `gameplay.slam_pipeline(...) -> Pipeline` | adheres | keep both as pipeline factories; the latter may internally produce/reuse a reconstruction artifact |
+| SLAM motion and quality | `.slam_motion_diversity(...)` / `.slam_quality(...) -> Pipeline` | adheres | keep; both are import-scoped generated methods |
+| SLAM reconstruction | `SLAMReconstructor` / `SLAMReconstruction` plus `slam_pipeline(...)` | mostly adheres | teach `slam_pipeline(...)` as the default because it returns a pipeline; retain reconstruction objects as expert source-creation/artifact APIs |
+| SLAM selection and point-cloud curation | `curate_slam_gameplay(...)`, `curate_point_cloud(...)` | intentional terminal | these calls explicitly create selection/point-cloud outputs; do not disguise them as input enrichments |
+| SLAM preflight | `preflight_slam(...) -> SLAMPreflightResult` | intentional inspector | it exists to report readiness before execution |
+| Video comparison | `compare_videos(...) -> VideoComparison` | intentional inspector | comparison/render/save is the requested output, not input enrichment |
+| Gameplay stats | `pipeline.stats() -> StatsReport` with a registered domain enricher | intentional terminal | stats already uses the core terminal and attaches domain sections to that report; it should not mutate pipeline metadata |
+
+The public grouping in `gameplay/__init__.py` is useful, but grouping free functions is not a
+substitute for pipeline methods when input is already represented by a pipeline. The rule is not
+"every function must return `Pipeline`." It is: every maintained **input-enrichment**
+capability gets a pipeline-preserving default; inspectors, analyzers requested for their result,
+artifact producers, direct model runtimes, and low-level helpers remain honest about their
+different boundary.
+
+### Documentation and examples
+
+- `docs/pipeline.md`, `docs/action-state-consistency.md`, `docs/api.md`, and
+  `examples/07_action_state_consistency.py` teach `.action_state_consistency(...)` first and
+  retain `.analyze(...)` as the detached-result alternative.
+- `docs/pixel-shift.md` correctly teaches `.pixel_shift(...)` first; `PixelShiftReport` remains
+  the detailed expert ledger path.
+- `docs/slam.md`, `README.md`, and `examples/06_gameplay_operator_methods.py` already teach
+  pipeline-returning gameplay methods. The example should add action-state once it can run
+  without obscuring the model-free SLAM demonstration, or a focused replacement should cover
+  the new method.
+- The test suite protects import laziness, one `Pipeline` type, dynamic gameplay registration,
+  analyzer driving, operator collision behavior, metadata immutability/conflicts,
+  attachment provenance/privacy, staleness guards, and the direct action-state method.
+
+## Implemented migration
+
+The migration was implemented in small contracts while preserving `.analyze(...)`
+compatibility:
+
+1. **Pipeline metadata state.** Initialize an empty mapping in `Pipeline.__init__`, expose it
+   through a read-only property returning a defensive deep copy, deep-copy it in `_clone`,
+   include it in `describe`, and define collision/replace behavior. Validate JSON safety at
+   attachment time.
+2. **Core enrichment primitive.** It accepts a namespace/key, a materialized JSON-safe
+   value, and component/provenance context; returns a clone and records the attachment in
+   `_ops`. It is domain-neutral, and `.output()` publishes a path-safe JSON representation in
+   `config.json`.
+3. **Factored analyzer return policy.** Reuse `run_stream_analyzer` /
+   `drive_dataset_analyzer` once, then either return the result (`analyze`) or attach it
+   (enrichment). Do not rerun an analyzer merely to support both surfaces.
+4. **Action-state companion operator.** Under the existing
+   `aintropy/action-state-consistency` name, add an operator registration in the gameplay
+   module. Its generated `.action_state_consistency(...)` method validates the same parameters
+   and options, drives the same analyzer, and attaches the result to the gameplay namespace.
+   Importing core alone must not reveal the method.
+5. **Repeated-call semantics.** Default to a loud conflict for the same metadata key.
+   `metadata_key=` labels multiple checks and `replace=True` is the only overwrite path.
+6. **Validity across later calls.** Bind each materialized attachment to the input/window/
+   registry identity it analyzed. Preserve it through downstream selection/output configuration;
+   reject upstream mutations instead of silently presenting stale evidence.
+7. **User surfaces.** Change the action-state guide, pipeline/API references, gameplay
+   examples, and docstrings so the pipeline-returning method is primary and `.analyze(...)`,
+   checker instances, and manual loops are progressively deeper alternatives.
+8. **Contract tests.** Cover method appearance only after `import kuration.gameplay`,
+   unchanged `type(pipeline) is Pipeline`, original-pipeline immutability, metadata preservation
+   through downstream operators, upstream-change rejection, namespace collision failure,
+   analyzer-result parity, single-pass execution, JSON safety, descriptor/provenance capture,
+   path redaction, artifact publication, optional-dependency laziness, registry overlays, and
+   stream/dataset modes.
+9. **Maintained-domain review.** For each new gameplay capability, classify it as
+   configuration, enrichment, inspector, or terminal during review. A free-standing result
+   object in the primary input path requires an explicit reason in its canonical documentation.
 
 ## Known tensions (surfaced, not smoothed over)
 
@@ -185,9 +399,13 @@ When adding a new capability, ask, in order:
    beginner who never touches it never pays for it?
 5. Does it fail loudly at load/validation time rather than silently, consistent with the closed
    grammar's "no silent fallbacks" invariant?
+6. If it augments input-backed work, does its default surface return a pipeline and attach
+   namespaced, provenance-bound metadata — or is it honestly an inspector/terminal whose result
+   is the point of the call?
 
-If the answer to all five is yes, it belongs in the SDK exactly the way every existing seam
+If the answer to all six is yes, it belongs in the SDK exactly the way every existing seam
 does. Update the canonical home for that layer (`docs/customization.md`, `docs/operators.md`,
 etc. — see `docs/documentation-contract.md`'s ownership table) rather than duplicating an
-explanation here; this document should stay the short, stable statement of the thesis and its
-ladder, not grow into a second architecture reference.
+explanation here. This document owns the stable thesis, cross-cutting contracts, and dated
+adherence audit; implementation detail still belongs in the architecture and canonical feature
+guides.

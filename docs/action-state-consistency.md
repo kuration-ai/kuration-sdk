@@ -30,24 +30,29 @@ python -m pytest tests/test_action_state_consistency.py tests/test_anomaly_check
 
 ## What gets registered with kuration-sdk
 
-The SDK registers this capability as the built-in analyzer
-`aintropy/action-state-consistency`. An analyzer is a discoverable, user-owned stateful
-object: unlike a batch transform, it may accumulate evidence across multiple segments
-before `summary()` can return a result. Kuration validates and constructs it through
-`get_analyzer()` but does not pretend it is an independently schedulable per-segment stage.
-It is drivable three ways over the same accumulator: `Pipeline.analyze()` on a tick stream
-(`add_batch`), `Pipeline.analyze()`/`run_dataset_analyzer()`/`kur-check` on a written artifact
-(`check_dataset`), or your own loop over `add_segment()`. The descriptor advertises both driven
-modes (`capabilities: {"stateful", "cross_segment", "tick_stream", "dataset"}`).
+The SDK registers `aintropy/action-state-consistency` twice through distinct registry kinds:
+
+- as the stateful analyzer that owns cross-segment accumulation and both execution hooks; and
+- as the direct `.action_state_consistency(...)` operator that drives that analyzer once and
+  returns a pipeline carrying the result.
+
+The operator is the normal input-backed API. The analyzer remains the single implementation and
+the explicit escape hatch: `.analyze()` returns its detached result,
+`run_dataset_analyzer()`/`kur-check` drive written artifacts, and a caller-owned checker can
+still receive `add_segment()` calls. The analyzer descriptor advertises both driven modes
+(`capabilities: {"stateful", "cross_segment", "tick_stream", "dataset"}`); the operator
+advertises that it contributes pipeline metadata.
 
 Discover it without reading a dataset:
 
 ```bash
 kur-list analyzers
 kur-describe analyzer aintropy/action-state-consistency --json
+kur-describe operator aintropy/action-state-consistency --json
 ```
 
-Registration only stores a dependency-light factory; it does not run optical flow.
+Registration only stores dependency-light analyzer/operator callables; it does not run optical
+flow.
 Discovery and analyzer construction therefore work without OpenCV.
 
 ## Structure
@@ -123,57 +128,49 @@ nothing stops any caller from building a baselines dict by hand instead.
 
 ## Usage
 
-`ActionStateConsistencyChecker` is a user-owned analyzer — same ownership pattern as
-`PixelShiftReport`, and for the same reason: classifying a clip means aggregating across
-every segment that belongs to it, which a stateless per-segment SDK transform cannot do.
-The normal Python path needs only the SDK import:
+### Keep the result on the pipeline
 
-```python
-import kuration.gameplay as gameplay
-
-checker = gameplay.action_state_checker(**config)
-for frames, actions, segment_id in your_own_segments:
-    # segment_id is (source_id, start_idx, end_idx) -- same contract as
-    # PixelShiftReport.add_segment. Segments sharing a source_id are one clip.
-    checker.add_segment(frames, actions, segment_id)
-
-checker.print_report()          # counts + exact clip IDs per verdict, printed to stdout
-records = checker.to_records()  # flat rows compatible with PixelShiftReport.to_records()
-print(checker.summary())        # {"consistent": [...], "inconsistent": [...], "inconclusive": [...]}
-print(checker.clip_verdict("clip_042"))  # "consistent" | "inconsistent" | "inconclusive"
-```
-
-Each record uses the shared `source_id`/`control`/`cell_key`/`frame`/`shift` schema
-and adds `consistent`, the source-level `verdict`, and source-level `n_instances`.
-`frame_space` and `frame_space_note` are included on every row so dataset-mode
-shard-concatenation offsets cannot be mistaken for real source frames. A source with no
-measured instance still emits one inconclusive row.
-
-### Running it as a fluent pipeline operation
-
-The analyzer is also an ordinary pipeline terminal — no job spec, no CLI, and no hand-written
-segment loop. `.analyze()` drives it over the pipeline's segmented tick stream, with frames
-decoded lazily by the SDK's one bounded media path:
+Importing `kuration.gameplay` registers the direct method on the ordinary core `Pipeline`.
+It decodes frames through the SDK's bounded media path, drives the analyzer once, and returns an
+immutable pipeline carrying the verdict:
 
 The download-free runnable companion is
 [`examples/07_action_state_consistency.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/07_action_state_consistency.py);
 it injects an in-memory media provider, exercises real optical flow, and shows both verdicts.
 
 ```python
+import kuration.gameplay  # registers the direct method
 from kuration import input
 
-result = (input({"clip1": rows}, schema=schema, fields={"action": action_columns}, time="t")
-          .join_video({"clip1": "clip1.mp4"})            # lazy frames
-          .window(64, stride=32)
-          .options(streaming=True)
-          .analyze("aintropy/action-state-consistency",
-                   {"anomaly_type": "action_state", "baselines": baselines},
-                   controls=["W"]))
+pipeline = (
+    input({"clip1": rows}, schema=schema, fields={"action": action_columns}, time="t")
+    .join_video({"clip1": "clip1.mp4"})            # lazy frames
+    .window(64, stride=32)
+    .options(streaming=True)
+    .action_state_consistency(baselines=baselines, controls=["W"])
+)
 
-result["passed"]         # False if any clip is inconsistent
-result["summary"]        # {"consistent": [...], "inconsistent": [...], "inconclusive": [...]}
-result["frame_space"]    # "source" -- real source frames (see below)
+result = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
+result["passed"]       # False if any clip is inconsistent
+result["summary"]      # {"consistent": [...], "inconsistent": [...], "inconclusive": [...]}
+result["frame_space"]  # "source" -- real source frames (see below)
+
+# Keep working with the same value.
+dataset = (
+    pipeline
+    .pixel_shift(controls=["W"])
+    .filter("w_shift_measured", ">=", 1)
+    .bin("w_shift_mean", bins=8)
+    .sample("equal", n=100)
+    .output("out/gameplay")
+)
 ```
+
+The metadata entry also records the analyzer descriptor, invocation, resolved mode, and a digest
+of the input basis it describes. Later selection and output calls preserve it. Changing the
+schema, video join, window, or registry after materialization fails loudly instead of leaving a
+stale verdict attached. Use `metadata_key=` to retain multiple labeled checks and
+`replace=True` only for an explicit overwrite.
 
 The analyzer declares the same input contract as the pixel-shift transform
 (`inputs=("media:frame", "field:action")`, one lookbehind action row, three lookahead rows,
@@ -189,13 +186,47 @@ through the same measurement API. Consequences worth knowing:
   schema names its frames/actions differently.
 - **Options are the `add_segment` options.** `controls` and `boundary` pass through per batch;
   `color_space` is read from the declared media column instead of assuming BGR.
-- Pass `analyzer=checker` to drive a checker you constructed yourself
-  (`gameplay.action_state_checker(**config)`), then call `checker.print_report()` afterwards —
-  the accumulated per-instance ledger stays yours.
 
 An artifact-backed pipeline (`input(adapter="curated", ...)`) instead resolves to dataset mode
-and returns exactly what `run_dataset_analyzer()` returns; pass `mode="stream"`/`mode="dataset"`
-to choose explicitly.
+and attaches exactly what `run_dataset_analyzer()` returns. Pass `frames=`/`actions=` for
+non-default modality names or `mode="stream"`/`mode="dataset"` to choose explicitly.
+
+### Return the result directly
+
+`.analyze()` uses the same analyzer driver but is intentionally terminal:
+
+```python
+result = pipeline.analyze(
+    "aintropy/action-state-consistency",
+    {"anomaly_type": "action_state", "baselines": baselines},
+    controls=["W"],
+)
+```
+
+Use it when the result itself is the goal and no later pipeline work needs to retain it.
+
+### Own the detailed checker
+
+`ActionStateConsistencyChecker` remains the expert path for a detailed per-instance ledger or a
+custom segment loop:
+
+```python
+import kuration.gameplay as gameplay
+
+checker = gameplay.action_state_checker(**config)
+for frames, actions, segment_id in your_own_segments:
+    checker.add_segment(frames, actions, segment_id)
+
+checker.print_report()
+records = checker.to_records()
+print(checker.summary())
+print(checker.clip_verdict("clip_042"))
+```
+
+Each record uses the shared `source_id`/`control`/`cell_key`/`frame`/`shift` schema and adds
+`consistent`, the source-level `verdict`, and source-level `n_instances`. `frame_space` and
+`frame_space_note` prevent dataset-mode shard offsets from being mistaken for source frames.
+A source with no measured instance still emits one inconclusive row.
 
 ### Running on a curated dataset from the CLI
 

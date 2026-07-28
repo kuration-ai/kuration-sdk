@@ -81,14 +81,14 @@ result = checker.summary()
 ```
 
 Analyzers are discoverable with `kur-list analyzers` and `kur-describe analyzer ...`, but are
-not implicit pipeline stages. Keeping lifecycle ownership explicit prevents worker-local state
+not implicit selection stages. Keeping lifecycle ownership explicit prevents worker-local state
 from being mistaken for a dataset-wide result. Two optional hooks make an analyzer drivable, and
-declaring one is what `Pipeline.analyze()` dispatches on:
+declaring one is what `Pipeline.enrich()` and `Pipeline.analyze()` dispatch on:
 
 | hook | driven by | evidence it sees |
 |---|---|---|
-| `check_dataset(dataset, **options)` → mapping with a boolean `passed` | `run_dataset_analyzer()`, `Pipeline.analyze()` on an artifact-backed pipeline, `kur-check DATASET --analyzer NAME [--analyzer-config PATH] [--analyzer-options PATH]` | written shards and their manifest |
-| `add_batch(batch, ctx)` → `None` | `run_stream_analyzer()`, `Pipeline.analyze()` on any `input(...)` pipeline | segmented raw ticks with lazy media, in one bounded pass |
+| `check_dataset(dataset, **options)` → mapping with a boolean `passed` | `run_dataset_analyzer()`, `Pipeline.enrich()` / `Pipeline.analyze()` on an artifact-backed pipeline, `kur-check DATASET --analyzer NAME [--analyzer-config PATH] [--analyzer-options PATH]` | written shards and their manifest |
+| `add_batch(batch, ctx)` → `None` | `run_stream_analyzer()`, `Pipeline.enrich()` / `Pipeline.analyze()` on any `input(...)` pipeline | segmented raw ticks with lazy media, in one bounded pass |
 
 `add_batch` receives exactly what a batch transform's `transform_batch` receives, because it is
 fed by the same bounded machinery: a batch keyed by the analyzer's declared input tokens plus
@@ -106,15 +106,23 @@ register_analyzer("acme/clip-check", build_clip_checker,
                   media_requirements={"kind": "video-frame", "layout": "HWC"},
                   lookbehind={"field:action": 1}, lookahead=3)
 
-result = pipeline.analyze("acme/clip-check", config, controls=["W"])
+pipeline = pipeline.enrich(
+    "acme/clip-check",
+    config,
+    namespace="acme",
+    key="clip_check",
+    controls=["W"],
+)
+result = pipeline.metadata["acme"]["clip_check"]["result"]
 ```
 
 Declarations are validated at registration (and by `kur-plugin-check`), so a malformed one fails
-at import rather than inside a long run. `**options` passed to `analyze()` reach the hook being
-driven; `inputs=`/`batch_size=` remap and size the stream path. A `stream_result()` method may
-return a mapping with a boolean `passed` (mirroring `check_dataset`) that is merged into the
-driver's result — the place to state a verdict and, if the analyzer records positions, which
-coordinate space they live in.
+at import rather than inside a long run. `**options` passed to `enrich()` or `analyze()` reach
+the hook being driven; `inputs=`/`batch_size=` remap and size the stream path. `enrich()` returns
+a new pipeline carrying the result, while `analyze()` is the explicit detached-result form.
+A `stream_result()` method may return a mapping with a boolean `passed` (mirroring
+`check_dataset`) that is merged into the driver's result — the place to state a verdict and, if
+the analyzer records positions, which coordinate space they live in.
 
 Segment ids on the stream path are the real `(source_id, start_idx, end_idx)` of the source
 window, so an analyzer's own cross-window de-duplication works in true source coordinates. The

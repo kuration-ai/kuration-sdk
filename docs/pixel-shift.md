@@ -118,6 +118,9 @@ two lists can be concatenated directly.
 
 ### Why the report is a separate object
 
+This is the detailed expert ledger path; the default input-backed surface remains the
+pipeline-preserving `.pixel_shift(...)` method.
+
 An earlier version accumulated per-instance detail into a module-level dict as a side effect
 of `transform_batch`. That state was invisible to the SDK contract and made results depend on
 where a physical plan happened to run transforms. Today the ordinary count path runs transforms

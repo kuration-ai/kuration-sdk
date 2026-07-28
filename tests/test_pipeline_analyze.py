@@ -8,6 +8,7 @@ unsupported mode from silently doing nothing.
 """
 from __future__ import annotations
 
+import json
 import numpy as np
 import pytest
 
@@ -158,6 +159,82 @@ def test_analyze_drives_a_stream_analyzer_over_real_source_windows():
     # window=4, stride=2 over 12 ticks -> starts 0,2,4,6,8 per source.
     assert result["segments_analyzed"] == 10
     assert result["summary"] == {"sources": ["clip-a", "clip-b"], "windows": 10, "above": 5}
+
+
+def test_enrich_attaches_the_same_analyzer_result_to_an_immutable_pipeline():
+    base = _pipeline()
+    enriched = base.enrich(
+        "test/window-mean",
+        {"minimum": 50.0},
+        namespace="checks",
+        key="window_mean",
+    )
+    detached = base.analyze("test/window-mean", {"minimum": 50.0})
+
+    assert base.metadata == {}
+    attachment = enriched.metadata["checks"]["window_mean"]
+    assert attachment["result"] == detached
+    assert attachment["component"]["name"] == "test/window-mean"
+    assert attachment["component"]["kind"] == "analyzer"
+    assert attachment["mode"] == "stream"
+    assert len(attachment["basis_sha256"]) == 64
+    assert attachment["request"]["parameters"] == {"minimum": 50.0}
+    assert enriched.describe()["metadata"] == enriched.metadata
+    assert enriched.measure("value").metadata == enriched.metadata
+
+
+def test_enrich_executes_once_rejects_conflicts_and_guards_its_input_basis():
+    analyzer = WindowMeanAnalyzer()
+    enriched = _pipeline().enrich(
+        "test/window-mean",
+        analyzer=analyzer,
+        namespace="checks",
+        key="window_mean",
+    )
+
+    assert len(analyzer.segments) == 10
+    with pytest.raises(ValueError, match="already exists"):
+        enriched.enrich(
+            "test/window-mean",
+            analyzer=WindowMeanAnalyzer(),
+            namespace="checks",
+            key="window_mean",
+        )
+    # Downstream decisions retain materialized evidence.
+    assert enriched.options(seed=9).metadata == enriched.metadata
+    # Input/window/registry changes cannot silently make it stale.
+    with pytest.raises(ValueError, match="input basis"):
+        enriched.window(6)
+    with pytest.raises(ValueError, match="input basis"):
+        enriched.using(default_registry)
+
+
+def test_enrich_rejects_explicit_empty_metadata_locations():
+    with pytest.raises(ValueError, match="metadata namespace"):
+        _pipeline().enrich("test/window-mean", namespace="")
+    with pytest.raises(ValueError, match="metadata key"):
+        _pipeline().enrich("test/window-mean", key="")
+
+
+def test_enrichment_metadata_reaches_written_config(tmp_path):
+    pipeline = (
+        _pipeline()
+        .enrich(
+            "test/window-mean",
+            {"minimum": 50.0},
+            namespace="checks",
+            key="window_mean",
+        )
+        .measure("value")
+        .bin("value", bins=2)
+        .sample("equal", n=2)
+    )
+    pipeline.output(tmp_path / "enriched")
+
+    cfg = json.loads((tmp_path / "enriched" / "config.json").read_text())
+    attachment = cfg["metadata"]["checks"]["window_mean"]
+    assert attachment["component"]["name"] == "test/window-mean"
+    assert attachment["result"]["summary"]["windows"] == 10
 
 
 def test_analyze_supplies_true_source_segment_ids_and_declared_lookbehind():
@@ -498,6 +575,53 @@ def test_action_state_analyzer_runs_on_a_tick_stream_pipeline():
     assert [record["frame"] for record in checker._clip_records["clip1"]] == [3]
 
 
+def test_action_state_direct_method_keeps_the_verdict_on_the_pipeline():
+    base = _gameplay_pipeline()
+    enriched = base.action_state_consistency(
+        baselines=BASELINES,
+        controls=["W"],
+    )
+    detached = base.analyze(
+        asc.ANALYZER_NAME,
+        {"anomaly_type": "action_state", "baselines": BASELINES},
+        controls=["W"],
+    )
+
+    assert base.metadata == {}
+    assert type(enriched) is type(base)
+    attachment = enriched.metadata["gameplay"]["action_state_consistency"]
+    assert attachment["result"] == detached
+    assert attachment["result"]["passed"] is True
+    assert attachment["result"]["summary"]["consistent"] == ["clip1"]
+    assert attachment["component"]["name"] == asc.ANALYZER_NAME
+    assert enriched.options(seed=11).metadata == enriched.metadata
+    assert enriched._ops[-1]["op"] == "apply"
+    assert enriched._ops[-1]["args"] == [asc.OPERATOR_NAME]
+    assert [item["op"] for item in enriched._ops[-1]["expansion"]] == ["enrich"]
+
+
+def test_action_state_direct_method_supports_labels_and_loud_replacement():
+    pipeline = _gameplay_pipeline().action_state_consistency(
+        baselines=BASELINES,
+        controls=["W"],
+        metadata_key="reference",
+    )
+    assert pipeline.metadata["gameplay"]["reference"]["result"]["passed"] is True
+    with pytest.raises(ValueError, match="already exists"):
+        pipeline.action_state_consistency(
+            baselines=BASELINES,
+            controls=["W"],
+            metadata_key="reference",
+        )
+    replaced = pipeline.action_state_consistency(
+        baselines=BASELINES,
+        controls=["W"],
+        metadata_key="reference",
+        replace=True,
+    )
+    assert replaced.metadata["gameplay"]["reference"]["result"]["passed"] is True
+
+
 def test_action_state_analyzer_reports_an_inconsistent_clip_from_a_tick_stream():
     result = _gameplay_pipeline().analyze(
         asc.ANALYZER_NAME,
@@ -534,8 +658,15 @@ def test_action_state_analyzer_runs_on_a_written_artifact(tmp_path):
     fluent = _artifact_pipeline(dataset).analyze(asc.ANALYZER_NAME, parameters, **options)
     reference = run_dataset_analyzer(asc.ANALYZER_NAME, str(dataset),
                                     parameters=parameters, options=options)
+    enriched = _artifact_pipeline(dataset).action_state_consistency(
+        baselines=BASELINES,
+        frames="video",
+        actions="input",
+        controls=["W"],
+    )
 
     assert fluent == reference
+    assert enriched.metadata["gameplay"]["action_state_consistency"]["result"] == reference
     assert fluent["passed"] is True
     # The artifact path keeps its deliberately loud frame-space caveat.
     assert fluent["frame_space"] == "shard-concatenation"

@@ -64,10 +64,14 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.window` | `(window, stride=None, unit="steps") -> Pipeline` | set the `Segmenter` |
 | `Pipeline.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None) -> Pipeline` | attach a strictly aligned lazy video media column |
 | `Pipeline.pixel_shift` | `(*, controls=None, boundary="exclude") -> Pipeline` | registered by `kuration.gameplay` as `aintropy/pixel-shift`; add the DIAMOND action/pixel-motion features (`[pixel-shift]` when frames are measured) |
+| `Pipeline.action_state_consistency` | `(*, baselines, anomaly_type="action_state", controls=None, boundary="exclude", mode=None, inputs=None, batch_size=None, frames=None, actions=None, color_space=None, verify=None, metadata_key="action_state_consistency", replace=False) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/action-state-consistency`; run the existing analyzer once and attach its verdict under `metadata["gameplay"][metadata_key]` |
 | `Pipeline.slam_motion_diversity` | `(*, axis="slam_path_length", bins=8) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/slam-motion-diversity`; add SLAM motion features and bin one diversity axis |
 | `Pipeline.slam_quality` | `(*, min_score=None, min_tracking_confidence=0.5, translation_ratio=10.0, translation_mad_multiplier=8.0, max_translation_step=None, max_turn_degrees=90.0) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/slam-quality`; add SLAM quality features and optionally filter weak windows |
 | `Pipeline.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params) -> Pipeline` | add a registered bounded scalar-feature transform |
 | `Pipeline.using` | `(registry) -> Pipeline` | resolve adapters, analyzers, containers, encoders, filters, methods, metrics, operators, presets, scorers, and transforms through one explicit `Registry` overlay |
+| `Pipeline.metadata` | read-only `dict` property | defensive deep copy of namespaced caller/enrichment metadata carried by the pipeline |
+| `Pipeline.with_metadata` | `(namespace, key, value, *, replace=False) -> Pipeline` | attach caller-owned strict-JSON metadata without mutating the input pipeline |
+| `Pipeline.enrich` | `(name, parameters=None, *, namespace=None, key=None, replace=False, mode=None, inputs=None, batch_size=None, analyzer=None, **options) -> Pipeline` | drive a registered analyzer once and attach its JSON result, descriptor, invocation, mode, and input-basis fingerprint |
 | registered operator methods | `(**params) -> Pipeline` | every operator is callable by normalized local name (`acme/signal-diversity` → `signal_diversity`) or qualified name (`acme__signal_diversity`); custom modules and plugins use the same flow |
 | `Pipeline.apply` | `(name, **params) -> Pipeline` | compatibility-only string dispatch; normal Python code uses the generated operator method |
 | `Pipeline.semantic` | `(field, semantics, *, dims=None, bits=None, max_rate=None) -> Pipeline` | refine an inferred field as `"position"`, `"angular"`, or `"bitmask"` |
@@ -95,7 +99,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.check` | `(policy=None, *, verify=False, **expectations) -> QualityGateResult` | terminal — evaluate quality gates without raising; artifact-backed pipelines are gated exactly as `kur-check --policy` gates them, others on a bounded input preview |
 | `Pipeline.experiment` | `(arms: dict, n: int, baseline=None) -> ExperimentResult` | terminal — multi-arm comparison (`arms` maps name → `Pipeline` or raw strategy dict) |
 | `Pipeline.head` | `(k=5) -> list[Tick]` | inspector — first `k` ticks of the first source |
-| `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources, expectations}`, no data touched |
+| `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources, expectations, metadata}`, no data touched |
 | `Pipeline.preview` | `(*, max_sources=3, max_ticks_per_source=10000, examples=5) -> DatasetPreview` | inspector — bounded field quality, source shape, and representative tick sample |
 | `Pipeline.review` | `(n=None, *, path=None, examples=10, hist_bins=10, **output_options) -> SelectionReview \| HoursSelectionReview` | terminal — compare a complete count-selection pool, or write/review an hours selection when `path=` is supplied |
 | `Pipeline.explain` | `(*, inspect_sources=False) -> ExecutionPlan` | inspector — typed stage plan, requirements, implicit choices, and warnings; optionally preflight source metadata |
@@ -370,7 +374,7 @@ The facade itself also exports three registration modules and its idempotent reg
 | name | signature | does |
 |---|---|---|
 | `kuration.gameplay.pixel_shift` | module | pixel-shift transform, operator, and report facade |
-| `kuration.gameplay.action_state_consistency` | module | action-state analyzer facade |
+| `kuration.gameplay.action_state_consistency` | module | action-state analyzer and pipeline-operator facade |
 | `kuration.gameplay.slam` | module | SLAM reconstruction, trajectory, and point-cloud facade |
 | `kuration.gameplay.register` | `() -> None` | idempotently register every maintained gameplay component and stats enricher |
 
@@ -380,6 +384,7 @@ The facade itself also exports three registration modules and its idempotent reg
 | `PixelShift` | `(*, controls=None, boundary="exclude")` | bounded batch transform producing per-control shift min/max/mean/measured/count/requested features |
 | `PixelShiftReport` | `()`; `.add_segment(...)`, `.print_report()` | user-owned cross-segment instance report |
 | `kuration.gameplay.action_state_consistency.action_state_consistency` | `(*, anomaly_type, baselines) -> ActionStateConsistencyChecker` | factory registered as analyzer `aintropy/action-state-consistency` |
+| `kuration.gameplay.action_state_consistency.attach_action_state_consistency` | `(pipeline, *, baselines, anomaly_type="action_state", controls=None, boundary="exclude", mode=None, inputs=None, batch_size=None, frames=None, actions=None, color_space=None, verify=None, metadata_key="action_state_consistency", replace=False) -> Pipeline` | handler registered as the direct pipeline operator of the same stable name |
 | `ActionStateConsistencyChecker` | `(config)`; `.add_segment(...)`, `.clip_verdict(source_id)`, `.summary()`, `.print_report()` | classify clips against pixel-shift baselines (`[action-state]` for frame measurement) |
 | `AnomalyChecker` | `(validated_config)` | measurement-agnostic tuple aggregation used by the action-state adapter |
 | `VideoComparison` | `(left, right, *, labels=None, provider=None)`; `.render()`, `.save()`, `.probe()`, `.plot(frames=4)`, rich HTML display | synchronized side-by-side video review; `[video]` for default metadata/frame decoding and `[stats]` for contact sheets |

@@ -173,7 +173,7 @@ together and writes `dataset_manifest.json` + `config.json`.
 | a derived output tensor | an `OutputEncoder` (`timestep`/`encode_batch`) | core output code |
 | a per-segment metric the grammar can't express | `@register_metric` over a `WindowBuffer` | a grammar change |
 | a **whole-pool / learned / influence** metric | a `SegmentScorer` (`score(segments, ctx)`) | the closed grammar |
-| a stateful stream or artifact audit | `register_analyzer` | pretending it is a segment metric |
+| a stateful stream or artifact audit | `register_analyzer`; expose `Pipeline.enrich` or a domain operator when its result should stay on the pipeline | pretending it is a segment metric |
 | reusable fluent composition | `register_operator` | a second pipeline implementation |
 | a new pool-ranking algorithm | `register_method` | branching in selection core |
 | a reusable pre-selection exclusion | `register_filter` | an undocumented predicate |

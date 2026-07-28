@@ -10,11 +10,12 @@ detection, boundary handling, or optical-flow logic.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 from .anomaly_checker import AnomalyChecker, validate_baselines, validate_config
 
 ANOMALY_TYPES = ("action_state",)
-ACTION_STATE_ANALYZER_PARAMETERS = {
+ACTION_STATE_ANALYZER_PARAMETERS: dict[str, Any] = {
     "type": "object",
     "properties": {
         "anomaly_type": {"type": "string", "const": "action_state"},

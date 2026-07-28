@@ -1,9 +1,9 @@
-"""One pipeline, one terminal `.analyze()` call: detect action-state inconsistency.
+"""One fluent pipeline: detect action-state inconsistency and keep the verdict attached.
 
-`kuration.gameplay` registers `aintropy/action-state-consistency` as an *analyzer* (not an
-operator) on import -- it's stateful and cross-segment, so unlike `.pixel_shift(...)` it never
-becomes an implicit pipeline stage. `.analyze()` is a plain, terminal `Pipeline` method: build
-the pipeline, call it once, get the verdict back. No CLI, no separate analyzer construction.
+`kuration.gameplay` registers `aintropy/action-state-consistency` as both the stateful analyzer
+and a direct pipeline operator. `.action_state_consistency(...)` drives the analyzer once and
+returns an ordinary `Pipeline` carrying the verdict in `.metadata`. No CLI, detached side
+object, or separate analyzer construction is required.
 
 Frames come from a fake in-memory video provider (real per-frame pixel shift, no PyAV/codec
 needed), so this runs anywhere.
@@ -89,11 +89,11 @@ pipeline = (
     .window(4, stride=2)
 )
 
-result = pipeline.analyze(
-    ANALYZER_NAME,
-    parameters={"anomaly_type": "action_state", "baselines": baselines},
+checked = pipeline.action_state_consistency(
+    baselines=baselines,
     controls=["W"],
 )
+result = checked.metadata["gameplay"]["action_state_consistency"]["result"]
 
 print(f"analyzer: {ANALYZER_NAME}")
 print(f"passed:   {result['passed']}")
@@ -104,11 +104,11 @@ assert result["summary"]["consistent"] == ["clip1"]
 
 # Flip the expected sign: the same evidence now reads as inconsistent.
 bad_baselines = {"W": {"1": {"expected_sign": -1, "min": 0.0, "max": 1e9}}}
-bad_result = pipeline.analyze(
-    ANALYZER_NAME,
-    parameters={"anomaly_type": "action_state", "baselines": bad_baselines},
+bad_checked = pipeline.action_state_consistency(
+    baselines=bad_baselines,
     controls=["W"],
 )
+bad_result = bad_checked.metadata["gameplay"]["action_state_consistency"]["result"]
 print(f"\nwith flipped expected_sign -> passed: {bad_result['passed']}, "
       f"summary: {bad_result['summary']}")
 assert bad_result["passed"] is False

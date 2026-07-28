@@ -35,6 +35,7 @@ def test_gameplay_operators_extend_the_plain_core_pipeline():
 
     assert type(derived) is Pipeline
     assert callable(derived.pixel_shift)
+    assert callable(derived.action_state_consistency)
     assert callable(derived.slam_motion_diversity)
     assert callable(derived.slam_quality)
     assert not hasattr(gameplay, "GameplayPipeline")
@@ -146,6 +147,7 @@ import sys
 import kuration
 assert "kuration.gameplay" not in sys.modules
 assert "aintropy/pixel-shift" not in kuration.default_registry.names("operator")
+assert "aintropy/action-state-consistency" not in kuration.default_registry.names("operator")
 assert "aintropy/slam-quality" not in kuration.default_registry.names("operator")
 """
     subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True)
@@ -158,6 +160,7 @@ assert "aintropy/pixel-shift" not in default_registry.names("operator")
 load_plugins()
 assert "aintropy/pixel-shift" in default_registry.names("operator")
 assert "aintropy/action-state-consistency" in default_registry.names("analyzer")
+assert "aintropy/action-state-consistency" in default_registry.names("operator")
 assert "aintropy/slam-motion-diversity" in default_registry.names("operator")
 """
     subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True)

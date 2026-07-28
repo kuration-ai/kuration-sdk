@@ -103,6 +103,17 @@ bounded frame strips and action context automatically. For whole-video review,
 `gameplay.compare_videos(before, after)` renders synchronized players and can save a standalone
 HTML comparison.
 
+Stateful input checks follow the same pipeline-first rule:
+
+```python
+pipeline = pipeline.action_state_consistency(baselines=baselines, controls=["W"])
+verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
+```
+
+The returned value is still the ordinary immutable pipeline, so selection, inspection, and
+output can continue from it. `.analyze(...)` remains available when a detached result is the
+intended endpoint.
+
 ## Try it in five minutes
 
 The repository includes a deterministic, download-free sensor example using only NumPy:

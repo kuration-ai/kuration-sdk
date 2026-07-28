@@ -107,6 +107,19 @@ def _registry_inherits(registry, ancestor) -> bool:
     return False
 
 
+_METADATA_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+
+def _metadata_part(value: str, *, label: str) -> str:
+    """Validate one stable pipeline-metadata namespace or key."""
+    if not isinstance(value, str) or not _METADATA_PART.fullmatch(value):
+        raise ValueError(
+            f"{label} must start with an alphanumeric character and contain only "
+            "letters, numbers, '.', '_', or '-'"
+        )
+    return value
+
+
 def _friendly_operator_part(value: str) -> str:
     """Turn one public component-name part into a readable Python identifier."""
     identifier = re.sub(r"[^A-Za-z0-9_]", "_", value)
@@ -536,8 +549,19 @@ class Pipeline:
         self._mode: Optional[str] = None
         self._explicit_options: set[str] = set()
         self._expectations: dict = {}
+        self._metadata: dict[str, dict[str, Any]] = {}
+        self._materialized_metadata: set[tuple[str, str]] = set()
         from .registry import default_registry
         self._registry = default_registry if registry is None else registry.snapshot()
+
+    @property
+    def metadata(self) -> dict[str, dict[str, Any]]:
+        """Defensive copy of namespaced metadata carried by this pipeline.
+
+        Use :meth:`with_metadata` for caller-owned values or :meth:`enrich` to run a
+        registered analyzer and attach its materialized result.
+        """
+        return copy.deepcopy(self._metadata)
 
     def _operator_method_map(self, *, discover_plugins: bool) -> dict[str, list[str]]:
         """Map fluent Python spellings to the registered operator names they identify.
@@ -630,12 +654,13 @@ class Pipeline:
         for attr in ("_ops", "_define", "_registered_metrics", "_predicates", "_prepass", "_axes", "_tags",
                      "_scorers", "_transforms", "_method_params", "_window_desc",
                      "_expectations", "_weights", "_target", "_tag_coverage", "_group_cap",
-                     "_feature_space"):
+                     "_feature_space", "_metadata"):
             setattr(p, attr, copy.deepcopy(getattr(self, attr)))
         p._callables = dict(self._callables)
         p._options = dict(self._options)  # callbacks/providers are deliberately shared values
         p._progress_spec = self._progress_spec
         p._explicit_options = set(self._explicit_options)
+        p._materialized_metadata = set(self._materialized_metadata)
         return p
 
     def _next(self, opname: str, *args, **kwargs) -> "Pipeline":
@@ -650,13 +675,68 @@ class Pipeline:
                 {s["as"] for s in self._scorers} |
                 {o for t in self._transforms for o in t["outputs"]})
 
+    def _metadata_target(self, namespace: str, key: str, *, replace: bool) -> tuple[str, str]:
+        namespace = _metadata_part(namespace, label="metadata namespace")
+        key = _metadata_part(key, label="metadata key")
+        if not isinstance(replace, bool):
+            raise ValueError("metadata replace must be true or false")
+        if key in self._metadata.get(namespace, {}) and not replace:
+            raise ValueError(
+                f"pipeline metadata {namespace!r}/{key!r} already exists; "
+                "pass replace=True to replace it explicitly"
+            )
+        return namespace, key
+
+    def _store_metadata(self, namespace: str, key: str, value: Any, *,
+                        materialized: bool) -> None:
+        self._metadata.setdefault(namespace, {})[key] = copy.deepcopy(value)
+        target = (namespace, key)
+        if materialized:
+            self._materialized_metadata.add(target)
+        else:
+            self._materialized_metadata.discard(target)
+
+    def _reject_materialized_input_change(self, operation: str) -> None:
+        if not self._materialized_metadata:
+            return
+        attached = [
+            f"{namespace}/{key}"
+            for namespace, key in sorted(self._materialized_metadata)
+        ]
+        raise ValueError(
+            f"{operation}() cannot change the input basis after materialized pipeline "
+            f"metadata {attached}; configure input, schema, media, window, and registry "
+            "before enrichment, or branch from the pre-enrichment pipeline and run it again"
+        )
+
     def using(self, registry) -> "Pipeline":
         """Return a pipeline resolving extension names through an explicit overlay registry."""
         from .registry import Registry
         if not isinstance(registry, Registry):
             raise ValueError("using() needs a Registry")
+        self._reject_materialized_input_change("using")
         p = self._next("using", "<registry>")
         p._registry = registry.snapshot()
+        return p
+
+    def with_metadata(self, namespace: str, key: str, value: Any, *,
+                      replace: bool = False) -> "Pipeline":
+        """Return a pipeline carrying caller-owned, namespaced JSON metadata.
+
+        The input pipeline is unchanged and :attr:`metadata` returns a defensive copy.
+        This method attaches descriptive state only; use :meth:`enrich` when the value
+        should be produced by a registered analyzer over this pipeline's input.
+        """
+        namespace, key = self._metadata_target(namespace, key, replace=replace)
+        from .provenance import strict_json_value
+
+        normalized = strict_json_value(
+            value, label=f"pipeline metadata {namespace!r}/{key!r}"
+        )
+        p = self._next(
+            "with_metadata", namespace, key, _jsonable(normalized), replace=replace
+        )
+        p._store_metadata(namespace, key, normalized, materialized=False)
         return p
 
     def _invoke_operator(self, name: str, params: dict[str, Any]) -> "Pipeline":
@@ -704,6 +784,7 @@ class Pipeline:
         return self._invoke_operator(name, params)
 
     def _with_schema(self, schema: SchemaSpec, opname: str, *args, **kwargs) -> "Pipeline":
+        self._reject_materialized_input_change(opname)
         p = self._next(opname, *args, **kwargs)
         p.schema = schema
         for configured in _adapter_chain(p.adapter):
@@ -787,6 +868,7 @@ class Pipeline:
     # ---- operators ---------------------------------------------------------------------
     def window(self, window, stride=None, unit: str = "steps") -> "Pipeline":
         """Set the segment window (and stride, default = window) in 'steps' or 'seconds'."""
+        self._reject_materialized_input_change("window")
         p = self._next("window", window, stride=stride, unit=unit)
         p._segmenter = Segmenter(
             window, stride if stride is not None else window, unit=unit,
@@ -798,6 +880,7 @@ class Pipeline:
     def join_video(self, videos, *, column: str = "frame", on: str = "timestamp",
                    tolerance=None, mismatch: str = "error", provider=None) -> "Pipeline":
         """Attach a lazily decoded video media column to every ordinary source."""
+        self._reject_materialized_input_change("join_video")
         if not isinstance(column, str) or not column:
             raise ValueError("join_video column must be a non-empty string")
         if callable(videos):
@@ -1346,7 +1429,8 @@ class Pipeline:
                             "mode": self._mode,
                             "overrides": sorted(self._explicit_options)},
                 "sources": _describe_src(self.sources),
-                "expectations": dict(self._expectations)}
+                "expectations": dict(self._expectations),
+                "metadata": self.metadata}
 
     def preview(self, *, max_sources: int = 3, max_ticks_per_source: int = 10_000,
                 examples: int = 5):
@@ -1540,6 +1624,121 @@ class Pipeline:
                 f"{len(datasets)}: {datasets} — analyze them one at a time")
         return datasets[0]
 
+    def _drive_analyzer(self, name: str, parameters: Optional[dict] = None, *,
+                        mode: Optional[str] = None, inputs=None,
+                        batch_size: Optional[int] = None, analyzer=None,
+                        _caller: str = "analyzer", **options) -> tuple[dict, str]:
+        """Drive one analyzer once and return its result plus resolved execution mode."""
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"{_caller}() needs a registered analyzer name")
+        if mode not in {None, "dataset", "stream"}:
+            raise ValueError(
+                f"{_caller}(mode=...) must be 'dataset', 'stream', or None"
+            )
+        if inputs is not None and (not isinstance(inputs, (list, tuple)) or not inputs):
+            raise ValueError(
+                f"{_caller}(inputs=...) must be a non-empty sequence of tokens"
+            )
+        resolved = mode or ("dataset" if self._artifact_datasets() else "stream")
+        from .analyzers import drive_dataset_analyzer, get_analyzer, run_stream_analyzer
+
+        if resolved == "dataset":
+            dataset = self._single_artifact(f"{_caller}(mode='dataset')")
+            if inputs is not None or batch_size is not None:
+                raise ValueError(
+                    f"{_caller}(inputs=/batch_size=) apply to the tick-stream path; "
+                    "dataset analysis reads written modalities"
+                )
+            if analyzer is None:
+                analyzer = get_analyzer(name, registry=self._registry,
+                                        **dict(parameters or {}))
+            elif parameters:
+                raise ValueError("pass analyzer= or parameters=, not both")
+            result = drive_dataset_analyzer(analyzer, name, dataset, options=options)
+            return result, resolved
+        self._check_exec()
+        result = run_stream_analyzer(
+            name, schema=self.schema, adapter=self.adapter, sources=self.sources,
+            segmenter=self._segmenter_or_default(), parameters=parameters, options=options,
+            inputs=inputs, batch_size=batch_size, on_error=self._options["on_error"],
+            progress=self._options["progress"], registry=self._registry, analyzer=analyzer)
+        return result, resolved
+
+    def _enrichment_basis(self, name: str, *, mode: str, inputs) -> str:
+        """Fingerprint the pipeline state a materialized analyzer result describes."""
+        from .checkpoints import canonical_hash
+
+        payload = {
+            "analyzer": self._registry.descriptor("analyzer", name).to_dict(),
+            "adapter": f"{type(self.adapter).__module__}.{type(self.adapter).__qualname__}",
+            "datasets": _jsonable(self._artifact_datasets()),
+            "inputs": _jsonable(inputs),
+            "mode": mode,
+            "schema": self.schema.to_dict(),
+            "segmenter": dict(self._window_desc),
+            "sources": _jsonable(self.sources),
+        }
+        return canonical_hash(payload)
+
+    def enrich(self, name: str, parameters: Optional[dict] = None, *,
+               namespace: Optional[str] = None, key: Optional[str] = None,
+               replace: bool = False, mode: Optional[str] = None, inputs=None,
+               batch_size: Optional[int] = None, analyzer=None, **options) -> "Pipeline":
+        """Run a registered analyzer and attach its result to a new pipeline.
+
+        This is the pipeline-preserving counterpart of :meth:`analyze`. Domain
+        operators normally wrap it with a direct method and a stable metadata location.
+        The analyzer executes exactly once; its JSON result, component descriptor,
+        invocation, and input-basis fingerprint are retained under ``metadata``.
+        """
+        if not isinstance(name, str) or not name:
+            raise ValueError("enrich() needs a registered analyzer name")
+        parts = name.split("/", 1)
+        default_namespace = parts[0] if len(parts) == 2 else "analysis"
+        default_key = _friendly_operator_part(parts[-1])
+        namespace, key = self._metadata_target(
+            default_namespace if namespace is None else namespace,
+            default_key if key is None else key,
+            replace=replace,
+        )
+        result, resolved = self._drive_analyzer(
+            name, parameters, mode=mode, inputs=inputs, batch_size=batch_size,
+            analyzer=analyzer, _caller="enrich", **options
+        )
+        from .provenance import strict_json_value
+
+        normalized_result = strict_json_value(
+            result, label=f"analyzer {name!r} result for pipeline metadata"
+        )
+        request = strict_json_value(
+            {
+                "parameters": _jsonable(dict(parameters or {})),
+                "options": _jsonable(options),
+                "inputs": _jsonable(inputs),
+                "batch_size": batch_size,
+                "owned_analyzer": analyzer is not None,
+            },
+            label=f"analyzer {name!r} metadata request",
+        )
+        attachment = {
+            "component": self._registry.descriptor("analyzer", name).to_dict(),
+            "mode": resolved,
+            "basis_sha256": self._enrichment_basis(name, mode=resolved, inputs=inputs),
+            "request": request,
+            "result": normalized_result,
+        }
+        validated_attachment = strict_json_value(
+            attachment, label=f"pipeline enrichment {namespace!r}/{key!r}"
+        )
+        p = self._next(
+            "enrich", name, namespace=namespace, key=key, replace=replace,
+            mode=mode, inputs=inputs, batch_size=batch_size,
+            parameters=_jsonable(dict(parameters or {})),
+            options=_jsonable(options), owned_analyzer=analyzer is not None,
+        )
+        p._store_metadata(namespace, key, validated_attachment, materialized=True)
+        return p
+
     def analyze(self, name: str, parameters: Optional[dict] = None, *,
                 mode: Optional[str] = None, inputs=None, batch_size: Optional[int] = None,
                 analyzer=None, **options):
@@ -1562,31 +1761,11 @@ class Pipeline:
         path's declared inputs. ``analyzer=`` drives an instance you already own — its
         accumulated evidence stays yours after the call.
         """
-        if not isinstance(name, str) or not name:
-            raise ValueError("analyze() needs a registered analyzer name")
-        if mode not in {None, "dataset", "stream"}:
-            raise ValueError("analyze(mode=...) must be 'dataset', 'stream', or None")
-        if inputs is not None and (not isinstance(inputs, (list, tuple)) or not inputs):
-            raise ValueError("analyze(inputs=...) must be a non-empty sequence of tokens")
-        resolved = mode or ("dataset" if self._artifact_datasets() else "stream")
-        from .analyzers import drive_dataset_analyzer, get_analyzer, run_stream_analyzer
-        if resolved == "dataset":
-            dataset = self._single_artifact("analyze(mode='dataset')")
-            if inputs is not None or batch_size is not None:
-                raise ValueError("analyze(inputs=/batch_size=) apply to the tick-stream path; "
-                                 "dataset analysis reads written modalities")
-            if analyzer is None:
-                analyzer = get_analyzer(name, registry=self._registry,
-                                        **dict(parameters or {}))
-            elif parameters:
-                raise ValueError("pass analyzer= or parameters=, not both")
-            return drive_dataset_analyzer(analyzer, name, dataset, options=options)
-        self._check_exec()
-        return run_stream_analyzer(
-            name, schema=self.schema, adapter=self.adapter, sources=self.sources,
-            segmenter=self._segmenter_or_default(), parameters=parameters, options=options,
-            inputs=inputs, batch_size=batch_size, on_error=self._options["on_error"],
-            progress=self._options["progress"], registry=self._registry, analyzer=analyzer)
+        result, _resolved = self._drive_analyzer(
+            name, parameters, mode=mode, inputs=inputs, batch_size=batch_size,
+            analyzer=analyzer, _caller="analyze", **options
+        )
+        return result
 
     def check(self, policy: Optional[dict] = None, *, verify: bool = False, **expectations):
         """Evaluate quality gates over the cheapest evidence this pipeline can produce.
@@ -1936,6 +2115,8 @@ class Pipeline:
                 "mode": {"name": self._mode, "resolved": self.describe()["options"]},
                 "warnings": [dict(w) for w in self.explain().warnings],
             }
+            if self._metadata:
+                config_updates["metadata"] = _jsonable(self._metadata)
             if preset_resolution:
                 config_updates["output_preset"] = preset_resolution
             return _write_dataset_impl(
@@ -2070,6 +2251,8 @@ class Pipeline:
             cfg["output_preset"] = preset_resolution
         cfg["mode"] = {"name": self._mode, "resolved": self.describe()["options"]}
         cfg["warnings"] = [dict(w) for w in self.explain().warnings]
+        if self._metadata:
+            cfg["metadata"] = _jsonable(self._metadata)
         if getattr(result, "execution", None):
             cfg["execution"] = result.execution
         write_config(f"{path}/config.json", cfg)
@@ -2287,6 +2470,8 @@ class Pipeline:
         cfg["provenance"] = signature
         cfg["pipeline"] = list(self._ops)
         cfg["errors"] = list(result.errors)
+        if self._metadata:
+            cfg["metadata"] = _jsonable(self._metadata)
         write_config(f"{out_dir}/config.json", cfg)
         from .results import DatasetWriteResult
         return DatasetWriteResult(dataset=str(out_dir), shards=entries,

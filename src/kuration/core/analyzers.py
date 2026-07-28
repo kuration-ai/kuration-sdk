@@ -3,7 +3,8 @@
 Unlike a batch transform, an analyzer may accumulate evidence across segments before it
 can return a result, so the SDK never schedules one as an implicit selection stage: the
 caller owns the instance and its update lifecycle. Two drivers make that lifecycle
-reachable without writing the loop by hand, and both are what ``Pipeline.analyze()`` calls:
+reachable without writing the loop by hand, and both are what ``Pipeline.enrich()`` and
+``Pipeline.analyze()`` call:
 
 * :func:`run_dataset_analyzer` — the artifact path, driving an analyzer's ``check_dataset``
   hook over a written dataset (also what ``kur-check --analyzer`` uses).

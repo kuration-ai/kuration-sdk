@@ -1,7 +1,7 @@
 """Built-in gameplay operator domain and reconstruction helpers.
 
-Importing this module registers pixel-shift and SLAM operators on the ordinary
-``kuration.Pipeline`` while grouping action-state analysis and reconstruction helpers.
+Importing this module registers pixel-shift, action-state consistency, and SLAM methods on the
+ordinary ``kuration.Pipeline`` while grouping their expert analysis/reconstruction helpers.
 Heavy runtime frameworks stay lazy; install ``kuration-sdk[gameplay]`` before executing the
 frame- or model-backed paths.
 """
