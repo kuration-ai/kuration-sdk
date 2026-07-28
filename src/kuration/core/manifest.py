@@ -13,6 +13,7 @@ import os
 import posixpath
 import re
 import tempfile
+import threading
 import uuid
 from typing import Optional
 
@@ -28,6 +29,8 @@ _SHARD_NAME = re.compile(
     r".+_shard[0-9]{4,}(?:_padded)?"
     r"\.[A-Za-z0-9][A-Za-z0-9._-]*\Z"
 )
+_MEMORY_LEASE_GUARD = threading.Lock()
+_MEMORY_LEASES: set[str] = set()
 
 
 def _validate_local_destination_symlinks(out_dir: str) -> None:
@@ -53,7 +56,9 @@ def dataset_writer_lease(out_dir: str):
 
     Local leases use an OS advisory lock outside the artifact, so process exit releases them
     automatically. Remote leases use the backend's exclusive-create mode and are removed only
-    by their owning token. A backend that cannot provide exclusive creation fails closed.
+    by their owning token. The process-local ``memory://`` backend uses a process-local guard
+    because older supported fsspec releases lack exclusive-create mode for it. A persistent
+    backend that cannot provide exclusive creation fails closed.
     """
     from .io import _fs, _local, is_remote
 
@@ -81,21 +86,32 @@ def dataset_writer_lease(out_dir: str):
     token = uuid.uuid4().hex.encode()
     handle = None
     fs = None
+    memory_lease_key = None
     try:
         if remote:
             fs = _fs(lock_path)
-            try:
-                with fs.open(lock_path, "xb") as stream:
+            if destination.startswith("memory://"):
+                memory_lease_key = fs._strip_protocol(lock_path)
+                with _MEMORY_LEASE_GUARD:
+                    if memory_lease_key in _MEMORY_LEASES:
+                        raise FileExistsError(
+                            f"output {destination!r} already has an active writer lease")
+                    _MEMORY_LEASES.add(memory_lease_key)
+                with fs.open(lock_path, "wb") as stream:
                     stream.write(token)
-            except FileExistsError as error:
-                raise FileExistsError(
-                    f"output {destination!r} already has an active writer lease; wait for that "
-                    f"writer to finish (or remove {lock_path!r} only after confirming it "
-                    "stopped)") from error
-            except (NotImplementedError, ValueError) as error:
-                raise RuntimeError(
-                    f"remote backend cannot provide an exclusive writer lease for "
-                    f"{destination!r}; refusing race-prone publication") from error
+            else:
+                try:
+                    with fs.open(lock_path, "xb") as stream:
+                        stream.write(token)
+                except FileExistsError as error:
+                    raise FileExistsError(
+                        f"output {destination!r} already has an active writer lease; wait for "
+                        f"that writer to finish (or remove {lock_path!r} only after confirming "
+                        "it stopped)") from error
+                except (NotImplementedError, ValueError) as error:
+                    raise RuntimeError(
+                        f"remote backend cannot provide an exclusive writer lease for "
+                        f"{destination!r}; refusing race-prone publication") from error
         else:
             handle = open(lock_path, "a+b")
             if os.name == "nt":
@@ -143,6 +159,9 @@ def dataset_writer_lease(out_dir: str):
                     fs.rm_file(fs._strip_protocol(lock_path))
             except (FileNotFoundError, OSError):
                 pass
+        if memory_lease_key is not None:
+            with _MEMORY_LEASE_GUARD:
+                _MEMORY_LEASES.discard(memory_lease_key)
 
 
 def validate_source_destination_separation(

@@ -281,11 +281,14 @@ def _ensure_remote_mutation_supported(path) -> None:
 def open_file(path, mode: str = "rb"):
     if is_remote(path):
         try:
-            import fsspec
+            fs = _fs(path)
         except ImportError as error:
             raise ImportError(f"remote path {path!r} needs fsspec and the matching backend; "
                               "install kuration-sdk[cloud]") from error
-        with fsspec.open(str(path), mode) as f:
+        # Open the exact backend path. Older fsspec ``OpenFile`` wrappers interpret glob
+        # metacharacters even for a single file, so a literal ``[`` in a checkpoint root can
+        # otherwise make an existing object unreadable or select an adjacent namespace.
+        with fs.open(str(path), mode) as f:
             yield f
     else:
         p = _local(path)

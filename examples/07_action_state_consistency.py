@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 
-import kuration.gameplay as gameplay  # registers the analyzer (and pixel-shift) on import
+import kuration.gameplay  # noqa: F401 -- registers the analyzer and pixel-shift on import
 from kuration import FrameRef, SchemaSpec, VideoMetadata, input
 from kuration.gameplay.pixel_shift import diamond_action_decode as dad
 
