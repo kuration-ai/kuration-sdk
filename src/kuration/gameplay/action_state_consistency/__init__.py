@@ -20,6 +20,7 @@ from typing import Any
 from .action_state import (
     ACTION_STATE_ANALYZER_PARAMETERS,
     ANOMALY_TYPES,
+    CALIBRATION_PARAMETERS,
     ActionStateConsistencyChecker,
     action_state_consistency,
     load_baselines_from_reference,
@@ -27,8 +28,11 @@ from .action_state import (
     validate_action_state_config,
 )
 from .anomaly_checker import (
+    DEFAULT_CALIBRATION,
     AnomalyChecker,
+    derive_baselines,
     validate_baselines,
+    validate_calibration,
     validate_config,
 )
 
@@ -43,8 +47,14 @@ ACTION_STATE_OPERATOR_PARAMETERS: dict[str, Any] = {
             "const": "action_state",
             "default": "action_state",
         },
+        # baselines OR controls is required (enforced by the operator handler, which
+        # raises before running anything): baselines= is external calibration; controls=
+        # alone selects self-calibrated outlier detection over the named controls.
         "baselines": deepcopy(
             ACTION_STATE_ANALYZER_PARAMETERS["properties"]["baselines"]
+        ),
+        "calibration": deepcopy(
+            ACTION_STATE_ANALYZER_PARAMETERS["properties"]["calibration"]
         ),
         "controls": {
             "type": "array",
@@ -75,7 +85,6 @@ ACTION_STATE_OPERATOR_PARAMETERS: dict[str, Any] = {
         },
         "replace": {"type": "boolean", "default": False},
     },
-    "required": ["baselines"],
     "additionalProperties": False,
 }
 
@@ -83,9 +92,10 @@ ACTION_STATE_OPERATOR_PARAMETERS: dict[str, Any] = {
 def attach_action_state_consistency(
     pipeline,
     *,
-    baselines: dict,
+    baselines: dict | None = None,
     anomaly_type: str = "action_state",
     controls=None,
+    calibration: dict | None = None,
     boundary: str = "exclude",
     mode: str | None = None,
     inputs=None,
@@ -97,7 +107,23 @@ def attach_action_state_consistency(
     metadata_key: str = "action_state_consistency",
     replace: bool = False,
 ):
-    """Run action-state consistency and retain the verdict on a derived pipeline."""
+    """Run action-state consistency and retain the verdict on a derived pipeline.
+
+    ``baselines=`` checks clips against externally calibrated ground truth. Omitting it
+    selects **self-calibrated** mode: clips are judged against the other clips'
+    leave-one-out consensus for the named ``controls`` (relative outlier detection, tuned
+    by ``calibration=``), and the derived consensus is recorded in the attached result.
+    One of the two must be given -- there is nothing to check otherwise.
+    """
+    if baselines is None and controls is None:
+        raise ValueError(
+            "action-state consistency needs baselines= (external calibration) or "
+            "controls= (self-calibrated outlier detection over the named controls)"
+        )
+    if baselines is not None and calibration is not None:
+        raise ValueError(
+            "calibration= applies only to self-calibrated mode; drop it or drop baselines="
+        )
     resolved = pipeline.analysis_mode(mode)
     dataset_options = {
         "frames": frames,
@@ -116,9 +142,14 @@ def attach_action_state_consistency(
     options: dict[str, Any] = {"boundary": boundary, **supplied_dataset_options}
     if controls is not None:
         options["controls"] = controls
+    parameters: dict[str, Any] = {"anomaly_type": anomaly_type}
+    if baselines is not None:
+        parameters["baselines"] = baselines
+    if calibration is not None:
+        parameters["calibration"] = calibration
     return pipeline.enrich(
         ANALYZER_NAME,
-        {"anomaly_type": anomaly_type, "baselines": baselines},
+        parameters,
         namespace="gameplay",
         key=metadata_key,
         replace=replace,
@@ -194,15 +225,19 @@ __all__ = [
     "ACTION_STATE_OPERATOR_PARAMETERS",
     "ANALYZER_NAME",
     "ANOMALY_TYPES",
+    "CALIBRATION_PARAMETERS",
+    "DEFAULT_CALIBRATION",
     "ActionStateConsistencyChecker",
     "AnomalyChecker",
     "OPERATOR_NAME",
     "action_state_consistency",
     "attach_action_state_consistency",
+    "derive_baselines",
     "load_baselines_from_reference",
     "register",
     "validate_action_state_baselines",
     "validate_action_state_config",
     "validate_baselines",
+    "validate_calibration",
     "validate_config",
 ]

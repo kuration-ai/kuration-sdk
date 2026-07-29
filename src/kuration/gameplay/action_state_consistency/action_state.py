@@ -15,10 +15,22 @@ from typing import Any
 from .anomaly_checker import AnomalyChecker, validate_baselines, validate_config
 
 ANOMALY_TYPES = ("action_state",)
+CALIBRATION_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "min_clips": {"type": "integer", "minimum": 2},
+        "min_samples": {"type": "integer", "minimum": 2},
+        "sign_consensus": {"type": "number", "exclusiveMinimum": 0.5, "maximum": 1},
+        "tolerance": {"type": "number", "minimum": 1},
+    },
+    "additionalProperties": False,
+}
 ACTION_STATE_ANALYZER_PARAMETERS: dict[str, Any] = {
     "type": "object",
     "properties": {
         "anomaly_type": {"type": "string", "const": "action_state"},
+        # Omitted entirely -> self-calibrated mode: clips are judged against the other
+        # clips' leave-one-out consensus instead of an external reference.
         "baselines": {
             "type": "object",
             "additionalProperties": {
@@ -35,8 +47,9 @@ ACTION_STATE_ANALYZER_PARAMETERS: dict[str, Any] = {
                 },
             },
         },
+        "calibration": CALIBRATION_PARAMETERS,
     },
-    "required": ["anomaly_type", "baselines"],
+    "required": ["anomaly_type"],
     "additionalProperties": False,
 }
 
@@ -80,13 +93,15 @@ def validate_action_state_baselines(baselines) -> dict:
 
 def validate_action_state_config(config) -> dict:
     """Validate the full action_state operator config:
-    ``{"anomaly_type": "action_state", "baselines": {...}}``."""
+    ``{"anomaly_type": "action_state", "baselines": {...} | None}`` (plus optional
+    ``calibration`` knobs when baselines is None -- see anomaly_checker.validate_config)."""
     validated = validate_config(config)
     if validated["anomaly_type"] not in ANOMALY_TYPES:
         raise ValueError(
             f"config['anomaly_type'] must be one of {ANOMALY_TYPES}, got {validated['anomaly_type']!r}"
         )
-    validated["baselines"] = validate_action_state_baselines(config["baselines"])
+    if validated["baselines"] is not None:
+        validated["baselines"] = validate_action_state_baselines(config["baselines"])
     return validated
 
 
@@ -207,21 +222,37 @@ class ActionStateConsistencyChecker(AnomalyChecker):
         baselines, and record the result under its clip (segment_id's source_id).
         ``controls`` defaults to every control with a configured baseline; passing an
         explicit subset must still be a subset of the configured baselines -- there is
-        nothing to check a control against without one."""
+        nothing to check a control against without one. In self-calibrated mode there is
+        no configured set to default to, so ``controls`` is required and validated against
+        pixel-shift's control vocabulary instead."""
         from ..pixel_shift import (
+            ALL_CONTROLS,
             iter_instances,
             validate_boundary,
             validate_color_space,
             validate_segment_inputs,
         )
 
-        controls = tuple(self.baselines) if controls is None else tuple(controls)
-        unknown = sorted(set(controls) - set(self.baselines))
-        if unknown:
-            raise ValueError(
-                f"no baseline configured for control(s) {unknown}; "
-                f"configured: {sorted(self.baselines)}"
-            )
+        if self.baselines is None:
+            if controls is None:
+                raise ValueError(
+                    "self-calibrated action-state consistency needs controls=; without "
+                    "baselines there is no configured set to default to"
+                )
+            controls = tuple(controls)
+            unknown = sorted(set(controls) - set(ALL_CONTROLS))
+            if unknown:
+                raise ValueError(
+                    f"unknown control(s) {unknown}; expected {list(ALL_CONTROLS)}"
+                )
+        else:
+            controls = tuple(self.baselines) if controls is None else tuple(controls)
+            unknown = sorted(set(controls) - set(self.baselines))
+            if unknown:
+                raise ValueError(
+                    f"no baseline configured for control(s) {unknown}; "
+                    f"configured: {sorted(self.baselines)}"
+                )
         boundary = validate_boundary(boundary)
         color_space = validate_color_space(color_space)
         frames, actions, before, after_actions, after_frames = validate_segment_inputs(
@@ -309,14 +340,22 @@ class ActionStateConsistencyChecker(AnomalyChecker):
             )
 
     def stream_result(self) -> dict:
-        """Report the tick-stream verdict and the frame space its positions live in."""
+        """Report the tick-stream verdict and the frame space its positions live in.
+
+        A self-calibrated run additionally reports its ``calibration`` record (the knobs
+        and the pooled consensus baselines), so a verdict judged against inferred
+        normality says so in the attached result."""
         summary = self.summary()
-        return {
+        result = {
             "passed": not summary["inconsistent"],
             "frame_space": self.frame_space,
             "frame_space_note": self.frame_space_note,
             "cross_window_dedup": True,
         }
+        calibration = self.calibration_report()
+        if calibration is not None:
+            result["calibration"] = calibration
+        return result
 
     def check_dataset(
         self,
@@ -404,7 +443,7 @@ class ActionStateConsistencyChecker(AnomalyChecker):
                                  "start": start, "end": end})
             shards += 1
         summary = self.summary()
-        return {
+        result = {
             "passed": not summary["inconsistent"],
             "shards_checked": shards,
             "frame_space": self.frame_space,
@@ -413,10 +452,21 @@ class ActionStateConsistencyChecker(AnomalyChecker):
             "shard_ranges": shard_ranges,
             "summary": summary,
         }
+        calibration = self.calibration_report()
+        if calibration is not None:
+            result["calibration"] = calibration
+        return result
 
 
-def action_state_consistency(*, anomaly_type: str, baselines: dict):
-    """Construct the discoverable, user-owned action-state analyzer."""
-    return ActionStateConsistencyChecker(
-        {"anomaly_type": anomaly_type, "baselines": baselines}
-    )
+def action_state_consistency(*, anomaly_type: str, baselines: dict | None = None,
+                             calibration: dict | None = None):
+    """Construct the discoverable, user-owned action-state analyzer.
+
+    Without ``baselines`` the checker self-calibrates: each clip is judged against the
+    other clips' leave-one-out consensus (relative outlier detection), tuned by the
+    optional ``calibration`` knobs. Supplied baselines remain the externally-calibrated
+    ground truth and reject ``calibration``."""
+    config: dict[str, Any] = {"anomaly_type": anomaly_type, "baselines": baselines}
+    if calibration is not None:
+        config["calibration"] = calibration
+    return ActionStateConsistencyChecker(config)

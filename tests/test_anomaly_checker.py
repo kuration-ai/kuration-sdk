@@ -303,7 +303,10 @@ def test_register_adds_the_real_builtin_analyzer():
     assert asc.OPERATOR_NAME in default_registry.names("operator")
     operator = default_registry.descriptor("operator", asc.OPERATOR_NAME)
     assert operator.capabilities["pipeline_metadata"] is True
-    assert operator.parameters["required"] == ("baselines",)
+    # baselines is no longer schema-required: omitting it (with controls=) selects
+    # self-calibrated mode. The handler itself enforces "baselines or controls".
+    assert "required" not in operator.parameters
+    assert "calibration" in operator.parameters["properties"]
     assert "aintropy/consistency-check" not in default_registry.names("transform")
     assert "aintropy/consistency-check" not in default_registry.names("operator")
 
@@ -342,3 +345,112 @@ def test_pixel_shift_execution_has_sdk_extra_hint_without_opencv(monkeypatch):
 
     with pytest.raises(ImportError, match=r"kuration-sdk\[pixel-shift\]"):
         diamond_action_decode._require_cv2()
+
+
+# ---------------------------------------------------------------------------------------
+# Self-calibrated mode: leave-one-out consensus outlier detection, no external baselines
+# ---------------------------------------------------------------------------------------
+from kuration.gameplay.action_state_consistency import (  # noqa: E402
+    DEFAULT_CALIBRATION,
+    derive_baselines,
+    validate_calibration,
+)
+
+
+def _self_calibrated(calibration=None):
+    return AnomalyChecker(validate_config(
+        {"anomaly_type": "synthetic", "baselines": None, "calibration": calibration}))
+
+
+def _record(checker, clip, shifts, *, control="X", cell="1"):
+    checker.resolve_segment((clip, 0, 10), expected_length=10)
+    for frame, shift in enumerate(shifts):
+        checker.record_instance(clip, control, cell, frame, shift)
+
+
+def test_validate_calibration_fills_defaults_and_rejects_bad_knobs():
+    assert validate_calibration(None) == DEFAULT_CALIBRATION
+    assert validate_calibration({"min_clips": 4})["min_clips"] == 4
+    assert validate_calibration({"min_clips": 4})["min_samples"] == 5
+    with pytest.raises(ValueError, match="unknown calibration knob"):
+        validate_calibration({"quantile": 0.1})
+    with pytest.raises(ValueError, match="min_clips"):
+        validate_calibration({"min_clips": 1})
+    with pytest.raises(ValueError, match="sign_consensus"):
+        validate_calibration({"sign_consensus": 0.5})
+    with pytest.raises(ValueError, match="tolerance"):
+        validate_calibration({"tolerance": 0.9})
+
+
+def test_validate_config_separates_the_two_calibration_modes():
+    self_calibrated = validate_config({"anomaly_type": "t", "baselines": None})
+    assert self_calibrated["baselines"] is None
+    assert self_calibrated["calibration"] == DEFAULT_CALIBRATION
+    with pytest.raises(ValueError, match="self-calibrated"):
+        validate_config({
+            "anomaly_type": "t",
+            "baselines": {"X": {"1": {"expected_sign": 1, "min": 0.0, "max": 1.0}}},
+            "calibration": {"min_clips": 4},
+        })
+
+
+def test_derive_baselines_skips_underpowered_and_contested_cells():
+    derived = derive_baselines({
+        ("X", "1"): [1.0, 1.1, 0.9, 1.0, 1.05],       # clean positive consensus
+        ("X", "2"): [1.0, 1.0],                        # too few samples
+        ("Y", "1"): [1.0, -1.0, 1.0, -1.0, 1.0],       # contested direction (0.6 < 0.8)
+        ("Z", "1"): [0.0, 0.0, 0.0, 0.0, 0.0],         # no nonzero evidence
+    })
+    assert set(derived) == {"X"}
+    baseline = derived["X"]["1"]
+    assert baseline["expected_sign"] == 1
+    # 5th/95th percentile of |shift| widened by the 1.5x tolerance.
+    assert baseline["min"] == pytest.approx(np.quantile([1.0, 1.1, 0.9, 1.0, 1.05], 0.05) / 1.5)
+    assert baseline["max"] == pytest.approx(np.quantile([1.0, 1.1, 0.9, 1.0, 1.05], 0.95) * 1.5)
+
+
+def test_self_calibrated_checker_flags_the_relative_outlier_leave_one_out():
+    checker = _self_calibrated({"min_samples": 5, "sign_consensus": 0.7})
+    for clip in ("a", "b", "c"):
+        _record(checker, clip, [1.0, 1.1, 0.9])
+    _record(checker, "d", [-1.0, -1.05])          # moves the wrong way
+    _record(checker, "e", [1.0], control="Y")     # a cell nobody else measured
+
+    summary = checker.summary()
+    assert summary["inconsistent"] == ["d"]
+    assert summary["consistent"] == ["a", "b", "c"]
+    # e's only instances live in a cell with no independent evidence: unjudged instances
+    # carry no verdict weight, so the clip is inconclusive rather than vacuously blessed.
+    assert summary["inconclusive"] == ["e"]
+
+    rows = {(row["source_id"], row["frame"]): row for row in checker.to_records()}
+    assert rows[("d", 0)]["consistent"] is False
+    assert rows[("e", 0)]["consistent"] is None
+    assert rows[("e", 0)]["verdict"] == "inconclusive"
+
+    report = checker.calibration_report()
+    assert report["mode"] == "self-calibrated"
+    assert report["sign_consensus"] == 0.7
+    # The pooled consensus is the reportable record of inferred normality.
+    assert report["derived_baselines"]["X"]["1"]["expected_sign"] == 1
+
+
+def test_self_calibrated_checker_refuses_pools_below_min_clips():
+    checker = _self_calibrated()
+    _record(checker, "a", [1.0])
+    _record(checker, "b", [1.0])
+    with pytest.raises(ValueError, match="at least 3 clips"):
+        checker.summary()
+    with pytest.raises(ValueError, match="at least 3 clips"):
+        checker.calibration_report()
+
+
+def test_supplied_baselines_have_nothing_derived():
+    checker = AnomalyChecker(validate_config({
+        "anomaly_type": "t",
+        "baselines": {"X": {"1": {"expected_sign": 1, "min": 0.0, "max": 2.0}}},
+    }))
+    assert checker.self_calibrated is False
+    assert checker.calibration_report() is None
+    with pytest.raises(ValueError, match="nothing was derived"):
+        checker.derived_baselines()

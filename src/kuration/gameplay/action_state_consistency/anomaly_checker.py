@@ -79,11 +79,103 @@ def validate_baselines(baselines) -> dict:
     return out
 
 
+#: Self-calibration knobs and their defaults. ``min_clips``: the smallest pool that can
+#: define a consensus at all; ``min_samples``: measurements a (control, cell) needs from
+#: OTHER clips before it is judged; ``sign_consensus``: the fraction of nonzero shifts that
+#: must agree on a direction (a contested cell is skipped, never guessed); ``tolerance``:
+#: how far the derived magnitude bounds are widened beyond the observed 5th/95th percentile.
+DEFAULT_CALIBRATION = {
+    "min_clips": 3,
+    "min_samples": 5,
+    "sign_consensus": 0.8,
+    "tolerance": 1.5,
+}
+
+#: The observed-magnitude percentiles the derived [min, max] bounds start from, before
+#: ``tolerance`` widening. Not a knob: robust-bound percentiles are a statistical choice the
+#: calibration should own, not a lever every caller re-decides.
+_BOUND_QUANTILES = (0.05, 0.95)
+
+
+def validate_calibration(calibration) -> dict:
+    """Validate self-calibration knob overrides and fill in the documented defaults."""
+    if calibration is None:
+        return dict(DEFAULT_CALIBRATION)
+    if not isinstance(calibration, dict):
+        raise ValueError("calibration must be a dict of knob overrides")
+    unknown = sorted(set(calibration) - set(DEFAULT_CALIBRATION))
+    if unknown:
+        raise ValueError(
+            f"unknown calibration knob(s) {unknown}; expected {sorted(DEFAULT_CALIBRATION)}"
+        )
+    out = dict(DEFAULT_CALIBRATION)
+    for key, value in calibration.items():
+        if key in ("min_clips", "min_samples"):
+            if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 2:
+                raise ValueError(f"calibration {key} must be an integer >= 2")
+            out[key] = int(value)
+        elif key == "sign_consensus":
+            consensus = _finite_number(value, name="calibration sign_consensus")
+            if not 0.5 < consensus <= 1.0:
+                raise ValueError("calibration sign_consensus must be in (0.5, 1.0]")
+            out[key] = consensus
+        else:  # tolerance
+            tolerance = _finite_number(value, name="calibration tolerance")
+            if tolerance < 1.0:
+                raise ValueError("calibration tolerance must be >= 1")
+            out[key] = tolerance
+    return out
+
+
+def derive_baselines(
+    samples,
+    *,
+    min_samples: int = DEFAULT_CALIBRATION["min_samples"],
+    sign_consensus: float = DEFAULT_CALIBRATION["sign_consensus"],
+    tolerance: float = DEFAULT_CALIBRATION["tolerance"],
+) -> dict:
+    """Derive consensus baselines from pooled measurements, skipping what can't be trusted.
+
+    ``samples`` maps ``(control, cell_key)`` to the pooled shifts measured for that cell. A
+    cell yields a baseline only when it has at least ``min_samples`` measurements, at least
+    one of them nonzero, and at least ``sign_consensus`` of the nonzero ones agree on a
+    direction; anything underpowered or contested is omitted (its instances stay unjudged)
+    rather than judged against a guess. ``expected_sign`` is the consensus direction and
+    ``min``/``max`` are the 5th/95th percentile of the cell's ``|shift|`` widened by
+    ``tolerance`` — note the bounds include every sample, so a mostly-zero cell derives a
+    zero floor and the magnitude check degrades to conservative rather than accusatory.
+    """
+    derived: dict = {}
+    for (control, cell_key), shifts in samples.items():
+        values = np.asarray([_finite_number(s, name="shift") for s in shifts], dtype=float)
+        if len(values) < min_samples:
+            continue
+        nonzero = values[values != 0]
+        if len(nonzero) == 0:
+            continue
+        positive = int((nonzero > 0).sum())
+        negative = len(nonzero) - positive
+        if max(positive, negative) / len(nonzero) < sign_consensus:
+            continue
+        magnitudes = np.abs(values)
+        derived.setdefault(control, {})[cell_key] = {
+            "expected_sign": 1 if positive >= negative else -1,
+            "min": float(np.quantile(magnitudes, _BOUND_QUANTILES[0])) / tolerance,
+            "max": float(np.quantile(magnitudes, _BOUND_QUANTILES[1])) * tolerance,
+        }
+    return derived
+
+
 def validate_config(config) -> dict:
     """Validate the generic config shape: ``{"anomaly_type": <non-empty string>,
-    "baselines": {...}}``. Does not restrict which ``anomaly_type`` values are legal --
+    "baselines": {...} | None}``. Does not restrict which ``anomaly_type`` values are legal --
     that's entirely a specific adapter's concern (e.g. action_state.py's ANOMALY_TYPES),
     since the generic core has no opinion on what anomaly types exist.
+
+    ``baselines=None`` selects **self-calibrated** mode: every clip is judged against
+    baselines derived from the other clips' own measurements (see ``AnomalyChecker``), tuned
+    by the optional ``calibration`` knobs. Explicit baselines reject ``calibration`` loudly —
+    the knobs have nothing to calibrate.
     """
     if not isinstance(config, dict):
         raise ValueError("config must be a dict")
@@ -91,7 +183,17 @@ def validate_config(config) -> dict:
     if not isinstance(anomaly_type, str) or not anomaly_type:
         raise ValueError("config['anomaly_type'] must be a non-empty string")
     if "baselines" not in config:
-        raise ValueError("config must include 'baselines'")
+        raise ValueError("config must include 'baselines' (a dict, or None to self-calibrate)")
+    if config["baselines"] is None:
+        return {
+            "anomaly_type": anomaly_type,
+            "baselines": None,
+            "calibration": validate_calibration(config.get("calibration")),
+        }
+    if config.get("calibration") is not None:
+        raise ValueError(
+            "calibration applies only to self-calibrated mode; drop it or drop baselines"
+        )
     return {"anomaly_type": anomaly_type, "baselines": validate_baselines(config["baselines"])}
 
 
@@ -163,6 +265,17 @@ class AnomalyChecker:
       - INCONCLUSIVE if no violation was found but also no baselined instance was ever
         observed in the clip -- nothing to judge either way. This is deliberately NOT the
         same bar as "every configured control fired at least once".
+
+    **Self-calibrated mode** (``baselines=None`` in the config): no external truth is
+    supplied, so instances are recorded unjudged and every clip is judged at verdict time
+    against baselines derived from the OTHER clips' measurements (leave-one-out — a clip
+    never vouches for itself). This detects *relative* outliers: the clip that disagrees
+    with the corpus. It structurally cannot catch a corpus-wide problem — if every clip is
+    desynced the same way, the consensus IS the desync — which is why supplied baselines
+    remain the externally-calibrated ground truth and self-calibration is a labeled mode,
+    never a silent fallback. Cells without enough independent evidence (see
+    ``DEFAULT_CALIBRATION``) stay unjudged, and pools smaller than ``min_clips`` refuse to
+    issue verdicts at all.
     """
 
     def __init__(self, validated_config: dict):
@@ -171,6 +284,8 @@ class AnomalyChecker:
         ``validate_config`` (plus any type-specific checks) before constructing this."""
         self.anomaly_type = validated_config["anomaly_type"]
         self.baselines = validated_config["baselines"]
+        self.calibration = validated_config.get("calibration") if self.baselines is None else None
+        self._judged_cache: dict | None = None
         # A press's global frame position can be "owned" by more than one overlapping
         # window (see the pixel-shift guide, "Input and segment-boundary
         # contract") -- same tie-breaker PixelShiftReport uses.
@@ -207,7 +322,12 @@ class AnomalyChecker:
         end_idx). Call this once per segment before recording any of its instances."""
         source_id, start_idx, end_idx = _validate_segment_id(segment_id, expected_length)
         self._clips_seen.add(source_id)
+        self._judged_cache = None
         return source_id, start_idx, end_idx
+
+    @property
+    def self_calibrated(self) -> bool:
+        return self.baselines is None
 
     def record_instance(
         self,
@@ -221,7 +341,11 @@ class AnomalyChecker:
         result under its clip. Silently does nothing if there's no baseline for this
         exact cell_key (matches segment_scalars' own "not requested" semantics) -- but
         raises if `control` itself was never configured at all, since a caller reaching
-        this point with an unconfigured control is an adapter bug, not absent data."""
+        this point with an unconfigured control is an adapter bug, not absent data.
+
+        In self-calibrated mode there is no baseline to check against yet: every instance
+        is recorded unjudged (``consistent=None``) and judged leave-one-out at verdict
+        time."""
         if not isinstance(source_id, str) or not source_id:
             raise ValueError("instance source_id must be a non-empty string")
         if source_id not in self._clips_seen:
@@ -240,12 +364,15 @@ class AnomalyChecker:
         ):
             raise ValueError("instance frame must be a non-negative integer")
         frame = int(frame)
-        cells = self.baselines.get(control)
-        if cells is None:
-            raise KeyError(f"no baseline configured for control {control!r}")
-        baseline = cells.get(cell_key)
-        if baseline is None:
-            return  # no baseline for this exact cell -- not checked
+        if self.baselines is None:
+            baseline = None  # judged leave-one-out at verdict time
+        else:
+            cells = self.baselines.get(control)
+            if cells is None:
+                raise KeyError(f"no baseline configured for control {control!r}")
+            baseline = cells.get(cell_key)
+            if baseline is None:
+                return  # no baseline for this exact cell -- not checked
         shift = _finite_number(shift, name="shift")
         instance_key = (source_id, control, cell_key, frame)
         if instance_key in self._seen_instances:
@@ -256,18 +383,106 @@ class AnomalyChecker:
             "cell_key": cell_key,
             "frame": frame,
             "shift": shift,
-            "consistent": _is_consistent(shift, baseline),
+            "consistent": None if baseline is None else _is_consistent(shift, baseline),
         }
+        self._judged_cache = None
         self._clip_records.setdefault(source_id, []).append(record)
 
+    def _judged_records(self) -> dict:
+        """Per-clip records with ``consistent`` resolved.
+
+        Supplied-baselines mode returns the ledger as recorded (judged eagerly). In
+        self-calibrated mode each clip is judged against baselines derived from every
+        *other* clip's measurements, so one bad clip cannot vouch for itself; instances in
+        cells without enough independent evidence keep ``consistent=None`` and carry no
+        verdict weight.
+        """
+        if self.baselines is not None:
+            return self._clip_records
+        if self._judged_cache is not None:
+            return self._judged_cache
+        min_clips = self.calibration["min_clips"]
+        if len(self._clips_seen) < min_clips:
+            raise ValueError(
+                f"self-calibration needs at least {min_clips} clips to define a consensus; "
+                f"saw {len(self._clips_seen)} -- supply baselines= for pools this small"
+            )
+        knobs = {key: self.calibration[key]
+                 for key in ("min_samples", "sign_consensus", "tolerance")}
+        judged: dict = {}
+        for source_id in self._clips_seen:
+            records = self._clip_records.get(source_id, [])
+            if not records:
+                judged[source_id] = []
+                continue
+            samples: dict = {}
+            for other_id, other_records in self._clip_records.items():
+                if other_id == source_id:
+                    continue
+                for record in other_records:
+                    samples.setdefault(
+                        (record["control"], record["cell_key"]), []
+                    ).append(record["shift"])
+            baselines = derive_baselines(samples, **knobs)
+            resolved = []
+            for record in records:
+                baseline = baselines.get(record["control"], {}).get(record["cell_key"])
+                resolved.append({
+                    **record,
+                    "consistent": None if baseline is None
+                    else _is_consistent(record["shift"], baseline),
+                })
+            judged[source_id] = resolved
+        self._judged_cache = judged
+        return judged
+
+    def derived_baselines(self) -> dict:
+        """The pooled (all-clips) consensus baselines in self-calibrated mode.
+
+        This is the reportable summary of what "normal" was inferred to be; verdicts
+        themselves are judged leave-one-out, so a clip's own measurements never appear in
+        the baselines it is checked against. Raises with supplied baselines -- nothing was
+        derived.
+        """
+        if self.baselines is not None:
+            raise ValueError("baselines were supplied; nothing was derived")
+        self._judged_records()  # enforce the min_clips floor before summarizing a consensus
+        samples: dict = {}
+        for records in self._clip_records.values():
+            for record in records:
+                samples.setdefault(
+                    (record["control"], record["cell_key"]), []
+                ).append(record["shift"])
+        knobs = {key: self.calibration[key]
+                 for key in ("min_samples", "sign_consensus", "tolerance")}
+        return derive_baselines(samples, **knobs)
+
+    def calibration_report(self) -> dict | None:
+        """The embeddable self-calibration record (knobs + pooled consensus), or ``None``
+        when baselines were supplied. Results that judged clips against inferred normality
+        must say so -- this is what analyzers attach next to their verdicts."""
+        if self.baselines is not None:
+            return None
+        return {
+            "mode": "self-calibrated",
+            **self.calibration,
+            "derived_baselines": self.derived_baselines(),
+        }
+
     def clip_verdict(self, source_id: str) -> str:
-        """"consistent" | "inconsistent" | "inconclusive" for one clip."""
+        """"consistent" | "inconsistent" | "inconclusive" for one clip.
+
+        Only judged instances carry verdict weight: a self-calibrated instance whose cell
+        had too little independent evidence (``consistent=None``) is not treated as
+        supporting evidence, so a clip with nothing but unjudged instances stays
+        inconclusive."""
         if source_id not in self._clips_seen:
             raise KeyError(f"no segments recorded for clip {source_id!r}")
-        records = self._clip_records.get(source_id, [])
-        if not records:
+        records = self._judged_records().get(source_id, [])
+        judged = [r for r in records if r["consistent"] is not None]
+        if not judged:
             return "inconclusive"
-        if any(not r["consistent"] for r in records):
+        if any(not r["consistent"] for r in judged):
             return "inconsistent"
         return "consistent"
 
@@ -298,8 +513,9 @@ class AnomalyChecker:
         Does not print anything; see ``print_report()`` for the human-readable report.
         """
         rows = []
+        judged_records = self._judged_records()
         for source_id in sorted(self._clips_seen):
-            records = self._clip_records.get(source_id, [])
+            records = judged_records.get(source_id, [])
             verdict = self.clip_verdict(source_id)
             if not records:
                 rows.append(
@@ -344,9 +560,13 @@ class AnomalyChecker:
         PixelShiftReport.print_report()). See ``to_records()`` for this same data as
         plain, unprinted structured rows."""
         verdicts = self.summary()
+        judged_records = self._judged_records()
         print("=" * 78)
         print(f"ANOMALY REPORT (anomaly_type={self.anomaly_type!r})")
         print("=" * 78)
+        if self.baselines is None:
+            print("baselines: self-calibrated -- clips judged against the other clips' "
+                  "consensus (leave-one-out), not an external reference")
         if self.frame_space != "source":
             print(f"frame space: {self.frame_space} -- {self.frame_space_note}")
         for verdict in ("consistent", "inconsistent", "inconclusive"):
@@ -354,7 +574,8 @@ class AnomalyChecker:
             print(f"\n{verdict.upper()}: {len(clip_ids)} clip(s)")
             for clip_id in clip_ids:
                 if verdict == "inconsistent":
-                    violations = [r for r in self._clip_records[clip_id] if not r["consistent"]]
+                    violations = [r for r in judged_records[clip_id]
+                                  if r["consistent"] is False]
                     # Outside the "source" frame space the number is not a source frame, so it
                     # is labeled with the space it actually belongs to.
                     position = ("frame" if self.frame_space == "source"
