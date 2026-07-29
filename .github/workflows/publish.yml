@@ -13,7 +13,7 @@ jobs:
   prepare:
     name: Prepare tested distributions
     if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'plugin-')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -127,10 +127,10 @@ jobs:
       - name: Smoke-test installed wheel
         shell: bash
         run: |
-          python -m venv /tmp/kuration-release-smoke
-          /tmp/kuration-release-smoke/bin/python -m pip install dist/*.whl
-          cd /tmp
-          /tmp/kuration-release-smoke/bin/python - <<'PY'
+          python -m venv "$RUNNER_TEMP"/kuration-release-smoke
+          "$RUNNER_TEMP"/kuration-release-smoke/bin/python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP"/kuration-release-smoke/bin/python - <<'PY'
           from importlib.metadata import version
           from importlib.resources import files
           from pathlib import Path
@@ -146,9 +146,9 @@ jobs:
           assert kuration.__version__ == version("kuration-sdk")
           PY
           while IFS= read -r command; do
-            /tmp/kuration-release-smoke/bin/"$command" --help
+            "$RUNNER_TEMP"/kuration-release-smoke/bin/"$command" --help
           done < <(
-            /tmp/kuration-release-smoke/bin/python - <<'PY'
+            "$RUNNER_TEMP"/kuration-release-smoke/bin/python - <<'PY'
           from importlib.metadata import distribution
 
           scripts = distribution("kuration-sdk").entry_points
@@ -170,7 +170,7 @@ jobs:
     name: Publish and attach release artifacts
     if: github.event_name == 'release' && github.event.release.prerelease == false
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     environment:
       name: pypi
