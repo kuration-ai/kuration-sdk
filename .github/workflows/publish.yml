@@ -13,7 +13,7 @@ jobs:
   prepare:
     name: Prepare tested distributions
     if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'plugin-')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -112,10 +112,10 @@ jobs:
       - name: Smoke-test installed wheel
         shell: bash
         run: |
-          python -m venv /tmp/kuration-release-smoke
-          /tmp/kuration-release-smoke/bin/python -m pip install dist/*.whl
-          cd /tmp
-          /tmp/kuration-release-smoke/bin/python - <<'PY'
+          python -m venv "$RUNNER_TEMP"/kuration-release-smoke
+          "$RUNNER_TEMP"/kuration-release-smoke/bin/python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP"/kuration-release-smoke/bin/python - <<'PY'
           from importlib.metadata import version
           from importlib.resources import files
           from pathlib import Path
@@ -128,11 +128,26 @@ jobs:
           assert "site-packages" in str(Path(kuration.__file__).resolve())
           assert kuration.__version__ == version("kuration-sdk")
           PY
+<<<<<<< Updated upstream
           for command in kur-curate kur-experiment kur-report kur-validate kur-list \
                          kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check \
                          kur-plugin-check; do
             /tmp/kuration-release-smoke/bin/"$command" --help
           done
+=======
+          while IFS= read -r command; do
+            "$RUNNER_TEMP"/kuration-release-smoke/bin/"$command" --help
+          done < <(
+            "$RUNNER_TEMP"/kuration-release-smoke/bin/python - <<'PY'
+          from importlib.metadata import distribution
+
+          scripts = distribution("kuration-sdk").entry_points
+          for entry_point in sorted(scripts, key=lambda item: item.name):
+              if entry_point.group == "console_scripts":
+                  print(entry_point.name)
+          PY
+          )
+>>>>>>> Stashed changes
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-distributions-${{ github.run_id }}
@@ -146,7 +161,7 @@ jobs:
     name: Publish and attach release artifacts
     if: github.event_name == 'release' && github.event.release.prerelease == false
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     environment:
       name: pypi

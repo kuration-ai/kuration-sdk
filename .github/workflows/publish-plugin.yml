@@ -17,7 +17,7 @@ jobs:
   prepare:
     name: Prepare plugin distribution
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'plugin-')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
     outputs:
       package: ${{ steps.plugin.outputs.package }}
@@ -143,10 +143,10 @@ jobs:
           check-wheel-contents dist/*.whl
       - name: Smoke-test installed plugin wheel
         run: |
-          python -m venv /tmp/kuration-plugin-release-smoke
-          /tmp/kuration-plugin-release-smoke/bin/python -m pip install . dist/*.whl
-          cd /tmp
-          /tmp/kuration-plugin-release-smoke/bin/python - <<'PY'
+          python -m venv "$RUNNER_TEMP"/kuration-plugin-release-smoke
+          "$RUNNER_TEMP"/kuration-plugin-release-smoke/bin/python -m pip install . dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP"/kuration-plugin-release-smoke/bin/python - <<'PY'
           import os
           from importlib.metadata import entry_points, version
 
@@ -171,7 +171,7 @@ jobs:
     name: Publish plugin distribution
     if: github.event_name == 'release' && github.event.release.prerelease == false && startsWith(github.event.release.tag_name, 'plugin-')
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     environment:
       name: pypi-plugins

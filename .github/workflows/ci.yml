@@ -14,7 +14,7 @@ permissions:
 jobs:
   test:
     name: Python ${{ matrix.python }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -63,7 +63,7 @@ jobs:
 
   minimum-dependencies:
     name: Minimum dependencies
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -79,7 +79,7 @@ jobs:
 
   core-only:
     name: Core-only installation
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -100,6 +100,35 @@ jobs:
       - name: Exercise core schemas and DSL
         run: python -m pytest tests/test_schema.py tests/test_grammar.py -q
 
+<<<<<<< Updated upstream
+=======
+  notebook-ui:
+    name: JupyterLab and browser UX
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install notebook and browser test runtimes
+        run: >-
+          python -m pip install '.[stats]' 'pytest>=8'
+          'nbclient>=0.10' 'ipykernel>=6.29' 'playwright>=1.48,<2'
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Execute the model-free gameplay notebook
+        run: >-
+          python scripts/execute_notebook.py
+          examples/notebooks/gameplay_stats.ipynb
+          "$RUNNER_TEMP"/gameplay_stats.executed.ipynb
+      - name: Exercise notebook-facing HTML in Chromium
+        env:
+          KURATION_BROWSER_TESTS: "1"
+        run: python -m pytest tests/test_jupyter_ui.py -q
+
+>>>>>>> Stashed changes
   platform-smoke:
     name: Core smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -120,7 +149,7 @@ jobs:
 
   optional-integrations:
     name: Optional integration (${{ matrix.extra }}, ${{ matrix.dependency_set }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -171,7 +200,7 @@ jobs:
 
   docs:
     name: Documentation site
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -182,9 +211,32 @@ jobs:
       - run: python -m pip install -e '.[docs]'
       - run: python -m mkdocs build --strict
 
+<<<<<<< Updated upstream
   plugins:
     name: Repository plugins
     runs-on: ubuntu-latest
+=======
+  dependency-audit:
+    name: Minimum dependency vulnerability audit
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install pinned audit tool
+        run: >-
+          python -m pip install -c .github/constraints/release.txt pip-audit
+      - name: Audit the resolved minimum dependency graph
+        run: >-
+          python -m pip_audit -r .github/constraints/minimum.txt
+
+  plugins:
+    name: External plugin template
+    runs-on: [self-hosted, linux, x64]
+>>>>>>> Stashed changes
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -220,8 +272,13 @@ jobs:
   build:
     name: Build and wheel smoke test
     needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs,
+<<<<<<< Updated upstream
             plugins]
     runs-on: ubuntu-latest
+=======
+            dependency-audit, plugins]
+    runs-on: [self-hosted, linux, x64]
+>>>>>>> Stashed changes
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -240,10 +297,10 @@ jobs:
       - name: Smoke-test installed wheel
         shell: bash
         run: |
-          python -m venv /tmp/kuration-wheel-smoke
-          /tmp/kuration-wheel-smoke/bin/python -m pip install dist/*.whl
-          cd /tmp
-          /tmp/kuration-wheel-smoke/bin/python - <<'PY'
+          python -m venv "$RUNNER_TEMP"/kuration-wheel-smoke
+          "$RUNNER_TEMP"/kuration-wheel-smoke/bin/python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP"/kuration-wheel-smoke/bin/python - <<'PY'
           from importlib.metadata import version
           from importlib.resources import files
           from pathlib import Path
@@ -260,11 +317,26 @@ jobs:
                        "render_html_report"):
               assert hasattr(kuration, name)
           PY
+<<<<<<< Updated upstream
           for command in kur-curate kur-experiment kur-report kur-validate kur-list \
                          kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check \
                          kur-plugin-check; do
             /tmp/kuration-wheel-smoke/bin/"$command" --help
           done
+=======
+          while IFS= read -r command; do
+            "$RUNNER_TEMP"/kuration-wheel-smoke/bin/"$command" --help
+          done < <(
+            "$RUNNER_TEMP"/kuration-wheel-smoke/bin/python - <<'PY'
+          from importlib.metadata import distribution
+
+          scripts = distribution("kuration-sdk").entry_points
+          for entry_point in sorted(scripts, key=lambda item: item.name):
+              if entry_point.group == "console_scripts":
+                  print(entry_point.name)
+          PY
+          )
+>>>>>>> Stashed changes
       - name: Record distribution hashes
         run: sha256sum dist/* > SHA256SUMS
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -280,8 +352,13 @@ jobs:
     name: Required CI
     if: ${{ always() }}
     needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs,
+<<<<<<< Updated upstream
             plugins, build]
     runs-on: ubuntu-latest
+=======
+            dependency-audit, plugins, build]
+    runs-on: [self-hosted, linux, x64]
+>>>>>>> Stashed changes
     steps:
       - name: Verify required jobs
         env:
