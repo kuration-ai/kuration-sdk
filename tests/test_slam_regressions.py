@@ -729,19 +729,36 @@ def test_cwd_relative_video_reingests_from_a_different_working_directory(tmp_pat
 def test_unrecordable_runtime_option_is_rejected_instead_of_dropped():
     with pytest.raises(ValueError, match="devices.*cannot be recorded"):
         SLAMReconstructor(depth_model="da3-base", devices={"cuda:0"})
+    # Non-allowlisted options only reach provenance with a custom runtime factory; the
+    # default factory rejects them by name first (see the eager-validation test below).
     with pytest.raises(ValueError, match="tuning.*cannot be recorded"):
-        SLAMReconstructor(depth_model="da3-base", tuning=object())
+        SLAMReconstructor(
+            depth_model="da3-base", runtime_factory=lambda **_: None, tuning=object()
+        )
 
     first = SLAMReconstructor(depth_model="da3-base", devices=["cuda:0"], window_size=8)
     second = SLAMReconstructor(depth_model="da3-base", devices=["cuda:1"], window_size=8)
     nested = SLAMReconstructor(
-        depth_model="da3-base", devices=["cuda:0"], window_size=8, extra={"a": [1, 2]}
+        depth_model="da3-base", devices=["cuda:0"], window_size=8,
+        runtime_factory=lambda **_: None, extra={"a": [1, 2]},
     )
 
     assert first.provenance["options"]["devices"] == ["cuda:0"]
     assert nested.provenance["options"]["extra"] == {"a": [1, 2]}
     assert first.provenance != second.provenance
     assert first.provenance != nested.provenance
+
+
+def test_default_runtime_option_allowlist_matches_the_real_operator_signature():
+    pytest.importorskip("torch")
+    import inspect
+
+    from kuration.gameplay.slam._runtime import SLAMOperator
+    from kuration.gameplay.slam.runner import DEFAULT_RUNTIME_OPTIONS
+
+    accepted = set(inspect.signature(SLAMOperator.__init__).parameters)
+    accepted -= {"self", "depth_model", "embedding_model", "embeddings"}
+    assert accepted == set(DEFAULT_RUNTIME_OPTIONS)
 
 
 def test_pointcloud_scene_renders_a_cloud_without_colors():

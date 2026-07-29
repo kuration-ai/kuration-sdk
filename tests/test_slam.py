@@ -502,6 +502,25 @@ def test_runner_rejects_conflicting_embedding_sources():
         )
 
 
+def test_unknown_default_runtime_options_are_rejected_before_any_cached_path(tmp_path):
+    with pytest.raises(TypeError, match="tolerence"):
+        gameplay.SLAMReconstructor(object(), tolerence=0.1)
+    frames = {"clip": np.zeros((1, 2, 2, 3), dtype=np.uint8)}
+    with pytest.raises(TypeError, match="window_sizes"):
+        run_slam_reconstruction(frames, depth_model=object(), window_sizes=8)
+    # Reusing an existing manifest must not silently ignore the same mistake.
+    manifest = export_slam_output(_output(), tmp_path / "existing")
+    with pytest.raises(TypeError, match="tolerence"):
+        prepare_slam_input(
+            manifest, runner_options={"depth_model": object(), "tolerence": 0.1}
+        )
+    # A custom runtime factory owns its own signature, so its options pass through.
+    runner = gameplay.SLAMReconstructor(
+        object(), runtime_factory=lambda **_: None, custom_option=1
+    )
+    assert runner.runner_options["custom_option"] == 1
+
+
 def test_point_cloud_confidence_curation_and_output(tmp_path):
     cloud = PointCloudArtifact(
         points=np.array(

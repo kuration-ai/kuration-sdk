@@ -141,6 +141,20 @@ assert "faiss" not in sys.modules
     subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True)
 
 
+def test_slam_star_import_stays_torch_free_and_dir_lists_lazy_runtime_names():
+    code = """
+import sys
+namespace = {}
+exec("from kuration.gameplay.slam import *", namespace)
+assert "SLAMReconstructor" in namespace
+assert "SLAMOperator" not in namespace
+import kuration.gameplay.slam as slam
+assert {"CameraPose", "SLAMOperator", "SLAMOutput"} <= set(dir(slam))
+assert "torch" not in sys.modules
+"""
+    subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True)
+
+
 def test_core_import_does_not_import_or_register_gameplay():
     code = """
 import sys

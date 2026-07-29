@@ -236,6 +236,33 @@ class SLAMReconstruction:
         return str(self.manifest)
 
 
+# Keyword arguments the default runtime (``_runtime.SLAMOperator``) accepts beyond the model
+# inputs named above. Kept static so validation never imports torch; pinned against the real
+# signature in tests/test_slam_regressions.py.
+DEFAULT_RUNTIME_OPTIONS = frozenset({
+    "output_pointcloud", "devices", "window_size", "overlap", "bridge_size",
+    "process_res", "conf_thresh", "num_max_points", "top_k",
+    "similarity_threshold", "seed", "verbose",
+})
+
+
+def _validate_runtime_options(runtime_factory, runtime_options: Mapping[str, Any]) -> None:
+    """Reject options the default runtime cannot accept, before any cached path can hide them.
+
+    A custom ``runtime_factory`` owns its own signature, so only the default factory is
+    checked. Without this, a typo of a caller-level keyword (``tolerence=``) lands here and is
+    silently ignored whenever an existing manifest or cache hit skips runtime construction.
+    """
+    if runtime_factory is not None or not runtime_options:
+        return
+    unknown = sorted(set(runtime_options) - DEFAULT_RUNTIME_OPTIONS)
+    if unknown:
+        raise TypeError(
+            f"unknown SLAM runtime option(s) {unknown}; the default runtime accepts "
+            f"{sorted(DEFAULT_RUNTIME_OPTIONS)}"
+        )
+
+
 class SLAMReconstructor:
     """Video/frame-to-reconstruction workflow that feeds Kuration's curation pipeline.
 
@@ -257,6 +284,7 @@ class SLAMReconstructor:
     ) -> None:
         if embedding_model is not None and embeddings is not None:
             raise ValueError("pass embedding_model or embeddings, not both")
+        _validate_runtime_options(runtime_factory, runtime_options)
         self.runner_options: dict[str, Any] = {
             "depth_model": depth_model,
             "embedding_model": embedding_model,
@@ -454,6 +482,7 @@ def run_slam_reconstruction(
     SALAD, or FAISS dependency. With no explicit factory, the function lazily imports the
     private ``kuration.gameplay.slam._runtime.SLAMOperator``.
     """
+    _validate_runtime_options(runtime_factory, runtime_options)
     frames = _validated_frames(data)
     if depth_model is None:
         raise ValueError("running SLAM needs depth_model; precomputed SLAM input does not")
@@ -584,6 +613,15 @@ def prepare_slam_input(
         raise ValueError("resume and preflight must be true or false")
     if cache_key is not None and (not isinstance(cache_key, str) or not cache_key.strip()):
         raise ValueError("cache_key must be a non-empty string or None")
+    # Validate before the manifest/cache short-circuits below, which never build a runtime and
+    # would otherwise ignore an unusable option without a word.
+    runner = dict(runner_options or {})
+    named = {"depth_model", "embedding_model", "embeddings", "depth_model_id",
+             "embedding_model_id", "runtime_factory", "progress"}
+    _validate_runtime_options(
+        runner.get("runtime_factory"),
+        {key: value for key, value in runner.items() if key not in named},
+    )
     _emit(progress, "slam-prepare", "start", total=None)
     manifest = _existing_manifest(source)
     if manifest is not None:

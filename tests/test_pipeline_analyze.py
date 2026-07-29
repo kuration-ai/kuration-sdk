@@ -437,6 +437,16 @@ def test_artifact_pipeline_names_its_dataset(tmp_path):
     assert result["segments_analyzed"] == 3
 
 
+def test_analysis_mode_is_the_public_resolution_rule(tmp_path):
+    artifact = _artifact_pipeline(_written_dataset(tmp_path))
+    assert artifact.analysis_mode() == "dataset"
+    assert artifact.analysis_mode("stream") == "stream"
+    stream = _pipeline()
+    assert stream.analysis_mode() == "stream"
+    with pytest.raises(ValueError, match="'dataset', 'stream', or None"):
+        stream.analysis_mode("batch")
+
+
 def test_analyze_rejects_stream_only_options_in_dataset_mode(tmp_path):
     dataset = _written_dataset(tmp_path)
     with pytest.raises(ValueError, match="tick-stream path"):

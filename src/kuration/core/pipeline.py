@@ -1624,6 +1624,18 @@ class Pipeline:
                 f"{len(datasets)}: {datasets} — analyze them one at a time")
         return datasets[0]
 
+    def analysis_mode(self, mode: Optional[str] = None) -> str:
+        """Resolve the analyzer execution mode this pipeline runs under.
+
+        ``None`` resolves to ``"dataset"`` when the source is a written kuration dataset and
+        ``"stream"`` otherwise — exactly the rule :meth:`analyze`/:meth:`enrich`/:meth:`check`
+        apply. Domain operators that accept mode-specific options call this to reject an
+        inapplicable option up front instead of re-deriving the rule from pipeline internals.
+        """
+        if mode not in {None, "dataset", "stream"}:
+            raise ValueError("analysis_mode(mode=...) must be 'dataset', 'stream', or None")
+        return mode or ("dataset" if self._artifact_datasets() else "stream")
+
     def _drive_analyzer(self, name: str, parameters: Optional[dict] = None, *,
                         mode: Optional[str] = None, inputs=None,
                         batch_size: Optional[int] = None, analyzer=None,
@@ -1639,7 +1651,7 @@ class Pipeline:
             raise ValueError(
                 f"{_caller}(inputs=...) must be a non-empty sequence of tokens"
             )
-        resolved = mode or ("dataset" if self._artifact_datasets() else "stream")
+        resolved = self.analysis_mode(mode)
         from .analyzers import drive_dataset_analyzer, get_analyzer, run_stream_analyzer
 
         if resolved == "dataset":

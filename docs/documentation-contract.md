@@ -151,7 +151,7 @@ All non-underscore methods intentionally exposed by `Pipeline` are public:
   for registered operators; `with_metadata` and `enrich` retain input-backed state on a
   pipeline; `apply`, `organize`, and `curate` remain compatibility aliases.
 - Inspection: the defensive `metadata` property, `head`, `describe`, `preview`, `review`,
-  `explain`.
+  `explain`, and `analysis_mode` (the resolved analyzer execution mode).
 - Terminals: `collect`, `report`, `stats`, `analyze`, `check`, `experiment`, `output`.
 
 Registered operator methods normalize the local component name (`acme/signal-diversity` becomes

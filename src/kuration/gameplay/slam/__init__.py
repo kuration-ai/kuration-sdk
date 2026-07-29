@@ -88,15 +88,24 @@ QUALITY_OPERATOR_PARAMETERS: dict[str, Any] = {
 }
 
 
+# Torch-backed names served lazily below; deliberately NOT in __all__ so a star import stays
+# zero-Torch like everything else in this module. Attribute access still works.
+_LAZY_RUNTIME_NAMES = ("CameraPose", "SLAMOperator", "SLAMOutput")
+
+
 def __getattr__(name: str):
     """Lazily expose `SLAMOperator`/`CameraPose`/`SLAMOutput` so importing
     `kuration.gameplay.slam` keeps a zero-Torch import graph -- only code
     that actually touches `SLAMOperator` pulls in `torch`."""
-    if name in {"SLAMOperator", "CameraPose", "SLAMOutput"}:
+    if name in _LAZY_RUNTIME_NAMES:
         from . import _runtime
 
         return getattr(_runtime, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *_LAZY_RUNTIME_NAMES})
 
 
 def register() -> None:
@@ -205,16 +214,13 @@ __all__ = [
     "QUALITY_TRANSFORM_NAME",
     "SELECTION_FORMAT",
     "SELECTION_VERSION",
-    "SLAMCurationResult",
-    "SLAMReconstructor",
-    "SLAMReconstruction",
-    "CameraPose",
     "PointCloudArtifact",
-    "SLAMOutput",
-    "SLAMOperator",
+    "SLAMCurationResult",
+    "SLAMMotion",
     "SLAMPreflightResult",
     "SLAMQuality",
-    "SLAMMotion",
+    "SLAMReconstruction",
+    "SLAMReconstructor",
     "SLAMTrajectoryAdapter",
     "TRANSFORM_NAME",
     "TRACKING_CONFIDENCE",

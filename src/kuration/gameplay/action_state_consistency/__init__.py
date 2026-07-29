@@ -98,7 +98,7 @@ def attach_action_state_consistency(
     replace: bool = False,
 ):
     """Run action-state consistency and retain the verdict on a derived pipeline."""
-    resolved = mode or ("dataset" if pipeline._artifact_datasets() else "stream")
+    resolved = pipeline.analysis_mode(mode)
     dataset_options = {
         "frames": frames,
         "actions": actions,
