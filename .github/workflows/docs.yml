@@ -23,7 +23,7 @@ permissions:
 jobs:
   build:
     name: Build documentation
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, aca]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,7 +44,7 @@ jobs:
     name: Deploy to GitHub Pages
     if: github.ref == 'refs/heads/main'
     needs: build
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, aca]
     timeout-minutes: 10
     environment:
       name: github-pages

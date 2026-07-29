@@ -13,7 +13,7 @@ jobs:
   prepare:
     name: Prepare tested distributions
     if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'plugin-')
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, aca]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -170,7 +170,7 @@ jobs:
     name: Publish and attach release artifacts
     if: github.event_name == 'release' && github.event.release.prerelease == false
     needs: prepare
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, aca]
     timeout-minutes: 10
     environment:
       name: pypi
