@@ -12,21 +12,25 @@ if TYPE_CHECKING:
 
 def action_state_checker(
     *,
-    baselines: dict,
+    baselines: dict | None = None,
     anomaly_type: str = "action_state",
+    calibration: dict | None = None,
 ) -> "Analyzer":
     """Construct the built-in action-state consistency analyzer.
 
     This is the direct Python spelling for
-    ``get_analyzer("aintropy/action-state-consistency", ...)``.
+    ``get_analyzer("aintropy/action-state-consistency", ...)``. Without ``baselines`` the
+    checker self-calibrates (leave-one-out consensus outlier detection); driving it then
+    requires explicit ``controls=``.
     """
     from ..core.analyzers import get_analyzer
 
-    return get_analyzer(
-        "aintropy/action-state-consistency",
-        anomaly_type=anomaly_type,
-        baselines=baselines,
-    )
+    params: dict = {"anomaly_type": anomaly_type}
+    if baselines is not None:
+        params["baselines"] = baselines
+    if calibration is not None:
+        params["calibration"] = calibration
+    return get_analyzer("aintropy/action-state-consistency", **params)
 
 
 def slam_pipeline(

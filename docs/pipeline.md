@@ -95,7 +95,7 @@ custom domains and plugins follow the same registered-operator mechanism.
 |---|---|---|
 | `.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None)` | a `JoinedMediaAdapter` with a resolved source→video mapping and lazy media column |
 | `.pixel_shift` | `(*, controls=None, boundary="exclude")` | the built-in `aintropy/pixel-shift` operator |
-| `.action_state_consistency` | `(*, baselines, anomaly_type="action_state", controls=None, boundary="exclude", mode=None, inputs=None, batch_size=None, metadata_key="action_state_consistency", replace=False, **dataset_options)` | runs the built-in analyzer once and returns a pipeline carrying its verdict under `metadata["gameplay"][metadata_key]` |
+| `.action_state_consistency` | `(*, baselines=None, anomaly_type="action_state", controls=None, calibration=None, boundary="exclude", mode=None, inputs=None, batch_size=None, metadata_key="action_state_consistency", replace=False, **dataset_options)` | runs the built-in analyzer once and returns a pipeline carrying its verdict under `metadata["gameplay"][metadata_key]`; `baselines=` checks against external calibration, `controls=` alone self-calibrates against the other clips' leave-one-out consensus |
 | `.slam_motion_diversity` | `(*, axis="slam_path_length", bins=8)` | the built-in `aintropy/slam-motion-diversity` operator |
 | `.slam_quality` | `(*, min_score=None, **quality_options)` | the built-in `aintropy/slam-quality` operator |
 | `.window` | `(window, stride=None, unit="steps")` | the `Segmenter` (stride defaults to `window`) |

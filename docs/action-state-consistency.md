@@ -126,6 +126,50 @@ That reference-building script is itself dataset-specific tooling (it derives va
 real ASG/TeaPearce reference gameplay) and is kept out of the reusable gameplay domain —
 nothing stops any caller from building a baselines dict by hand instead.
 
+### Self-calibrated mode: no baselines at all
+
+Omitting `baselines` (and naming `controls=` instead) switches the check to **relative
+outlier detection**: every measured instance is pooled, and each clip is judged against
+consensus baselines derived from *the other clips'* measurements — leave-one-out, so one
+bad clip never vouches for itself.
+
+```python
+pipeline.action_state_consistency(controls=["W", "S"])   # no baselines anywhere
+```
+
+Be clear about what this mode means before reaching for it:
+
+- **It finds the clip that disagrees with the corpus** — a desynced recording, a remapped
+  key, doctored footage — without any reference measurement.
+- **It structurally cannot find a corpus-wide problem.** If every clip is desynced the
+  same way, the consensus *is* the desync and everything passes. Supplied baselines remain
+  the externally calibrated ground truth; self-calibration is a labeled mode, never a
+  silent fallback.
+- **It refuses to guess from noise.** A `(control, press-length)` cell is judged only when
+  enough independent measurements agree on a direction; pools below `min_clips` refuse to
+  issue verdicts at all. The knobs (defaults in `DEFAULT_CALIBRATION`) come in via
+  `calibration=`:
+
+```python
+pipeline.action_state_consistency(
+    controls=["W", "S"],
+    calibration={           # all optional; shown with their defaults
+        "min_clips": 3,       # smallest pool that can define a consensus
+        "min_samples": 5,     # measurements a cell needs from OTHER clips to be judged
+        "sign_consensus": 0.8,  # fraction of nonzero shifts that must agree on direction
+        "tolerance": 1.5,     # widening of the derived magnitude bounds
+    },
+)
+```
+
+Derived `expected_sign` is the consensus direction; `min`/`max` are the 5th/95th
+percentile of the pooled `|shift|` widened by `tolerance`. The attached result records the
+mode, the knobs, and the pooled consensus under `result["calibration"]`
+(`{"mode": "self-calibrated", ..., "derived_baselines": {...}}`), so a verdict judged
+against inferred normality says so in the artifact. Instances in cells that could not be
+derived stay unjudged and carry no verdict weight — a clip with nothing but unjudged
+instances is `inconclusive`, not blessed.
+
 ## Usage
 
 ### Keep the result on the pipeline

@@ -632,6 +632,103 @@ def test_action_state_direct_method_supports_labels_and_loud_replacement():
     assert replaced.metadata["gameplay"]["reference"]["result"]["passed"] is True
 
 
+class _MultiVideoProvider:
+    """FakeVideoProvider for several URIs, so clips can carry different footage."""
+
+    capabilities = {"streaming": True, "variable_frame_rate": True}
+
+    def __init__(self, frames_by_uri):
+        self.frames_by_uri = frames_by_uri
+
+    def probe(self, uri):
+        from kuration import VideoMetadata
+
+        frames = self.frames_by_uri[uri]
+        return VideoMetadata(uri, frames[0].shape[1], frames[0].shape[0],
+                             len(frames), float(len(frames) - 1), 1.0)
+
+    def iter_refs(self, uri, *, source_id=None):
+        from kuration import FrameRef
+
+        for index in range(len(self.frames_by_uri[uri])):
+            yield FrameRef(uri, source_id or uri, index, float(index))
+
+    def decode_batch(self, refs):
+        return np.stack([self.frames_by_uri[ref.uri][ref.frame_index] for ref in refs])
+
+
+def _multi_clip_pipeline(n_clips=5, outlier="clip5", press_at=3, n_frames=8, **options):
+    """n_clips identical W-press clips, except ``outlier`` whose footage runs backwards --
+    its press produces the opposite pixel shift, the relative anomaly self-calibration
+    exists to catch."""
+    forward = _shifting_noise_frames(n_frames)
+    sources, frames_by_uri = {}, {}
+    for index in range(1, n_clips + 1):
+        clip = f"clip{index}"
+        actions = [_action() for _ in range(n_frames)]
+        actions[press_at] = _action(w=True)
+        sources[clip] = [
+            {"t": step, **{column: float(value)
+                           for column, value in zip(ACTION_COLUMNS, actions[step],
+                                                    strict=True)}}
+            for step in range(n_frames)]
+        frames_by_uri[f"{clip}.mp4"] = forward[::-1] if clip == outlier else forward
+    return (input(sources, schema=GAMEPLAY_SCHEMA, fields={"action": ACTION_COLUMNS},
+                  time="t")
+            .join_video({clip: f"{clip}.mp4" for clip in sources},
+                        provider=_MultiVideoProvider(frames_by_uri), on="frame_index")
+            .window(4, stride=2)
+            .options(on_error="raise", **options))
+
+
+# Enough independent evidence for a 5-clip pool: each held-out clip leaves 4 measurements,
+# and a normal clip's pool contains the outlier (3 of 4 agree -> consensus 0.75).
+SELF_CALIBRATION = {"min_samples": 3, "sign_consensus": 0.7}
+
+
+def test_action_state_self_calibrates_without_baselines():
+    result = _multi_clip_pipeline().analyze(
+        asc.ANALYZER_NAME,
+        {"anomaly_type": "action_state", "calibration": SELF_CALIBRATION},
+        controls=["W"])
+
+    assert result["passed"] is False
+    assert result["summary"]["inconsistent"] == ["clip5"]
+    assert result["summary"]["consistent"] == ["clip1", "clip2", "clip3", "clip4"]
+    calibration = result["calibration"]
+    assert calibration["mode"] == "self-calibrated"
+    assert calibration["min_samples"] == 3
+    assert calibration["derived_baselines"]["W"]["1"]["expected_sign"] == 1
+
+
+def test_action_state_direct_method_self_calibrates_and_records_the_consensus():
+    enriched = _multi_clip_pipeline().action_state_consistency(
+        controls=["W"], calibration=SELF_CALIBRATION)
+
+    attachment = enriched.metadata["gameplay"]["action_state_consistency"]
+    assert attachment["result"]["passed"] is False
+    assert attachment["result"]["summary"]["inconsistent"] == ["clip5"]
+    # The verdict carries the record of what "normal" was inferred to be.
+    assert attachment["result"]["calibration"]["mode"] == "self-calibrated"
+    assert "W" in attachment["result"]["calibration"]["derived_baselines"]
+    assert attachment["request"]["parameters"] == {
+        "anomaly_type": "action_state", "calibration": SELF_CALIBRATION}
+
+
+def test_action_state_requires_baselines_or_controls_and_rejects_stray_calibration():
+    pipeline = _gameplay_pipeline()
+    with pytest.raises(ValueError, match="baselines= .*or.*controls="):
+        pipeline.action_state_consistency()
+    with pytest.raises(ValueError, match="self-calibrated"):
+        pipeline.action_state_consistency(
+            baselines=BASELINES, controls=["W"], calibration=SELF_CALIBRATION)
+    # Without controls there is no configured set to default to: loud at drive time.
+    with pytest.raises(ValueError, match="needs controls="):
+        _multi_clip_pipeline().analyze(
+            asc.ANALYZER_NAME,
+            {"anomaly_type": "action_state", "calibration": SELF_CALIBRATION})
+
+
 def test_action_state_analyzer_reports_an_inconsistent_clip_from_a_tick_stream():
     result = _gameplay_pipeline().analyze(
         asc.ANALYZER_NAME,
