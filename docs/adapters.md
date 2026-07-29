@@ -12,6 +12,22 @@ class InputAdapter(Protocol):
     def ticks(self, source_uri: str) -> Iterable[Tick]: ...
 ```
 
+Adapters may also participate in `kur-import` auto-detection:
+
+```python
+class CaptureAdapter:
+    @staticmethod
+    def detect_source(uri):
+        return 100 if uri.endswith(".capture") else 0
+```
+
+`detect_source()` returns false/zero for no match, or a positive confidence. The uniquely
+highest-confidence registered adapter wins; ties fail and ask for `--adapter NAME`. Tensor
+adapters can additionally provide a static
+`import_arrays(uri) -> dict[str, numpy.ndarray]` hook to preserve raw modality ranks and dtypes.
+Adapters without that hook run through their normal `ticks()` contract and require either safe
+schema inference or an explicit schema/config.
+
 ## The canonical `Tick`
 
 ```python

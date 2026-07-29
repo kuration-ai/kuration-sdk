@@ -28,12 +28,22 @@ parameters fail before source rows are read.
 
 A transform factory is registered with `register_batch_transform()` (or `register_transform`),
 declaring scalar outputs, `field:`/`feature:`/`media:` inputs, semantic media requirements, and
-resource hints. Boundary-sensitive transforms may additionally declare integer `lookbehind` and
-`lookahead` tick counts. The typed `TransformContext` exposes per-row arrays through
+resource hints. Boundary-sensitive transforms may additionally declare `lookbehind` and
+`lookahead` tick counts, either as one integer shared by every input or as a
+`{declared input token: count}` mapping when only some inputs need context. The typed
+`TransformContext` exposes per-row arrays through
 `ctx.before("field:signal")` and `ctx.after("field:signal")`;
 `ownership="rightmost-start"` also supplies immutable `ctx.owned_lengths`, preventing overlapping
 windows from claiming the same event start. The rc2 batch keys remain available during the
-release-candidate compatibility window. A pipeline invokes the transform with
+release-candidate compatibility window.
+
+Declared input tokens are *roles*. A per-use `inputs=` remapping supplies one same-kind token per
+role (arity and kind are validated when the pipeline is built), so read every input through
+`ctx.input_token("media:frame")` — or `ctx.inputs`, the role→token mapping in declaration order —
+rather than hardcoding the registration token, which a remapped use would not have. `field:`
+inputs arrive as `(B,T,E,D)` arrays NaN-padded to the widest extent in the batch; `ctx.valid_steps`
+(also `batch["valid_steps"]`) gives each row's real timestep count, so a ragged batch's padding is
+never averaged into a measurement by accident. A pipeline invokes the transform with
 `.transform(...)`; outputs behave like any other scalar selection feature. Use `get_transform()`
 for direct lookup. Accelerator libraries must be imported inside the factory or execution method
 so discovery and `import kuration` remain dependency-light.
@@ -71,8 +81,53 @@ result = checker.summary()
 ```
 
 Analyzers are discoverable with `kur-list analyzers` and `kur-describe analyzer ...`, but are
-not implicit pipeline stages. Keeping lifecycle ownership explicit prevents worker-local state
-from being mistaken for a dataset-wide result.
+not implicit selection stages. Keeping lifecycle ownership explicit prevents worker-local state
+from being mistaken for a dataset-wide result. Two optional hooks make an analyzer drivable, and
+declaring one is what `Pipeline.enrich()` and `Pipeline.analyze()` dispatch on:
+
+| hook | driven by | evidence it sees |
+|---|---|---|
+| `check_dataset(dataset, **options)` → mapping with a boolean `passed` | `run_dataset_analyzer()`, `Pipeline.enrich()` / `Pipeline.analyze()` on an artifact-backed pipeline, `kur-check DATASET --analyzer NAME [--analyzer-config PATH] [--analyzer-options PATH]` | written shards and their manifest |
+| `add_batch(batch, ctx)` → `None` | `run_stream_analyzer()`, `Pipeline.enrich()` / `Pipeline.analyze()` on any `input(...)` pipeline | segmented raw ticks with lazy media, in one bounded pass |
+
+`add_batch` receives exactly what a batch transform's `transform_batch` receives, because it is
+fed by the same bounded machinery: a batch keyed by the analyzer's declared input tokens plus
+`segment_ids` and `valid_steps`, and a `TransformContext` whose `input_token(role)`,
+`before(token)`, and `after(token)` resolve declared roles and boundary context. It accumulates
+instead of returning scalars, so it must return `None`. Declare the inputs at registration —
+`field:`/`media:` tokens only, since a single raw pass has no feature stage to produce a
+`feature:` input:
+
+```python
+register_analyzer("acme/clip-check", build_clip_checker,
+                  description="Accumulate evidence across every segment in a clip",
+                  parameters=PARAMETERS,
+                  inputs=("media:frame", "field:action"),
+                  media_requirements={"kind": "video-frame", "layout": "HWC"},
+                  lookbehind={"field:action": 1}, lookahead=3)
+
+pipeline = pipeline.enrich(
+    "acme/clip-check",
+    config,
+    namespace="acme",
+    key="clip_check",
+    controls=["W"],
+)
+result = pipeline.metadata["acme"]["clip_check"]["result"]
+```
+
+Declarations are validated at registration (and by `kur-plugin-check`), so a malformed one fails
+at import rather than inside a long run. `**options` passed to `enrich()` or `analyze()` reach
+the hook being driven; `inputs=`/`batch_size=` remap and size the stream path. `enrich()` returns
+a new pipeline carrying the result, while `analyze()` is the explicit detached-result form.
+A `stream_result()` method may return a mapping with a boolean `passed` (mirroring
+`check_dataset`) that is merged into the driver's result — the place to state a verdict and, if
+the analyzer records positions, which coordinate space they live in.
+
+Segment ids on the stream path are the real `(source_id, start_idx, end_idx)` of the source
+window, so an analyzer's own cross-window de-duplication works in true source coordinates. The
+artifact path cannot offer that (a manifest records no source start offset); an analyzer that
+measures positions should say so rather than imply source frames.
 
 The SDK includes `kuration/split-leakage` for auditing existing or imported split assignments.
 It accepts repeated observations (for example, many segments from one clip), detects a source
@@ -105,14 +160,14 @@ The dependency-light validator supports the descriptor subset used by SDK contra
 array length/uniqueness/`items`, and nested object `properties`, `required`, and
 `additionalProperties`. Validation is recursive and reports the failing parameter path.
 
-## Repository plugins
+## Built-ins and external plugins
 
-New maintained extensions belong under the repository's
-[`plugins/` workspace](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins). Each child is an
-independent Python distribution with its own dependencies, tests, documentation, and
-`kuration.plugins` entry point; plugin code is intentionally excluded from the core SDK wheel.
-Copy `plugins/_template`, use a namespaced component name, and let the plugin CI job exercise the
-same installation and wheel checks used for every sibling.
+First-party standard capabilities such as pixel shift, action-state consistency, and SLAM ship in
+the SDK wheel under `kuration.gameplay`, register when that domain is imported or discovered,
+and keep heavy frameworks in optional extras.
+Use [`plugins/_template`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins/_template)
+for independently versioned or externally distributed behavior. An external plugin owns its
+dependencies, tests, documentation, and `kuration.plugins` entry point.
 
 Run the complete isolated contribution contract locally with:
 
@@ -136,5 +191,7 @@ contract testing, discovery, and plugin-packaging examples. The runnable compani
 [`examples/05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py).
 
 Artifacts and manifests carry `artifact_format_version`; jobs carry `job_schema_version`.
-Unversioned documents are legacy `0.0`, current documents are `1.0`, and unsupported future
-major versions are rejected. Use `migrate()` or `kur-migrate` for deterministic upgrades.
+Unversioned documents are legacy `0.0`. The current artifact format is `1.2` and the current job
+schema is `1.0`; documents newer than the corresponding supported version are rejected, including
+future minor versions. Use `migrate()` or `kur-migrate` for deterministic upgrades where a
+migration is available.

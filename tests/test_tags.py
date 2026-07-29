@@ -13,8 +13,8 @@ from kuration import (
     load_strategy,
     write_dataset,
 )
-from kuration.tags import compile_tagger
-from kuration.select import enforce_tag_coverage
+from kuration.core.tags import compile_tagger
+from kuration.core.select import enforce_tag_coverage
 
 SCHEMA = SchemaSpec.from_dict({
     "name": "t", "entity_axis": "e", "sample_hz": 1.0,

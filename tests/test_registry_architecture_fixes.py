@@ -8,13 +8,13 @@ import pytest
 
 from kuration import (ComponentDescriptor, Registry, SchemaSpec, Segment, Segmenter, Tick,
                        default_registry, input)
-from kuration.execution import ResourceSpec
-from kuration.features import FeatureEngine
-from kuration.output.containers import Container, read_shard
-from kuration.output.spec import Modality, OutputSpec
-from kuration.output.stream import stream_source_shards
-from kuration.plugins import plugin_provenance
-from kuration.scoring import score_sources
+from kuration.core.execution import ResourceSpec
+from kuration.core.features import FeatureEngine
+from kuration.core.output.containers import Container, read_shard
+from kuration.core.output.spec import Modality, OutputSpec
+from kuration.core.output.stream import stream_source_shards
+from kuration.core.plugins import plugin_provenance
+from kuration.core.scoring import score_sources
 
 
 SCHEMA = SchemaSpec.from_dict({
@@ -286,7 +286,7 @@ def test_ray_worker_receives_metric_plugin_modules_even_with_one_worker(monkeypa
             seen["modules"] = items[0][1][-2]
             return iter(fn(item) for item in items)
 
-    import kuration.execution as execution
+    import kuration.core.execution as execution
     monkeypatch.setattr(execution, "RayExecutionBackend", FakeRayBackend)
     ticks = [Tick(i, {0: {"x": float(i), "y": 0.0}}) for i in range(2)]
 
@@ -296,9 +296,17 @@ def test_ray_worker_receives_metric_plugin_modules_even_with_one_worker(monkeypa
         def ticks(self, source):
             return ticks
 
-    segments, errors, _ = score_sources(
-        schema=SCHEMA, adapter=Adapter(), sources=["s"], define={},
-        registered=["acme/ray"], segmenter=Segmenter(2, 2), executor="ray",
-        workers=1, on_error="raise", registry=registry)
+    # The fake backend runs the worker-side load_plugins(__name__) in-process, which would
+    # leave this test module in the global loaded-plugins set and get forwarded to the real
+    # Ray workers of later tests (where it cannot be imported) — snapshot and restore.
+    import kuration.core.plugins as plugin_state
+    snapshot = plugin_state._plugin_state_snapshot()
+    try:
+        segments, errors, _ = score_sources(
+            schema=SCHEMA, adapter=Adapter(), sources=["s"], define={},
+            registered=["acme/ray"], segmenter=Segmenter(2, 2), executor="ray",
+            workers=1, on_error="raise", registry=registry)
+    finally:
+        plugin_state._restore_plugin_state(snapshot, None)
     assert segments and not errors
     assert __name__ in seen["modules"]

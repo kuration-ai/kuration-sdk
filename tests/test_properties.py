@@ -8,7 +8,7 @@ import numpy as np
 from hypothesis import given, strategies as st
 
 from kuration import Segmenter, Tick, assign_splits, migrate_config, migrate_job
-from kuration.binning import bin_codes
+from kuration.core.binning import bin_codes
 
 
 @given(

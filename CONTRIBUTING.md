@@ -26,15 +26,15 @@ methods, or framework support:
 python -m pip install -e '.[all,dev]'
 ```
 
-Optional dependencies must remain optional. The core package depends only on NumPy; imports of
+Optional dependencies must remain optional. The base install depends only on NumPy; imports of
 heavy integrations should be lazy and should raise a clear installation hint when unavailable.
 
 ## Design rules
 
-- Keep domain knowledge out of the core. Dataset-specific behavior belongs in an
-  `InputAdapter`, `MediaProvider`, `OutputEncoder`, registered metric, `BatchTransform`,
-  `SegmentScorer`, or another documented
-  extension seam.
+- Keep the execution framework domain-neutral. First-party domain behavior may ship as a
+  namespaced built-in adapter, analyzer, operator, or transform when it has an owner, a closed
+  contract, focused tests, documentation, and lazy optional dependencies. External or
+  independently versioned behavior belongs behind the same extension seams as a plugin.
 - Validate configuration early and loudly. Unknown fields, operators, methods, and parameters
   must not silently fall back.
 - Preserve deterministic results across worker counts for a fixed seed.
@@ -55,7 +55,8 @@ error handling and assert that their candidate and output pools are non-empty.
 
 Keep public interfaces synchronized across:
 
-- implementation and exports in `src/kuration/`;
+- generic implementation and exports in `src/kuration/core/`;
+- maintained domain implementation in `src/kuration/gameplay/`;
 - exact signatures in [docs/api.md](docs/api.md);
 - fluent behavior in [docs/pipeline.md](docs/pipeline.md);
 - runnable examples when the recommended workflow changes;
@@ -73,8 +74,10 @@ Use the narrowest supported seam for the behavior:
 |---|---|
 | Reuse a named sequence of fluent calls | compositional operator |
 | Read a new source format | input adapter |
+| Compute bounded model/device features over batches | batch transform |
 | Compute one scalar from one segment window | registered metric |
 | Score segments using a whole pool, model, or reference set | segment scorer |
+| Accumulate state across a stream or audit a written artifact | analyzer |
 | Derive an output tensor or encoded value | output encoder |
 | Change how segments receive selection priority | selection method |
 | Remove segments before selection | pre-pass filter |
@@ -116,7 +119,7 @@ def balance_signal(pipeline, *, field, bins=8):
     )
 
 
-pipeline = pipeline.apply("acme/balance-signal", field="signal", bins=6)
+pipeline = pipeline.balance_signal(field="signal", bins=6)
 ```
 
 The handler must return a pipeline derived from its argument and add at least one ordinary
@@ -330,13 +333,11 @@ An output preset is a factory `(schema, **parameters) -> OutputSpec` registered 
 `register_preset`. It should assemble ordinary declared modalities rather than bypass output
 validation. Include a closed parameter schema and test strict categorical behavior.
 
-### Packaging extension plugins
+### Packaging external plugins
 
-Maintained plugins live under [`plugins/`](plugins/README.md). Copy `plugins/_template` and keep
-each child as an independent distribution rather than adding it to the `kuration-sdk` wheel.
-That keeps optional dependencies isolated and lets contributors test or release one plugin at a
-time. Registration code may be loaded explicitly through a job's `plugins` list or automatically
-by the `kuration.plugins` entry-point group:
+Copy [`plugins/_template`](plugins/README.md) for extensions that should remain independently
+versioned or distributed outside `kuration-sdk`. Registration code may be loaded explicitly
+through a job's `plugins` list or automatically by the `kuration.plugins` entry-point group:
 
 ```toml
 [project.entry-points."kuration.plugins"]
@@ -404,6 +405,8 @@ Keep pull requests focused and describe:
 
 - the problem and intended behavior;
 - the compatibility or artifact-format impact;
+- the extension kind affected (adapter, analyzer, container, encoder, filter, method, metric,
+  operator, preset, scorer, or transform);
 - tests and examples run;
 - optional dependencies or compute implications;
 - documentation updated.

@@ -4,11 +4,25 @@ from __future__ import annotations
 import io
 import sys
 
-from kuration import SchemaSpec, Segmenter, Tick, load_plugins, load_strategy, write_dataset
-from kuration.dsl.registry import METRICS
-from kuration.output import OutputSpec
-from kuration.progress import cli_progress
-from kuration.scoring import score_sources
+import pytest
+
+from kuration import (
+    SchemaSpec,
+    Segmenter,
+    Tick,
+    input,
+    load_plugins,
+    load_strategy,
+    write_dataset,
+)
+from kuration.core.dsl.registry import METRICS
+from kuration.core.output import OutputSpec
+from kuration.core.progress import (
+    _notebook_progress_html,
+    cli_progress,
+    progress_callback,
+)
+from kuration.core.scoring import score_sources
 
 
 SCHEMA = SchemaSpec.from_dict({
@@ -55,7 +69,7 @@ def test_explicit_plugin_metric_loads_and_reaches_spawned_workers(tmp_path, monk
         assert all("plugin_mean" in s.features for s in segs)
         assert strategy.referenced_metrics() == {"plugin_mean"}
     finally:
-        from kuration import plugins as plugin_state
+        from kuration.core import plugins as plugin_state
         METRICS.pop("plugin_mean", None)
         sys.modules.pop(name, None)
         plugin_state._LOADED_MODULES.discard(name)
@@ -74,7 +88,7 @@ def test_score_progress_event_contract():
 
 
 def test_entry_point_initializer_is_idempotent(monkeypatch):
-    import kuration.plugins as plugin_state
+    import kuration.core.plugins as plugin_state
     from kuration import default_registry
     calls = []
 
@@ -115,6 +129,55 @@ def test_entry_point_initializer_is_idempotent(monkeypatch):
         plugin_state._ENTRY_POINTS_SCANNED = old_scanned
 
 
+def test_entry_point_operator_is_discovered_as_a_direct_method(monkeypatch):
+    import kuration.core.plugins as plugin_state
+    from kuration import default_registry
+
+    def plugin_window(pipeline, *, size):
+        return pipeline.window(size)
+
+    def initialize():
+        default_registry.register_operator(
+            "plugin/direct-window",
+            plugin_window,
+            parameters={
+                "type": "object",
+                "properties": {"size": {"type": "integer", "minimum": 1}},
+                "required": ["size"],
+                "additionalProperties": False,
+            },
+        )
+
+    plugin_window.__module__ = "fake_direct_plugin"
+    initialize.__module__ = "fake_direct_plugin"
+
+    class FakeEP:
+        name, value = "fake-direct", "fake_direct_plugin:initialize"
+
+        def load(self):
+            return initialize
+
+    class FakeEPs(list):
+        def select(self, **kwargs):
+            return self if kwargs == {"group": "kuration.plugins"} else []
+
+    key = "fake-direct=fake_direct_plugin:initialize"
+    snapshot = plugin_state._plugin_state_snapshot()
+    old_scanned = plugin_state._ENTRY_POINTS_SCANNED
+    plugin_state._LOADED_ENTRY_POINTS.discard(key)
+    plugin_state._ENTRY_POINTS_SCANNED = False
+    monkeypatch.setattr(plugin_state, "entry_points", lambda: FakeEPs([FakeEP()]))
+    try:
+        # Attribute lookup itself performs the same lazy entry-point discovery as apply().
+        pipeline = input([{"x": float(i)} for i in range(8)])
+        expanded = pipeline.direct_window(size=4)
+        assert expanded._window_desc["window"] == 4
+        assert expanded._ops[-1]["args"] == ["plugin/direct-window"]
+    finally:
+        plugin_state._restore_plugin_state(snapshot, None)
+        plugin_state._ENTRY_POINTS_SCANNED = old_scanned
+
+
 def test_job_plugins_load_before_strategy_validation(tmp_path, monkeypatch):
     name = _plugin_file(tmp_path, "job_kuration_plugin")
     monkeypatch.syspath_prepend(str(tmp_path))
@@ -127,10 +190,10 @@ def test_job_plugins_load_before_strategy_validation(tmp_path, monkeypatch):
         "strategy": {"selection": {"method": "top-k", "weights": {"plugin_mean": 1.0}}},
     }
     try:
-        from kuration.cli.validate import validate_job
+        from kuration.core.cli.validate import validate_job
         assert validate_job(job)["kind"] == "report"
     finally:
-        import kuration.plugins as plugin_state
+        import kuration.core.plugins as plugin_state
         METRICS.pop("plugin_mean", None)
         sys.modules.pop(name, None)
         plugin_state._LOADED_MODULES.discard(name)
@@ -163,3 +226,29 @@ def test_cli_progress_is_throttled_and_human_readable():
     assert lines[0] == "[scoring] starting (100 total)"
     assert lines[-1] == "[scoring] complete (200 segments)"
     assert len(lines) <= 23
+
+
+def test_progress_modes_are_selectable_without_an_extra_import():
+    callback = lambda event: None
+    assert progress_callback(callback) is callback
+    assert progress_callback("off") is None
+    quiet = input([{"x": 1.0}]).options(progress="off")
+    assert quiet._options["progress"] is None
+    assert quiet.describe()["options"]["progress"] == "off"
+    with pytest.raises(ValueError, match="progress must be"):
+        progress_callback("sparkles")
+
+
+def test_notebook_progress_markup_is_bounded_and_safe():
+    html = _notebook_progress_html(
+        {
+            "phase": "<scoring>",
+            "event": "advance",
+            "current": 25,
+            "total": 100,
+            "source": "<clip>",
+        }
+    )
+    assert "&lt;scoring&gt;" in html and "&lt;clip&gt;" in html
+    assert "25/100" in html
+    assert "width:25.000%" in html

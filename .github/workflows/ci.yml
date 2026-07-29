@@ -27,7 +27,7 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - name: Install
-        run: python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p]'
+        run: python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p,pixel-shift]'
       - name: Import cloud backends
         if: matrix.python == '3.11'
         run: python -c 'import adlfs, gcsfs, s3fs'
@@ -60,6 +60,8 @@ jobs:
           python examples/03_compare_strategies.py
           python examples/04_operator_pipeline.py
           python examples/05_custom_operators.py
+          python examples/06_gameplay_operator_methods.py
+          python examples/07_action_state_consistency.py
 
   minimum-dependencies:
     name: Minimum dependencies
@@ -72,7 +74,9 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install declared minimums
-        run: python -m pip install -c .github/constraints/minimum.txt -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p]'
+        run: >-
+          python -m pip install -c .github/constraints/minimum.txt
+          -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p,pixel-shift]'
       - name: Import minimum cloud backends
         run: python -c 'import adlfs, gcsfs, s3fs'
       - run: python -m pytest tests/ -q
@@ -94,11 +98,50 @@ jobs:
           python - <<'PY'
           from importlib.util import find_spec
 
-          for package in ("torch", "datasets", "zarr", "av", "ray", "s3fs", "gcsfs", "adlfs"):
+          for package in ("torch", "datasets", "zarr", "av", "ray", "s3fs", "gcsfs",
+                          "adlfs", "cv2", "matplotlib"):
               assert find_spec(package) is None, f"{package} leaked into the core installation"
+
+          from kuration import default_registry
+
+          assert "aintropy/pixel-shift" not in default_registry.names("operator")
+          assert "aintropy/action-state-consistency" not in default_registry.names("analyzer")
+          assert "aintropy/slam-motion-diversity" not in default_registry.names("operator")
+
+          import kuration.gameplay
+
+          assert "aintropy/pixel-shift" in default_registry.names("operator")
+          assert "aintropy/action-state-consistency" in default_registry.names("analyzer")
+          assert "aintropy/slam-motion-diversity" in default_registry.names("operator")
           PY
       - name: Exercise core schemas and DSL
         run: python -m pytest tests/test_schema.py tests/test_grammar.py -q
+
+  notebook-ui:
+    name: JupyterLab and browser UX
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install notebook and browser test runtimes
+        run: >-
+          python -m pip install '.[stats]' 'pytest>=8'
+          'nbclient>=0.10' 'ipykernel>=6.29' 'playwright>=1.48,<2'
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Execute the model-free gameplay notebook
+        run: >-
+          python scripts/execute_notebook.py
+          examples/notebooks/gameplay_stats.ipynb
+          /tmp/gameplay_stats.executed.ipynb
+      - name: Exercise notebook-facing HTML in Chromium
+        env:
+          KURATION_BROWSER_TESTS: "1"
+        run: python -m pytest tests/test_jupyter_ui.py -q
 
   platform-smoke:
     name: Core smoke (${{ matrix.os }})
@@ -125,7 +168,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extra: [zarr, torch, hf, video, ray]
+        extra: [zarr, torch, hf, video, ray, stats, pixel-shift, action-state, slam, slam-viz]
         dependency_set: [current, minimum]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -159,13 +202,34 @@ jobs:
                 -k 'hf or huggingface' -q
               ;;
             video)
-              python -c 'import av; from kuration.media import _av; assert _av() is av'
+              python -c 'import av; from kuration.core.media import _av; assert _av() is av'
               python -m pytest tests/test_media_transforms_execution.py -k 'video or pyav' -q
               ;;
             ray)
               python -c 'import ray'
               python -m pytest tests/test_execution_backpressure.py \
                 tests/test_determinism_conformance.py -k ray -q
+              ;;
+            stats)
+              python -c 'import matplotlib'
+              python -m pytest tests/test_stats.py tests/test_gameplay_stats.py -q
+              ;;
+            pixel-shift)
+              python -c 'import cv2; from kuration.gameplay import pixel_shift'
+              python -m pytest tests/test_pixel_shift.py -q
+              ;;
+            action-state)
+              python -c 'import cv2; from kuration.gameplay import action_state_consistency'
+              python -m pytest tests/test_action_state_consistency.py \
+                tests/test_anomaly_checker.py -q
+              ;;
+            slam)
+              python -c 'import av, faiss, torch; from kuration.gameplay.slam import SLAMOperator'
+              python -m pytest tests/test_slam.py tests/test_slam_regressions.py -q
+              ;;
+            slam-viz)
+              python -c 'import trimesh; from kuration.gameplay.slam import build_pointcloud_scene'
+              python -m pytest tests/test_slam.py -k pointcloud_scene -q
               ;;
           esac
 
@@ -182,8 +246,25 @@ jobs:
       - run: python -m pip install -e '.[docs]'
       - run: python -m mkdocs build --strict
 
+  dependency-audit:
+    name: Minimum dependency vulnerability audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install pinned audit tool
+        run: >-
+          python -m pip install -c .github/constraints/release.txt pip-audit
+      - name: Audit the resolved minimum dependency graph
+        run: >-
+          python -m pip_audit -r .github/constraints/minimum.txt
+
   plugins:
-    name: Repository plugins
+    name: External plugin template
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -201,13 +282,6 @@ jobs:
             python scripts/check_plugin.py "$plugin" --artifacts plugin-dist
           done
           sha256sum plugin-dist/* > plugin-SHA256SUMS
-      - name: Validate pixel-shift and action-state integration together
-        run: |
-          python -m pip install -e . -e 'plugins/pixel_shift[test]' \
-            -e 'plugins/action_state_consistency[test]'
-          python -m pytest \
-            plugins/pixel_shift/tests \
-            plugins/action_state_consistency/tests -q
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: plugin-package-distributions-${{ github.sha }}
@@ -220,7 +294,7 @@ jobs:
   build:
     name: Build and wheel smoke test
     needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs,
-            plugins]
+            dependency-audit, plugins]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -249,9 +323,12 @@ jobs:
           from pathlib import Path
 
           import kuration
+          import kuration.core
+          import kuration.gameplay
 
           package = files("kuration")
-          assert package.joinpath("schemas/job.schema.json").is_file()
+          core_package = files("kuration.core")
+          assert core_package.joinpath("schemas/job.schema.json").is_file()
           assert package.joinpath("py.typed").is_file()
           assert "site-packages" in str(Path(kuration.__file__).resolve())
           assert kuration.__version__ == version("kuration-sdk")
@@ -259,12 +336,33 @@ jobs:
                        "SelectionReview", "HoursSelectionReview", "QualityGateResult",
                        "render_html_report"):
               assert hasattr(kuration, name)
+          assert kuration.core.Pipeline is kuration.Pipeline
+          assert kuration.gameplay.SLAMReconstructor
+          assert not hasattr(kuration.gameplay, "GameplayPipeline")
+          assert not hasattr(kuration.gameplay, "as_gameplay")
+          assert not hasattr(kuration.gameplay, "input")
+          pipeline = kuration.input([{"t": 0.0, "x": 1.0}], time="t").window(1)
+          assert type(pipeline) is kuration.Pipeline
+          assert callable(pipeline.pixel_shift)
+          assert callable(pipeline.slam_motion_diversity)
+          assert "aintropy/pixel-shift" in kuration.default_registry.names("operator")
+          assert "aintropy/action-state-consistency" in \
+              kuration.default_registry.names("analyzer")
+          assert "aintropy/slam-motion-diversity" in \
+              kuration.default_registry.names("operator")
           PY
-          for command in kur-curate kur-experiment kur-report kur-validate kur-list \
-                         kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check \
-                         kur-plugin-check; do
+          while IFS= read -r command; do
             /tmp/kuration-wheel-smoke/bin/"$command" --help
-          done
+          done < <(
+            /tmp/kuration-wheel-smoke/bin/python - <<'PY'
+          from importlib.metadata import distribution
+
+          scripts = distribution("kuration-sdk").entry_points
+          for entry_point in sorted(scripts, key=lambda item: item.name):
+              if entry_point.group == "console_scripts":
+                  print(entry_point.name)
+          PY
+          )
       - name: Record distribution hashes
         run: sha256sum dist/* > SHA256SUMS
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -280,7 +378,7 @@ jobs:
     name: Required CI
     if: ${{ always() }}
     needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs,
-            plugins, build]
+            dependency-audit, plugins, build]
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs
@@ -291,10 +389,12 @@ jobs:
           PLATFORM_RESULT: ${{ needs.platform-smoke.result }}
           OPTIONAL_RESULT: ${{ needs.optional-integrations.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
+          DEPENDENCY_AUDIT_RESULT: ${{ needs.dependency-audit.result }}
           PLUGINS_RESULT: ${{ needs.plugins.result }}
           BUILD_RESULT: ${{ needs.build.result }}
         run: |
           for result in "$TEST_RESULT" "$MINIMUM_RESULT" "$CORE_RESULT" "$PLATFORM_RESULT" \
-                        "$OPTIONAL_RESULT" "$DOCS_RESULT" "$PLUGINS_RESULT" "$BUILD_RESULT"; do
+                        "$OPTIONAL_RESULT" "$DOCS_RESULT" "$DEPENDENCY_AUDIT_RESULT" \
+                        "$PLUGINS_RESULT" "$BUILD_RESULT"; do
             test "$result" = success || exit 1
           done

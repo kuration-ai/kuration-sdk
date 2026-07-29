@@ -30,6 +30,10 @@ class MemAdapter:
     def ticks(self, src):
         return self.data[src]
 
+    def source_fingerprint(self, src):
+        from kuration.core.provenance import _state_hash
+        return _state_hash(self.data[src])
+
 
 class FlakyAdapter(MemAdapter):
     def __init__(self, schema, data, bad):
@@ -135,13 +139,13 @@ def test_resume_repairs_corrupt_existing_shards(tmp_path):
     second = write_dataset(str(tmp_path / "out"), resume=True, **common)
     assert second["results"]["shards"] == first["results"]["shards"]   # same manifest
     assert open(victim, "rb").read() != b"CORRUPT"
-    from kuration.io import file_integrity
+    from kuration.core.io import file_integrity
     repaired = next(entry for entry in second["shards"] if entry["path"] == victim)
     assert file_integrity(victim) == {
         "sha256": repaired["sha256"], "size_bytes": repaired["size_bytes"]}
 
 
-def test_no_resume_overwrites(tmp_path):
+def test_force_overwrites_without_resuming(tmp_path):
     data = _data(range(1, 5))
     common = dict(schema=SCHEMA, adapter=MemAdapter(SCHEMA, data), sources=list(data),
                   strategy=load_strategy(STRAT, SCHEMA), segmenter=Segmenter(4, 4),
@@ -150,5 +154,5 @@ def test_no_resume_overwrites(tmp_path):
     victim = first["shards"][0]["path"]
     with open(victim, "wb") as f:
         f.write(b"CORRUPT")
-    write_dataset(str(tmp_path / "out"), resume=False, **common)        # default: rewrite
+    write_dataset(str(tmp_path / "out"), resume=False, force=True, **common)
     assert open(victim, "rb").read() != b"CORRUPT"

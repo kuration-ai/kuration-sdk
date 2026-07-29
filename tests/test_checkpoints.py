@@ -1,5 +1,8 @@
 """Partition/stage checkpoint commit, reuse, and corruption behavior."""
+from contextlib import contextmanager
 import json
+import os
+from pathlib import Path
 
 import pytest
 
@@ -70,3 +73,104 @@ def test_commit_files_are_canonical_and_attempts_are_not_left_behind(tmp_path):
 def test_checkpoint_rejects_stage_path_traversal(tmp_path):
     with pytest.raises(ValueError, match="safe"):
         StageCheckpoint(str(tmp_path), "../outside", _identity())
+
+
+@pytest.mark.parametrize(
+    "root",
+    ["", "   ", os.path.abspath(os.path.sep), f"file://{os.path.abspath(os.path.sep)}",
+     "memory://"],
+)
+def test_checkpoint_root_must_be_explicit_and_bounded(root):
+    with pytest.raises(ValueError, match="checkpoint root"):
+        StageCheckpoint(root, "features", _identity())
+
+
+def test_remote_checkpoint_root_keeps_its_scheme():
+    checkpoint = StageCheckpoint("memory://checkpoints", "features", _identity())
+    assert checkpoint.root == "memory://checkpoints"
+    assert checkpoint.stage_root == "memory://checkpoints/features"
+
+
+@pytest.mark.parametrize(
+    "root", ["memory://checkpoints/../other", "memory://checkpoints//other"]
+)
+def test_remote_checkpoint_root_rejects_ambiguous_components(root):
+    with pytest.raises(ValueError, match="ambiguous remote path component"):
+        StageCheckpoint(root, "features", _identity())
+
+
+def test_checkpoint_rejects_commit_data_path_outside_its_partition(tmp_path):
+    checkpoint = StageCheckpoint(str(tmp_path / "checkpoint"), "features", _identity())
+    commit = checkpoint.write_partition("source:a", _batch("a"))
+    outside = tmp_path / "outside.arrow"
+    outside.write_bytes(Path(commit.data_file).read_bytes())
+    _data_path, commit_path = checkpoint._paths("source:a")
+    payload = json.loads(Path(commit_path).read_text())
+    payload["data_file"] = str(outside)
+    Path(commit_path).write_text(json.dumps(payload))
+
+    assert checkpoint.load_commit("source:a") is None
+    assert checkpoint.reusable("source:a") is None
+
+
+def test_checkpoint_validation_uses_the_opened_generation_during_snapshot(
+        tmp_path, monkeypatch):
+    from kuration.core import checkpoints as checkpoints_module
+
+    checkpoint = StageCheckpoint(str(tmp_path), "features", _identity())
+    checkpoint.write_partition("source:a", _batch("a"))
+    replacement = tmp_path / "replacement.arrow"
+    _batch("replacement", 8).write_ipc(str(replacement))
+    real_snapshot = checkpoints_module.local_snapshot
+
+    @contextmanager
+    def replace_after_snapshot(path):
+        with real_snapshot(path) as snapshot:
+            os.replace(replacement, path)
+            yield snapshot
+
+    monkeypatch.setattr(checkpoints_module, "local_snapshot", replace_after_snapshot)
+
+    assert checkpoint.validate("source:a") is True
+
+
+def test_checkpoint_validation_rejects_symlinks_and_special_files(tmp_path):
+    checkpoint = StageCheckpoint(str(tmp_path), "features", _identity())
+    commit = checkpoint.write_partition("source:a", _batch("a"))
+    data_path = Path(commit.data_file)
+    target = tmp_path / "target.arrow"
+    os.replace(data_path, target)
+    data_path.symlink_to(target)
+
+    assert checkpoint.validate("source:a") is False
+
+    data_path.unlink()
+    os.mkfifo(data_path)
+    assert checkpoint.validate("source:a") is False
+
+
+def test_checkpoint_metadata_rejects_duplicate_keys_and_malformed_stage_entries(
+        tmp_path):
+    checkpoint = StageCheckpoint(str(tmp_path), "features", _identity())
+    checkpoint.write_partition("source:a", _batch("a"))
+    _data_path, commit_path = checkpoint._paths("source:a")
+    commit_document = Path(commit_path).read_text()
+    Path(commit_path).write_text(
+        commit_document.replace(
+            '"partition_id":"source:a"',
+            '"partition_id":"source:a","partition_id":"other"',
+            1,
+        )
+    )
+    assert checkpoint.load_commit("source:a") is None
+
+    marker = {
+        "stage_id": "features",
+        "identity": _identity().to_dict(),
+        "identity_fingerprint": _identity().fingerprint,
+        "partitions": ["not-an-object"],
+        "rows": 1,
+        "commit": True,
+    }
+    Path(checkpoint.commit_marker).write_text(json.dumps(marker))
+    assert checkpoint.load_stage() is None

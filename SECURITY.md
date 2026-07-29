@@ -2,9 +2,10 @@
 
 ## Supported versions
 
-Until the first stable release, security fixes are made on the latest published `0.x` release
-only. Users should upgrade to the newest release before reporting or validating a suspected
-issue.
+Before the first public release, security fixes land on the current development branch; no
+published package version is supported yet. After publication and until `1.0`, fixes are made on
+the latest published `0.x` release only. Users should upgrade to that newest release before
+validating a suspected issue.
 
 ## Reporting a vulnerability
 

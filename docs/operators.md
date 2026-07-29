@@ -12,6 +12,47 @@ Operators do not introduce a hidden execution system. Their expansion is validat
 same schema and strategy rules as handwritten pipeline code, and both the named call and expanded
 operations are recorded in artifact provenance.
 
+## Programming model
+
+There is one `Pipeline` type. An operator registration adds a fluent method to that type; it does
+not create a domain-specific pipeline or require string dispatch:
+
+```python
+from kuration import Pipeline, input
+import acme_kuration  # imports a module that calls register_operator(...)
+
+base = input("sessions/*.parquet", time="t").window(64, stride=32)
+pipeline = base.signal_diversity(field="motor_current", bins=6)
+
+assert type(base) is Pipeline
+assert type(pipeline) is Pipeline
+```
+
+The method is resolved from the registered component name:
+
+| registered name | normal Python spelling | always-available qualified spelling |
+|---|---|---|
+| `acme/signal-diversity` | `.signal_diversity(...)` | `.acme__signal_diversity(...)` |
+| `aintropy/pixel-shift` | `.pixel_shift(...)` | `.aintropy__pixel_shift(...)` |
+| `aintropy/action-state-consistency` | `.action_state_consistency(...)` | `.aintropy__action_state_consistency(...)` |
+
+Hyphens and dots become underscores in the readable spelling. If two namespaces expose the same
+local name, the short spelling fails with the qualified alternatives instead of choosing one (an
+un-namespaced operator whose name *is* the short spelling keeps it, and the namespaced ones stay
+callable under their qualified aliases). The qualified form is also useful in shared libraries
+that want to make component ownership explicit.
+
+A local name that is already a `Pipeline` attribute — `report`, `window`, `filter`, `output`,
+`schema`, … — is **rejected at registration** (and by `kur-plugin-check`): Python resolves the
+real attribute before the generated method, so such an operator would be silently shadowed.
+Rename it (`acme/report-balance`).
+
+Import order is flexible for the process-wide registry: importing a registration module makes
+its methods available even on an existing default-registry pipeline. A pipeline created with an
+explicit registry remains isolated and resolves operators only through that registry snapshot.
+`Pipeline.apply(name, **params)` remains a compatibility path for integrations that receive a
+component name as data; ordinary Python code should use the generated method.
+
 ## 1. Package an ordinary pipeline recipe
 
 This operator measures variability and adds it as a diversity axis:
@@ -47,7 +88,7 @@ Use it like a built-in operation:
 pipeline = (
     input("sessions/*.parquet", time="t")
     .window(64, stride=32)
-    .apply("acme/signal-diversity", field="motor_current", bins=6)
+    .signal_diversity(field="motor_current", bins=6)
     .sample("equal", n=10_000)
 )
 ```
@@ -97,7 +138,17 @@ For edge-sensitive events, registration accepts `lookbehind=<ticks>`, `lookahead
 `ownership="rightmost-start"`. Read the typed context with `ctx.before("field:signal")` and
 `ctx.after("field:signal")`; source-edge entries are `None`. Immutable `ctx.owned_lengths` gives
 the prefix of each logical window whose event starts belong to that segment. The corresponding
-rc2 batch keys remain available during the release-candidate compatibility window.
+rc2 batch keys remain available during the release-candidate compatibility window. Either count
+may instead be a `{declared input token: count}` mapping (`lookbehind={"field:signal": 1}`) when
+only one input needs boundary context — the runner then extracts, and for media decodes, nothing
+for the others.
+
+A caller may remap the declared inputs per use (`.transform(name, inputs=["media:shot",
+"field:signal"])`), supplying one same-kind token per declared role. Address the batch through
+`ctx.input_token("media:frame")` (or the `ctx.inputs` role→token mapping) so a remapped use works;
+a hardcoded registration token would pass construction and fail mid-run. `field:` batches are
+`(B,T,E,D)` and NaN-padded to the batch's widest extent, so use `ctx.valid_steps` (also
+`batch["valid_steps"]`) to bound each row to its real timesteps.
 
 For video, declare `inputs=("media:frame",)` and a semantic requirement such as
 `media_requirements={"kind": "video-frame", "layout": "HWC", "color_space": "RGB"}`.
@@ -110,7 +161,7 @@ Test the operator at three levels:
 ```python
 def test_signal_operator_expands_and_selects():
     base = input([{"signal": float(i)} for i in range(16)]).window(4)
-    pipeline = base.apply("acme/signal-diversity", field="signal", bins=3)
+    pipeline = base.signal_diversity(field="signal", bins=3)
 
     description = pipeline.describe()
     assert "signal_variability" in description["strategy"]["define"]
@@ -144,12 +195,68 @@ Python callers use `list_components("operator")` and
 schemas, dependency hints, capabilities, package and module identity, stability metadata, and a
 code fingerprint.
 
-## 5. Package as a plugin
+Registration also creates the fluent import flow. Import a custom registration module, or let
+Kuration discover an installed `kuration.plugins` entry point, then call the operator by its
+normalized local name:
 
-For a plugin maintained in this repository, copy
+```python
+import acme_kuration
+
+pipeline = pipeline.signal_diversity(field="signal")
+```
+
+`acme/signal-diversity` maps to `signal_diversity`; the always-available qualified spelling is
+`acme__signal_diversity`. Ambiguous short names fail with the qualified alternatives instead of
+silently choosing one.
+
+## 5. Built-in operator catalog
+
+Importing `kuration.gameplay` registers every maintained gameplay operator on the ordinary core
+pipeline. Importing the domain remains dependency-light; optional frameworks load only when an
+operator's execution path needs them.
+
+| registered operator | fluent method | expands to | execution dependency |
+|---|---|---|---|
+| `aintropy/pixel-shift` | `.pixel_shift(controls=None, boundary="exclude")` | the bounded transform of the same name | OpenCV via `[pixel-shift]` |
+| `aintropy/action-state-consistency` | `.action_state_consistency(baselines=..., controls=None, ...)` | the analyzer of the same name plus pipeline metadata attachment | OpenCV via `[action-state]` |
+| `aintropy/slam-motion-diversity` | `.slam_motion_diversity(axis="slam_path_length", bins=8)` | `aintropy/slam-motion` plus a bin axis | NumPy for a precomputed trajectory |
+| `aintropy/slam-quality` | `.slam_quality(min_score=None, **quality_options)` | `aintropy/slam-quality` plus an optional predicate | NumPy for a precomputed trajectory |
+
+```python
+import kuration.gameplay  # registers the methods
+from kuration import input
+
+pipeline = (
+    input("telemetry/*.parquet", time="timestamp")
+    .join_video(lambda source: source.replace(".parquet", ".mp4"), tolerance=0.020)
+    .window(32, stride=16)
+    .pixel_shift(controls=["W", "S", "A", "D"])
+    .bin("w_shift_mean", bins=8)
+    .sample("equal", n=2_000)
+)
+```
+
+Pixel Shift and action-state consistency need DIAMOND-compatible action rows and aligned video
+frames. Action-state remains stateful internally: its direct operator explicitly drives the
+registered analyzer once and attaches the verdict rather than pretending it is a segment
+feature. The SLAM operators expect the trajectory schema produced by
+`gameplay.slam_pipeline(...)` or `gameplay.input_slam(...)`. See
+[Pixel Shift](pixel-shift.md), [Action-state consistency](action-state-consistency.md), and
+[SLAM](slam.md) for those input contracts.
+
+The ordinary core operations—`.window()`, `.measure()`, `.transform()`, `.filter()`, `.bin()`,
+`.score()`, `.tag()`, `.sample()`, and the rest—are listed with exact signatures in the
+[Pipeline operator reference](pipeline.md#operator-reference). At runtime,
+`kur-list operators` and `list_components("operator")` are the authoritative catalogs for the
+currently installed and imported environment.
+
+## 6. Choose built-in or external packaging
+
+First-party gameplay operators accepted into the SDK live under `src/kuration/gameplay/`, register
+when that domain is imported or discovered, and declare optional framework requirements through
+SDK extras. For an independently versioned or external plugin, copy
 [`plugins/_template`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins/_template)
-to `plugins/<plugin-name>`. Each child remains a separate distribution, so its dependencies and
-release lifecycle do not enlarge the SDK wheel. An external package uses the same layout:
+to `plugins/<plugin-name>`. The external package uses this layout:
 
 ```text
 acme-kuration/
@@ -180,7 +287,7 @@ python scripts/check_plugin.py plugins/<plugin-name>
 For installed packages, `kur-plugin-check acme --json` performs the descriptor and discovery
 portion transactionally.
 
-## Complete runnable example
+## Complete runnable examples
 
 [`examples/05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py) registers both styles,
 discovers their descriptors, runs them over small in-memory sessions, and verifies their selected
@@ -188,4 +295,12 @@ features. It requires only the NumPy core:
 
 ```bash
 python examples/05_custom_operators.py
+```
+
+[`examples/06_gameplay_operator_methods.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py)
+uses a synthetic precomputed camera trajectory to demonstrate the maintained gameplay methods,
+the namespace-qualified spelling, and the fact that every call returns the same core `Pipeline`:
+
+```bash
+python examples/06_gameplay_operator_methods.py
 ```

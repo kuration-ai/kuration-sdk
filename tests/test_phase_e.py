@@ -12,7 +12,7 @@ from kuration import (
     load_strategy,
     run_experiment,
 )
-from kuration.experiment import union_define
+from kuration.core.experiment import union_define
 
 SCHEMA = SchemaSpec.from_dict({
     "name": "e", "entity_axis": "e", "sample_hz": 1.0, "fields": {"act": {"kind": "scalar"}},

@@ -7,7 +7,7 @@ import sys
 
 def _run(function: str, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-c", f"from kuration.cli.{function.rsplit('.', 1)[0]} "
+        [sys.executable, "-c", f"from kuration.core.cli.{function.rsplit('.', 1)[0]} "
          f"import {function.rsplit('.', 1)[1]}; {function.rsplit('.', 1)[1]}()", *args],
         capture_output=True,
         text=True,

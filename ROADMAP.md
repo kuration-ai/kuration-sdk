@@ -47,6 +47,10 @@ These items gate public publishing. Pipeline execution optimization does not gat
 - Bounded input previews, candidate-vs-selected review, artifact diffing, and dependency-free
   static HTML reports.
 - Hours-budget admission review and reusable Python/CLI quality gates.
+- A CLI covering the whole lifecycle, not just execution: schema inference, job scaffolding,
+  and bounded previews before a run; distribution stats, array export, and checkpoint
+  maintenance after one; all under a single `kur` dispatcher with shell completion, which
+  discovers plugin-contributed commands through their entry points.
 
 ## Delivered — synchronized video ingestion
 
