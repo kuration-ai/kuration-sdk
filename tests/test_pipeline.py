@@ -1,4 +1,4 @@
-"""Fluent pipeline facade: input() -> operators -> terminals (src/kuration/pipeline.py).
+"""Fluent pipeline facade: input() -> operators -> terminals (src/kuration/core/pipeline.py).
 
 Data is synthesized in-memory with a controlled distribution: source s{i} has hp ~ 25*i
 (+ a small j%5 ripple), so filter/bin assertions are checkable. Every test that should
@@ -23,7 +23,7 @@ from kuration import (
     segment_priorities,
     select,
 )
-from kuration.pipeline import Pipeline, input as kur_input
+from kuration.core.pipeline import Pipeline, input as kur_input
 
 N_SOURCES, N_STEPS = 4, 64
 
@@ -69,11 +69,12 @@ def test_head_and_describe():
     assert len(ticks) == 3 and hasattr(ticks[0], "entities")
     d = p.describe()
     assert set(d) == {"schema", "strategy", "output", "segmenter", "options", "sources",
-                      "expectations"}
+                      "expectations", "metadata"}
     assert d["output"] is None
     assert d["segmenter"] == {"window": 64, "stride": 64, "unit": "steps"}
     assert d["sources"] == [f"s{i}" for i in range(N_SOURCES)]
     assert d["strategy"]["define"] == {}
+    assert d["metadata"] == {}
 
 
 # ======================================================================================
@@ -93,6 +94,34 @@ def test_immutability_branching():
     assert "predicates" not in a.describe()["strategy"].get("selection", {})
     assert a2.describe()["strategy"]["selection"]["predicates"] == [
         {"metric": "hp", "op": "<=", "value": 50.0}]
+
+
+def test_pipeline_metadata_is_namespaced_immutable_and_preserved_by_chaining():
+    base = _pipe()
+    annotated = base.with_metadata("project", "review", {"owner": "team-a", "ready": True})
+
+    assert base.metadata == {}
+    assert annotated.metadata == {
+        "project": {"review": {"owner": "team-a", "ready": True}}
+    }
+    external = annotated.metadata
+    external["project"]["review"]["owner"] = "mutated"
+    assert annotated.metadata["project"]["review"]["owner"] == "team-a"
+    assert annotated.measure("hp").metadata == annotated.metadata
+
+
+def test_pipeline_metadata_rejects_implicit_replacement_and_non_json_values():
+    annotated = _pipe().with_metadata("project", "review", {"version": 1})
+    with pytest.raises(ValueError, match="already exists"):
+        annotated.with_metadata("project", "review", {"version": 2})
+    replaced = annotated.with_metadata(
+        "project", "review", {"version": 2}, replace=True
+    )
+    assert replaced.metadata["project"]["review"] == {"version": 2}
+    with pytest.raises(ValueError, match="strict JSON"):
+        _pipe().with_metadata("project", "bad", {"value": float("nan")})
+    with pytest.raises(ValueError, match="metadata namespace"):
+        _pipe().with_metadata("not/a/namespace", "bad", {})
 
 
 # ======================================================================================
@@ -412,6 +441,26 @@ def test_output_count_path_end_to_end(tmp_path):
         assert arrays["action"].shape == (16,)
 
 
+def test_output_publishes_pipeline_metadata_with_private_paths_redacted(tmp_path):
+    private_path = "/private/customer/session-42.bin"
+    out_dir = tmp_path / "metadata"
+    pipeline = (
+        _pipe()
+        .with_metadata("project", "source_note", {"original": private_path})
+        .window(16)
+        .measure("hp")
+        .organize("hp", bins=2)
+        .curate(n=2)
+        .options(on_error="raise")
+    )
+    pipeline.output(str(out_dir))
+
+    cfg = json.loads((out_dir / "config.json").read_text())
+    published = cfg["metadata"]["project"]["source_note"]["original"]
+    assert "customer" not in published
+    assert published.startswith("session-42.bin-")
+
+
 def test_output_include_exclude(tmp_path):
     p = (_pipe().window(16).measure("hp").organize("hp", bins=2).curate(n=2)
          .options(on_error="raise"))
@@ -473,6 +522,46 @@ def test_output_hours_path_end_to_end(tmp_path):
     shards = list(iter_shards(str(out_dir), split="train"))
     assert shards
     assert shards[0]["hp"].shape == (64,)           # whole-track shards, shard_length=64
+
+
+def test_config_split_counts_are_emitting_sources_not_assigned_sources(tmp_path):
+    """`n_train`/`n_test` in config.json count sources that actually emitted shards, not sources
+    that were assigned a split — pinned on both write paths so the meaning can't drift back."""
+    def emitters(out_dir):
+        man = json.loads((out_dir / "dataset_manifest.json").read_text())
+        by_split = {}
+        for entry in man["shards"]:
+            by_split.setdefault(entry["split"], set()).add(entry["source_id"])
+        return by_split
+
+    # ---- count path (_write_selected): one selected segment -> exactly one emitting source
+    count_dir = tmp_path / "ds_count_splits"
+    p = (_pipe().window(16).measure("hp").organize("hp", bins=4).split(test=0.5)
+         .curate(n=1).options(on_error="raise"))
+    assigned = p.collect().splits
+    assert len(assigned) == N_SOURCES                       # every source was assigned a split
+    assert len({s for s, sp in assigned.items() if sp == "train"}) >= 2
+    out = p.output(str(count_dir))
+    results = out["results"]
+    written = emitters(count_dir)
+    assert sum(len(sources) for sources in written.values()) == 1
+    assert results["n_train"] == len(written.get("train", ()))
+    assert results["n_test"] == len(written.get("test", ()))
+    assert results["n_train"] + results["n_test"] == 1      # not the 4 assigned sources
+    assert json.loads((count_dir / "config.json").read_text())["results"] == results
+
+    # ---- hours path (write_dataset): the budget admits fewer sources than it assigns
+    hours_dir = tmp_path / "ds_hours_splits"
+    hp = (_pipe().window(16).measure("hp").organize("hp", bins=4).split(test=0.5)
+          .curate(hours=0.02).options(on_error="raise"))
+    hout = hp.output(str(hours_dir))
+    hresults, hwritten = hout["results"], emitters(hours_dir)
+    assert len(hout["split"]) == N_SOURCES
+    assert hresults["n_train"] == len(hwritten.get("train", ()))
+    assert hresults["n_test"] == len(hwritten.get("test", ()))
+    for split in ("train", "test"):
+        assigned_count = len({s for s, sp in hout["split"].items() if sp == split})
+        assert hresults[f"n_{split}"] < assigned_count      # assigned sources that emitted nothing
 
 
 def test_output_hours_path_split(tmp_path):

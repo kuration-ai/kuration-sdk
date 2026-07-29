@@ -15,7 +15,8 @@ def _keys(result):
 
 @pytest.mark.parametrize("seed", [0, 7, 29])
 @pytest.mark.parametrize("batch_size", [1, 3, 11])
-def test_top_k_predicate_parity_across_partitioning(tmp_path, seed, batch_size):
+@pytest.mark.parametrize("normalize", ["quantile", "minmax", "zscore"])
+def test_top_k_predicate_parity_across_partitioning(tmp_path, seed, batch_size, normalize):
     sessions = {
         f"source-{source}": [{"x": float(tick + source),
                               "quality": float((tick * 3 + source) % 11)}
@@ -26,11 +27,12 @@ def test_top_k_predicate_parity_across_partitioning(tmp_path, seed, batch_size):
                 .measure("level", "mean", of="x")
                 .measure("quality", "mean", of="quality")
                 .filter("quality", ">=", 3.0)
-                .sample("top-k", n=9, weights={"level": 0.7, "quality": 0.3})
+                .sample("top-k", n=9, weights={"level": 0.7, "quality": 0.3},
+                        normalize=normalize)
                 .options(seed=seed, batch_size=batch_size, on_error="raise"))
     reference = pipeline.collect()
     bounded = pipeline._bounded_count_result(
-        str(tmp_path / f"top-{seed}-{batch_size}"), pipeline._compile())
+        str(tmp_path / f"top-{normalize}-{seed}-{batch_size}"), pipeline._compile())
     assert _keys(bounded) == _keys(reference)
     assert len(bounded.all_segments) == len(reference.all_segments)
 

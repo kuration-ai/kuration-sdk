@@ -31,7 +31,7 @@ class MemAdapter:
 # A trivial whole-pool scorer: score = rank of the source's mean action (needs no buffers).
 # Registered at import; guard against re-registration across test runs.
 def _register_demo():
-    if "rank_action" in __import__("kuration.scorers", fromlist=["_SCORERS"])._SCORERS:
+    if "rank_action" in __import__("kuration.core.scorers", fromlist=["_SCORERS"])._SCORERS:
         return
 
     class RankAction:

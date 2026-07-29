@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from kuration.schema import FieldSpec, SchemaSpec
+from kuration.core.schema import FieldSpec, SchemaSpec
 
 GOOD = {
     "name": "demo",
@@ -70,9 +70,20 @@ def test_direct_constructors_validate_and_nested_mappings_are_immutable():
         schema.fields["mask"].bits["OFF"] = 2
 
 
+@pytest.mark.parametrize("name", [1, "", "with space", "with.dot"])
+def test_bit_names_must_be_string_dsl_identifiers(name):
+    with pytest.raises(ValueError, match="bit name"):
+        FieldSpec(
+            "mask",
+            "scalar",
+            semantics="bitmask",
+            bits={name: 1},
+        )
+
+
 def test_single_stream_fields_are_valid_unqualified_dsl_sources():
-    from kuration.dsl import compile_metric
-    from kuration.buffer import Tick, build_window
+    from kuration.core.dsl import compile_metric
+    from kuration.core.buffer import Tick, build_window
     schema = SchemaSpec.from_dict({"name": "single", "fields": {"x": {"kind": "scalar"}}})
     metric = compile_metric({"source": "x", "reduce": "mean"}, schema)
     window = build_window(schema, [Tick(time=0, entities={0: {"x": 3.0}})])
@@ -80,7 +91,7 @@ def test_single_stream_fields_are_valid_unqualified_dsl_sources():
 
 
 def test_dimension_labels_allow_domain_punctuation_but_remain_dsl_addressable():
-    from kuration.dsl import compile_metric
+    from kuration.core.dsl import compile_metric
     schema = SchemaSpec.from_dict({"name": "actions", "fields": {
         "action": {"kind": "vector", "dims": ["mouse_x_-1000"]}}})
     compile_metric({"source": "action.mouse_x_-1000", "reduce": "mean"}, schema)

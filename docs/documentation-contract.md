@@ -58,6 +58,7 @@ The target structure below mostly reuses the existing pages. New pages are marke
 | Concepts | `docs/overview.md`, `docs/schema.md`, `docs/dsl.md`, `docs/strategies.md` | mental model and core data contracts |
 | Inputs and outputs | `docs/adapters.md`, `docs/output.md` | supported storage, mapping, encoding, and artifacts |
 | Extension guides | `docs/operators.md`, `docs/customization.md`, relevant sections of `docs/architecture.md` | reusable operators, supported seams, registries, plugins, and design constraints |
+| Design thesis | `DESIGN.md` (repo root) | the cross-cutting progressive-disclosure thesis and decision ladder every layer instantiates; read before adding a seam |
 | Operations | `docs/jobs.md`, scale/reliability recipes in `docs/usage.md` | validation, CLI runs, streaming, parallelism, resume, cloud I/O |
 | Reference | `docs/api.md`, shipped `job.schema.json` | exact Python and job-spec contracts |
 | Roadmap | `ROADMAP.md`, linked detailed plans | release gates and sequenced future direction |
@@ -69,9 +70,12 @@ full explanation. In particular:
 - `docs/quickstart.md` owns the complete first run; the README contains a short tested version.
 - `docs/pipeline.md` owns fluent operator behavior; the API reference owns exact signatures.
 - Layer guides own concepts and examples; `docs/api.md` links to them rather than repeating them.
-- `docs/jobs.md` explains the job format; `src/kuration/schemas/job.schema.json` is the
+- `docs/jobs.md` explains the job format; `src/kuration/core/schemas/job.schema.json` is the
   machine-readable key and validation authority.
 - `docs/architecture.md` explains design decisions, not ordinary usage.
+- `DESIGN.md` states the one cross-cutting thesis (progressive disclosure) and its decision
+  ladder; it links to `docs/architecture.md`, `docs/customization.md`, and `docs/operators.md`
+  for the per-layer explanations rather than repeating them.
 
 ## Supported public interface
 
@@ -86,7 +90,9 @@ are grouped below by user task.
 
 - Entry and results: `input`, `Pipeline`, `infer_schema`, `curate`, `CurateResult`,
   `write_dataset`, `DatasetWriteResult`, `run_experiment`, `Arm`, `union_define`,
-  `ExperimentResult`, `dataset_report`, `DatasetReport`, `preview_dataset`, `DatasetPreview`,
+  `ExperimentResult`, `dataset_report`, `DatasetReport`, `stats`, `StatsReport`,
+  `StatsExamples`,
+  `preview_dataset`, `DatasetPreview`,
   `selection_review`, `SelectionReview`, `inspect_dataset`, `DatasetInspection`,
   `compare_datasets`, `DatasetComparison`, `render_html_report`, `write_html_report`,
   `hours_selection_review`, `HoursSelectionReview`, `evaluate_quality`, `check_quality`,
@@ -104,6 +110,14 @@ are grouped below by user task.
   `register_batch_transform`, `register_transform`, `get_transform`, `apply_transforms`,
   `apply_transforms_to_windows`, `ExecutionBackend`, `ResourceSpec`, `LocalExecutionBackend`,
   `RayExecutionBackend`, `get_execution_backend`.
+- Bounded execution and physical planning: `SegmentBatch`, `IDENTITY_COLUMNS`,
+  `iter_segment_batches`, `CheckpointIdentity`, `PartitionCommit`, `StageCheckpoint`,
+  `canonical_hash`, `FeatureStageResult`, `checkpoint_feature_stage`, `external_quantile_edges`,
+  `external_top_k`, `external_uniform_bins`, `iter_external_top_k_priorities`,
+  `iter_external_span_items`, `iter_external_uniform_priorities`, `external_weighted`,
+  `iter_external_weighted_priorities`, `iter_external_hash_dedup`, `OperatorResources`,
+  `OperatorTraits`, `PhysicalOperator`, `PhysicalStage`, `PhysicalPlan`,
+  `compile_physical_plan`.
 - Strategies and selection: `Strategy`, `load_strategy`, `bin_segments`, `quantile_bins`,
   `select`, `segment_priorities`, `assign_splits`, `apply_filters`, `method_priorities`,
   `register_method`, `register_filter`.
@@ -114,9 +128,12 @@ are grouped below by user task.
 - Registries, plugins, and progress: `Registry`, `default_registry`, `ComponentDescriptor`,
   `list_components`, `describe_component`, `load_plugins`, `loaded_plugin_modules`,
   `plugin_failures`, `plugin_provenance`, `check_plugins`, `PluginCheckResult`, `ProgressCallback`,
-  `register_operator`, `Analyzer`, `SplitLeakageAnalyzer`, `register_analyzer`, `get_analyzer`.
+  `ProgressSpec`, `progress_callback`, `notebook_progress`, `cli_progress`,
+  `register_operator`, `detect_adapter`, `Analyzer`, `DatasetAnalyzer`, `StreamAnalyzer`,
+  `SplitLeakageAnalyzer`, `register_analyzer`, `get_analyzer`, `run_dataset_analyzer`,
+  `run_stream_analyzer`.
 - Manifests and I/O: `build_config`, `dump_segment_manifest`, `write_config`, `read_text`,
-  `write_text`, `write_bytes`, `exists`, `local_copy`.
+  `write_text`, `write_bytes`, `exists`, `local_copy`, `import_dataset`.
 - Versioning and migration: `__version__`, `ARTIFACT_FORMAT_VERSION`, `JOB_SCHEMA_VERSION`, `migrate`,
   `migrate_job`, `migrate_config`.
 
@@ -129,19 +146,28 @@ All non-underscore methods intentionally exposed by `Pipeline` are public:
 
 - Schema and resolution: `using`, `semantic`, `as_position`, `as_angular`, `as_bitmask`,
   `at_rate`.
-- Pipeline construction: `apply`, `window`, `join_video`, `transform`, `measure`, `filter`,
-  `bin`, `score`, `tag`, `split`, `group`, `options`, `expect`, `sample`; `organize` and
-  `curate` remain compatibility aliases.
-- Inspection: `head`, `describe`, `preview`, `review`, `explain`.
-- Terminals: `collect`, `report`, `experiment`, `output`.
+- Pipeline construction and enrichment: `window`, `join_video`, `transform`, `measure`, `filter`, `bin`,
+  `score`, `tag`, `split`, `group`, `options`, `expect`, `sample`, plus direct methods generated
+  for registered operators; `with_metadata` and `enrich` retain input-backed state on a
+  pipeline; `apply`, `organize`, and `curate` remain compatibility aliases.
+- Inspection: the defensive `metadata` property, `head`, `describe`, `preview`, `review`,
+  `explain`, and `analysis_mode` (the resolved analyzer execution mode).
+- Terminals: `collect`, `report`, `stats`, `analyze`, `check`, `experiment`, `output`.
 
-The reference must cover these methods even though they are not individual members of
-`kuration.__all__`.
+Registered operator methods normalize the local component name (`acme/signal-diversity` becomes
+`signal_diversity`) and expose a namespace-qualified spelling (`acme__signal_diversity`) for
+collisions. The reference must cover this generated method contract and the static methods above
+even though they are not individual members of `kuration.__all__`.
 
 ### Framework integration
 
-`kuration.torch.ShardDataset` is public and supported. It is kept out of the top-level namespace
-so importing `kuration` does not imply a PyTorch dependency.
+`kuration.core.torch.ShardDataset` is public and supported. The built-in
+`kuration.gameplay.pixel_shift`, `kuration.gameplay.action_state_consistency`,
+`kuration.gameplay.slam`, `kuration.gameplay.compare_videos`, and
+`kuration.gameplay.VideoComparison` are also
+public. Their direct APIs are documented in `docs/api.md` and their focused guides. Importing
+`kuration.gameplay` registers these capabilities but must not import OpenCV, PyTorch, FAISS,
+or another optional runtime. Importing the core `kuration` package does not import gameplay.
 
 Other module members that are absent from `kuration.__all__` are internal unless a future
 contract explicitly adds them. Underscore-prefixed classes, functions, methods, and CLI helpers
@@ -151,14 +177,21 @@ are always internal.
 
 The installed commands are public end-user interfaces:
 
+- Dispatch and discover commands: `kur` (`kur <command>` == `kur-<command>`, plus
+  `kur completion`).
+- Author a job: `kur-infer`, `kur-init`, `kur-preview`.
 - Run and analyze: `kur-curate`, `kur-experiment`, `kur-report`.
-- Validate and inspect: `kur-validate`, `kur-explain`, `kur-inspect`, `kur-diff`, `kur-check`.
+- Validate and inspect: `kur-validate`, `kur-explain`, `kur-inspect`, `kur-stats`, `kur-diff`,
+  `kur-check`.
+- Import and export tensor data: `kur-import`, `kur-export`.
 - Discover extensions: `kur-list`, `kur-describe`, `kur-plugin-check`.
+- Reconstruct and curate SLAM data: `kur-slam`.
+- Maintain execution state: `kur-checkpoint`.
 - Upgrade documents: `kur-migrate`.
 
 Their command options and exit behavior belong in `docs/jobs.md` or a linked CLI reference. The
-JSON job contract is the shipped `src/kuration/schemas/job.schema.json`, including supported version
-and migration behavior. Internal functions under `kuration.cli` are not a supported Python API.
+JSON job contract is the shipped `src/kuration/core/schemas/job.schema.json`, including supported version
+and migration behavior. Internal functions under `kuration.core.cli` are not a supported Python API.
 
 ### Artifact interface
 

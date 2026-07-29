@@ -199,6 +199,7 @@ write_dataset("out/run1", ..., workers=8,        # parallel feature pass (determ
               executor="local",                  # or "ray" with the optional [ray] extra
               on_error="skip",                    # log + skip a bad source (default); "raise" to fail fast
               resume=True,                         # verify and reuse intact shards
+              force=False,                         # true replaces; mutually exclusive with resume
               streaming=True)                      # bounded memory with a streaming-capable adapter
 ```
 `streaming=True` reads each source as a lazy tick stream on both the feature pass and the shard
@@ -210,10 +211,16 @@ their partitions cannot guarantee bounded memory.
 `resume=True` is safe against crashes, corruption, and drift: local shards use atomic replacement;
 remote shards upload a complete attempt before publishing and never pre-delete the prior object.
 Existing shards are reused only when their recorded
-size and SHA-256 match, and a complete run fingerprint is pinned in a sidecar.
+size and SHA-256 match, and a complete run fingerprint is pinned in a sidecar whose own
+integrity is covered by the final commit. Legacy or tampered unpinned markers are never trusted.
+Reuse additionally requires an adapter fingerprint, local content identity, or immutable remote
+object version; mutable logical IDs and metadata-only remote listings may be processed but never
+authorize persisted results. If a hard `memory_budget` requires checkpointing, provide
+`adapter.source_fingerprint(source)` or use versioned/content-addressed inputs.
 Changes to sources, schema, strategy, segmentation, budgets, adapter/encoder code or state,
 callbacks (including captured closure/default values), seed, or output spec reject resume. To
-change a run, use a fresh `out_dir`.
+change a run, use a fresh `out_dir` or explicit `force=True`. One writer lease is held for the
+destination until commit, preventing concurrent publishers from interleaving.
 
 Custom registry extensions can be loaded from a job with `"plugins": ["my_package.plugin"]`,
 or from Python with `load_plugins(...)`. Installed packages may expose a `kuration.plugins`
@@ -221,8 +228,10 @@ entry point. Set `"include_plugin_entry_points": false` when a reproducible job 
 only built-ins and its explicit plugin modules—even if ambient plugins were discovered earlier
 in the process. For programmatic progress, pass `progress=events.append` (or any callback) to
 `curate`, `run_experiment`, or `write_dataset`; fluent pipelines use
-`.options(progress=callback)`. Run CLIs render the same events on interactive stderr and accept
-`--quiet`.
+`.options(progress=callback)`. For end-user display, use
+`.options(progress="auto")`: it updates compact rows in JupyterLab and renders throttled terminal
+output in scripts. `"notebook"`, `"terminal"`, and `"off"` make the selection explicit. Run CLIs
+render the same events on interactive stderr and accept `--quiet`.
 
 ## 12 · Sub-track spans (keep the best *parts* of long sources)
 
@@ -323,6 +332,7 @@ with a modality whose source is `media:frame`; no custom encoder is required.
 kur-curate     job.json                  # sources -> hours-budget shards
 kur-experiment job.json --out cmp.json   # add "arms": [...] + "target_size" to compare strategies
 kur-report     job.json --out rep.json   # profile metric distributions (no selection)
+kur-import     SOURCE --out out/raw       # detected-adapter conversion, with no selection
 ```
 
 ## 16 · Curate a CSV/JSON in one chain (fluent pipeline, no explicit schema)
@@ -355,7 +365,83 @@ provenance).
 
 ---
 
-## 17 · Review input, selection, and artifact changes
+## 17 · Generate stats before selection, after selection, and from output
+
+`stats()` is a terminal over the current immutable pipeline stage. Branch a pipeline to compare
+the uncurated corpus with a count-selected set, then inspect the actual emitted artifact:
+
+```python
+from kuration import input, stats
+
+source = (
+    input("logs/*.parquet", time="t", entity="agent")
+    .window(64)
+    .measure("speed", "mean", of="position", map="speed")
+)
+
+uncurated = source.stats()
+selected = source.sample("top-k", n=5000, weights={"speed": 1.0})
+curated = selected.stats()
+
+written = selected.output("out/curated")
+emitted = written.stats()
+
+print(uncurated.render())
+curated.plot("speed")                # from the repo root: pip install -e '.[stats]'
+curated.available()                  # plots, evidence modes, comparisons, media
+curated.examples(metric="speed", compare="selected-vs-rejected")
+emitted.save("out/curated-stats.html")
+
+# Inspect an existing artifact without its original input pipeline:
+reopened = stats("out/curated")
+```
+
+The input section is a bounded field preview; candidate/selection metrics use the complete
+scored segment pool. Output statistics scan the emitted, padding-trimmed modalities with exact
+count/mean/std/min/max aggregates. Histograms and percentiles retain at most
+`max_values=100000` evenly sampled values per modality so tensor outputs stay bounded.
+`content=False` limits an artifact report to manifest/config metadata, and `verify=True` checks
+recorded shard integrity while scanning.
+
+Count-selection results also support `pipeline.collect().stats()` without rescoring. Hours
+admission is decided over output tracks, so `.sample(hours=...).stats()` is explicitly marked
+as planned; call `.output(path).stats()` for admitted and emitted statistics.
+
+Importing a maintained domain unlocks relevant sections and plots without changing the call:
+
+```python
+import kuration.gameplay as gameplay
+
+report = gameplay.slam_pipeline("slam-export/manifest.json").window(32).slam_quality().stats()
+report.plot()                         # gameplay is the automatic default
+evidence = report.examples(
+    metric="slam_quality_score",
+    compare="selected-vs-rejected",
+    n=6,
+    frames=3,
+)
+
+comparison = gameplay.compare_videos("raw.mp4", "curated.mp4",
+                                     labels=("Before", "After"))
+comparison.save("video-review.html", embed=False)
+```
+
+The rich video result displays synchronized players in Jupyter. Small local videos embed
+automatically; larger files remain referenced to avoid unexpectedly inflating notebook output.
+Use `comparison.plot(frames=4)` for a matched contact sheet (`[stats]`) and
+`comparison.probe()` for codec, rate, duration, and frame metadata (`[video]`).
+Live pipeline evidence reads only the requested segment ranges and decodes at most `frames`
+evenly spaced images per example. `selected`, `rejected`, `strongest`, and `weakest` modes reuse
+the scored count-selection pool; serialized reports retain bounded copies, while live reports
+can rank any available metric exactly. Whole videos and large frame tensors are never embedded
+in the JSON report.
+The runnable
+[gameplay stats notebook](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb)
+uses synthetic trajectories and needs no model or GPU.
+
+---
+
+## 18 · Review input, selection, and artifact changes
 
 ```python
 from kuration import compare_datasets, render_html_report, write_html_report
@@ -438,7 +524,7 @@ kur-check out/candidate --policy quality.json --html quality.html
 
 ---
 
-## 18 · Troubleshooting — common loud failures
+## 19 · Troubleshooting — common loud failures
 
 The SDK fails loudly by design: a raised error at load or preflight beats a silently wrong
 dataset. The ones you're most likely to meet, and what they mean:
@@ -456,7 +542,7 @@ dataset. The ones you're most likely to meet, and what they mean:
 | `span_steps=... < shard_length=... with short_policy='drop'` | every admitted span would chunk to zero shards while consuming the hours budget | raise `span_steps`, lower `shard_length`, or use `short_policy: "keep"/"pad"` |
 | `binning axis '...': N NaN feature value(s)` | a registered metric or scorer produced NaN on some window; NaN would poison the quantile edges | make the metric total (return 0.0 for degenerate windows), or drop those segments with a pre-pass filter |
 | `dataset ... lacks modalities [...]` | mixing curated datasets with different modalities under a schema derived from the first | pass an explicit `schema=` covering only the shared modalities |
-| `needs fsspec` / `needs h5py` / `needs pyarrow` / `needs zarr` | an optional capability was reached without its extra installed | install the named published extra, e.g. `pip install 'kuration-sdk[s3]'` |
+| `needs fsspec` / `needs h5py` / `needs pyarrow` / `needs zarr` | an optional capability was reached without its extra installed | install the named extra, e.g. `pip install -e '.[s3]'` from a checkout before public launch |
 | `write_dataset needs sample_hz ... for the hours budget` | fluent-pipeline `.sample(hours=...).output(...)` on a source whose schema has no `sample_hz` (inference found no numeric time column, or duplicate/no-gap timestamps) | pass `hz=` to `input()`, or `.options(sample_hz=...)` before `.output(...)` |
 | `workers>1 is not supported for in-memory sources` | `.options(workers=2)` on a `Pipeline` built from in-memory rows/ticks/DataFrame — parallel workers rebuild adapters by name per process and can't see in-process data | keep `workers=1` for in-memory input, or write the data to files first and `input()` the paths |
 

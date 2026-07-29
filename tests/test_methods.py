@@ -15,7 +15,7 @@ from kuration import (
     register_metric,
     segment_priorities,
 )
-from kuration.dsl.registry import METRICS
+from kuration.core.dsl.registry import METRICS
 
 pytestmark = pytest.mark.skipif(
     __import__("importlib").util.find_spec("sklearn") is None, reason="needs [methods] extra")

@@ -6,15 +6,15 @@ import numpy as np
 import pytest
 
 from kuration import ComponentDescriptor, Registry, SchemaSpec, Segment, default_registry
-from kuration.cli.explain import explain_job
-from kuration.dsl import compile_metric
-from kuration.infer import sample_source
-from kuration.plugin_validation import check_plugins
-from kuration.registry import validate_parameters
-from kuration.report import dataset_report
-from kuration.review import _json_value
-from kuration.strategy import load_strategy
-from kuration.versioning import migrate
+from kuration.core.cli.explain import explain_job
+from kuration.core.dsl import compile_metric
+from kuration.core.infer import sample_source
+from kuration.core.plugin_validation import check_plugins
+from kuration.core.registry import validate_parameters
+from kuration.core.report import dataset_report
+from kuration.core.review import _json_value
+from kuration.core.strategy import load_strategy
+from kuration.core.versioning import migrate
 
 
 def test_migrate_recognizes_an_unversioned_job_and_rejects_dual_versions():
@@ -126,7 +126,7 @@ def test_parameter_enum_const_and_uniqueness_use_json_type_equality():
 
 
 def test_plugin_loader_rejects_non_module_non_callable_entry_point(monkeypatch):
-    import kuration.plugins as plugin_state
+    import kuration.core.plugins as plugin_state
 
     class FakeEntryPoint:
         name = "review-invalid"
@@ -156,7 +156,7 @@ def test_plugin_loader_rejects_non_module_non_callable_entry_point(monkeypatch):
 
 
 def test_plugin_loader_rejects_noop_entry_point_with_persistent_diagnostic(monkeypatch):
-    import kuration.plugins as plugin_state
+    import kuration.core.plugins as plugin_state
 
     def initialize():
         pass
@@ -193,7 +193,7 @@ def test_plugin_loader_rejects_noop_entry_point_with_persistent_diagnostic(monke
 def test_plugin_loader_accepts_preimported_entry_point_with_owned_component(
         tmp_path, monkeypatch):
     import importlib
-    import kuration.plugins as plugin_state
+    import kuration.core.plugins as plugin_state
 
     module_name = "review_preimported_plugin"
     package = tmp_path / module_name

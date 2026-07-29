@@ -1,9 +1,11 @@
-"""Generic multivariate time-series → curated training shards (the 5-minute start).
+"""CSV files on disk to training shards — the five-minute start.
 
-Synthesizes a few CSV "device logs", then curates them for diversity across movement + a
-temperature axis, with coverage of every operating mode, and writes train/test shards.
+The common starting point: a folder of logs and no schema written yet. `input()` sniffs the
+files, infers the schema from a sample, and every operator validates itself against it.
 
     python examples/01_timeseries_to_shards.py
+
+For the same path against a real published dataset, see public_data/ett_fluent.py.
 """
 import csv
 import math
@@ -11,62 +13,58 @@ import random
 import tempfile
 from pathlib import Path
 
-from kuration import SchemaSpec, TimeseriesAdapter, OutputSpec, input
+from kuration import input, iter_shards
 
 rng = random.Random(0)
 work = Path(tempfile.mkdtemp(prefix="kuration_ex01_"))
 
-# 1. Declare the dataset's vocabulary (data, not code).
-schema = SchemaSpec.from_dict({
-    "name": "devices", "entity_axis": "device", "sample_hz": 1.0,
-    "fields": {
-        "pos":  {"kind": "vector", "dims": ["x", "y"], "semantics": "position", "max_rate": 100},
-        "temp": {"kind": "scalar"},
-        "mode": {"kind": "categorical"},
-    },
-})
-
-# 2. Synthesize 8 device logs as CSV (one entity per file).
+# 1. Synthesize eight device logs, one CSV per device. "fault" is deliberately rare, so
+#    ordinary distribution matching would drop it — that is what tag coverage is for.
 MODES = ["idle", "active", "fault"]
-sources = []
-for d in range(8):
-    p = work / f"device_{d}.csv"
-    with p.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["t", "device", "x", "y", "temp", "mode"])
-        w.writeheader()
+for device in range(8):
+    path = work / f"device_{device}.csv"
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["t", "device", "x", "y", "temp", "mode"])
+        writer.writeheader()
+        mode = MODES[device % len(MODES)] if device < 6 else "fault"
         x = y = 0.0
-        mode = MODES[d % len(MODES)] if d < 6 else "fault"   # "fault" deliberately rare
         for t in range(200):
-            x += math.sin(t / 10) * (d + 1) * 0.1
+            x += math.sin(t / 10) * (device + 1) * 0.1
             y += math.cos(t / 13) * 0.1
-            w.writerow({"t": t, "device": f"d{d}", "x": round(x, 3), "y": round(y, 3),
-                        "temp": round(20 + 5 * math.sin(t / 20) + rng.random(), 2), "mode": mode})
-    sources.append(str(p))
+            writer.writerow({"t": t, "device": f"d{device}",
+                             "x": round(x, 3), "y": round(y, 3),
+                             "temp": round(20 + 5 * math.sin(t / 20) + rng.random(), 2),
+                             "mode": mode})
 
-adapter = TimeseriesAdapter(schema, fields={"pos": ["x", "y"], "temp": "temp", "mode": "mode"},
-                            time_column="t", entity_column="device")
-
-# 3. Output: each timestep is a 2-vector position + a scalar temperature.
-spec = OutputSpec.from_dict({
-    "shard_length": 32, "container": "npz",
-    "modalities": {"pos":  {"dtype": "float32", "shape": [2], "source": "field:pos"},
-                   "temp": {"dtype": "float32", "shape": [],  "source": "field:temp"}},
-})
-
-# 4. Build and execute the fluent pipeline.
+# 2. One chain, start to finish. No SchemaSpec, no adapter, no strategy dict: the time and
+#    entity columns are recognized by name, and the sample rate comes from `t` itself.
+out_dir = work / "out"
 pipeline = (
-    input(adapter=adapter, sources=sources, schema=schema)
+    input(f"{work}/*.csv")
+    # The schema knows the rate, so windows can be stated in seconds.
     .window(8, stride=4, unit="seconds")
-    .measure("speed", "mean", of="pos", map="speed")
-    .measure("temp", "mean", of="temp")
-    .bin("speed", bins=5)
-    .bin("temp", bins=5)
-    .tag("mode", min_frac=0.05)
-    .sample("equal", hours=0.04, test_hours=0.02)
+    .measure("drift", "std", of="x")          # how much the device moved
+    .measure("temp", "mean", of="temp")       # how hot it ran
+    .bin("drift", bins=5)                     # spread the picks over both axes instead
+    .bin("temp", bins=5)                      # of over-sampling the average device
+    .tag("mode", min_frac=0.05)               # keep every operating mode, incl. "fault"
+    .split(test=0.25)                         # whole devices held out, never half a window
+    # Budget in recorded time, not window count: 0.25h train + 0.1h test out of the ~0.44h
+    # the eight devices hold between them.
+    .sample("equal", hours=0.25, test_hours=0.1)
     .options(mode="strict", seed=0)
 )
-res = pipeline.output(str(work / "out"), spec=spec)
-r = res["results"]
-print(f"wrote {r['shards']} shards  ({r['n_train']} train / {r['n_test']} test sources)")
-print(f"output dir: {work / 'out'}")
-print(f"  e.g. {res['shards'][0]['path'] if res['shards'] else '(none)'}")
+
+# `mode` selected windows but is not a training tensor. Strict mode refuses to guess what
+# should happen to a categorical field, so the decision is stated here.
+result = pipeline.output(out_dir, include=["x", "y", "temp"], categorical="omit",
+                         shard_length=32)
+summary = result["results"]
+print(f"inferred fields: {', '.join(pipeline.describe()['schema']['fields'])}")
+print(f"wrote {summary['shards']} shards "
+      f"({summary['n_train']} train / {summary['n_test']} test devices)")
+
+# 3. Read one back as ordinary numpy arrays.
+arrays = next(iter(iter_shards(out_dir)))
+print("one shard:", {name: tuple(array.shape) for name, array in arrays.items()})
+print(f"output dir: {out_dir}")

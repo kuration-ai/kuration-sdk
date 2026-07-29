@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 from kuration import Registry, SchemaSpec, Segment, Tick, default_registry, input, load_plugins
-from kuration.registry import validate_parameters
-from kuration.transforms import apply_transforms
+from kuration.core.registry import validate_parameters
+from kuration.core.transforms import apply_transforms
 
 
 SCHEMA = SchemaSpec.from_dict({
@@ -57,7 +57,7 @@ def test_plugin_provenance_tracks_registered_implementation_modules(tmp_path, mo
         "register_metric('review/provenance')(metric)\n")
     monkeypatch.syspath_prepend(str(tmp_path))
 
-    from kuration import plugins as plugin_state
+    from kuration.core import plugins as plugin_state
     try:
         load_plugins(["review_plugin.plugin"], include_entry_points=False)
         assert "review_plugin.implementation" in plugin_state.loaded_plugin_modules()
@@ -68,7 +68,7 @@ def test_plugin_provenance_tracks_registered_implementation_modules(tmp_path, mo
         changed = {entry["module"]: entry for entry in plugin_state.plugin_provenance()}
         assert changed["review_plugin.implementation"]["sha256"] != original_hash
     finally:
-        from kuration.dsl.registry import METRICS
+        from kuration.core.dsl.registry import METRICS
         METRICS.pop("review/provenance", None)
         default_registry._entries["metric"].pop("review/provenance", None)
         for name in ("review_plugin.plugin", "review_plugin.implementation", "review_plugin"):
@@ -77,7 +77,7 @@ def test_plugin_provenance_tracks_registered_implementation_modules(tmp_path, mo
 
 
 def test_job_can_disable_ambient_entry_point_discovery(monkeypatch):
-    import kuration.plugins as plugin_state
+    import kuration.core.plugins as plugin_state
 
     class BrokenEntryPoint:
         name, value = "broken", "broken_plugin:register"
@@ -104,14 +104,14 @@ def test_job_can_disable_ambient_entry_point_discovery(monkeypatch):
         },
     }
     try:
-        from kuration.cli.validate import validate_job
+        from kuration.core.cli.validate import validate_job
         assert validate_job(job)["kind"] == "report"
     finally:
         plugin_state._ENTRY_POINTS_SCANNED = old_scanned
 
 
 def test_job_excludes_entry_points_discovered_earlier(monkeypatch):
-    import kuration.plugins as plugin_state
+    import kuration.core.plugins as plugin_state
 
     def ambient_metric(window):
         return float(len(window))
@@ -142,7 +142,7 @@ def test_job_excludes_entry_points_discovered_earlier(monkeypatch):
     try:
         load_plugins()
         assert "review/ambient" in default_registry.names("metric")
-        from kuration.cli.job import resolve_job
+        from kuration.core.cli.job import resolve_job
         resolved = resolve_job({
             "include_plugin_entry_points": False,
             "schema": SCHEMA.to_dict(),
@@ -195,7 +195,7 @@ def test_input_resolves_named_adapter_from_isolated_registry():
 
 def test_component_parameter_schema_validates_nested_arrays_and_objects():
     registry = Registry()
-    registry.register_operator("review/schema", lambda pipeline: pipeline, parameters={
+    registry.register_operator("review/schema-shapes", lambda pipeline: pipeline, parameters={
         "type": "object",
         "properties": {
             "controls": {"type": "array", "minItems": 1,
@@ -207,7 +207,7 @@ def test_component_parameter_schema_validates_nested_arrays_and_objects():
         "required": ["controls"],
         "additionalProperties": False,
     })
-    descriptor = registry.descriptor("operator", "review/schema")
+    descriptor = registry.descriptor("operator", "review/schema-shapes")
 
     validate_parameters(descriptor, {"controls": ["W"], "config": {"threshold": 0.5}})
     with pytest.raises(ValueError, match=r"controls.*\[0\].*JSON type string"):

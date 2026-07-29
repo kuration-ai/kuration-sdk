@@ -10,21 +10,16 @@ repository is available locally.
 
 ## 1. Install
 
-Install the published NumPy-only core in a Python 3.11 or newer environment:
-
-```bash
-python -m pip install kuration-sdk
-```
-
-The runnable example is kept in the repository. Clone it if you are not already in a checkout:
+Clone the repository and install the NumPy-only core in a Python 3.11 or newer environment:
 
 ```bash
 git clone https://github.com/aintropy-ai/kuration-sdk.git
 cd kuration-sdk
+python -m pip install -e .
 ```
 
-The quick start needs no optional extras. Contributors can instead install the checkout with
-`python -m pip install -e .`.
+The quick start needs no optional extras. Public PyPI installation remains a release-readiness
+gate, so this guide does not assume that package name is published yet.
 
 ## 2. Run the pipeline
 

@@ -11,20 +11,45 @@ import kuration
 
 ROOT = Path(__file__).parents[1]
 REFERENCE = ROOT / "docs" / "api.md"
+DOCUMENTATION_CONTRACT = ROOT / "docs" / "documentation-contract.md"
 
 
-def _mentions_identifier(text: str, name: str) -> bool:
-    return re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", text) is not None
+def _reference_rows(text: str) -> set[str]:
+    """Return the exact object names that own API-reference table rows."""
+
+    return set(re.findall(r"^\| `([^`]+)` \|", text, re.MULTILINE))
 
 
 def test_api_reference_covers_every_top_level_export():
     text = REFERENCE.read_text()
-    missing = [name for name in kuration.__all__ if not _mentions_identifier(text, name)]
+    rows = _reference_rows(text)
+    missing = [name for name in kuration.__all__ if name not in rows]
     assert not missing, f"docs/api.md is missing kuration exports: {missing}"
 
 
+def test_documentation_contract_inventories_every_top_level_export():
+    text = DOCUMENTATION_CONTRACT.read_text()
+    inventory = text.split("### Top-level Python API", 1)[1].split("### Fluent pipeline", 1)[0]
+    missing = [
+        name for name in kuration.__all__
+        if re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", inventory) is None
+    ]
+    assert not missing, f"documentation contract is missing kuration exports: {missing}"
+
+
+def test_api_reference_covers_every_gameplay_facade_export():
+    import kuration.gameplay as gameplay
+
+    rows = _reference_rows(REFERENCE.read_text())
+    missing = [
+        name for name in gameplay.__all__
+        if not any(row == name or row.endswith(f".{name}") for row in rows)
+    ]
+    assert not missing, f"docs/api.md is missing kuration.gameplay exports: {missing}"
+
+
 def test_api_reference_covers_every_public_pipeline_method():
-    tree = ast.parse((ROOT / "src" / "kuration" / "pipeline.py").read_text())
+    tree = ast.parse((ROOT / "src" / "kuration" / "core" / "pipeline.py").read_text())
     pipeline = next(
         node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "Pipeline")
     methods = [
@@ -35,6 +60,42 @@ def test_api_reference_covers_every_public_pipeline_method():
     text = REFERENCE.read_text()
     missing = [name for name in methods if f"Pipeline.{name}" not in text]
     assert not missing, f"docs/api.md is missing Pipeline methods: {missing}"
+
+    contract = DOCUMENTATION_CONTRACT.read_text()
+    inventory = contract.split("### Fluent pipeline", 1)[1].split(
+        "### Framework integration", 1)[0]
+    contract_missing = [
+        name for name in methods
+        if re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", inventory) is None
+    ]
+    assert not contract_missing, (
+        f"documentation contract is missing Pipeline methods: {contract_missing}"
+    )
+
+
+def test_operator_guides_cover_every_bundled_gameplay_operator():
+    import kuration.gameplay  # noqa: F401
+
+    expected = {
+        "aintropy/pixel-shift": "pixel_shift",
+        "aintropy/action-state-consistency": "action_state_consistency",
+        "aintropy/slam-motion-diversity": "slam_motion_diversity",
+        "aintropy/slam-quality": "slam_quality",
+    }
+    registered = {
+        name for name in kuration.default_registry.names("operator")
+        if name.startswith("aintropy/")
+    }
+    assert registered == set(expected)
+
+    references = [
+        (ROOT / "docs" / "operators.md").read_text(),
+        (ROOT / "docs" / "pipeline.md").read_text(),
+        REFERENCE.read_text(),
+    ]
+    for component, method in expected.items():
+        assert all(component in text for text in references)
+        assert all(method in text for text in references)
 
 
 def _plain_signature(obj) -> str:
@@ -52,7 +113,7 @@ def _plain_signature(obj) -> str:
 
 
 def _documented_signature(text: str, name: str) -> str:
-    match = re.search(rf"\| `{re.escape(name)}` \| `([^`]+)` \|", text)
+    match = re.search(rf"\| `{re.escape(name)}` \| `([^`]+)`", text)
     assert match is not None, f"docs/api.md has no signature row for {name}"
     return match.group(1).split(" -> ", 1)[0]
 
@@ -60,14 +121,44 @@ def _documented_signature(text: str, name: str) -> str:
 def test_primary_api_signatures_match_the_reference():
     text = REFERENCE.read_text()
     public = {
-        "curate": kuration.curate,
+        "curate": kuration.core.curate,
         "write_dataset": kuration.write_dataset,
         "run_experiment": kuration.run_experiment,
         "dataset_report": kuration.dataset_report,
         "input": kuration.input,
+        "Pipeline": kuration.Pipeline,
         "Pipeline.sample": kuration.Pipeline.sample,
+        "Pipeline.curate": kuration.Pipeline.curate,
         "Pipeline.output": kuration.Pipeline.output,
         "Pipeline.review": kuration.Pipeline.review,
+        "schema_from_output": kuration.schema_from_output,
+        "FeatureEngine": kuration.FeatureEngine,
+        "CuratedDatasetAdapter": kuration.CuratedDatasetAdapter,
+        "FrameRef": kuration.FrameRef,
+        "VideoMetadata": kuration.VideoMetadata,
+        "PyAVMediaProvider": kuration.PyAVMediaProvider,
+        "VideoAdapter": kuration.VideoAdapter,
+        "JoinedMediaAdapter": kuration.JoinedMediaAdapter,
+        "get_adapter": kuration.get_adapter,
+        "register_batch_transform": kuration.register_batch_transform,
+        "register_transform": kuration.register_transform,
+        "get_transform": kuration.get_transform,
+        "apply_transforms": kuration.apply_transforms,
+        "LocalExecutionBackend": kuration.LocalExecutionBackend,
+        "RayExecutionBackend": kuration.RayExecutionBackend,
+        "ResourceSpec": kuration.ResourceSpec,
+        "get_execution_backend": kuration.get_execution_backend,
+        "load_strategy": kuration.load_strategy,
+        "get_scorer": kuration.get_scorer,
+        "PassthroughEncoder": kuration.PassthroughEncoder,
+        "get_encoder": kuration.get_encoder,
+        "cli_progress": kuration.cli_progress,
+        "register_analyzer": kuration.register_analyzer,
+        "Arm": kuration.Arm,
+        "PartitionCommit": kuration.PartitionCommit,
+        "checkpoint_feature_stage": kuration.checkpoint_feature_stage,
+        "external_top_k": kuration.external_top_k,
+        "external_uniform_bins": kuration.external_uniform_bins,
         "SplitLeakageAnalyzer": kuration.SplitLeakageAnalyzer,
         "SplitLeakageAnalyzer.add_assignment": kuration.SplitLeakageAnalyzer.add_assignment,
         "SplitLeakageAnalyzer.add_assignments": kuration.SplitLeakageAnalyzer.add_assignments,
@@ -83,13 +174,14 @@ def test_primary_api_signatures_match_the_reference():
 
 
 def test_api_reference_covers_optional_torch_surface():
-    assert "kuration.torch.ShardDataset" in REFERENCE.read_text()
+    assert "kuration.core.torch.ShardDataset" in REFERENCE.read_text()
 
 
 def test_public_objects_have_source_docstrings():
-    # A typing alias has no independent runtime ``__doc__`` slot; its contract is documented
-    # explicitly in the API reference. Every ordinary exported object must explain itself.
-    exemptions = {"ProgressCallback"}
+    # Typing aliases have no independent runtime ``__doc__`` slot; their contracts are
+    # documented explicitly in the API reference. Every ordinary exported object must
+    # explain itself.
+    exemptions = {"ProgressCallback", "ProgressSpec"}
     missing = [
         name for name in kuration.__all__
         if name not in exemptions and not inspect.getdoc(getattr(kuration, name))
