@@ -17,7 +17,7 @@ jobs:
   prepare:
     name: Prepare plugin distribution
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'plugin-')
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, aca]
     timeout-minutes: 15
     outputs:
       package: ${{ steps.plugin.outputs.package }}
@@ -171,7 +171,7 @@ jobs:
     name: Publish plugin distribution
     if: github.event_name == 'release' && github.event.release.prerelease == false && startsWith(github.event.release.tag_name, 'plugin-')
     needs: prepare
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, aca]
     timeout-minutes: 10
     environment:
       name: pypi-plugins
