@@ -1,3 +1,14 @@
+# The heavy self-hosted matrices live in sibling workflows (ci-versions.yml,
+# ci-integrations.yml, ci-integrations-minimum.yml, ci-core.yml) so no single
+# run carries enough jobs for GitHub's /actions/runs/{id}/jobs response to
+# exceed the ACA runner scaler's 3s HTTP timeout. See
+# .github/aca-runner/ci-workflow-split-plan.md.
+#
+# `build` and `required-ci` deliberately stay here: publish.yml and
+# publish-plugin.yml resolve the release artifact by querying this workflow
+# file for a successful run at the release SHA, then downloading
+# python-package-distributions-<sha> from it. Moving either out silently
+# breaks releases.
 name: CI
 
 on:
@@ -12,111 +23,6 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Python ${{ matrix.python }}
-    runs-on: [self-hosted, aca]
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.11", "3.12", "3.13", "3.14"]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-      - name: Install
-        run: python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p,pixel-shift]'
-      - name: Import cloud backends
-        if: matrix.python == '3.11'
-        run: python -c 'import adlfs, gcsfs, s3fs'
-      - name: Test with coverage
-        if: matrix.python == '3.11'
-        run: python -m pytest tests/ -q --cov=kuration --cov-report=term --cov-report=xml --cov-fail-under=80
-      - name: Test
-        if: matrix.python != '3.11'
-        run: python -m pytest tests/ -q
-      - name: Upload coverage report
-        if: matrix.python == '3.11'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-report
-          path: coverage.xml
-      - name: Compile
-        if: matrix.python == '3.11'
-        run: python -m compileall -q src/kuration examples
-      - name: Lint
-        if: matrix.python == '3.11'
-        run: python -m ruff check src tests examples
-      - name: Type check
-        if: matrix.python == '3.11'
-        run: python -m mypy
-      - name: Run examples
-        if: matrix.python == '3.11'
-        run: |
-          python examples/01_timeseries_to_shards.py
-          python examples/02_robotics_action_aware.py
-          python examples/03_compare_strategies.py
-          python examples/04_operator_pipeline.py
-          python examples/05_custom_operators.py
-          python examples/06_gameplay_operator_methods.py
-          python examples/07_action_state_consistency.py
-
-  minimum-dependencies:
-    name: Minimum dependencies
-    runs-on: [self-hosted, aca]
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install declared minimums
-        run: >-
-          python -m pip install -c .github/constraints/minimum.txt
-          -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p,pixel-shift]'
-      - name: Import minimum cloud backends
-        run: python -c 'import adlfs, gcsfs, s3fs'
-      - run: python -m pytest tests/ -q
-
-  core-only:
-    name: Core-only installation
-    runs-on: [self-hosted, aca]
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install only the core and test runner
-        run: python -m pip install . 'pytest>=8'
-      - name: Verify heavy integrations remain optional
-        run: |
-          python - <<'PY'
-          from importlib.util import find_spec
-
-          for package in ("torch", "datasets", "zarr", "av", "ray", "s3fs", "gcsfs",
-                          "adlfs", "cv2", "matplotlib"):
-              assert find_spec(package) is None, f"{package} leaked into the core installation"
-
-          from kuration import default_registry
-
-          assert "aintropy/pixel-shift" not in default_registry.names("operator")
-          assert "aintropy/action-state-consistency" not in default_registry.names("analyzer")
-          assert "aintropy/slam-motion-diversity" not in default_registry.names("operator")
-
-          import kuration.gameplay
-
-          assert "aintropy/pixel-shift" in default_registry.names("operator")
-          assert "aintropy/action-state-consistency" in default_registry.names("analyzer")
-          assert "aintropy/slam-motion-diversity" in default_registry.names("operator")
-          PY
-      - name: Exercise core schemas and DSL
-        run: python -m pytest tests/test_schema.py tests/test_grammar.py -q
-
   notebook-ui:
     name: JupyterLab and browser UX
     # Stays GitHub-hosted: `playwright install --with-deps` needs sudo apt-get,
@@ -163,140 +69,13 @@ jobs:
       - run: python -m pytest tests/test_schema.py tests/test_cli_discovery.py -q
       - run: kur-validate --help
 
-  optional-integrations:
-    name: Optional integration (${{ matrix.extra }}, ${{ matrix.dependency_set }})
-    runs-on: [self-hosted, aca]
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        extra: [zarr, torch, hf, video, ray, stats, pixel-shift, action-state, slam, slam-viz]
-        dependency_set: [current, minimum]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install optional integration
-        if: matrix.dependency_set == 'current'
-        run: python -m pip install -e '.[dev,${{ matrix.extra }}]'
-      - name: Install optional integration at its declared minimum
-        if: matrix.dependency_set == 'minimum'
-        run: python -m pip install -c .github/constraints/minimum.txt -e '.[dev,${{ matrix.extra }}]'
-      - name: Import and test optional integration
-        env:
-          RAY_memory_monitor_refresh_ms: "0"
-        shell: bash
-        run: |
-          case "${{ matrix.extra }}" in
-            zarr)
-              python -c 'import zarr'
-              python -m pytest tests/test_adapters_tier1.py tests/test_check_source.py -k zarr -q
-              ;;
-            torch)
-              python -c 'import torch'
-              python -m pytest tests/test_loaders.py -k torch -q
-              ;;
-            hf)
-              python -c 'import datasets'
-              python -m pytest tests/test_adapters_tier1.py tests/test_check_source.py \
-                -k 'hf or huggingface' -q
-              ;;
-            video)
-              python -c 'import av; from kuration.core.media import _av; assert _av() is av'
-              python -m pytest tests/test_media_transforms_execution.py -k 'video or pyav' -q
-              ;;
-            ray)
-              python -c 'import ray'
-              python -m pytest tests/test_execution_backpressure.py \
-                tests/test_determinism_conformance.py -k ray -q
-              ;;
-            stats)
-              python -c 'import matplotlib'
-              python -m pytest tests/test_stats.py tests/test_gameplay_stats.py -q
-              ;;
-            pixel-shift)
-              python -c 'import cv2; from kuration.gameplay import pixel_shift'
-              python -m pytest tests/test_pixel_shift.py -q
-              ;;
-            action-state)
-              python -c 'import cv2; from kuration.gameplay import action_state_consistency'
-              python -m pytest tests/test_action_state_consistency.py \
-                tests/test_anomaly_checker.py -q
-              ;;
-            slam)
-              python -c 'import av, faiss, torch; from kuration.gameplay.slam import SLAMOperator'
-              python -m pytest tests/test_slam.py tests/test_slam_regressions.py -q
-              ;;
-            slam-viz)
-              python -c 'import trimesh; from kuration.gameplay.slam import build_pointcloud_scene'
-              python -m pytest tests/test_slam.py -k pointcloud_scene -q
-              ;;
-          esac
-
-  docs:
-    name: Documentation site
-    runs-on: [self-hosted, aca]
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-          cache: pip
-      - run: python -m pip install -e '.[docs]'
-      - run: python -m mkdocs build --strict
-
-  dependency-audit:
-    name: Minimum dependency vulnerability audit
-    runs-on: [self-hosted, aca]
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install pinned audit tool
-        run: >-
-          python -m pip install -c .github/constraints/release.txt pip-audit
-      - name: Audit the resolved minimum dependency graph
-        run: >-
-          python -m pip_audit -r .github/constraints/minimum.txt
-
-  plugins:
-    name: External plugin template
-    runs-on: [self-hosted, aca]
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Validate every plugin distribution in a clean environment
-        shell: bash
-        run: |
-          mkdir -p plugin-dist
-          for plugin in plugins/*; do
-            test -f "$plugin/pyproject.toml" || continue
-            python scripts/check_plugin.py "$plugin" --artifacts plugin-dist
-          done
-          sha256sum plugin-dist/* > plugin-SHA256SUMS
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: plugin-package-distributions-${{ github.sha }}
-          path: |
-            plugin-dist/
-            plugin-SHA256SUMS
-          if-no-files-found: error
-          retention-days: 30
-
   build:
     name: Build and wheel smoke test
-    needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs,
-            dependency-audit, plugins]
+    # `needs:` cannot span workflow files, so the gating that used to make this
+    # wait for the full matrix now lives in required-ci, which fails the run if
+    # any sibling workflow failed. The artifact this uploads is only ever
+    # consumed from a *successful* ci.yml run, so a red matrix still cannot
+    # promote a wheel.
     runs-on: [self-hosted, aca]
     timeout-minutes: 15
     steps:
@@ -379,24 +158,78 @@ jobs:
   required-ci:
     name: Required CI
     if: ${{ always() }}
-    needs: [test, minimum-dependencies, core-only, platform-smoke, optional-integrations, docs,
-            dependency-audit, plugins, build]
-    runs-on: [self-hosted, aca]
+    needs: [notebook-ui, platform-smoke, build]
+    # GitHub-hosted on purpose: this job spends most of its life sleeping while
+    # it waits on the sibling workflows, and should not hold an ACA slot.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
     steps:
-      - name: Verify required jobs
+      - name: Verify jobs in this workflow
         env:
-          TEST_RESULT: ${{ needs.test.result }}
-          MINIMUM_RESULT: ${{ needs.minimum-dependencies.result }}
-          CORE_RESULT: ${{ needs.core-only.result }}
+          NOTEBOOK_RESULT: ${{ needs.notebook-ui.result }}
           PLATFORM_RESULT: ${{ needs.platform-smoke.result }}
-          OPTIONAL_RESULT: ${{ needs.optional-integrations.result }}
-          DOCS_RESULT: ${{ needs.docs.result }}
-          DEPENDENCY_AUDIT_RESULT: ${{ needs.dependency-audit.result }}
-          PLUGINS_RESULT: ${{ needs.plugins.result }}
           BUILD_RESULT: ${{ needs.build.result }}
         run: |
-          for result in "$TEST_RESULT" "$MINIMUM_RESULT" "$CORE_RESULT" "$PLATFORM_RESULT" \
-                        "$OPTIONAL_RESULT" "$DOCS_RESULT" "$DEPENDENCY_AUDIT_RESULT" \
-                        "$PLUGINS_RESULT" "$BUILD_RESULT"; do
+          for result in "$NOTEBOOK_RESULT" "$PLATFORM_RESULT" "$BUILD_RESULT"; do
             test "$result" = success || exit 1
           done
+      - name: Verify sibling CI workflows for this revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          TRIGGER_EVENT: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflows="ci-versions.yml ci-integrations.yml ci-integrations-minimum.yml ci-core.yml"
+          deadline=$(( $(date +%s) + 45 * 60 ))
+          failed=0
+
+          for workflow in $workflows; do
+            while :; do
+              # gh writes the error body to stdout, so a swallowed failure would
+              # look like a run that is merely not ready. Check the exit status,
+              # and only treat 404 (workflow not registered yet) as "keep going".
+              if payload="$(gh api \
+                    "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?head_sha=${HEAD_SHA}&per_page=30" \
+                    2>&1)"; then
+                line="$(printf '%s' "$payload" | jq -r "
+                  [.workflow_runs[] | select(.event == \"${TRIGGER_EVENT}\")]
+                  | sort_by(.run_number) | last // empty
+                  | \"\(.status) \(.conclusion)\"")"
+              elif printf '%s' "$payload" | grep -qi 'not found'; then
+                line=""
+              else
+                echo "::error::could not query ${workflow}: ${payload}"
+                exit 1
+              fi
+
+              run_status="${line%% *}"
+              conclusion="${line##* }"
+
+              if [ -z "$line" ]; then
+                echo "${workflow}: no run yet for ${HEAD_SHA}, waiting"
+              elif [ "$run_status" != "completed" ]; then
+                echo "${workflow}: ${run_status}, waiting"
+              else
+                echo "${workflow}: ${conclusion}"
+                break
+              fi
+
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::timed out waiting for ${workflow} at ${HEAD_SHA}"
+                exit 1
+              fi
+              sleep 20
+            done
+
+            if [ "$conclusion" != "success" ]; then
+              echo "::error::${workflow} concluded ${conclusion} for ${HEAD_SHA}"
+              failed=1
+            fi
+          done
+
+          exit "$failed"

@@ -134,13 +134,12 @@ az containerapp job create \
   --env-vars "GITHUB_PAT=secretref:github-pat" "RUNNER_REPO=${REPO}" \
   --scale-rule-name "github-runner-scaler" \
   --scale-rule-type "github-runner" \
-  `# enableEtags is set explicitly because newer containerapp extensions` \
-  `# default it to true. With etags the scaler sends If-None-Match and` \
-  `# counts zero queued jobs on a 304 — and a queue that is not changing` \
-  `# (jobs parked waiting for a runner that does not exist yet) returns 304` \
-  `# every poll, so it never scales up and the queue never changes. The` \
-  `# engine-product job predates the default and has no etags, which is why` \
-  `# it works.` \
+  `# enableEtags is deliberately left at the extension default (true): the` \
+  `# scaler sends If-None-Match and a 304 costs it almost nothing, which` \
+  `# keeps steady-state polling well under its 3s HTTP timeout. Do not set` \
+  `# it to false — that forces a full response on every poll. The timeout` \
+  `# this fleet actually hit came from job-list size, fixed by splitting` \
+  `# ci.yml; see .github/aca-runner/ci-workflow-split-plan.md.` \
   --scale-rule-metadata \
       "githubAPIURL=https://api.github.com" \
       "owner=${REPO%/*}" \
@@ -148,7 +147,6 @@ az containerapp job create \
       "repos=${REPO##*/}" \
       "labels=self-hosted,aca" \
       "targetWorkflowQueueLength=1" \
-      "enableEtags=false" \
   --scale-rule-auth "personalAccessToken=github-pat"
 
 echo "=== 5. Assign AcrPull to job managed identity ==="
