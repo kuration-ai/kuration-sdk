@@ -16,6 +16,7 @@ PYTHON_FENCE = re.compile(
     r"^[ \t]*```python[ \t]*\n(.*?)^[ \t]*```[ \t]*$",
     re.MULTILINE | re.DOTALL,
 )
+SNIPPET_INCLUDE = re.compile(r"^\s*--8<--\s+\"[^\"\n]+\"\s*$")
 
 
 def _public_markdown_files() -> list[Path]:
@@ -105,6 +106,8 @@ def test_fenced_python_examples_are_syntactically_valid() -> None:
     for source in _public_markdown_files():
         text = source.read_text(encoding="utf-8")
         for match in PYTHON_FENCE.finditer(text):
+            if SNIPPET_INCLUDE.match(match.group(1)):
+                continue  # pymdownx.snippets expands this at mkdocs build time, not here.
             line = text.count("\n", 0, match.start()) + 1
             try:
                 compile(textwrap.dedent(match.group(1)), str(source), "exec")

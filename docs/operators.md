@@ -289,7 +289,7 @@ portion transactionally.
 
 ## Complete runnable examples
 
-[`examples/05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py) registers both styles,
+`examples/05_custom_operators.py` registers both styles,
 discovers their descriptors, runs them over small in-memory sessions, and verifies their selected
 features. It requires only the NumPy core:
 
@@ -297,10 +297,18 @@ features. It requires only the NumPy core:
 python examples/05_custom_operators.py
 ```
 
-[`examples/06_gameplay_operator_methods.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py)
+```python
+--8<-- "examples/05_custom_operators.py"
+```
+
+`examples/06_gameplay_operator_methods.py`
 uses a synthetic precomputed camera trajectory to demonstrate the maintained gameplay methods,
 the namespace-qualified spelling, and the fact that every call returns the same core `Pipeline`:
 
 ```bash
 python examples/06_gameplay_operator_methods.py
+```
+
+```python
+--8<-- "examples/06_gameplay_operator_methods.py"
 ```
