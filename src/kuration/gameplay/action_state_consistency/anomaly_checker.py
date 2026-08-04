@@ -130,7 +130,9 @@ def validate_calibration(calibration) -> dict:
 def derive_baselines(
     samples,
     *,
-    min_samples: int = DEFAULT_CALIBRATION["min_samples"],
+    # int() because DEFAULT_CALIBRATION mixes ints and floats, so its value type
+    # widens to float; the count knobs stay ints without duplicating the defaults.
+    min_samples: int = int(DEFAULT_CALIBRATION["min_samples"]),
     sign_consensus: float = DEFAULT_CALIBRATION["sign_consensus"],
     tolerance: float = DEFAULT_CALIBRATION["tolerance"],
 ) -> dict:
@@ -284,7 +286,14 @@ class AnomalyChecker:
         ``validate_config`` (plus any type-specific checks) before constructing this."""
         self.anomaly_type = validated_config["anomaly_type"]
         self.baselines = validated_config["baselines"]
-        self.calibration = validated_config.get("calibration") if self.baselines is None else None
+        # None is the supplied-baselines marker: there are no self-calibration knobs in
+        # that mode. Otherwise fill the documented defaults, so a config that omits
+        # "calibration" entirely still gets a usable dict rather than a None deref later.
+        self.calibration: dict | None = (
+            validate_calibration(validated_config.get("calibration"))
+            if self.baselines is None
+            else None
+        )
         self._judged_cache: dict | None = None
         # A press's global frame position can be "owned" by more than one overlapping
         # window (see the pixel-shift guide, "Input and segment-boundary
@@ -388,6 +397,18 @@ class AnomalyChecker:
         self._judged_cache = None
         self._clip_records.setdefault(source_id, []).append(record)
 
+    def _calibration_knobs(self) -> dict:
+        """The active self-calibration knobs.
+
+        Every caller is already past a ``self.baselines is not None`` guard, so this
+        only narrows away the supplied-baselines ``None``; reaching it in that mode is a
+        bug rather than a user error.
+        """
+        calibration = self.calibration
+        if calibration is None:
+            raise ValueError("baselines were supplied; there are no self-calibration knobs")
+        return calibration
+
     def _judged_records(self) -> dict:
         """Per-clip records with ``consistent`` resolved.
 
@@ -401,13 +422,13 @@ class AnomalyChecker:
             return self._clip_records
         if self._judged_cache is not None:
             return self._judged_cache
-        min_clips = self.calibration["min_clips"]
+        min_clips = self._calibration_knobs()["min_clips"]
         if len(self._clips_seen) < min_clips:
             raise ValueError(
                 f"self-calibration needs at least {min_clips} clips to define a consensus; "
                 f"saw {len(self._clips_seen)} -- supply baselines= for pools this small"
             )
-        knobs = {key: self.calibration[key]
+        knobs = {key: self._calibration_knobs()[key]
                  for key in ("min_samples", "sign_consensus", "tolerance")}
         judged: dict = {}
         for source_id in self._clips_seen:
@@ -453,7 +474,7 @@ class AnomalyChecker:
                 samples.setdefault(
                     (record["control"], record["cell_key"]), []
                 ).append(record["shift"])
-        knobs = {key: self.calibration[key]
+        knobs = {key: self._calibration_knobs()[key]
                  for key in ("min_samples", "sign_consensus", "tolerance")}
         return derive_baselines(samples, **knobs)
 
@@ -465,7 +486,7 @@ class AnomalyChecker:
             return None
         return {
             "mode": "self-calibrated",
-            **self.calibration,
+            **self._calibration_knobs(),
             "derived_baselines": self.derived_baselines(),
         }
 

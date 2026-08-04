@@ -117,16 +117,19 @@ def test_fenced_python_examples_are_syntactically_valid() -> None:
 
 def test_numbered_examples_are_cataloged_and_run_by_ci() -> None:
     catalog = (REPOSITORY_ROOT / "examples" / "README.md").read_text(encoding="utf-8")
-    workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
-        encoding="utf-8"
-    )
+    # CI is split across several ci*.yml files so that no single workflow run
+    # has a job list large enough to time out the self-hosted runner's scaler,
+    # so an example may be run from any of them.
+    workflow_paths = sorted((REPOSITORY_ROOT / ".github" / "workflows").glob("ci*.yml"))
+    assert workflow_paths, "no ci*.yml workflow files found"
+    workflows = "\n".join(path.read_text(encoding="utf-8") for path in workflow_paths)
     missing: list[str] = []
 
     for example in sorted((REPOSITORY_ROOT / "examples").glob("[0-9][0-9]_*.py")):
         relative = example.relative_to(REPOSITORY_ROOT).as_posix()
         if relative not in catalog:
             missing.append(f"{relative}: examples/README.md")
-        if relative not in workflow:
-            missing.append(f"{relative}: .github/workflows/ci.yml")
+        if relative not in workflows:
+            missing.append(f"{relative}: .github/workflows/ci*.yml")
 
     assert not missing, "Numbered examples missing from catalog or CI:\n" + "\n".join(missing)
