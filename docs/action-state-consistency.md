@@ -179,7 +179,7 @@ It decodes frames through the SDK's bounded media path, drives the analyzer once
 immutable pipeline carrying the verdict:
 
 The download-free runnable companion is
-[`examples/07_action_state_consistency.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/07_action_state_consistency.py);
+`examples/07_action_state_consistency.py`;
 it injects an in-memory media provider, exercises real optical flow, and shows both verdicts.
 
 ```python
