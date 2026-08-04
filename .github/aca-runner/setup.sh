@@ -71,6 +71,7 @@ echo "OK"
 
 echo "=== 2. Verify shared ACA environment '${ACA_ENV}' exists ==="
 echo "Subscription: $(az account show --query 'name' -o tsv 2>/dev/null || echo '(az account show failed — not logged in?)')"
+echo "Tenant:       $(az account show --query 'tenantId' -o tsv 2>/dev/null || echo '?')"
 
 # Surface the real az error rather than reporting every failure as "not found":
 # a wrong subscription, a missing containerapp extension, an expired login and
