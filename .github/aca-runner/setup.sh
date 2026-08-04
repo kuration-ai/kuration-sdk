@@ -70,9 +70,30 @@ fi
 echo "OK"
 
 echo "=== 2. Verify shared ACA environment '${ACA_ENV}' exists ==="
-if ! az containerapp env show --name "$ACA_ENV" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
-  echo "ERROR: ACA environment '${ACA_ENV}' not found in '${RESOURCE_GROUP}'."
-  echo "It is created by aintropy-engine-product/aca-runner/setup.sh."
+echo "Subscription: $(az account show --query 'name' -o tsv 2>/dev/null || echo '(az account show failed — not logged in?)')"
+
+# Surface the real az error rather than reporting every failure as "not found":
+# a wrong subscription, a missing containerapp extension, an expired login and
+# an absent environment all fail here for different reasons.
+if ! ENV_ERR=$(az containerapp env show \
+      --name "$ACA_ENV" --resource-group "$RESOURCE_GROUP" -o none 2>&1); then
+  echo "ERROR: could not read ACA environment '${ACA_ENV}' in '${RESOURCE_GROUP}'."
+  echo "az said:"
+  echo "${ENV_ERR}" | sed 's/^/  /'
+  echo ""
+  echo "Common causes, in order:"
+  echo "  1. Wrong subscription selected. The environment lives wherever the"
+  echo "     engine-product 'github-runner' job runs:"
+  echo "       az account list -o table"
+  echo "       az account set --subscription <name-or-id>"
+  echo "  2. Environment lives elsewhere. Find it, then re-run with overrides:"
+  echo "       az resource list --resource-type Microsoft.App/managedEnvironments \\"
+  echo "         --query '[].{name:name,group:resourceGroup,location:location}' -o table"
+  echo "       RESOURCE_GROUP=<rg> ACA_ENV=<env> GITHUB_PAT=... bash ${BASH_SOURCE[0]}"
+  echo "  3. containerapp extension missing:  az extension add -n containerapp"
+  echo ""
+  echo "The environment is created by aintropy-engine-product/aca-runner/setup.sh;"
+  echo "this script only adds a job to it."
   exit 1
 fi
 echo "OK"
