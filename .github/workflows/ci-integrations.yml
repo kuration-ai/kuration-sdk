@@ -33,13 +33,18 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-          cache: pip
+      # No `cache: pip`, and --no-cache-dir below: the slam extra pulls torch,
+      # torchvision, faiss and opencv, which already exhaust the ACA replica's
+      # ephemeral disk ("[Errno 28] No space left on device" installing
+      # torchvision). A pip cache keeps a second full copy of every wheel.
       - name: Install optional integration
         if: matrix.dependency_set == 'current'
-        run: python -m pip install -e '.[dev,${{ matrix.extra }}]'
+        run: python -m pip install --no-cache-dir -e '.[dev,${{ matrix.extra }}]'
       - name: Install optional integration at its declared minimum
         if: matrix.dependency_set == 'minimum'
-        run: python -m pip install -c .github/constraints/minimum.txt -e '.[dev,${{ matrix.extra }}]'
+        run: >-
+          python -m pip install --no-cache-dir
+          -c .github/constraints/minimum.txt -e '.[dev,${{ matrix.extra }}]'
       - name: Import and test optional integration
         env:
           RAY_memory_monitor_refresh_ms: "0"
