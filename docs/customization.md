@@ -187,8 +187,8 @@ operator. It may compose `.join_video()` and `.transform()`, but cannot invent a
 stage or terminal. The named call and its expansion are both retained in provenance.
 
 The complete [operator guide](operators.md) owns registration, transform-backed computation,
-contract testing, discovery, and plugin-packaging examples. The runnable companion is
-[`examples/05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py).
+contract testing, discovery, and plugin-packaging examples, including the full source of the
+runnable companion, `examples/05_custom_operators.py`.
 
 Artifacts and manifests carry `artifact_format_version`; jobs carry `job_schema_version`.
 Unversioned documents are legacy `0.0`. The current artifact format is `1.2` and the current job
