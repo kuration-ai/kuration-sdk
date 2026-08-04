@@ -53,7 +53,7 @@ passed to `--out`.
 
 ## 3. What the pipeline did
 
-The runnable source is [`examples/quickstart.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/quickstart.py). Its central pipeline
+The runnable source is `examples/quickstart.py`. Its central pipeline
 is:
 
 ```python

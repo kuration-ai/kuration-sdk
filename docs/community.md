@@ -8,13 +8,13 @@ for the repository; otherwise start with an issue.
 
 Read the repository policies before opening a report:
 
-- [Support policy](https://github.com/aintropy-ai/kuration-sdk/blob/main/SUPPORT.md) — supported
+- [Support policy](support.md) — supported
   questions, information to include, and response expectations.
-- [Contributing guide](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md) —
+- [Contributing guide](contributing.md) —
   development setup, extension boundaries, tests, and pull-request requirements.
-- [Governance](https://github.com/aintropy-ai/kuration-sdk/blob/main/GOVERNANCE.md) — how maintainers
+- [Governance](governance.md) — how maintainers
   make compatibility and roadmap decisions.
-- [Security policy](https://github.com/aintropy-ai/kuration-sdk/blob/main/SECURITY.md) — the private
+- [Security policy](security.md) — the private
   vulnerability-reporting path and runtime trust boundaries.
 
 Do not include credentials, private datasets, unreleased vulnerability details, or proprietary

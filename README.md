@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/aintropy-ai/kuration-sdk/main/docs/assets/kuration-hero.svg" alt="Kuration turns raw sequential data into selected, verified training shards" width="100%">
+  <img src="docs/assets/kuration-hero.svg" alt="Kuration turns raw sequential data into selected, verified training shards" width="100%">
 </p>
 
 # kuration-sdk
@@ -44,7 +44,7 @@ and SHA-256 integrity metadata.
 | Move from laptop to scale | Streaming sources, bounded Arrow checkpoints, process workers, cloud paths, and optional Ray execution |
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/aintropy-ai/kuration-sdk/main/docs/assets/curation-flow.svg" alt="Sources flow through windows, features, selection, and verified dataset artifacts" width="95%">
+  <img src="docs/assets/curation-flow.svg" alt="Sources flow through windows, features, selection, and verified dataset artifacts" width="95%">
 </p>
 
 ## Install
