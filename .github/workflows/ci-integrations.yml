@@ -1,0 +1,97 @@
+# Split out of ci.yml so each run's job list stays small enough for the ACA
+# runner's KEDA scaler to enumerate within its 3s HTTP timeout. See
+# .github/aca-runner/ci-workflow-split-plan.md. The aggregate gate lives in
+# ci.yml's `required-ci`, which waits on this workflow's conclusion.
+#
+# The current/minimum halves of the matrix are separate workflows so neither
+# run carries 20 jobs; keep them in sync when adding an extra.
+name: CI - Integrations
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  optional-integrations:
+    name: Optional integration (${{ matrix.extra }}, ${{ matrix.dependency_set }})
+    runs-on: [self-hosted, aca]
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        extra: [zarr, torch, hf, video, ray, stats, pixel-shift, action-state, slam, slam-viz]
+        dependency_set: [current]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      # No `cache: pip`, and --no-cache-dir below: the slam extra pulls torch,
+      # torchvision, faiss and opencv, which already exhaust the ACA replica's
+      # ephemeral disk ("[Errno 28] No space left on device" installing
+      # torchvision). A pip cache keeps a second full copy of every wheel.
+      - name: Install optional integration
+        if: matrix.dependency_set == 'current'
+        run: python -m pip install --no-cache-dir -e '.[dev,${{ matrix.extra }}]'
+      - name: Install optional integration at its declared minimum
+        if: matrix.dependency_set == 'minimum'
+        run: >-
+          python -m pip install --no-cache-dir
+          -c .github/constraints/minimum.txt -e '.[dev,${{ matrix.extra }}]'
+      - name: Import and test optional integration
+        env:
+          RAY_memory_monitor_refresh_ms: "0"
+        shell: bash
+        run: |
+          case "${{ matrix.extra }}" in
+            zarr)
+              python -c 'import zarr'
+              python -m pytest tests/test_adapters_tier1.py tests/test_check_source.py -k zarr -q
+              ;;
+            torch)
+              python -c 'import torch'
+              python -m pytest tests/test_loaders.py -k torch -q
+              ;;
+            hf)
+              python -c 'import datasets'
+              python -m pytest tests/test_adapters_tier1.py tests/test_check_source.py \
+                -k 'hf or huggingface' -q
+              ;;
+            video)
+              python -c 'import av; from kuration.core.media import _av; assert _av() is av'
+              python -m pytest tests/test_media_transforms_execution.py -k 'video or pyav' -q
+              ;;
+            ray)
+              python -c 'import ray'
+              python -m pytest tests/test_execution_backpressure.py \
+                tests/test_determinism_conformance.py -k ray -q
+              ;;
+            stats)
+              python -c 'import matplotlib'
+              python -m pytest tests/test_stats.py tests/test_gameplay_stats.py -q
+              ;;
+            pixel-shift)
+              python -c 'import cv2; from kuration.gameplay import pixel_shift'
+              python -m pytest tests/test_pixel_shift.py -q
+              ;;
+            action-state)
+              python -c 'import cv2; from kuration.gameplay import action_state_consistency'
+              python -m pytest tests/test_action_state_consistency.py \
+                tests/test_anomaly_checker.py -q
+              ;;
+            slam)
+              python -c 'import av, faiss, torch; from kuration.gameplay.slam import SLAMOperator'
+              python -m pytest tests/test_slam.py tests/test_slam_regressions.py -q
+              ;;
+            slam-viz)
+              python -c 'import trimesh; from kuration.gameplay.slam import build_pointcloud_scene'
+              python -m pytest tests/test_slam.py -k pointcloud_scene -q
+              ;;
+          esac
