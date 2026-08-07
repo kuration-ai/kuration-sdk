@@ -33,7 +33,7 @@ import numpy as np
 from kuration import FieldSpec, SchemaSpec, Tick
 
 ASG_SCHEMA = SchemaSpec(
-    name="asg_cs2_collision",
+    name="asg_collision",
     entity_axis="player",
     # ASG match data is sampled every 4 of 64 server ticks -> one sample every 62.5ms (16Hz),
     # matching the reference physics_utils.py's DT constant.

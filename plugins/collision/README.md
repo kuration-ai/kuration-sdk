@@ -1,4 +1,4 @@
-# Kuration CS2 Collision
+# Kuration Collision
 
 Detects and classifies CS2 wall collisions -- `head_on`, `angled`, `W_slide`, `WA_slide`,
 `slide_end`, `slide_constrained` -- from per-tick position/view-angle telemetry, raycast
@@ -15,14 +15,14 @@ below.
 ## Install
 
 ```bash
-pip install kuration-plugin-cs2-collision
+pip install kuration-plugin-collision
 ```
 
 For repository development:
 
 ```bash
-python -m pip install -e . -e plugins/cs2_collision[test]
-python -m pytest plugins/cs2_collision/tests -q
+python -m pip install -e . -e plugins/collision[test]
+python -m pytest plugins/collision/tests -q
 ```
 
 ## Format-agnostic by design
@@ -78,12 +78,12 @@ run would very likely surface more, and more confidently-ranked, candidates.
 
 ## What gets registered
 
-- `aintropy/cs2-collision-asg` -- an `adapter`: ASG `data.json` -> canonical `Tick`s.
-- `aintropy/cs2-collision-teapearce` -- an `adapter`: TeaPearce dust2 `.npy` -> canonical `Tick`s.
-- `aintropy/cs2-collision` -- a `transform` (the actual per-window compute) and an
+- `aintropy/collision-asg` -- an `adapter`: ASG `data.json` -> canonical `Tick`s.
+- `aintropy/collision-teapearce` -- an `adapter`: TeaPearce dust2 `.npy` -> canonical `Tick`s.
+- `aintropy/collision` -- a `transform` (the actual per-window compute) and an
   `operator` (its fluent-pipeline wrapper) under the same name, mirroring
   `plugins/pixel_shift`'s pattern.
-- `aintropy/cs2-collision-directional` -- an `analyzer`: the physically-modeled,
+- `aintropy/collision-directional` -- an `analyzer`: the physically-modeled,
   no-learned-baseline alternative described below.
 
 Discover without reading a dataset:
@@ -92,15 +92,15 @@ Discover without reading a dataset:
 kur-list adapters
 kur-list transforms
 kur-list operators
-kur-describe operator aintropy/cs2-collision --json
+kur-describe operator aintropy/collision --json
 ```
 
 ## Usage
 
 ```python
 from kuration import default_registry, input
-from kuration_cs2_collision import register
-from kuration_cs2_collision.asg_adapter import AsgCollisionAdapter
+from kuration_collision import register
+from kuration_collision.asg_adapter import AsgCollisionAdapter
 
 register()
 
@@ -111,7 +111,7 @@ map_registry = {"de_dust2": ["/path/to/de_dust2.bsp"]}   # add more maps as need
 pipeline = (
     input(adapter=AsgCollisionAdapter(), sources=list(map_for_source), schema=AsgCollisionAdapter.schema)
     .window(256, stride=128)
-    .apply("aintropy/cs2-collision",
+    .apply("aintropy/collision",
            map_for_source=map_for_source,
            map_registry=map_registry,
            dist_path="action_state_dist.json")
@@ -123,8 +123,8 @@ pipeline = (
 
 ```python
 from kuration import input
-from kuration_cs2_collision import register
-from kuration_cs2_collision.teapearce_adapter import TEAPEARCE_SCHEMA, TeaPearceDust2Adapter
+from kuration_collision import register
+from kuration_collision.teapearce_adapter import TEAPEARCE_SCHEMA, TeaPearceDust2Adapter
 
 register()
 
@@ -135,7 +135,7 @@ map_registry = {"de_dust2": ["/path/to/de_dust2.bsp"]}  # a CS2 dust2 .bsp works
 pipeline = (
     input(adapter=TeaPearceDust2Adapter(), sources=npy_paths, schema=TEAPEARCE_SCHEMA)
     .window(128, stride=128)
-    .apply("aintropy/cs2-collision",
+    .apply("aintropy/collision",
            map_for_source=map_for_source,
            map_registry=map_registry,
            dist_path="action_state_dist.json")  # ASG-fit placeholder -- see caveat above
@@ -159,7 +159,7 @@ One value per output, per window (segment) -- not per tick:
 Parsing raw `.bsp`/`.glb`/`.nav` files (Source-engine lump tables + texture-based
 non-solid-face filtering for `.bsp`) is the expensive part, not building the raycast
 BVH. `mesh_cache.py` caches the parsed, filtered `(vertices, faces)` arrays to an
-on-disk `.npz` (`disk_cache_dir`, default `.kuration_cs2_collision_cache`), so repeated
+on-disk `.npz` (`disk_cache_dir`, default `.kuration_collision_cache`), so repeated
 runs across separate processes skip raw parsing entirely. Within one pipeline run, an
 in-memory `{map_name: mesh}` dict on the transform instance gives free reuse across
 every source sharing a map -- safe because Kuration's batch-transform stage runs
@@ -179,7 +179,7 @@ single-process/sequential with one transform instance reused for the whole run (
 
 ## Directional-residual analyzer (alternative algorithm)
 
-`aintropy/cs2-collision-directional` is a second, independent collision-detection
+`aintropy/collision-directional` is a second, independent collision-detection
 algorithm, ported unmodified from the reference `directional_collision_detector.py`
 script. It needs no learned per-condition baseline (no `action_state_dist.json`): for
 every tick where a movement combo is held it computes the *expected* velocity from a
@@ -213,7 +213,7 @@ recording (it flattens that same file's canonical `Tick` stream -- the exact one
 Pipeline's windowed Tick machinery entirely):
 
 ```python
-from kuration_cs2_collision import fit_ramp_models, load_directional_arrays, save_ramp_models
+from kuration_collision import fit_ramp_models, load_directional_arrays, save_ramp_models
 
 npy_paths = [...]  # your TeaPearce dust2 .npy recordings
 sources_by_id = {p: load_directional_arrays(p) for p in npy_paths}
@@ -235,12 +235,12 @@ validation, not because anything here is TeaPearce-specific):
 
 ```python
 import kuration
-from kuration_cs2_collision import load_directional_arrays, register
+from kuration_collision import load_directional_arrays, register
 
 register()
 
 analyzer = kuration.get_analyzer(
-    "aintropy/cs2-collision-directional",
+    "aintropy/collision-directional",
     map_for_source={p: "de_dust2" for p in npy_paths},
     map_registry={"de_dust2": ["/path/to/de_dust2.bsp"]},
     ramp_models_path="ramp_models.json",

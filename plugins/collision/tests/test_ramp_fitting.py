@@ -10,8 +10,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from kuration_cs2_collision.physics import BIT_A, BIT_W
-from kuration_cs2_collision.ramp_fitting import (
+from kuration_collision.physics import BIT_A, BIT_W
+from kuration_collision.ramp_fitting import (
     find_clean_press_ramps,
     fit_exponential_ramp,
     fit_ramp_models,

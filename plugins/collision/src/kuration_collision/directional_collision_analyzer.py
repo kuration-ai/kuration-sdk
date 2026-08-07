@@ -33,7 +33,7 @@ from .mesh_cache import cast_proximity_rays, load_mesh_cached
 from .physics import BIT_A, BIT_D, BIT_S, BIT_W, MAX_DYAW_LEARN, is_skip_flags, wrap_angle
 from .ramp_fitting import ALL_MOVE_BITS, load_ramp_models
 
-COMPONENT_NAME = "aintropy/cs2-collision-directional"
+COMPONENT_NAME = "aintropy/collision-directional"
 
 # How many consecutive ticks of an unmodeled combo (typically a brief key release/change
 # right as the player reacts to hitting something) we tolerate before dropping collision
@@ -111,7 +111,7 @@ class DirectionalCollisionAnalyzer:
 
     def __init__(
         self, *, map_for_source, map_registry, ramp_models_path,
-        disk_cache_dir=".kuration_cs2_collision_cache",
+        disk_cache_dir=".kuration_collision_cache",
         proximity=40.0, min_missing_speed=MIN_MISSING_SPEED, concentration_ratio=0.6,
     ):
         self.map_for_source = dict(map_for_source)

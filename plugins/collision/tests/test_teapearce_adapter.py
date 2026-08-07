@@ -7,7 +7,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from kuration_cs2_collision.teapearce_adapter import (
+from kuration_collision.teapearce_adapter import (
     TEAPEARCE_SCHEMA,
     TeaPearceDust2Adapter,
     load_directional_arrays,

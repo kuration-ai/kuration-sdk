@@ -13,15 +13,15 @@ import pytest
 trimesh = pytest.importorskip("trimesh")
 
 from kuration import default_registry, describe_component
-from kuration_cs2_collision import register
-from kuration_cs2_collision.asg_adapter import AsgCollisionAdapter
-from kuration_cs2_collision.collision_operator import (
+from kuration_collision import register
+from kuration_collision.asg_adapter import AsgCollisionAdapter
+from kuration_collision.collision_operator import (
     COMPONENT_NAME,
     OUTPUT_KEYS,
     CollisionMechanics,
     _score_and_classify_window,
 )
-from kuration_cs2_collision.mesh_cache import load_mesh_cached
+from kuration_collision.mesh_cache import load_mesh_cached
 
 register()
 
@@ -75,7 +75,7 @@ def test_registers_transform_and_operator():
     transform_descriptor = describe_component("transform", COMPONENT_NAME,
                                               registry=default_registry.snapshot())
     assert transform_descriptor["parameters"]["additionalProperties"] is False
-    assert transform_descriptor["package"] == "kuration-plugin-cs2-collision"
+    assert transform_descriptor["package"] == "kuration-plugin-collision"
 
 
 # ---------------------------------------------------------------------------------------

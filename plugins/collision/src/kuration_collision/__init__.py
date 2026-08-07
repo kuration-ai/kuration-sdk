@@ -23,8 +23,8 @@ from .ramp_fitting import fit_ramp_models, load_ramp_models, save_ramp_models
 from .teapearce_adapter import TEAPEARCE_SCHEMA, TeaPearceDust2Adapter, load_directional_arrays
 
 
-ADAPTER_NAME = "aintropy/cs2-collision-asg"
-TEAPEARCE_ADAPTER_NAME = "aintropy/cs2-collision-teapearce"
+ADAPTER_NAME = "aintropy/collision-asg"
+TEAPEARCE_ADAPTER_NAME = "aintropy/collision-teapearce"
 
 
 def register() -> None:
@@ -40,11 +40,11 @@ def register() -> None:
 
     common = {
         "version": "1",
-        "package": "kuration-plugin-cs2-collision",
+        "package": "kuration-plugin-collision",
         "stability": "experimental",
-        "install_hint": "pip install kuration-plugin-cs2-collision",
+        "install_hint": "pip install kuration-plugin-collision",
         "documentation": "https://github.com/aintropy-ai/kuration-sdk/tree/main/"
-                         "plugins/cs2_collision#usage",
+                         "plugins/collision#usage",
     }
     if ADAPTER_NAME not in default_registry.names("adapter"):
         register_adapter(

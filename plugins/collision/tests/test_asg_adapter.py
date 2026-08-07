@@ -8,7 +8,7 @@ import json
 import numpy as np
 import pytest
 
-from kuration_cs2_collision.asg_adapter import ASG_SCHEMA, AsgCollisionAdapter
+from kuration_collision.asg_adapter import ASG_SCHEMA, AsgCollisionAdapter
 
 
 def _write_match(tmp_path, map_name="de_dust2"):

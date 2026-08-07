@@ -17,32 +17,32 @@ import pytest
 
 from kuration import default_registry, list_components
 
-from kuration_cs2_collision import register
-from kuration_cs2_collision.asg_adapter import AsgCollisionAdapter
-from kuration_cs2_collision.collision_operator import COMPONENT_NAME, CollisionMechanics, collision_mechanics
-from kuration_cs2_collision.directional_collision_analyzer import (
+from kuration_collision import register
+from kuration_collision.asg_adapter import AsgCollisionAdapter
+from kuration_collision.collision_operator import COMPONENT_NAME, CollisionMechanics, collision_mechanics
+from kuration_collision.directional_collision_analyzer import (
     COMPONENT_NAME as DIRECTIONAL_COMPONENT_NAME,
 )
-from kuration_cs2_collision.directional_collision_analyzer import directional_collision_analyzer
-from kuration_cs2_collision.teapearce_adapter import TeaPearceDust2Adapter
+from kuration_collision.directional_collision_analyzer import directional_collision_analyzer
+from kuration_collision.teapearce_adapter import TeaPearceDust2Adapter
 
 pytest.importorskip("trimesh")
 
 register()
 
-ADAPTER_NAME = "aintropy/cs2-collision-asg"
-TEAPEARCE_ADAPTER_NAME = "aintropy/cs2-collision-teapearce"
+ADAPTER_NAME = "aintropy/collision-asg"
+TEAPEARCE_ADAPTER_NAME = "aintropy/collision-teapearce"
 
 
 def test_plugin_entry_point_and_isolated_snapshot_contract():
     installed = entry_points()
     candidates = (
-        installed.select(group="kuration.plugins", name="cs2_collision")
+        installed.select(group="kuration.plugins", name="collision")
         if hasattr(installed, "select")
         else [point for point in installed.get("kuration.plugins", ())
-              if point.name == "cs2_collision"]
+              if point.name == "collision"]
     )
-    assert [point.value for point in candidates] == ["kuration_cs2_collision:register"]
+    assert [point.value for point in candidates] == ["kuration_collision:register"]
 
     isolated = default_registry.snapshot()
     assert isolated.get("adapter", ADAPTER_NAME) is AsgCollisionAdapter
@@ -81,7 +81,7 @@ def test_every_registered_component_describable_through_the_kur_describe_cli(mon
         describe_main()
         row = json.loads(capsys.readouterr().out)
         assert row["name"] == name
-        assert row["package"] == "kuration-plugin-cs2-collision"
+        assert row["package"] == "kuration-plugin-collision"
         assert row["parameters"]["additionalProperties"] is False
 
 

@@ -13,14 +13,14 @@ import pytest
 trimesh = pytest.importorskip("trimesh")
 
 from kuration import default_registry, describe_component
-from kuration_cs2_collision import register
-from kuration_cs2_collision.directional_collision_analyzer import (
+from kuration_collision import register
+from kuration_collision.directional_collision_analyzer import (
     COMPONENT_NAME,
     DirectionalCollisionAnalyzer,
 )
-from kuration_cs2_collision.mesh_cache import load_mesh_cached
-from kuration_cs2_collision.physics import BIT_W, FL_FROZEN
-from kuration_cs2_collision.ramp_fitting import save_ramp_models
+from kuration_collision.mesh_cache import load_mesh_cached
+from kuration_collision.physics import BIT_W, FL_FROZEN
+from kuration_collision.ramp_fitting import save_ramp_models
 
 register()
 
@@ -59,7 +59,7 @@ def test_registers_directional_collision_analyzer():
     assert COMPONENT_NAME in default_registry.names("analyzer")
     desc = describe_component("analyzer", COMPONENT_NAME, registry=default_registry.snapshot())
     assert desc["parameters"]["additionalProperties"] is False
-    assert desc["package"] == "kuration-plugin-cs2-collision"
+    assert desc["package"] == "kuration-plugin-collision"
     assert desc["capabilities"] == {"stateful": True, "cross_segment": True}
 
 

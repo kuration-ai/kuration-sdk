@@ -1,5 +1,5 @@
 [project]
-name = "kuration-plugin-cs2-collision"
+name = "kuration-plugin-collision"
 version = "0.1.0"
 description = "Kuration operator that detects and classifies CS2 wall collisions from per-tick position/angle telemetry raycast against map geometry."
 readme = "README.md"
@@ -20,7 +20,7 @@ test = [
 ]
 
 [project.entry-points."kuration.plugins"]
-cs2_collision = "kuration_cs2_collision:register"
+collision = "kuration_collision:register"
 
 [build-system]
 requires = ["setuptools>=80,<84"]

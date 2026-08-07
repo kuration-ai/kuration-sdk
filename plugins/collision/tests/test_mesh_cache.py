@@ -11,7 +11,7 @@ import pytest
 
 trimesh = pytest.importorskip("trimesh")
 
-from kuration_cs2_collision import mesh_cache as mc
+from kuration_collision import mesh_cache as mc
 
 
 def _box_glb(tmp_path, name="box"):

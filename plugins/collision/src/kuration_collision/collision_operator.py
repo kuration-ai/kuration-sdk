@@ -1,4 +1,4 @@
-"""The `aintropy/cs2-collision` batch transform + operator pair.
+"""The `aintropy/collision` batch transform + operator pair.
 
 Ported from the reference `collision_pipeline_fused.py` pipeline (itself a fused,
 in-memory-only combination of `action_state_analyzer.py`'s per-tick anomaly scan and
@@ -71,7 +71,7 @@ def _drop_entity_axis_row(arr, *, vector: bool):
     return arr[:, 0, 0] if arr.ndim == 3 else arr
 
 
-COMPONENT_NAME = "aintropy/cs2-collision"
+COMPONENT_NAME = "aintropy/collision"
 
 COLLISION_TYPES = ("head_on", "angled", "W_slide", "WA_slide", "slide_end", "slide_constrained")
 
@@ -126,7 +126,7 @@ COLLISION_PARAMETERS = {
 
 # Defaults mirror collision_pipeline_fused.py's argparse defaults exactly.
 _DEFAULTS = dict(
-    disk_cache_dir=".kuration_cs2_collision_cache",
+    disk_cache_dir=".kuration_collision_cache",
     min_score=2.0,
     proximity=40.0,
     min_approach=250.0,

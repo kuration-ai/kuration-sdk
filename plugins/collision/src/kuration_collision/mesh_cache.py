@@ -75,7 +75,7 @@ def _trimesh():
         import trimesh
     except ImportError as e:
         raise ImportError(
-            "kuration-plugin-cs2-collision needs trimesh: pip install trimesh"
+            "kuration-plugin-collision needs trimesh: pip install trimesh"
         ) from e
     return trimesh
 
@@ -530,7 +530,7 @@ def build_map_geometry(map_paths, *, disk_cache_dir: str | None, map_name: str) 
     return vertices, faces
 
 
-def load_mesh_cached(map_name: str, map_paths, *, disk_cache_dir: str | None = ".kuration_cs2_collision_cache"):
+def load_mesh_cached(map_name: str, map_paths, *, disk_cache_dir: str | None = ".kuration_collision_cache"):
     """Load (from the on-disk cache, or by parsing raw map files) a warmed trimesh.Trimesh
     for `map_name`. Callers should additionally hold an in-memory `{map_name: mesh}` dict
     (see `CollisionMechanics.__init__`) so this only runs once per map per process."""
