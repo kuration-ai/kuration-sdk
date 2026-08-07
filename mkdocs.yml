@@ -74,6 +74,7 @@ nav:
       - Customization and discovery: customization.md
       - Pixel shift: pixel-shift.md
       - Action-state consistency: action-state-consistency.md
+      - Collision detection: collision.md
       - SLAM trajectory curation: slam.md
       - Domain modules: domains.md
       - Architecture: architecture.md

@@ -50,6 +50,7 @@ p2p = ["protobuf>=5.29.6"]        # Open P2P worked example (annotation.proto pa
 cli = ["jsonschema>=4.21"]        # kur-validate --json-schema (JSON Schema cross-check)
 pixel-shift = ["opencv-python>=4.9"]  # DIAMOND action-aligned optical-flow operator
 action-state = ["opencv-python>=4.9"] # pixel-shift-backed consistency analyzer
+collision = ["trimesh>=4", "rtree>=1.0"]  # CS2 wall-collision raycast operator/analyzer
 slam = [
     "av>=12",
     "torch>=2.13",
@@ -81,6 +82,7 @@ gameplay = [
     "safetensors>=0.4",
     "faiss-cpu>=1.8",
     "trimesh>=4",
+    "rtree>=1.0",
 ]                                  # every built-in gameplay capability and visualization runtime
 standard-operators = [
     "av>=12",
@@ -97,6 +99,7 @@ standard-operators = [
     "safetensors>=0.4",
     "faiss-cpu>=1.8",
     "trimesh>=4",
+    "rtree>=1.0",
 ]                                  # compatibility alias for the gameplay extra
 all = [
     "scikit-learn>=1.5",
@@ -126,6 +129,7 @@ all = [
     "safetensors>=0.4",
     "faiss-cpu>=1.8",
     "trimesh>=4",
+    "rtree>=1.0",
 ]                                   # every runtime capability and cloud backend in one install
 dev = [
     "pytest>=8",
