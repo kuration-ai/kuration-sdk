@@ -32,3 +32,12 @@ out/
 
 CLAUDE.md
 uv.lock
+
+# JupyterLab extension build output (plugins/lab)
+node_modules/
+plugins/lab/lib/
+plugins/lab/src/kuration_lab/labextension/
+*.tsbuildinfo
+*.tgz
+.yarn/
+yarn-error.log

@@ -79,6 +79,7 @@ nav:
       - Architecture: architecture.md
   - Operate:
       - Jobs and CLI: jobs.md
+      - JupyterLab extension: lab.md
       - Compatibility: compatibility.md
       - Release notes: releases.md
       - Community and support: community.md

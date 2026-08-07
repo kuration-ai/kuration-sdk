@@ -116,6 +116,10 @@ jobs:
           mkdir -p plugin-dist
           for plugin in plugins/*; do
             test -f "$plugin/pyproject.toml" || continue
+            # Browser-facing plugins (a package.json marks them) need node/jlpm and
+            # register no kuration.plugins entry point; ci.yml's notebook-ui job
+            # builds and validates them instead.
+            test -f "$plugin/package.json" && continue
             python scripts/check_plugin.py "$plugin" --artifacts plugin-dist
           done
           sha256sum plugin-dist/* > plugin-SHA256SUMS
