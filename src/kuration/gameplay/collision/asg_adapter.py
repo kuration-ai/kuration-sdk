@@ -2,8 +2,9 @@
 
 One kuration "source" = one (match, player) pair -- matching how the reference scripts'
 own `by_player`/`tick_index` helpers already organize match data (one continuous tick
-sequence per player), and how `plugins/action_state_consistency`/`plugins/pixel_shift`
-treat a `segment_id`'s `source_id` as one continuous clip. This keeps windowing,
+sequence per player), and how the sibling `kuration.gameplay.action_state_consistency`/
+`kuration.gameplay.pixel_shift` packages treat a `segment_id`'s `source_id` as one
+continuous clip. This keeps windowing,
 lookbehind, and the collision operator's per-source mesh lookup all operating on one
 player's own uninterrupted tick sequence, with no cross-player mixing inside a window.
 

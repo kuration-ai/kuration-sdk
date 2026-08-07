@@ -15,6 +15,7 @@ src/kuration/
 │   └── ...
 └── gameplay/               # maintained gameplay implementation
     ├── action_state_consistency/
+    ├── collision/
     ├── pixel_shift/
     └── slam/
         └── _vendor/        # private SLAM runtime dependencies
@@ -34,6 +35,7 @@ vendored snapshot require the focused SLAM regression suite and preserved licens
 | `kuration.core` | schemas, adapters, segmentation, features, selection, output, registries | NumPy |
 | `kuration.gameplay.pixel_shift` | action-aligned optical-flow measurements | `[pixel-shift]` |
 | `kuration.gameplay.action_state_consistency` | cross-segment baseline analysis | `[action-state]` when measuring frames |
+| `kuration.gameplay.collision` | CS2 wall-collision detection/classification against map geometry | `[collision]` |
 | `kuration.gameplay.slam` | reconstruction, trajectory quality/diversity, point clouds | `[slam]`, `[slam-viz]` |
 | `kuration.gameplay` stats/video review | automatic action, media, and SLAM summaries; synchronized comparisons | `[stats]` for plots, `[video]` for probing |
 

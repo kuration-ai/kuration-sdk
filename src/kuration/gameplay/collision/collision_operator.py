@@ -184,6 +184,7 @@ def _score_and_classify_window(
     pos_before, yaw_before, pitch_before, hp_before, btn_before, flags_before, vel_before,
     mesh, dist, *, min_score, proximity, min_approach, max_residual,
     slide_angle, max_slide_speed, min_release_accel, max_release_vn,
+    owned_length=None,
 ) -> dict:
     """Score + classify every tick in one window (a slice of one source's continuous
     tick sequence). Ported from _scan_one_player (scoring) + _classify_one_player
@@ -193,9 +194,19 @@ def _score_and_classify_window(
     `vel` must already be true HU/s velocity, supplied by the adapter (either a real
     recorded engine velocity, or one the adapter derived itself at its own known sample
     rate) -- this function never derives or scales velocity from position deltas itself.
+
+    `owned_length` restricts the scored ticks to the window's OWNED prefix under the
+    core's ``ownership="rightmost-start"`` convention (a window owns its steps up to where
+    the next window starts, the same rule pixel-shift applies to press instances): with
+    overlapping windows (stride < window), a collision tick inside the overlap would
+    otherwise be counted once per covering window. The overlap ticks this window skips
+    are exactly the next window's owned prefix -- and the next window scores them with
+    full lookbehind context, so nothing is lost, only deduplicated. ``None`` (a direct
+    call outside the pipeline) means the whole window is owned.
     """
     have_history = pos_before is not None
     T = len(hp)
+    limit = T if owned_length is None else min(T, int(owned_length))
 
     def rec(i):
         if i < 0:
@@ -212,7 +223,7 @@ def _score_and_classify_window(
     counts = {t: 0 for t in COLLISION_TYPES}
     total = 0
 
-    for i in range(T):
+    for i in range(limit):
         p0 = rec(i)
         pm1 = rec(i - 1)
         pm2 = rec(i - 2)
@@ -363,20 +374,28 @@ class CollisionMechanics:
         return mesh
 
     def transform_batch(self, batch, ctx):
-        pos = _drop_entity_axis(batch["field:position"], vector=True)
-        angle = _drop_entity_axis(batch["field:angle"], vector=True)
-        hp = _drop_entity_axis(batch["field:hp"], vector=False)
-        btn = _drop_entity_axis(batch["field:btn_mask"], vector=False)
-        flags = _drop_entity_axis(batch["field:flags"], vector=False)
-        vel = _drop_entity_axis(batch["field:velocity"], vector=True)
+        # Address the batch by declared role (a per-use ``inputs=`` remapping can
+        # legitimately rename tokens); plain-mapping contexts from direct callers keep
+        # the registration tokens.
+        typed = hasattr(ctx, "input_token")
+
+        def tok(role):
+            return ctx.input_token(role) if typed else role
+
+        pos = _drop_entity_axis(batch[tok("field:position")], vector=True)
+        angle = _drop_entity_axis(batch[tok("field:angle")], vector=True)
+        hp = _drop_entity_axis(batch[tok("field:hp")], vector=False)
+        btn = _drop_entity_axis(batch[tok("field:btn_mask")], vector=False)
+        flags = _drop_entity_axis(batch[tok("field:flags")], vector=False)
+        vel = _drop_entity_axis(batch[tok("field:velocity")], vector=True)
 
         if hasattr(ctx, "before"):
-            pos_before_batch = [_drop_entity_axis_row(a, vector=True) for a in ctx.before("field:position")]
-            angle_before_batch = [_drop_entity_axis_row(a, vector=True) for a in ctx.before("field:angle")]
-            hp_before_batch = [_drop_entity_axis_row(a, vector=False) for a in ctx.before("field:hp")]
-            btn_before_batch = [_drop_entity_axis_row(a, vector=False) for a in ctx.before("field:btn_mask")]
-            flags_before_batch = [_drop_entity_axis_row(a, vector=False) for a in ctx.before("field:flags")]
-            vel_before_batch = [_drop_entity_axis_row(a, vector=True) for a in ctx.before("field:velocity")]
+            pos_before_batch = [_drop_entity_axis_row(a, vector=True) for a in ctx.before(tok("field:position"))]
+            angle_before_batch = [_drop_entity_axis_row(a, vector=True) for a in ctx.before(tok("field:angle"))]
+            hp_before_batch = [_drop_entity_axis_row(a, vector=False) for a in ctx.before(tok("field:hp"))]
+            btn_before_batch = [_drop_entity_axis_row(a, vector=False) for a in ctx.before(tok("field:btn_mask"))]
+            flags_before_batch = [_drop_entity_axis_row(a, vector=False) for a in ctx.before(tok("field:flags"))]
+            vel_before_batch = [_drop_entity_axis_row(a, vector=True) for a in ctx.before(tok("field:velocity"))]
         else:
             n = len(batch["segment_ids"])
             pos_before_batch = batch.get("lookbehind:field:position", [None] * n)
@@ -386,19 +405,35 @@ class CollisionMechanics:
             flags_before_batch = batch.get("lookbehind:field:flags", [None] * n)
             vel_before_batch = batch.get("lookbehind:field:velocity", [None] * n)
 
+        # Hand-built contexts (unit tests, direct callers) may carry neither attribute --
+        # fall back to the batch mapping, then to "the whole window is owned and valid".
+        owned_lengths = getattr(ctx, "owned_lengths", None)
+        if owned_lengths is None:
+            owned_lengths = batch.get("owned_lengths")
+        valid_steps = getattr(ctx, "valid_steps", None)
+        if valid_steps is None:
+            valid_steps = batch.get("valid_steps")
+
         rows = []
         for i, (source_id, _, _) in enumerate(batch["segment_ids"]):
             mesh = self._mesh_for(source_id)
-            ang = angle[i]
+            # Batch rows are padded to the widest window in the batch (pad is NaN, which
+            # int()/comparison code below must never see); ``valid_steps`` is the honest
+            # per-row extent. The owned prefix can never exceed it.
+            valid = int(valid_steps[i]) if valid_steps is not None else len(hp[i])
+            owned = (min(valid, int(owned_lengths[i]))
+                     if owned_lengths is not None else None)
+            ang = angle[i][:valid]
             ang_before = angle_before_batch[i]
             rows.append(_score_and_classify_window(
-                pos[i], ang[:, 0], ang[:, 1], hp[i], btn[i], flags[i], vel[i],
+                pos[i][:valid], ang[:, 0], ang[:, 1], hp[i][:valid], btn[i][:valid],
+                flags[i][:valid], vel[i][:valid],
                 pos_before_batch[i],
                 ang_before[:, 0] if ang_before is not None else None,
                 ang_before[:, 1] if ang_before is not None else None,
                 hp_before_batch[i], btn_before_batch[i], flags_before_batch[i],
                 vel_before_batch[i],
-                mesh, self.dist, **self._thresholds,
+                mesh, self.dist, **self._thresholds, owned_length=owned,
             ))
         return {key: np.array([r[key] for r in rows], dtype=np.float64) for key in OUTPUT_KEYS}
 

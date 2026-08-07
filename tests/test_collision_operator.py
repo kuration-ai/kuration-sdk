@@ -13,15 +13,15 @@ import pytest
 trimesh = pytest.importorskip("trimesh")
 
 from kuration import default_registry, describe_component
-from kuration_collision import register
-from kuration_collision.asg_adapter import AsgCollisionAdapter
-from kuration_collision.collision_operator import (
+from kuration.gameplay.collision import register
+from kuration.gameplay.collision.asg_adapter import AsgCollisionAdapter
+from kuration.gameplay.collision.collision_operator import (
     COMPONENT_NAME,
     OUTPUT_KEYS,
     CollisionMechanics,
     _score_and_classify_window,
 )
-from kuration_collision.mesh_cache import load_mesh_cached
+from kuration.gameplay.collision.mesh_cache import load_mesh_cached
 
 register()
 
@@ -75,7 +75,7 @@ def test_registers_transform_and_operator():
     transform_descriptor = describe_component("transform", COMPONENT_NAME,
                                               registry=default_registry.snapshot())
     assert transform_descriptor["parameters"]["additionalProperties"] is False
-    assert transform_descriptor["package"] == "kuration-plugin-collision"
+    assert transform_descriptor["package"] == "kuration-sdk"
 
 
 # ---------------------------------------------------------------------------------------
@@ -271,14 +271,13 @@ def test_full_pipeline_input_window_apply_collect_end_to_end(tmp_path):
 
 
 @pytest.mark.filterwarnings("ignore:binning axis .* is constant")
-def test_overlapping_windows_double_count_the_same_collision_tick(tmp_path):
-    # Regression/pin test for the README's documented "Known limitations" gap: unlike
-    # plugins/pixel_shift's ownership="rightmost-start" dedup, this operator has no
-    # cross-window ownership convention, so a collision tick inside the overlap of two
-    # windows (stride < window) is counted in BOTH windows' collision_count -- this is
-    # CURRENT, ACCEPTED behavior, not a claim it's correct. If a future change adds
-    # dedup, this test's expected counts must be updated deliberately (not silently
-    # broken), and the README's "Known limitations" section should be updated alongside it.
+def test_overlapping_windows_count_each_collision_tick_once(tmp_path):
+    # The transform registers ownership="rightmost-start" (the same convention
+    # pixel_shift uses for press instances): a window owns its steps up to where the
+    # next window starts, so a collision tick inside a stride<window overlap is scored
+    # by exactly one window -- the one whose owned prefix contains it, which sees it
+    # with full lookbehind context. An earlier revision had no ownership convention and
+    # double-counted the tick in both covering windows.
     from kuration import input as kuration_input
 
     glb_path = _wall_glb(tmp_path)
@@ -316,7 +315,10 @@ def test_overlapping_windows_double_count_the_same_collision_tick(tmp_path):
 
     assert not result.errors
     assert len(result.all_segments) == 2
-    # One real collision event, reported once per overlapping window -- i.e. double
-    # counted in the aggregate, not deduplicated.
-    counts = [seg.features["collision_count"] for seg in result.all_segments]
-    assert counts == [1.0, 1.0]
+    # One real collision event (tick index 2, inside both windows' extent): window
+    # [0:4) owns ticks [0,2) only, window [2:6) owns [2,6) and scores the collision
+    # with ticks 0-1 as lookbehind -- one event, counted once in the aggregate.
+    by_start = sorted(result.all_segments, key=lambda seg: seg.start_idx)
+    counts = [seg.features["collision_count"] for seg in by_start]
+    assert counts == [0.0, 1.0]
+    assert sum(counts) == 1.0

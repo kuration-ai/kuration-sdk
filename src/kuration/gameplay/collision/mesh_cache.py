@@ -11,6 +11,13 @@ Kuration's batch-transform stage runs single-process/sequential -- see the opera
 module docstring) and an on-disk `.npz` of the already-parsed, already-filtered
 (vertices, faces) arrays (reused across separate runs/processes, skipping the expensive
 parse step entirely on a cache hit).
+
+The on-disk cache is versioned: every `.npz` records the `GEOMETRY_CACHE_VERSION` it was
+written under, and a cache entry from a different version (or one predating the version
+field) is rebuilt from the raw map files instead of being trusted. The parsers themselves
+are what the version protects -- displacement-surface and static-prop support changed a
+real map's face count from 8,494 to 68,302, and an unversioned cache would have silently
+kept serving the old geometry forever after such an upgrade.
 """
 from __future__ import annotations
 
@@ -22,6 +29,12 @@ import struct
 from pathlib import Path
 
 import numpy as np
+
+# Bump whenever any geometry parser below changes its output for the same raw file --
+# on-disk cache entries written under a different version are re-parsed, not trusted.
+# Version 1 is the first versioned format; unversioned caches (the pre-SDK plugin layout)
+# are treated as stale.
+GEOMETRY_CACHE_VERSION = 1
 
 COMPONENT_FMT = {5121: "B", 5123: "H", 5125: "I", 5126: "f"}
 COMPONENT_SIZE = {5121: 1, 5123: 2, 5125: 4, 5126: 4}
@@ -75,7 +88,8 @@ def _trimesh():
         import trimesh
     except ImportError as e:
         raise ImportError(
-            "kuration-plugin-collision needs trimesh: pip install trimesh"
+            'the collision operator needs trimesh (and rtree for its ray BVH): '
+            'pip install "kuration-sdk[collision]"'
         ) from e
     return trimesh
 
@@ -83,7 +97,8 @@ def _trimesh():
 def _read_glb(glb_path: str):
     with open(glb_path, "rb") as f:
         magic, version, _ = struct.unpack("<4sII", f.read(12))
-        assert magic == b"glTF" and version == 2, "Not a GLB 2.0 file"
+        if magic != b"glTF" or version != 2:
+            raise ValueError(f"not a GLB 2.0 file: {glb_path}")
         c0_len = struct.unpack("<I", f.read(4))[0]
         f.read(4)
         gltf = json.loads(f.read(c0_len).decode("utf-8"))
@@ -328,7 +343,8 @@ def _static_prop_geometry(data: bytes) -> tuple:
 def _build_geometry_from_bsp(path: str) -> tuple:
     with open(path, "rb") as f:
         data = f.read()
-    assert data[:4] == b"VBSP", f"Not a VBSP file: {path}"
+    if data[:4] != b"VBSP":
+        raise ValueError(f"not a VBSP file: {path}")
 
     def lump(idx):
         return _bsp_lump(data, idx)
@@ -430,7 +446,8 @@ def _build_geometry_from_nav(path: str) -> tuple:
     with open(path, "rb") as f:
         data = f.read()
     magic = struct.unpack_from("<I", data, 0)[0]
-    assert magic == 0xFEEDFACE, f"Not a NAV file: {path}"
+    if magic != 0xFEEDFACE:
+        raise ValueError(f"not a NAV file: {path}")
     places = struct.unpack_from("<H", data, 12)[0]
     n_areas = struct.unpack_from("<I", data, 14)[0]
 
@@ -505,14 +522,18 @@ def build_map_geometry(map_paths, *, disk_cache_dir: str | None, map_name: str) 
     """Return (vertices, faces) for `map_name`, combining every path in `map_paths`.
 
     Checks the on-disk npz cache first (fast path: skips lump-table parsing and
-    texture-based face filtering entirely). On a miss, parses the raw files via the
-    ported format-specific readers and populates the cache for next time.
+    texture-based face filtering entirely). On a miss -- including a hit written under a
+    different `GEOMETRY_CACHE_VERSION`, which means the parsers have changed since it was
+    written -- parses the raw files via the ported format-specific readers and repopulates
+    the cache for next time.
     """
     if disk_cache_dir is not None:
         cache_path = _disk_cache_path(disk_cache_dir, map_name)
         if cache_path.exists():
             data = np.load(cache_path)
-            return data["vertices"], data["faces"]
+            if ("cache_version" in data
+                    and int(data["cache_version"]) == GEOMETRY_CACHE_VERSION):
+                return data["vertices"], data["faces"]
 
     all_v, all_f = [], []
     vert_offset = 0
@@ -526,7 +547,8 @@ def build_map_geometry(map_paths, *, disk_cache_dir: str | None, map_name: str) 
 
     if disk_cache_dir is not None:
         _atomic_write_npz(_disk_cache_path(disk_cache_dir, map_name),
-                          vertices=vertices, faces=faces)
+                          vertices=vertices, faces=faces,
+                          cache_version=np.int64(GEOMETRY_CACHE_VERSION))
     return vertices, faces
 
 

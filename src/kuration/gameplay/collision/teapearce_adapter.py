@@ -5,7 +5,7 @@ Each `.npy` file (e.g. `dm_july2021_expert_1.npy`, from the `dataset_dm_expert_d
 archives) is a plain object array of shape `(n_frames, 6)`. Column 1 is a `curr_vars` dict
 per frame containing real, verified position/angle/velocity/health telemetry
 (`localpos1/2/3`, `viewangle_xy/vert`, `vel_1/2/3`, `obs_health`, `tp_wasd`, `tp_lclick`,
-...) scraped via memory-read + Game State Integration -- see this package's README for the
+...) scraped via memory-read + Game State Integration -- see `docs/collision.md` for the
 verification performed against real dust2 map geometry (bounding-box containment, raw
 raycast hit-rate/distance distribution, and NAV-mesh floor-height checks at both real
 respawn events found in the data, all consistent with a correctly-aligned coordinate
@@ -14,8 +14,8 @@ system).
 One kuration source = one `.npy` file (one continuous recording), mirroring
 `asg_adapter.py`'s one-source-per-continuous-tick-sequence convention.
 
-Known approximations, all discussed and accepted before writing this (see the plugin
-README's "TeaPearce adapter" section for the full reasoning):
+Known approximations, all discussed and accepted before writing this (see
+`docs/collision.md`'s TeaPearce section for the full reasoning):
 - `onground` is always reported True. No ground-truth onground signal exists in
   `curr_vars`; the collision operator's learned-baseline lookup already has a
   ground-fallback for exactly this situation, and ducking/onground never affect the
@@ -23,8 +23,15 @@ README's "TeaPearce adapter" section for the full reasoning):
   regardless) -- only which learned-baseline bucket a tick's z-score is measured against.
 - `ducking` is always reported False. No crouch instances were found across three
   checked real files (3,000 frames, all alive frames at exactly standing eye-height).
-- `flags` excludes any frozen/noclip signal beyond `obs_mode != 0` (spectator/observer),
-  since there's no direct FL_FROZEN equivalent recorded.
+- `obs_mode != 0` (spectator/observer) frames are reported with `FL_NOCLIP` set, so both
+  collision algorithms' `is_skip_flags()` gate excludes them. While observing, the
+  recorded position/velocity telemetry follows the OBSERVED player and `obs_health` is
+  that player's health (often full), while `tp_wasd` is still the recorder's own keys --
+  exactly the telemetry/input mismatch both algorithms would otherwise score as phantom
+  collisions. An earlier revision mapped `obs_mode != 0` to merely "not FL_ONGROUND",
+  which does not skip anything -- the ground-fallback baseline lookup papered over it and
+  the directional analyzer processed observer frames outright. There is no direct
+  FL_FROZEN equivalent recorded beyond this.
 - `dist_path` (the learned anomaly baseline) is NOT produced by this adapter or by any
   learn phase in this plugin -- the learn phase intentionally stays outside the SDK (see
   the reference `action_state_analyzer.py learn` command). Reusing the ASG-fit
@@ -57,6 +64,8 @@ import numpy as np
 
 from kuration import FieldSpec, SchemaSpec, Tick
 
+from .physics import BIT_A, BIT_D, BIT_S, BIT_W, FL_NOCLIP, FL_ONGROUND
+
 TEAPEARCE_SCHEMA = SchemaSpec(
     name="teapearce_dust2_collision",
     entity_axis="player",
@@ -75,11 +84,7 @@ TEAPEARCE_SCHEMA = SchemaSpec(
     },
 )
 
-# Source-engine IN_* bit values, matching physics.py's convention exactly so the same
-# collision operator's condition_key()/gating logic works unmodified.
-_BIT_W, _BIT_S, _BIT_A, _BIT_D = 8, 16, 512, 1024
-_FL_ONGROUND = 0x0001
-_KEY_BITS = {"w": _BIT_W, "s": _BIT_S, "a": _BIT_A, "d": _BIT_D}
+_KEY_BITS = {"w": BIT_W, "s": BIT_S, "a": BIT_A, "d": BIT_D}
 
 
 def _btn_mask(tp_wasd) -> float:
@@ -112,7 +117,10 @@ class TeaPearceDust2Adapter:
             angle = np.array([cv["viewangle_xy"], cv["viewangle_vert"]], dtype=np.float64)
             hp = float(cv.get("obs_health", 0.0))
             btn_mask = _btn_mask(cv.get("tp_wasd"))
-            flags = float(_FL_ONGROUND) if cv.get("obs_mode", 0) == 0 else 0.0
+            # Observer frames carry the OBSERVED player's telemetry against the recorder's
+            # own key input -- mark them FL_NOCLIP so is_skip_flags() excludes them (see
+            # the module docstring).
+            flags = float(FL_ONGROUND) if cv.get("obs_mode", 0) == 0 else float(FL_NOCLIP)
             velocity = np.array(
                 [cv.get("vel_1", 0.0), cv.get("vel_2", 0.0), cv.get("vel_3", 0.0)],
                 dtype=np.float64)
@@ -146,13 +154,14 @@ def load_directional_arrays(source_uri: str) -> dict:
     `ramp_fitting.fit_ramp_models()` need: `position`, `yaw`, `btn_mask`, `velocity`,
     `hp`, `flags`, `weapon`.
 
-    `Analyzer`s intentionally bypass the Pipeline's windowed Tick -> WindowBuffer
-    machinery (see `kuration.analyzers`'s module docstring: callers own the analyzer
-    instance and drive it directly with whole, correctly-ordered per-source arrays, not
-    windowed batches). This is that direct path for TeaPearce data specifically, built on
-    top of the exact same `TeaPearceDust2Adapter.ticks()` generator `CollisionMechanics`
-    consumes via the windowed path -- so there is exactly one place that parses raw
-    `curr_vars` fields, not two drifting copies of the same field-extraction logic.
+    This is the expert direct path for driving the analyzer (or a ramp fit) by hand with
+    whole, correctly-ordered per-source arrays; the fluent path is
+    ``pipeline.enrich("aintropy/collision-directional", ...)`` (or the registered
+    ``.collision_directional(...)`` operator), which streams the same fields through the
+    analyzer's ``add_batch`` hook. Both are built on the exact same
+    `TeaPearceDust2Adapter.ticks()` generator `CollisionMechanics` consumes via the
+    windowed path -- so there is exactly one place that parses raw `curr_vars` fields,
+    not two drifting copies of the same field-extraction logic.
     """
     ticks = list(TeaPearceDust2Adapter().ticks(source_uri))
     n = len(ticks)

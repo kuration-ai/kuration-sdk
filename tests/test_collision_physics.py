@@ -3,7 +3,7 @@ conversion, z-scoring, condition-key/flag decoding) shared by both collision alg
 """
 from __future__ import annotations
 
-from kuration_collision import physics as ph
+from kuration.gameplay.collision import physics as ph
 
 
 def test_wrap_angle_handles_wraparound():

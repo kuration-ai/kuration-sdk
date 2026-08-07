@@ -17,6 +17,7 @@ pillow==12.3.0
 safetensors==0.4.0
 faiss-cpu==1.8.0
 trimesh==4.0.0
+rtree==1.0.1
 datasets==2.18.0
 zarr==2.17.0
 # Zarr 2.17 imports codec symbols removed from the newer NumCodecs 0.16 line.

@@ -185,7 +185,8 @@ def test_gameplay_extra_and_compatibility_alias_cover_the_domain_runtimes():
     extras = config["project"]["optional-dependencies"]
 
     domain = set().union(
-        *(extras[name] for name in ("pixel-shift", "action-state", "slam", "slam-viz"))
+        *(extras[name] for name in ("pixel-shift", "action-state", "collision", "slam",
+                                    "slam-viz"))
     )
     assert set(extras["gameplay"]) == domain
     assert extras["standard-operators"] == extras["gameplay"]

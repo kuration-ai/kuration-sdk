@@ -11,7 +11,7 @@ import pytest
 
 trimesh = pytest.importorskip("trimesh")
 
-from kuration_collision import mesh_cache as mc
+from kuration.gameplay.collision import mesh_cache as mc
 
 
 def _box_glb(tmp_path, name="box"):
@@ -228,3 +228,34 @@ def test_displacement_triangles_applies_vertex_field_displacement():
     disp_verts[center_idx] = [0.0, 0.0, 1.0, 25.0]  # push the center vertex straight up by 25
     verts, _ = mc._displacement_triangles(corners, corners[0], 0, power, disp_verts)
     np.testing.assert_allclose(verts[center_idx], [5.0, 5.0, 25.0])
+
+
+def test_cache_entries_from_another_parser_version_are_rebuilt(tmp_path):
+    # The parsers themselves changed once already (displacements + static props took a
+    # real map from 8,494 to 68,302 faces) and an unversioned cache silently kept serving
+    # the old geometry. Every entry now records GEOMETRY_CACHE_VERSION; an entry from a
+    # different version -- or one predating the field -- must be re-parsed, not trusted.
+    glb_path = _box_glb(tmp_path)
+    cache_dir = tmp_path / "versioned_cache"
+
+    v1, f1 = mc.build_map_geometry([glb_path], disk_cache_dir=str(cache_dir), map_name="m")
+    cache_file = mc._disk_cache_path(str(cache_dir), "m")
+    with np.load(cache_file) as data:
+        assert int(data["cache_version"]) == mc.GEOMETRY_CACHE_VERSION
+
+    # Overwrite with a bogus unversioned (pre-SDK plugin layout) entry: a hit on it must
+    # be treated as a miss and rebuilt from the raw file...
+    np.savez(cache_file, vertices=np.zeros((3, 3)), faces=np.array([[0, 1, 2]]))
+    v2, f2 = mc.build_map_geometry([glb_path], disk_cache_dir=str(cache_dir), map_name="m")
+    np.testing.assert_array_equal(v1, v2)
+    np.testing.assert_array_equal(f1, f2)
+
+    # ...and the rebuild must repopulate the cache at the current version.
+    with np.load(cache_file) as data:
+        assert int(data["cache_version"]) == mc.GEOMETRY_CACHE_VERSION
+
+    # A future-version entry is equally untrusted (downgrades happen too).
+    np.savez(cache_file, vertices=np.zeros((3, 3)), faces=np.array([[0, 1, 2]]),
+             cache_version=np.int64(mc.GEOMETRY_CACHE_VERSION + 1))
+    v3, _ = mc.build_map_geometry([glb_path], disk_cache_dir=str(cache_dir), map_name="m")
+    np.testing.assert_array_equal(v1, v3)

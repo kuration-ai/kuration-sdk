@@ -219,6 +219,8 @@ operator's execution path needs them.
 |---|---|---|---|
 | `aintropy/pixel-shift` | `.pixel_shift(controls=None, boundary="exclude")` | the bounded transform of the same name | OpenCV via `[pixel-shift]` |
 | `aintropy/action-state-consistency` | `.action_state_consistency(baselines=..., controls=None, ...)` | the analyzer of the same name plus pipeline metadata attachment | OpenCV via `[action-state]` |
+| `aintropy/collision` | `.collision(map_for_source=..., map_registry=..., dist_path=..., **thresholds)` | the bounded transform of the same name | trimesh/rtree via `[collision]` |
+| `aintropy/collision-directional` | `.collision_directional(map_registry=..., ramp_models_path=..., ...)` | the tick-stream analyzer of the same name plus pipeline metadata attachment | trimesh/rtree via `[collision]` |
 | `aintropy/slam-motion-diversity` | `.slam_motion_diversity(axis="slam_path_length", bins=8)` | `aintropy/slam-motion` plus a bin axis | NumPy for a precomputed trajectory |
 | `aintropy/slam-quality` | `.slam_quality(min_score=None, **quality_options)` | `aintropy/slam-quality` plus an optional predicate | NumPy for a precomputed trajectory |
 
@@ -240,9 +242,10 @@ Pixel Shift and action-state consistency need DIAMOND-compatible action rows and
 frames. Action-state remains stateful internally: its direct operator explicitly drives the
 registered analyzer once and attaches the verdict rather than pretending it is a segment
 feature. The SLAM operators expect the trajectory schema produced by
-`gameplay.slam_pipeline(...)` or `gameplay.input_slam(...)`. See
-[Pixel Shift](pixel-shift.md), [Action-state consistency](action-state-consistency.md), and
-[SLAM](slam.md) for those input contracts.
+`gameplay.slam_pipeline(...)` or `gameplay.input_slam(...)`. The collision operators expect
+canonical position/angle/button telemetry plus map geometry files. See
+[Pixel Shift](pixel-shift.md), [Action-state consistency](action-state-consistency.md),
+[Collision detection](collision.md), and [SLAM](slam.md) for those input contracts.
 
 The ordinary core operations—`.window()`, `.measure()`, `.transform()`, `.filter()`, `.bin()`,
 `.score()`, `.tag()`, `.sample()`, and the rest—are listed with exact signatures in the

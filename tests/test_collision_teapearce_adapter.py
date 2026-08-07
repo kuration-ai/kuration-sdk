@@ -7,7 +7,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from kuration_collision.teapearce_adapter import (
+from kuration.gameplay.collision.teapearce_adapter import (
     TEAPEARCE_SCHEMA,
     TeaPearceDust2Adapter,
     load_directional_arrays,
@@ -75,17 +75,25 @@ def test_btn_mask_encodes_held_movement_keys(tmp_path):
     assert ticks[3].entities["player"]["btn_mask"] == BIT_S | BIT_D
 
 
-def test_flags_reflect_obs_mode(tmp_path):
+def test_observer_frames_are_marked_with_a_skip_flag(tmp_path):
+    # obs_mode != 0 means the recorded position/velocity follow the OBSERVED player
+    # while tp_wasd is still the recorder's keys -- exactly the telemetry/input mismatch
+    # both collision algorithms would score as phantom collisions. The adapter marks
+    # those frames FL_NOCLIP so is_skip_flags() excludes them; an earlier revision
+    # reported flags=0.0 (merely "not onground"), which excluded nothing.
+    from kuration.gameplay.collision.physics import FL_NOCLIP, FL_ONGROUND, is_skip_flags
+
     rows = [
         _curr_vars(0, 0, 0, 0, 0, 100, obs_mode=0),
         _curr_vars(0, 0, 0, 0, 0, 100, obs_mode=4),
     ]
     path = _write_npy(tmp_path, rows)
     ticks = list(TeaPearceDust2Adapter().ticks(path))
-    FL_ONGROUND = 0x0001
 
     assert ticks[0].entities["player"]["flags"] == FL_ONGROUND
-    assert ticks[1].entities["player"]["flags"] == 0.0
+    assert not is_skip_flags(int(ticks[0].entities["player"]["flags"]))
+    assert ticks[1].entities["player"]["flags"] == float(FL_NOCLIP)
+    assert is_skip_flags(int(ticks[1].entities["player"]["flags"]))
 
 
 def test_check_source_passes_for_well_formed_file(tmp_path):

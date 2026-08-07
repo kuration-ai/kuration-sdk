@@ -7,11 +7,22 @@ frame- or model-backed paths.
 """
 from __future__ import annotations
 
-from . import action_state_consistency, pixel_shift, slam
+from . import action_state_consistency, collision, pixel_shift, slam
 from .action_state_consistency import (
     ActionStateConsistencyChecker,
     AnomalyChecker,
     load_baselines_from_reference,
+)
+from .collision import (
+    AsgCollisionAdapter,
+    CollisionMechanics,
+    DirectionalCollisionAnalyzer,
+    TeaPearceDust2Adapter,
+    attach_directional_collision,
+    fit_ramp_models,
+    load_directional_arrays,
+    load_ramp_models,
+    save_ramp_models,
 )
 from .convenience import action_state_checker, slam_pipeline
 from .pixel_shift import PixelShift, PixelShiftReport
@@ -31,6 +42,7 @@ def register() -> None:
     pixel_shift.register()
     action_state_consistency.register()
     slam.register()
+    collision.register()
     from ..core.stats import register_stats_enricher
     from ._stats import (
         gameplay_stats,
@@ -52,21 +64,31 @@ register()
 __all__ = [
     "ActionStateConsistencyChecker",
     "AnomalyChecker",
+    "AsgCollisionAdapter",
+    "CollisionMechanics",
+    "DirectionalCollisionAnalyzer",
     "PixelShift",
     "PixelShiftReport",
     "SLAMReconstructor",
     "SLAMReconstruction",
+    "TeaPearceDust2Adapter",
     "VideoComparison",
     "action_state_checker",
     "action_state_consistency",
+    "attach_directional_collision",
+    "collision",
     "compare_videos",
     "curate_point_cloud",
     "curate_slam_gameplay",
+    "fit_ramp_models",
     "input_slam",
     "load_baselines_from_reference",
+    "load_directional_arrays",
+    "load_ramp_models",
     "pixel_shift",
     "preflight_slam",
     "register",
+    "save_ramp_models",
     "slam",
     "slam_pipeline",
 ]
