@@ -55,8 +55,7 @@ from collections.abc import Iterable
 
 import numpy as np
 
-from kuration import FieldSpec, SchemaSpec
-from kuration.buffer import Tick
+from kuration import FieldSpec, SchemaSpec, Tick
 
 TEAPEARCE_SCHEMA = SchemaSpec(
     name="teapearce_dust2_collision",

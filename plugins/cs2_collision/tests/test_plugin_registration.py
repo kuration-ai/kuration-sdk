@@ -53,7 +53,7 @@ def test_plugin_entry_point_and_isolated_snapshot_contract():
 
 
 def test_every_registered_component_discoverable_through_the_kur_list_cli(monkeypatch, capsys):
-    from kuration.cli.discovery import list_main
+    from kuration.core.cli.discovery import list_main
 
     expected_by_kind = {
         "adapters": {ADAPTER_NAME, TEAPEARCE_ADAPTER_NAME},
@@ -70,7 +70,7 @@ def test_every_registered_component_discoverable_through_the_kur_list_cli(monkey
 
 
 def test_every_registered_component_describable_through_the_kur_describe_cli(monkeypatch, capsys):
-    from kuration.cli.discovery import describe_main
+    from kuration.core.cli.discovery import describe_main
 
     for kind, name in [
         ("adapter", ADAPTER_NAME), ("adapter", TEAPEARCE_ADAPTER_NAME),

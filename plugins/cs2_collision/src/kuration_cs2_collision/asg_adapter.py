@@ -30,8 +30,7 @@ from collections.abc import Iterable
 
 import numpy as np
 
-from kuration import FieldSpec, SchemaSpec
-from kuration.buffer import Tick
+from kuration import FieldSpec, SchemaSpec, Tick
 
 ASG_SCHEMA = SchemaSpec(
     name="asg_cs2_collision",

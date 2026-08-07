@@ -44,6 +44,33 @@ from .physics import (
     z_score,
 )
 
+def _drop_entity_axis(arr, *, vector: bool):
+    """Normalize one batch field array back to the pre-entity-axis shape this module was
+    written against: `(n_segments, T, D)` for vector fields, `(n_segments, T)` for scalar
+    fields. Real Pipeline batches now carry an explicit `(n_segments, T, E, D)` shape
+    (E = entities) even for this plugin's always-single-entity-per-source schemas
+    (`entity_axis="player"`, one player per source, by design); pre-existing unit tests
+    still hand-build the pre-entity-axis shape directly, so this dispatches on `ndim`
+    rather than assuming either shape unconditionally."""
+    if arr is None:
+        return None
+    if vector:
+        return arr[:, :, 0, :] if arr.ndim == 4 else arr
+    return arr[:, :, 0, 0] if arr.ndim == 4 else arr
+
+
+def _drop_entity_axis_row(arr, *, vector: bool):
+    """Same normalization as `_drop_entity_axis`, but for a single PER-ROW array -- one
+    fewer leading axis, as returned per-element by `ctx.before()`/`ctx.after()`'s tuple:
+    `(T, D)` for vectors, `(T,)` for scalars, pre-entity-axis; new-format core provides
+    `(T, E, D)` / `(T, E, 1)`."""
+    if arr is None:
+        return None
+    if vector:
+        return arr[:, 0, :] if arr.ndim == 3 else arr
+    return arr[:, 0, 0] if arr.ndim == 3 else arr
+
+
 COMPONENT_NAME = "aintropy/cs2-collision"
 
 COLLISION_TYPES = ("head_on", "angled", "W_slide", "WA_slide", "slide_end", "slide_constrained")
@@ -336,20 +363,20 @@ class CollisionMechanics:
         return mesh
 
     def transform_batch(self, batch, ctx):
-        pos = batch["field:position"]
-        angle = batch["field:angle"]
-        hp = batch["field:hp"]
-        btn = batch["field:btn_mask"]
-        flags = batch["field:flags"]
-        vel = batch["field:velocity"]
+        pos = _drop_entity_axis(batch["field:position"], vector=True)
+        angle = _drop_entity_axis(batch["field:angle"], vector=True)
+        hp = _drop_entity_axis(batch["field:hp"], vector=False)
+        btn = _drop_entity_axis(batch["field:btn_mask"], vector=False)
+        flags = _drop_entity_axis(batch["field:flags"], vector=False)
+        vel = _drop_entity_axis(batch["field:velocity"], vector=True)
 
         if hasattr(ctx, "before"):
-            pos_before_batch = ctx.before("field:position")
-            angle_before_batch = ctx.before("field:angle")
-            hp_before_batch = ctx.before("field:hp")
-            btn_before_batch = ctx.before("field:btn_mask")
-            flags_before_batch = ctx.before("field:flags")
-            vel_before_batch = ctx.before("field:velocity")
+            pos_before_batch = [_drop_entity_axis_row(a, vector=True) for a in ctx.before("field:position")]
+            angle_before_batch = [_drop_entity_axis_row(a, vector=True) for a in ctx.before("field:angle")]
+            hp_before_batch = [_drop_entity_axis_row(a, vector=False) for a in ctx.before("field:hp")]
+            btn_before_batch = [_drop_entity_axis_row(a, vector=False) for a in ctx.before("field:btn_mask")]
+            flags_before_batch = [_drop_entity_axis_row(a, vector=False) for a in ctx.before("field:flags")]
+            vel_before_batch = [_drop_entity_axis_row(a, vector=True) for a in ctx.before("field:velocity")]
         else:
             n = len(batch["segment_ids"])
             pos_before_batch = batch.get("lookbehind:field:position", [None] * n)
