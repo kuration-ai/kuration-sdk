@@ -56,9 +56,25 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: "22"
-      - name: Build the kuration-lab distribution
+      - name: Build the kuration-lab frontend
         run: |
-          python -m pip install 'jupyterlab>=4.1,<5' 'build>=1.5,<2' 'twine>=6.2,<7' \
+          python -m pip install 'jupyterlab>=4.1,<5'
+          # JupyterLab 4.5+ moved jlpm out into the separate jupyter_builder
+          # distribution, so a partial install leaves a bin/jlpm that cannot
+          # import it. Probe it here, where the traceback names the step, rather
+          # than letting it surface from inside a hatch build hook.
+          jlpm --version
+          cd plugins/lab
+          jlpm install
+          jlpm build:prod
+      - name: Build the kuration-lab distribution
+        # Builds below reuse the frontend above via the jupyter-builder hook's
+        # skip-if-exists, so neither shells out to jlpm again. Without it,
+        # `python -m build` compiles from an sdist extracted to a temp dir (so
+        # the frontend never lands in the working tree) and the editable install
+        # then reruns `jlpm install` from scratch.
+        run: |
+          python -m pip install 'build>=1.5,<2' 'twine>=6.2,<7' \
             'check-wheel-contents>=0.6.3,<1'
           python -m build --outdir lab-dist plugins/lab
           python -m twine check lab-dist/*
