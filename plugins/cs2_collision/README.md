@@ -106,7 +106,7 @@ register()
 
 data_json_paths = [...]   # your ASG data.json files
 map_for_source = AsgCollisionAdapter.discover_map_for_source(data_json_paths)
-map_registry = {"de_dust2": ["/path/to/de_dust2.bsp"], ...}
+map_registry = {"de_dust2": ["/path/to/de_dust2.bsp"]}   # add more maps as needed
 
 pipeline = (
     input(adapter=AsgCollisionAdapter(), sources=list(map_for_source), schema=AsgCollisionAdapter.schema)
