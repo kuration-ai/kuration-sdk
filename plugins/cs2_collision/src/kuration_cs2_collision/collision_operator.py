@@ -153,15 +153,20 @@ def _extract_features(pm2, pm1, p0) -> dict:
 
 
 def _score_and_classify_window(
-    pos, yaw, pitch, hp, btn, flags,
-    pos_before, yaw_before, pitch_before, hp_before, btn_before, flags_before,
+    pos, yaw, pitch, hp, btn, flags, vel,
+    pos_before, yaw_before, pitch_before, hp_before, btn_before, flags_before, vel_before,
     mesh, dist, *, min_score, proximity, min_approach, max_residual,
     slide_angle, max_slide_speed, min_release_accel, max_release_vn,
 ) -> dict:
     """Score + classify every tick in one window (a slice of one source's continuous
     tick sequence). Ported from _scan_one_player (scoring) + _classify_one_player
     (raycast classification), fused into one per-tick pass since scanning happens over
-    the same window arrays the classifier would otherwise need to re-look-up."""
+    the same window arrays the classifier would otherwise need to re-look-up.
+
+    `vel` must already be true HU/s velocity, supplied by the adapter (either a real
+    recorded engine velocity, or one the adapter derived itself at its own known sample
+    rate) -- this function never derives or scales velocity from position deltas itself.
+    """
     have_history = pos_before is not None
     T = len(hp)
 
@@ -171,8 +176,8 @@ def _score_and_classify_window(
                 return None
             j = i + 2
             return (pos_before[j], float(yaw_before[j]), float(pitch_before[j]),
-                    float(hp_before[j]), int(btn_before[j]), int(flags_before[j]))
-        return (pos[i], float(yaw[i]), float(pitch[i]), float(hp[i]), int(btn[i]), int(flags[i]))
+                    float(hp_before[j]), int(btn_before[j]), int(flags_before[j]), vel_before[j])
+        return (pos[i], float(yaw[i]), float(pitch[i]), float(hp[i]), int(btn[i]), int(flags[i]), vel[i])
 
     ray_cache: dict = {}
     max_anomaly = 0.0
@@ -187,9 +192,9 @@ def _score_and_classify_window(
         if pm1 is None or pm2 is None:
             continue
 
-        pos0, yaw0, pitch0, hp0, btn0, flags0 = p0
-        _, _, _, hp1, _, flags1 = pm1
-        _, _, _, hp2, _, flags2 = pm2
+        pos0, yaw0, pitch0, hp0, btn0, flags0, vel0 = p0
+        _, _, _, hp1, _, flags1, vel1 = pm1
+        _, _, _, hp2, _, flags2, _vel2 = pm2
 
         if hp0 <= 0 or hp1 <= 0 or hp2 <= 0:
             continue
@@ -226,9 +231,8 @@ def _score_and_classify_window(
         if not (btn0 & BIT_W):
             continue
 
-        pos1_arr, pos2_arr = pm1[0], pm2[0]
-        vel_curr = pos0 - pos1_arr
-        vel_prev = pos1_arr - pos2_arr
+        vel_curr = vel0
+        vel_prev = vel1
 
         cache_key = (int(pos0[0]) >> 3, int(pos0[1]) >> 3, int(yaw0 / 5))
         if cache_key in ray_cache:
@@ -241,8 +245,8 @@ def _score_and_classify_window(
 
         flagged, vn_prev_hus, vn_curr_hus = wall_stopped(
             vel_prev, vel_curr, wall_normal, min_approach, max_residual)
-        sp_prev_hus = math.hypot(vel_prev[0], vel_prev[1]) * 64
-        sp_curr_hus = math.hypot(vel_curr[0], vel_curr[1]) * 64
+        sp_prev_hus = math.hypot(vel_prev[0], vel_prev[1])
+        sp_curr_hus = math.hypot(vel_curr[0], vel_curr[1])
 
         is_wall_release = (
             not flagged and max_residual < sp_prev_hus < max_slide_speed
@@ -337,6 +341,7 @@ class CollisionMechanics:
         hp = batch["field:hp"]
         btn = batch["field:btn_mask"]
         flags = batch["field:flags"]
+        vel = batch["field:velocity"]
 
         if hasattr(ctx, "before"):
             pos_before_batch = ctx.before("field:position")
@@ -344,6 +349,7 @@ class CollisionMechanics:
             hp_before_batch = ctx.before("field:hp")
             btn_before_batch = ctx.before("field:btn_mask")
             flags_before_batch = ctx.before("field:flags")
+            vel_before_batch = ctx.before("field:velocity")
         else:
             n = len(batch["segment_ids"])
             pos_before_batch = batch.get("lookbehind:field:position", [None] * n)
@@ -351,6 +357,7 @@ class CollisionMechanics:
             hp_before_batch = batch.get("lookbehind:field:hp", [None] * n)
             btn_before_batch = batch.get("lookbehind:field:btn_mask", [None] * n)
             flags_before_batch = batch.get("lookbehind:field:flags", [None] * n)
+            vel_before_batch = batch.get("lookbehind:field:velocity", [None] * n)
 
         rows = []
         for i, (source_id, _, _) in enumerate(batch["segment_ids"]):
@@ -358,11 +365,12 @@ class CollisionMechanics:
             ang = angle[i]
             ang_before = angle_before_batch[i]
             rows.append(_score_and_classify_window(
-                pos[i], ang[:, 0], ang[:, 1], hp[i], btn[i], flags[i],
+                pos[i], ang[:, 0], ang[:, 1], hp[i], btn[i], flags[i], vel[i],
                 pos_before_batch[i],
                 ang_before[:, 0] if ang_before is not None else None,
                 ang_before[:, 1] if ang_before is not None else None,
                 hp_before_batch[i], btn_before_batch[i], flags_before_batch[i],
+                vel_before_batch[i],
                 mesh, self.dist, **self._thresholds,
             ))
         return {key: np.array([r[key] for r in rows], dtype=np.float64) for key in OUTPUT_KEYS}

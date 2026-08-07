@@ -1,3 +1,8 @@
+"""Tests for CollisionMechanics: the learned-baseline anomaly scan (`_score_and_classify_
+window`) and its registration/wiring as a `transform` + `operator` pair. Uses a synthetic
+trimesh box wall and a minimal `action_state_dist.json` rather than real map/dataset files,
+so every test here is deterministic and self-contained.
+"""
 from __future__ import annotations
 
 import json
@@ -9,6 +14,7 @@ trimesh = pytest.importorskip("trimesh")
 
 from kuration import default_registry, describe_component
 from kuration_cs2_collision import register
+from kuration_cs2_collision.asg_adapter import AsgCollisionAdapter
 from kuration_cs2_collision.collision_operator import (
     COMPONENT_NAME,
     OUTPUT_KEYS,
@@ -83,7 +89,10 @@ def test_head_on_collision_is_detected_and_classified(tmp_path):
         dist = json.load(f)
 
     # Player runs +x (yaw=0) from x=0 to x=2, then stops dead at x=2 (wall at x=50).
+    # `vel` is the true HU/s velocity at each tick -- supplied directly (as an adapter
+    # would), not derived from the position column here.
     pos = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    vel = np.array([[0.0, 0.0, 0.0], [128.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
     yaw = np.zeros(3)
     pitch = np.zeros(3)
     hp = np.array([100.0, 100.0, 100.0])
@@ -91,8 +100,8 @@ def test_head_on_collision_is_detected_and_classified(tmp_path):
     flags = np.array([1.0, 1.0, 1.0])     # FL_ONGROUND
 
     out = _score_and_classify_window(
-        pos, yaw, pitch, hp, btn, flags,
-        None, None, None, None, None, None,   # no lookbehind needed; window itself has 3 ticks
+        pos, yaw, pitch, hp, btn, flags, vel,
+        None, None, None, None, None, None, None,   # no lookbehind needed; window has 3 ticks
         mesh, dist,
         min_score=1.0, proximity=60.0, min_approach=100.0, max_residual=20.0,
         slide_angle=75.0, max_slide_speed=400.0, min_release_accel=100.0, max_release_vn=100.0,
@@ -113,6 +122,7 @@ def test_no_collision_when_player_never_approaches_wall(tmp_path):
 
     # Player stays still the whole time -- no dv_fwd anomaly, no collision.
     pos = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+    vel = np.zeros((3, 3))
     yaw = np.zeros(3)
     pitch = np.zeros(3)
     hp = np.array([100.0, 100.0, 100.0])
@@ -120,8 +130,8 @@ def test_no_collision_when_player_never_approaches_wall(tmp_path):
     flags = np.array([1.0, 1.0, 1.0])
 
     out = _score_and_classify_window(
-        pos, yaw, pitch, hp, btn, flags,
-        None, None, None, None, None, None,
+        pos, yaw, pitch, hp, btn, flags, vel,
+        None, None, None, None, None, None, None,
         mesh, dist,
         min_score=1.0, proximity=60.0, min_approach=100.0, max_residual=20.0,
         slide_angle=75.0, max_slide_speed=400.0, min_release_accel=100.0, max_release_vn=100.0,
@@ -135,6 +145,7 @@ def test_dead_player_ticks_are_skipped(tmp_path):
         dist = json.load(f)
 
     pos = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    vel = np.array([[0.0, 0.0, 0.0], [128.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
     yaw = np.zeros(3)
     pitch = np.zeros(3)
     hp = np.array([100.0, 100.0, 0.0])   # dead on the final tick
@@ -142,8 +153,8 @@ def test_dead_player_ticks_are_skipped(tmp_path):
     flags = np.array([1.0, 1.0, 1.0])
 
     out = _score_and_classify_window(
-        pos, yaw, pitch, hp, btn, flags,
-        None, None, None, None, None, None,
+        pos, yaw, pitch, hp, btn, flags, vel,
+        None, None, None, None, None, None, None,
         mesh, dist,
         min_score=1.0, proximity=60.0, min_approach=100.0, max_residual=20.0,
         slide_angle=75.0, max_slide_speed=400.0, min_release_accel=100.0, max_release_vn=100.0,
@@ -169,6 +180,7 @@ def test_transform_batch_end_to_end_with_fake_ctx(tmp_path):
     )
 
     pos = np.array([[[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 0.0, 0.0]]])   # (1,3,3)
+    vel = np.array([[[0.0, 0.0, 0.0], [128.0, 0.0, 0.0], [0.0, 0.0, 0.0]]])
     angle = np.zeros((1, 3, 2))
     hp = np.array([[100.0, 100.0, 100.0]])
     btn = np.array([[8.0, 8.0, 8.0]])
@@ -181,10 +193,11 @@ def test_transform_batch_end_to_end_with_fake_ctx(tmp_path):
         "field:hp": hp,
         "field:btn_mask": btn,
         "field:flags": flags,
+        "field:velocity": vel,
     }
     ctx = _FakeCtx({
         "field:position": [None], "field:angle": [None], "field:hp": [None],
-        "field:btn_mask": [None], "field:flags": [None],
+        "field:btn_mask": [None], "field:flags": [None], "field:velocity": [None],
     })
 
     out = mech.transform_batch(batch, ctx)
@@ -196,3 +209,114 @@ def test_transform_batch_end_to_end_with_fake_ctx(tmp_path):
     cached_mesh = mech._mesh_cache["de_dust2"]
     mech.transform_batch(batch, ctx)
     assert mech._mesh_cache["de_dust2"] is cached_mesh
+
+
+def _write_asg_match(tmp_path):
+    # Same head-on scenario as test_head_on_collision_is_detected_and_classified above
+    # (run x=0 -> x=2, stop dead at x=2, wall at x=50) but expressed as real ASG data.json
+    # ticks so AsgCollisionAdapter's own position-delta velocity synthesis (*64 HU/s) is
+    # exercised for real, instead of a hand-built `vel` array: (2-0)*64=128, (2-2)*64=0 --
+    # the exact vel this scenario's unit test supplies directly.
+    data = {
+        "header": {"map_name": "de_dust2"},
+        "ticks": [
+            {"tick": 100, "players": [{"id32": 111, "pos": {"x": 0.0, "y": 0.0, "z": 0.0},
+                                       "ang": {"yaw": 0.0, "pitch": 0.0}, "hp": 100,
+                                       "btn_mask": 8, "flags": 1, "weapon": "AK-47"}]},
+            {"tick": 104, "players": [{"id32": 111, "pos": {"x": 2.0, "y": 0.0, "z": 0.0},
+                                       "ang": {"yaw": 0.0, "pitch": 0.0}, "hp": 100,
+                                       "btn_mask": 8, "flags": 1, "weapon": "AK-47"}]},
+            {"tick": 108, "players": [{"id32": 111, "pos": {"x": 2.0, "y": 0.0, "z": 0.0},
+                                       "ang": {"yaw": 0.0, "pitch": 0.0}, "hp": 100,
+                                       "btn_mask": 8, "flags": 1, "weapon": "AK-47"}]},
+        ],
+    }
+    path = tmp_path / "data.json"
+    path.write_text(json.dumps(data))
+    return f"{path}::111"
+
+
+def test_full_pipeline_input_window_apply_collect_end_to_end(tmp_path):
+    # The other end-to-end test above drives CollisionMechanics.transform_batch() with a
+    # hand-built batch dict + _FakeCtx, proving only the transform's own batch/ctx
+    # contract. This drives the SAME scenario through the real, registered Pipeline --
+    # input(adapter=...).window(...).apply(<registered operator name>...).collect() --
+    # proving the operator actually works wired into the SDK a real caller would use, not
+    # just its internal transform_batch() method in isolation.
+    from kuration import input as kuration_input
+
+    glb_path = _wall_glb(tmp_path)
+    dist_path = _dist_path(tmp_path)
+    source = _write_asg_match(tmp_path)
+
+    pipeline = (
+        kuration_input(adapter=AsgCollisionAdapter(), sources=[source],
+                       schema=AsgCollisionAdapter.schema)
+        .window(3, stride=3)
+        .apply(COMPONENT_NAME,
+               map_for_source={source: "de_dust2"},
+               map_registry={"de_dust2": [glb_path]},
+               dist_path=dist_path,
+               disk_cache_dir=str(tmp_path / "cache"),
+               min_score=1.0, proximity=60.0, min_approach=100.0, max_residual=20.0)
+        .organize("collision_count", bins=1)
+    )
+    result = pipeline.collect(n=1)
+
+    assert not result.errors
+    assert len(result.all_segments) == 1
+    features = result.all_segments[0].features
+    assert features["collision_count"] == 1.0
+    assert features["head_on_count"] == 1.0
+
+
+@pytest.mark.filterwarnings("ignore:binning axis .* is constant")
+def test_overlapping_windows_double_count_the_same_collision_tick(tmp_path):
+    # Regression/pin test for the README's documented "Known limitations" gap: unlike
+    # plugins/pixel_shift's ownership="rightmost-start" dedup, this operator has no
+    # cross-window ownership convention, so a collision tick inside the overlap of two
+    # windows (stride < window) is counted in BOTH windows' collision_count -- this is
+    # CURRENT, ACCEPTED behavior, not a claim it's correct. If a future change adds
+    # dedup, this test's expected counts must be updated deliberately (not silently
+    # broken), and the README's "Known limitations" section should be updated alongside it.
+    from kuration import input as kuration_input
+
+    glb_path = _wall_glb(tmp_path)
+    dist_path = _dist_path(tmp_path)
+
+    # pos = [0,2,2,2,2,2] -> vel = [0,128,0,0,0,0]: approach then stop-and-stay -- exactly
+    # ONE physical deceleration/collision event, at tick index 2.
+    xs = [0.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+    data = {
+        "header": {"map_name": "de_dust2"},
+        "ticks": [
+            {"tick": 100 + i * 4, "players": [{"id32": 111, "pos": {"x": x, "y": 0.0, "z": 0.0},
+                                               "ang": {"yaw": 0.0, "pitch": 0.0}, "hp": 100,
+                                               "btn_mask": 8, "flags": 1, "weapon": "AK-47"}]}
+            for i, x in enumerate(xs)
+        ],
+    }
+    path = tmp_path / "data.json"
+    path.write_text(json.dumps(data))
+    source = f"{path}::111"
+
+    pipeline = (
+        kuration_input(adapter=AsgCollisionAdapter(), sources=[source],
+                       schema=AsgCollisionAdapter.schema)
+        .window(4, stride=2)   # windows [0:4) and [2:6) both contain tick index 2
+        .apply(COMPONENT_NAME,
+               map_for_source={source: "de_dust2"},
+               map_registry={"de_dust2": [glb_path]},
+               dist_path=dist_path,
+               disk_cache_dir=str(tmp_path / "cache"),
+               min_score=1.0, proximity=60.0, min_approach=100.0, max_residual=20.0)
+        .organize("collision_count", bins=1)
+    )
+    result = pipeline.collect(n=10)
+
+    assert not result.errors
+    assert len(result.all_segments) == 2
+    # One real collision event, reported once per overlapping window -- i.e. double
+    # counted in the aggregate, not deduplicated.
+    counts = [seg.features["collision_count"] for seg in result.all_segments]
+    assert counts == [1.0, 1.0]

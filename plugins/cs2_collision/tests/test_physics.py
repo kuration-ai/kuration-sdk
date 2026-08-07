@@ -1,3 +1,6 @@
+"""Tests for physics.py: pure math/constant helpers (angle wrapping, local-frame velocity
+conversion, z-scoring, condition-key/flag decoding) shared by both collision algorithms.
+"""
 from __future__ import annotations
 
 from kuration_cs2_collision import physics as ph

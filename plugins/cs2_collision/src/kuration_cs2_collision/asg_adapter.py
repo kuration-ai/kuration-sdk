@@ -9,8 +9,19 @@ player's own uninterrupted tick sequence, with no cross-player mixing inside a w
 
 Only the raw physics fields the collision operator (and, generically, any other
 operator) might need are emitted: `position`, `angle`, `hp`, `btn_mask`, `flags`,
-`weapon`. No collision detection/classification logic lives here -- that is entirely
-the `collision_operator` module's concern, kept upstream-format-agnostic on purpose.
+`weapon`, `velocity`. No collision detection/classification logic lives here -- that is
+entirely the `collision_operator` module's concern, kept upstream-format-agnostic on
+purpose.
+
+`velocity` is synthesized here from consecutive position deltas, scaled by a fixed `*64`
+factor -- this is NOT a claim that ASG's true tick spacing is 1/64s; it exactly
+reproduces the reference `collision_classifier.py`'s own hardcoded velocity conversion
+(inherited verbatim rather than "corrected"), because this exact formula is what the
+already-validated match against real production `v3` collision output relies on. See
+`teapearce_adapter.py`'s module docstring for why a *different* dataset (with its own,
+different true tick spacing) needs its own correctly-scaled velocity instead of this
+same constant -- the fix for that dataset was to stop deriving velocity from position at
+all and use its own recorded engine velocity directly.
 """
 from __future__ import annotations
 
@@ -37,10 +48,14 @@ ASG_SCHEMA = SchemaSpec(
         "btn_mask": FieldSpec(name="btn_mask", kind="scalar"),
         "flags": FieldSpec(name="flags", kind="scalar"),
         "weapon": FieldSpec(name="weapon", kind="categorical"),
+        "velocity": FieldSpec(name="velocity", kind="vector", dims=("x", "y", "z")),
     },
 )
 
 _SOURCE_SEP = "::"
+# Matches the reference collision_classifier.py's hardcoded velocity conversion exactly --
+# see this module's docstring for why this is reproduced rather than "corrected".
+_VELOCITY_SCALE = 64.0
 
 
 def _map_name(data: dict) -> str:
@@ -68,19 +83,25 @@ class AsgCollisionAdapter:
                     seq.append((t["tick"], p))
         seq.sort(key=lambda x: x[0])
 
+        prev_pos = None
         for tick, p in seq:
             pos = p["pos"]
             ang = p["ang"]
+            position = np.array([pos["x"], pos["y"], pos["z"]], dtype=np.float64)
+            velocity = (np.zeros(3) if prev_pos is None
+                       else (position - prev_pos) * _VELOCITY_SCALE)
+            prev_pos = position
             yield Tick(
                 time=tick / self.schema.sample_hz,
                 entities={
                     "player": {
-                        "position": np.array([pos["x"], pos["y"], pos["z"]], dtype=np.float64),
+                        "position": position,
                         "angle": np.array([ang["yaw"], ang["pitch"]], dtype=np.float64),
                         "hp": float(p["hp"]),
                         "btn_mask": float(p["btn_mask"]),
                         "flags": float(p["flags"]),
                         "weapon": p.get("weapon", "unknown"),
+                        "velocity": velocity,
                     },
                 },
             )

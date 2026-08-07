@@ -16,14 +16,27 @@ from .collision_operator import (
     CollisionMechanics,
     collision_mechanics,
 )
+from .directional_collision_analyzer import DIRECTIONAL_COLLISION_PARAMETERS
+from .directional_collision_analyzer import COMPONENT_NAME as DIRECTIONAL_COMPONENT_NAME
+from .directional_collision_analyzer import DirectionalCollisionAnalyzer, directional_collision_analyzer
+from .ramp_fitting import fit_ramp_models, load_ramp_models, save_ramp_models
+from .teapearce_adapter import TEAPEARCE_SCHEMA, TeaPearceDust2Adapter, load_directional_arrays
 
 
 ADAPTER_NAME = "aintropy/cs2-collision-asg"
+TEAPEARCE_ADAPTER_NAME = "aintropy/cs2-collision-teapearce"
 
 
 def register() -> None:
-    """Idempotently register the adapter, transform, and compositional operator."""
-    from kuration import default_registry, register_adapter, register_batch_transform, register_operator
+    """Idempotently register the adapters, transform/operator pair, and directional
+    collision analyzer."""
+    from kuration import (
+        default_registry,
+        register_adapter,
+        register_analyzer,
+        register_batch_transform,
+        register_operator,
+    )
 
     common = {
         "version": "1",
@@ -42,6 +55,16 @@ def register() -> None:
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
             **common,
         )
+    if TEAPEARCE_ADAPTER_NAME not in default_registry.names("adapter"):
+        register_adapter(
+            TEAPEARCE_ADAPTER_NAME,
+            TeaPearceDust2Adapter,
+            description="Read TeaPearce/CounterStrike_Deathmatch dust2 .npy metadata files as "
+                        "one Tick stream per recording, yielding canonical "
+                        "position/angle/hp/btn_mask/flags",
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
+            **common,
+        )
     if COMPONENT_NAME not in default_registry.names("transform"):
         register_batch_transform(
             COMPONENT_NAME,
@@ -49,7 +72,8 @@ def register() -> None:
             description="Detect and classify CS2 wall collisions from per-tick position/angle "
                         "telemetry raycast against map geometry",
             outputs=OUTPUT_KEYS,
-            inputs=("field:position", "field:angle", "field:hp", "field:btn_mask", "field:flags"),
+            inputs=("field:position", "field:angle", "field:hp", "field:btn_mask", "field:flags",
+                   "field:velocity"),
             resources={"num_gpus": 0},
             lookbehind=2,
             parameters=COLLISION_PARAMETERS,
@@ -63,6 +87,17 @@ def register() -> None:
             parameters=COLLISION_PARAMETERS,
             **common,
         )
+    if DIRECTIONAL_COMPONENT_NAME not in default_registry.names("analyzer"):
+        register_analyzer(
+            DIRECTIONAL_COMPONENT_NAME,
+            directional_collision_analyzer,
+            description="Flag per-tick candidate wall collisions from position/velocity/angle/"
+                        "button telemetry against map geometry, using a fitted per-combo/weapon "
+                        "acceleration-ramp model instead of a learned anomaly baseline",
+            parameters=DIRECTIONAL_COLLISION_PARAMETERS,
+            capabilities={"stateful": True, "cross_segment": True},
+            **common,
+        )
 
 
 __all__ = [
@@ -70,9 +105,20 @@ __all__ = [
     "ASG_SCHEMA",
     "COLLISION_PARAMETERS",
     "COMPONENT_NAME",
+    "DIRECTIONAL_COLLISION_PARAMETERS",
+    "DIRECTIONAL_COMPONENT_NAME",
     "OUTPUT_KEYS",
+    "TEAPEARCE_ADAPTER_NAME",
+    "TEAPEARCE_SCHEMA",
     "AsgCollisionAdapter",
     "CollisionMechanics",
+    "DirectionalCollisionAnalyzer",
+    "TeaPearceDust2Adapter",
     "collision_mechanics",
+    "directional_collision_analyzer",
+    "fit_ramp_models",
+    "load_directional_arrays",
+    "load_ramp_models",
     "register",
+    "save_ramp_models",
 ]

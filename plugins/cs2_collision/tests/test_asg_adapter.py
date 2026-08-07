@@ -1,3 +1,6 @@
+"""Tests for AsgCollisionAdapter: reading ASG `data.json` match replays into one canonical
+Tick stream per (match, player), and `discover_map_for_source`'s per-match map lookup.
+"""
 from __future__ import annotations
 
 import json
