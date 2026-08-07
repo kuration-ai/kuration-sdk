@@ -55,10 +55,10 @@ def test_build_map_geometry_does_not_leak_state_across_different_maps(tmp_path):
         [str(big_path)], disk_cache_dir=str(cache_dir), map_name="big_map")
     assert not np.array_equal(v_small, v_big)
 
-    # Re-querying "small_map" (via a nonexistent raw path -- a cache hit is the only way
-    # this can succeed) after "big_map" was cached still returns small_map's own geometry.
+    # Re-querying "small_map" with the same raw input after "big_map" was cached still
+    # returns small_map's own geometry.
     v_small_again, f_small_again = mc.build_map_geometry(
-        ["/nonexistent.glb"], disk_cache_dir=str(cache_dir), map_name="small_map")
+        [small_glb], disk_cache_dir=str(cache_dir), map_name="small_map")
     np.testing.assert_array_equal(v_small, v_small_again)
     np.testing.assert_array_equal(f_small, f_small_again)
 
@@ -71,11 +71,29 @@ def test_build_map_geometry_writes_and_reuses_disk_cache(tmp_path):
     cache_file = mc._disk_cache_path(str(cache_dir), "test_map")
     assert cache_file.exists()
 
-    # Cache hit: parsing never runs again even if the raw file is now unreadable.
-    v2, f2 = mc.build_map_geometry(["/nonexistent/path.glb"], disk_cache_dir=str(cache_dir),
+    # Cache hit: the same unchanged raw input reuses the parsed geometry.
+    v2, f2 = mc.build_map_geometry([glb_path], disk_cache_dir=str(cache_dir),
                                    map_name="test_map")
     np.testing.assert_array_equal(v1, v2)
     np.testing.assert_array_equal(f1, f2)
+
+
+def test_build_map_geometry_rebuilds_when_same_named_source_changes(tmp_path):
+    glb_path = tmp_path / "map.glb"
+    cache_dir = tmp_path / "cache"
+
+    glb_path.write_bytes(
+        trimesh.creation.box(extents=(100.0, 100.0, 100.0)).export(file_type="glb"))
+    v1, _ = mc.build_map_geometry(
+        [str(glb_path)], disk_cache_dir=str(cache_dir), map_name="stable_name")
+
+    glb_path.write_bytes(
+        trimesh.creation.box(extents=(400.0, 400.0, 400.0)).export(file_type="glb"))
+    v2, _ = mc.build_map_geometry(
+        [str(glb_path)], disk_cache_dir=str(cache_dir), map_name="stable_name")
+
+    np.testing.assert_allclose(np.ptp(v1, axis=0), [100.0, 100.0, 100.0])
+    np.testing.assert_allclose(np.ptp(v2, axis=0), [400.0, 400.0, 400.0])
 
 
 def test_load_mesh_cached_returns_a_warmed_trimesh(tmp_path):
@@ -242,6 +260,7 @@ def test_cache_entries_from_another_parser_version_are_rebuilt(tmp_path):
     cache_file = mc._disk_cache_path(str(cache_dir), "m")
     with np.load(cache_file) as data:
         assert int(data["cache_version"]) == mc.GEOMETRY_CACHE_VERSION
+        assert "source_fingerprint" in data
 
     # Overwrite with a bogus unversioned (pre-SDK plugin layout) entry: a hit on it must
     # be treated as a miss and rebuilt from the raw file...

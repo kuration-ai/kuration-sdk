@@ -439,5 +439,13 @@ def test_add_batch_rejects_non_contiguous_windows(tmp_path):
         }
 
     analyzer.add_batch(batch_for(0, 3), {})
+    # The owned slice is walked immediately; raw window arrays are not retained until
+    # summary()/to_records(), and only compact cross-tick state remains.
+    assert len(analyzer._records) == 3
+    assert set(analyzer._stream_states) == {"src1"}
+    assert analyzer._stream_next_start == {"src1": 3}
     with pytest.raises(ValueError, match="contiguous"):
         analyzer.add_batch(batch_for(5, 8), {})  # a 2-tick gap the walk cannot survive
+    analyzer.summary()
+    assert analyzer._stream_states == {}
+    assert analyzer._stream_next_start == {}

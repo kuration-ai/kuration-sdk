@@ -122,9 +122,10 @@ Parsing raw `.bsp`/`.glb`/`.nav` files (Source-engine lump tables, displacement
 surfaces, static props, texture-based non-solid-face filtering) is the expensive part,
 not the raycast BVH. Parsed `(vertices, faces)` arrays are cached to an on-disk `.npz`
 (`disk_cache_dir`, default `.kuration_collision_cache`), plus an in-memory per-run dict.
-Cache entries record the geometry parser version (`GEOMETRY_CACHE_VERSION`) they were
-written under; entries from another version are re-parsed rather than trusted, so a
-parser upgrade can never silently keep serving stale geometry.
+Cache entries record both the geometry parser version (`GEOMETRY_CACHE_VERSION`) and a
+fingerprint of the raw geometry paths, sizes, and modification times. Entries are
+re-parsed when either changes, so parser upgrades and map-file replacements cannot
+silently keep serving stale geometry.
 
 ## Directional-residual analyzer (alternative algorithm)
 

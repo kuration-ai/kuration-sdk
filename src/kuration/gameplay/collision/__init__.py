@@ -12,6 +12,8 @@ install ``kuration-sdk[collision]`` before executing the raycast paths.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from .asg_adapter import ASG_SCHEMA, AsgCollisionAdapter
 from .collision_operator import (
     COLLISION_PARAMETERS,
@@ -50,7 +52,7 @@ def register() -> None:
 
     from .._registration import needs_registration
 
-    common = {
+    common: dict[str, Any] = {
         "version": "1",
         "package": "kuration-sdk",
         "stability": "experimental",

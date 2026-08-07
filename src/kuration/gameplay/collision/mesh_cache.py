@@ -12,12 +12,11 @@ module docstring) and an on-disk `.npz` of the already-parsed, already-filtered
 (vertices, faces) arrays (reused across separate runs/processes, skipping the expensive
 parse step entirely on a cache hit).
 
-The on-disk cache is versioned: every `.npz` records the `GEOMETRY_CACHE_VERSION` it was
-written under, and a cache entry from a different version (or one predating the version
-field) is rebuilt from the raw map files instead of being trusted. The parsers themselves
-are what the version protects -- displacement-surface and static-prop support changed a
-real map's face count from 8,494 to 68,302, and an unversioned cache would have silently
-kept serving the old geometry forever after such an upgrade.
+The on-disk cache is versioned and source-aware: every `.npz` records both the
+`GEOMETRY_CACHE_VERSION` it was written under and a fingerprint of the raw geometry paths,
+sizes, and modification times. A mismatched entry is rebuilt instead of being trusted.
+The parser version protects code changes, while the source fingerprint prevents replacing
+or editing a map under the same stable map name from silently serving stale geometry.
 """
 from __future__ import annotations
 
@@ -34,7 +33,7 @@ import numpy as np
 # on-disk cache entries written under a different version are re-parsed, not trusted.
 # Version 1 is the first versioned format; unversioned caches (the pre-SDK plugin layout)
 # are treated as stale.
-GEOMETRY_CACHE_VERSION = 1
+GEOMETRY_CACHE_VERSION = 2
 
 COMPONENT_FMT = {5121: "B", 5123: "H", 5125: "I", 5126: "f"}
 COMPONENT_SIZE = {5121: 1, 5123: 2, 5125: 4, 5126: 4}
@@ -511,6 +510,20 @@ def _disk_cache_path(cache_dir: str, map_name: str) -> Path:
     return Path(cache_dir) / f"{safe_name}.geometry.npz"
 
 
+def _geometry_source_fingerprint(map_paths) -> str:
+    """Stable identity for the exact raw geometry inputs used to build a cache entry."""
+    sources = []
+    for raw_path in map_paths:
+        path = Path(raw_path).resolve()
+        stat = path.stat()
+        sources.append({
+            "path": str(path),
+            "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+        })
+    return json.dumps(sources, sort_keys=True, separators=(",", ":"))
+
+
 def _atomic_write_npz(path: Path, **arrays) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(f".tmp-{os.getpid()}.npz")
@@ -527,13 +540,16 @@ def build_map_geometry(map_paths, *, disk_cache_dir: str | None, map_name: str) 
     written -- parses the raw files via the ported format-specific readers and repopulates
     the cache for next time.
     """
+    source_fingerprint = _geometry_source_fingerprint(map_paths)
     if disk_cache_dir is not None:
         cache_path = _disk_cache_path(disk_cache_dir, map_name)
         if cache_path.exists():
-            data = np.load(cache_path)
-            if ("cache_version" in data
-                    and int(data["cache_version"]) == GEOMETRY_CACHE_VERSION):
-                return data["vertices"], data["faces"]
+            with np.load(cache_path) as data:
+                if ("cache_version" in data
+                        and int(data["cache_version"]) == GEOMETRY_CACHE_VERSION
+                        and "source_fingerprint" in data
+                        and str(data["source_fingerprint"]) == source_fingerprint):
+                    return data["vertices"], data["faces"]
 
     all_v, all_f = [], []
     vert_offset = 0
@@ -548,7 +564,8 @@ def build_map_geometry(map_paths, *, disk_cache_dir: str | None, map_name: str) 
     if disk_cache_dir is not None:
         _atomic_write_npz(_disk_cache_path(disk_cache_dir, map_name),
                           vertices=vertices, faces=faces,
-                          cache_version=np.int64(GEOMETRY_CACHE_VERSION))
+                          cache_version=np.int64(GEOMETRY_CACHE_VERSION),
+                          source_fingerprint=np.asarray(source_fingerprint))
     return vertices, faces
 
 

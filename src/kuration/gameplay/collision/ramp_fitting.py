@@ -100,6 +100,8 @@ def fit_exponential_ramp(ramps: list) -> dict:
         sse = float(np.sum((mean_curve - pred) ** 2))
         if best is None or sse < best[0]:
             best = (sse, tau, cap)
+    if best is None:  # defensive: the positive tau grid always produces a usable basis
+        raise ValueError("could not fit an exponential ramp")
     _, tau, cap = best
     return {"tau_ticks": tau, "cap_hu_s": cap, "mean_curve": mean_curve.tolist(), "n": len(ramps)}
 

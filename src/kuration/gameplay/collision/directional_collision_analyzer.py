@@ -29,10 +29,9 @@ Two ways to drive it:
   (`add_batch`), so ``pipeline.enrich("aintropy/collision-directional", {...})`` -- or the
   registered ``.collision_directional(...)`` operator wrapping it -- streams the declared
   canonical fields through it in one bounded pass. Windows arrive per source, in order,
-  with ``ownership="rightmost-start"`` dedup, and are stitched back into each source's
-  continuous tick sequence before the walk runs, so windowing never corrupts the tracked
-  state. Overlapping or gapped windows that cannot reconstruct a continuous sequence
-  raise instead of walking corrupted state.
+  with ``ownership="rightmost-start"`` dedup, and each owned prefix is processed
+  immediately while the walk state carries across windows. Overlapping or gapped windows
+  that cannot reconstruct a continuous sequence raise instead of walking corrupted state.
 * **Direct (expert)**: construct it (via ``kuration.get_analyzer`` or the class) and call
   `process_source()` once per source with that source's complete, correctly-ordered
   arrays -- e.g. from `teapearce_adapter.load_directional_arrays()`.
@@ -93,16 +92,17 @@ COMBO_FORWARD_RIGHT = {
 def _wish_direction(combo_bits: int, yaw_deg: float) -> np.ndarray:
     """World-space unit vector for the wish direction of a held combo, given view yaw.
     Inverts physics.to_local()'s world->local rotation (that matrix is its own inverse)."""
-    forward, right = COMBO_FORWARD_RIGHT[combo_bits]
-    mag = math.hypot(forward, right)
-    forward, right = forward / mag, right / mag
+    forward_component, right_component = COMBO_FORWARD_RIGHT[combo_bits]
+    mag = math.hypot(forward_component, right_component)
+    forward = forward_component / mag
+    right = right_component / mag
     yaw = math.radians(yaw_deg)
     dx = forward * math.cos(yaw) + right * math.sin(yaw)
     dy = forward * math.sin(yaw) - right * math.cos(yaw)
     return np.array([dx, dy])
 
 
-DIRECTIONAL_COLLISION_PARAMETERS = {
+DIRECTIONAL_COLLISION_PARAMETERS: dict = {
     "type": "object",
     "properties": {
         "map_for_source": {
@@ -180,8 +180,22 @@ class DirectionalCollisionAnalyzer:
         )
         self._mesh_cache: dict = {}
         self._records: list = []
-        # Per-source stream reassembly buffers -- see add_batch().
-        self._pending: dict = {}
+        # Stateful per-source stream walks. add_batch() processes each owned prefix
+        # immediately and retains only this small cross-tick state, never the input arrays.
+        self._stream_states: dict = {}
+        self._stream_next_start: dict[str, int] = {}
+        self._active_stream_source: str | None = None
+
+    @staticmethod
+    def _new_walk_state() -> dict:
+        return {
+            "active_combo": None,
+            "ticks_since_change": 0,
+            "ticks_since_modeled": 0,
+            "v0": np.zeros(2),
+            "prev_yaw": None,
+            "ray_cache": {},
+        }
 
     def _mesh_for(self, source_id: str):
         map_name = self.map_for_source.get(source_id, self.default_map)
@@ -212,18 +226,34 @@ class DirectionalCollisionAnalyzer:
         first window's real start index, so records stay in true source coordinates even
         when segmentation does not begin at tick 0); it has no effect on the walk itself.
         """
+        self._process_chunk(
+            source_id,
+            position=position,
+            yaw=yaw,
+            btn_mask=btn_mask,
+            velocity=velocity,
+            hp=hp,
+            flags=flags,
+            weapon=weapon,
+            tick_offset=tick_offset,
+            state=self._new_walk_state(),
+        )
+
+    def _process_chunk(self, source_id: str, *, position, yaw, btn_mask, velocity, hp,
+                       flags, weapon, tick_offset: int, state: dict) -> None:
+        """Process one contiguous owned slice while preserving the source's walk state."""
         mesh = self._mesh_for(source_id)
         proximity = self._thresholds["proximity"]
         min_missing_speed = self._thresholds["min_missing_speed"]
         concentration_ratio = self._thresholds["concentration_ratio"]
 
         n = len(hp)
-        ray_cache: dict = {}
-        active_combo = None
-        ticks_since_change = 0
-        ticks_since_modeled = 0
-        v0 = np.zeros(2)
-        prev_yaw = None
+        ray_cache = state["ray_cache"]
+        active_combo = state["active_combo"]
+        ticks_since_change = state["ticks_since_change"]
+        ticks_since_modeled = state["ticks_since_modeled"]
+        v0 = state["v0"]
+        prev_yaw = state["prev_yaw"]
 
         for i in range(n):
             combo = int(btn_mask[i]) & ALL_MOVE_BITS
@@ -339,6 +369,14 @@ class DirectionalCollisionAnalyzer:
             record["reason"] = "flagged"
             self._records.append(record)
 
+        state.update(
+            active_combo=active_combo,
+            ticks_since_change=ticks_since_change,
+            ticks_since_modeled=ticks_since_modeled,
+            v0=v0,
+            prev_yaw=prev_yaw,
+        )
+
     # ── Tick-stream contract (what Pipeline.enrich()/analyze() drive) ──────────────────
 
     def add_batch(self, batch, ctx) -> None:
@@ -347,11 +385,10 @@ class DirectionalCollisionAnalyzer:
         Windows arrive per source, in order, and the registration declares
         ``ownership="rightmost-start"``, so each row's owned prefix (`owned_lengths`) is
         exactly the slice of the source's continuous tick sequence no other window owns.
-        Rows are stitched into per-source column buffers here; the sequential walk itself
-        runs once per source at read time (`summary()`/`to_records()`), because ownership
-        alone cannot reveal where a source ends. A window that does not continue exactly
-        where the previous one left off (stride > window leaves gaps the walk's carried
-        state cannot survive) raises instead of walking a corrupted sequence.
+        Each owned prefix is processed immediately while only the small cross-tick walk
+        state is retained. A window that does not continue exactly where the previous one
+        left off (stride > window leaves gaps the walk's carried state cannot survive)
+        raises instead of walking a corrupted sequence.
         """
         typed = hasattr(ctx, "input_token")
 
@@ -367,19 +404,26 @@ class DirectionalCollisionAnalyzer:
         columns = {role.split(":", 1)[1]: batch[tok(role)] for role in STREAM_INPUTS}
 
         for i, (source_id, start_idx, _end_idx) in enumerate(batch["segment_ids"]):
+            if source_id != self._active_stream_source:
+                if source_id in self._stream_states:
+                    raise ValueError(
+                        f"source {source_id!r} resumed after another source began -- stream "
+                        "windows must be grouped by source")
+                if self._active_stream_source is not None:
+                    self._stream_states.pop(self._active_stream_source, None)
+                    self._stream_next_start.pop(self._active_stream_source, None)
+                self._active_stream_source = source_id
             valid = int(valid_steps[i]) if valid_steps is not None else None
             owned = int(owned_lengths[i]) if owned_lengths is not None else None
-            buf = self._pending.get(source_id)
-            if buf is None:
-                buf = {"base": int(start_idx), "next_start": int(start_idx), "columns":
-                       {name: [] for name in columns}}
-                self._pending[source_id] = buf
-            if int(start_idx) != buf["next_start"]:
+            start = int(start_idx)
+            expected_start = self._stream_next_start.get(source_id, start)
+            if start != expected_start:
                 raise ValueError(
-                    f"source {source_id!r}: window starting at {int(start_idx)} does not "
-                    f"continue the previous window (expected start {buf['next_start']}) -- "
+                    f"source {source_id!r}: window starting at {start} does not "
+                    f"continue the previous window (expected start {expected_start}) -- "
                     "the directional walk carries tick-to-tick state and needs contiguous "
                     "coverage; use stride <= window")
+            chunk = {}
             for name, batched in columns.items():
                 row = batched[i]
                 if name == "weapon":
@@ -393,19 +437,28 @@ class DirectionalCollisionAnalyzer:
                         row = row[:, 0]  # yaw only; pitch plays no part in this walk
                 if valid is not None:
                     row = row[:valid]
-                buf["columns"][name].append(row if owned is None else row[:owned])
-            length = len(buf["columns"]["hp"][-1])
-            buf["next_start"] += length
+                chunk[name] = row if owned is None else row[:owned]
+            length = len(chunk["hp"])
+            state = self._stream_states.setdefault(source_id, self._new_walk_state())
+            self._process_chunk(
+                source_id,
+                position=chunk["position"],
+                yaw=chunk["angle"],
+                btn_mask=chunk["btn_mask"],
+                velocity=chunk["velocity"],
+                hp=chunk["hp"],
+                flags=chunk["flags"],
+                weapon=chunk["weapon"],
+                tick_offset=start,
+                state=state,
+            )
+            self._stream_next_start[source_id] = start + length
 
-    def _finalize_streamed(self) -> None:
-        """Run the sequential walk over every stream-buffered source, in arrival order."""
-        pending, self._pending = self._pending, {}
-        for source_id, buf in pending.items():
-            cols = {name: np.concatenate(rows) for name, rows in buf["columns"].items()}
-            self.process_source(
-                source_id, position=cols["position"], yaw=cols["angle"],
-                btn_mask=cols["btn_mask"], velocity=cols["velocity"], hp=cols["hp"],
-                flags=cols["flags"], weapon=cols["weapon"], tick_offset=buf["base"])
+    def _release_stream_state(self) -> None:
+        """Drop cross-window state once a result surface finalizes the current stream."""
+        self._stream_states.clear()
+        self._stream_next_start.clear()
+        self._active_stream_source = None
 
     # ── Result surface ──────────────────────────────────────────────────────────────────
 
@@ -414,7 +467,7 @@ class DirectionalCollisionAnalyzer:
         (directly or via the stream driver), in call order, with a `collision` boolean
         column plus whatever diagnostics were available at the gate the tick stopped at
         (None for fields never reached)."""
-        self._finalize_streamed()
+        self._release_stream_state()
         return list(self._records)
 
     def summary(self) -> dict:
@@ -425,7 +478,7 @@ class DirectionalCollisionAnalyzer:
         this mapping -- exposes which ticks fired, not just how many; the full per-tick
         diagnostics stay on `to_records()`.
         """
-        self._finalize_streamed()
+        self._release_stream_state()
         per_source: dict = {}
         flagged_ticks: dict = {}
         for r in self._records:

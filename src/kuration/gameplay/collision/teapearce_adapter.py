@@ -66,11 +66,13 @@ from kuration import FieldSpec, SchemaSpec, Tick
 
 from .physics import BIT_A, BIT_D, BIT_S, BIT_W, FL_NOCLIP, FL_ONGROUND
 
+TEAPEARCE_SAMPLE_HZ = 16.0
+
 TEAPEARCE_SCHEMA = SchemaSpec(
     name="teapearce_dust2_collision",
     entity_axis="player",
     # TeaPearce recordings are natively 16Hz -- matches physics.DT's assumed sample rate.
-    sample_hz=16.0,
+    sample_hz=TEAPEARCE_SAMPLE_HZ,
     fields={
         "position": FieldSpec(name="position", kind="vector", dims=("x", "y", "z"),
                               semantics="position"),
@@ -126,7 +128,7 @@ class TeaPearceDust2Adapter:
                 dtype=np.float64)
             weapon = _weapon_name(cv)
             yield Tick(
-                time=i / self.schema.sample_hz,
+                time=i / TEAPEARCE_SAMPLE_HZ,
                 entities={"player": {
                     "position": position, "angle": angle, "hp": hp,
                     "btn_mask": btn_mask, "flags": flags, "velocity": velocity,
