@@ -27,8 +27,11 @@ jobs:
     name: JupyterLab and browser UX
     # Stays GitHub-hosted: `playwright install --with-deps` needs sudo apt-get,
     # and the aca-runner image runs as a non-root user without sudo rights.
+    # Also builds and validates plugins/lab (kuration-lab) — the one plugin that
+    # needs node/jlpm, so it is skipped by ci-core.yml's generic plugins job and
+    # its release artifact is produced here instead.
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -50,6 +53,56 @@ jobs:
         env:
           KURATION_BROWSER_TESTS: "1"
         run: python -m pytest tests/test_jupyter_ui.py -q
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22"
+      - name: Build the kuration-lab frontend
+        run: |
+          python -m pip install 'jupyterlab>=4.1,<5'
+          # JupyterLab 4.5+ moved jlpm out into the separate jupyter_builder
+          # distribution, so a partial install leaves a bin/jlpm that cannot
+          # import it. Probe it here, where the traceback names the step, rather
+          # than letting it surface from inside a hatch build hook.
+          jlpm --version
+          cd plugins/lab
+          jlpm install
+          jlpm build:prod
+      - name: Build the kuration-lab distribution
+        # Reuses the frontend built above through the jupyter-builder hook's
+        # skip-if-exists, so neither the sdist nor the wheel shells out to jlpm.
+        # Without it `python -m build` compiles from an sdist extracted into a
+        # temp dir, where no frontend exists, and rebuilds it there.
+        run: |
+          python -m pip install 'build>=1.5,<2' 'twine>=6.2,<7' \
+            'check-wheel-contents>=0.6.3,<1'
+          python -m build --outdir lab-dist plugins/lab
+          python -m twine check lab-dist/*
+          check-wheel-contents lab-dist/*.whl
+      - name: Install and smoke the lab extension
+        run: |
+          # Two reasons this hook must not run here. It cannot be skipped by
+          # config: hatch-jupyter-builder honors skip-if-exists only for
+          # version == "standard", so an editable install always reruns the npm
+          # build whatever is on disk. And it cannot succeed: pip's build
+          # isolation exports a PYTHONPATH whose sitecustomize strips the
+          # interpreter's own site-packages, every child process inherits it,
+          # and `jlpm` is a console script shebanged to that interpreter — so it
+          # dies on `import jupyter_builder` even though jupyterlab is
+          # installed. (`python -m build` is unaffected; it isolates with a venv
+          # and clears PYTHONPATH.) The frontend step above already built it.
+          SKIP_JUPYTER_BUILDER=1 python -m pip install -e 'plugins/lab[test]'
+          jupyter labextension develop --overwrite plugins/lab
+          jupyter labextension list 2>&1 | grep -q kuration-lab
+          jupyter server extension list 2>&1 | grep -q kuration_lab
+          python -m pytest plugins/lab/tests -q
+          python -m ruff check plugins/lab/src plugins/lab/tests
+          (cd lab-dist && sha256sum -- * > lab-SHA256SUMS)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: labextension-package-distributions-${{ github.sha }}
+          path: lab-dist/
+          if-no-files-found: error
+          retention-days: 30
 
   platform-smoke:
     name: Core smoke (${{ matrix.os }})

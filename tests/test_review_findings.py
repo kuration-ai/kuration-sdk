@@ -224,6 +224,12 @@ def test_every_repository_plugin_is_an_independent_distribution():
     assert distributions
     for distribution in distributions:
         config = tomllib.loads((distribution / "pyproject.toml").read_text())
-        assert config["project"]["entry-points"]["kuration.plugins"]
+        if (distribution / "package.json").exists():
+            # Browser-facing plugins (e.g. plugins/lab) are UI distributions: they hook in
+            # through Jupyter's own discovery and deliberately register no kuration.plugins
+            # entry point (pinned by their own tests).
+            assert "kuration.plugins" not in config["project"].get("entry-points", {})
+        else:
+            assert config["project"]["entry-points"]["kuration.plugins"]
         assert (distribution / "tests").is_dir()
         assert (distribution / "src").is_dir()
