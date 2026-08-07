@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extra: [zarr, torch, hf, video, ray, stats, pixel-shift, action-state, slam, slam-viz]
+        extra: [zarr, torch, hf, video, ray, stats, pixel-shift, action-state, collision, slam, slam-viz]
         dependency_set: [minimum]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

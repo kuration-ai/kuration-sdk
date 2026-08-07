@@ -5,7 +5,7 @@ and `kuration.gameplay` domain),
 grouped by layer, with its real
 signature. Optional-extra requirements are tagged (`[methods]`, `[parquet]`, `[array]`,
 `[video]`, `[ray]`,
-`[cloud]`, `[torch]`, `[hf]`, `[zarr]`, `[scale]`, `[stats]`, `[gameplay]`, `[pixel-shift]`,
+`[cloud]`, `[torch]`, `[hf]`, `[zarr]`, `[scale]`, `[stats]`, `[gameplay]`, `[pixel-shift]`, `[collision]`,
 `[action-state]`, `[slam]`, `[slam-viz]`). For concepts and recipes see the per-layer docs
 ([schema](schema.md) · [dsl](dsl.md) · [adapters](adapters.md) · [strategies](strategies.md) ·
 [output](output.md)) and the [usage cookbook](usage.md).
@@ -65,6 +65,8 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None) -> Pipeline` | attach a strictly aligned lazy video media column |
 | `Pipeline.pixel_shift` | `(*, controls=None, boundary="exclude") -> Pipeline` | registered by `kuration.gameplay` as `aintropy/pixel-shift`; add the DIAMOND action/pixel-motion features (`[pixel-shift]` when frames are measured) |
 | `Pipeline.action_state_consistency` | `(*, baselines=None, anomaly_type="action_state", controls=None, calibration=None, boundary="exclude", mode=None, inputs=None, batch_size=None, frames=None, actions=None, color_space=None, verify=None, metadata_key="action_state_consistency", replace=False) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/action-state-consistency`; run the existing analyzer once and attach its verdict under `metadata["gameplay"][metadata_key]`. `baselines=` checks against external calibration; `controls=` alone self-calibrates (leave-one-out consensus, knobs via `calibration=`) |
+| `Pipeline.collision` | `(*, map_for_source, map_registry, dist_path, disk_cache_dir=".kuration_collision_cache", min_score=2.0, proximity=40.0, min_approach=250.0, max_residual=20.0, slide_angle=75.0, max_slide_speed=400.0, min_release_accel=100.0, max_release_vn=100.0) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/collision`; add per-window CS2 wall-collision count/anomaly features raycast against map geometry (`[collision]` for trimesh/rtree) |
+| `Pipeline.collision_directional` | `(*, map_registry, ramp_models_path, map_for_source=None, default_map=None, fallback_ramp=None, disk_cache_dir=None, proximity=None, min_missing_speed=None, concentration_ratio=None, inputs=None, batch_size=None, metadata_key="directional_collision", replace=False) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/collision-directional`; run the tick-stream analyzer once and attach its verdict (including `flagged_ticks` in source coordinates) under `metadata["gameplay"][metadata_key]` |
 | `Pipeline.slam_motion_diversity` | `(*, axis="slam_path_length", bins=8) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/slam-motion-diversity`; add SLAM motion features and bin one diversity axis |
 | `Pipeline.slam_quality` | `(*, min_score=None, min_tracking_confidence=0.5, translation_ratio=10.0, translation_mad_multiplier=8.0, max_translation_step=None, max_turn_degrees=90.0) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/slam-quality`; add SLAM quality features and optionally filter weak windows |
 | `Pipeline.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params) -> Pipeline` | add a registered bounded scalar-feature transform |
@@ -370,12 +372,13 @@ any output is written.
 The `kuration.gameplay` domain ships in the SDK wheel. Its heavy
 measurement runtimes remain optional.
 
-The facade itself also exports three registration modules and its idempotent registration hook:
+The facade itself also exports four registration modules and its idempotent registration hook:
 
 | name | signature | does |
 |---|---|---|
 | `kuration.gameplay.pixel_shift` | module | pixel-shift transform, operator, and report facade |
 | `kuration.gameplay.action_state_consistency` | module | action-state analyzer and pipeline-operator facade |
+| `kuration.gameplay.collision` | module | CS2 wall-collision transform/operator, directional tick-stream analyzer, adapters, and ramp-fit helpers |
 | `kuration.gameplay.slam` | module | SLAM reconstruction, trajectory, and point-cloud facade |
 | `kuration.gameplay.register` | `() -> None` | idempotently register every maintained gameplay component and stats enricher |
 
@@ -388,6 +391,15 @@ The facade itself also exports three registration modules and its idempotent reg
 | `kuration.gameplay.action_state_consistency.attach_action_state_consistency` | `(pipeline, *, baselines=None, anomaly_type="action_state", controls=None, calibration=None, boundary="exclude", mode=None, inputs=None, batch_size=None, frames=None, actions=None, color_space=None, verify=None, metadata_key="action_state_consistency", replace=False) -> Pipeline` | handler registered as the direct pipeline operator of the same stable name; requires `baselines=` or `controls=` |
 | `ActionStateConsistencyChecker` | `(config)`; `.add_segment(...)`, `.clip_verdict(source_id)`, `.summary()`, `.print_report()` | classify clips against pixel-shift baselines (`[action-state]` for frame measurement) |
 | `AnomalyChecker` | `(validated_config)` | measurement-agnostic tuple aggregation used by the action-state adapter |
+| `kuration.gameplay.collision.CollisionMechanics` | `(*, map_for_source, map_registry, dist_path, **thresholds)` | bounded batch transform registered as `aintropy/collision`: per-window collision counts/anomaly score raycast against map geometry (`[collision]`) |
+| `kuration.gameplay.collision.attach_directional_collision` | `(pipeline, *, map_registry, ramp_models_path, map_for_source=None, default_map=None, fallback_ramp=None, disk_cache_dir=None, proximity=None, min_missing_speed=None, concentration_ratio=None, inputs=None, batch_size=None, metadata_key="directional_collision", replace=False) -> Pipeline` | handler registered as the direct pipeline operator `aintropy/collision-directional`; runs the tick-stream analyzer once and attaches its verdict |
+| `DirectionalCollisionAnalyzer` | `(*, map_registry, ramp_models_path, map_for_source=None, default_map=None, fallback_ramp=(3.0, 215.0), ...)`; `.process_source(...)`, `.to_records()`, `.summary()` | acceleration-ramp-residual collision detector, drivable over the tick stream or directly per source |
+| `kuration.gameplay.collision.fit_ramp_models` | `(sources, *, min_ramps=5) -> dict` | fit the `{(combo_bits, weapon): (tau, cap)}` acceleration-ramp table the directional analyzer consumes |
+| `kuration.gameplay.collision.save_ramp_models` | `(models, path) -> None` | write a fitted ramp table to JSON |
+| `kuration.gameplay.collision.load_ramp_models` | `(path) -> dict` | read a ramp table written by `save_ramp_models` back into lookup shape |
+| `AsgCollisionAdapter` | `()`; `.ticks(source_uri)`, `.check_source(source_uri)`, `.discover_map_for_source(paths)` | InputAdapter registered as `aintropy/collision-asg`: ASG `data.json` -> canonical Ticks, one source per `(match, player)` |
+| `TeaPearceDust2Adapter` | `()`; `.ticks(source_uri)`, `.check_source(source_uri)` | InputAdapter registered as `aintropy/collision-teapearce`: TeaPearce dust2 `.npy` -> canonical Ticks, one source per recording |
+| `kuration.gameplay.collision.load_directional_arrays` | `(source_uri) -> dict` | flatten one TeaPearce recording's Tick stream into the plain per-source arrays `process_source()`/`fit_ramp_models()` take |
 | `VideoComparison` | `(left, right, *, labels=None, provider=None)`; `.render()`, `.save()`, `.probe()`, `.plot(frames=4)`, rich HTML display | synchronized side-by-side video review; `[video]` for default metadata/frame decoding and `[stats]` for contact sheets |
 | `kuration.gameplay.compare_videos` | `(left, right, *, labels=None, provider=None) -> VideoComparison` | ergonomic constructor for `VideoComparison` |
 
@@ -397,7 +409,7 @@ The facade itself also exports three registration modules and its idempotent reg
 `strongest-vs-weakest`. `n` is bounded to 1–100 and gameplay `frames` to 1–12.
 
 The associated validation and decoding helpers are documented in
-[pixel-shift.md](pixel-shift.md) and
+[pixel-shift.md](pixel-shift.md), [collision.md](collision.md), and
 [action-state-consistency.md](action-state-consistency.md).
 
 ## SLAM reconstruction and curation
