@@ -80,10 +80,16 @@ jobs:
           check-wheel-contents lab-dist/*.whl
       - name: Install and smoke the lab extension
         run: |
-          # hatch-jupyter-builder honors skip-if-exists only for version ==
-          # "standard", so an editable install always reruns the npm build no
-          # matter what is already on disk. The frontend step above produced it,
-          # so skip the hook outright rather than build the frontend twice.
+          # Two reasons this hook must not run here. It cannot be skipped by
+          # config: hatch-jupyter-builder honors skip-if-exists only for
+          # version == "standard", so an editable install always reruns the npm
+          # build whatever is on disk. And it cannot succeed: pip's build
+          # isolation exports a PYTHONPATH whose sitecustomize strips the
+          # interpreter's own site-packages, every child process inherits it,
+          # and `jlpm` is a console script shebanged to that interpreter — so it
+          # dies on `import jupyter_builder` even though jupyterlab is
+          # installed. (`python -m build` is unaffected; it isolates with a venv
+          # and clears PYTHONPATH.) The frontend step above already built it.
           SKIP_JUPYTER_BUILDER=1 python -m pip install -e 'plugins/lab[test]'
           jupyter labextension develop --overwrite plugins/lab
           jupyter labextension list 2>&1 | grep -q kuration-lab
