@@ -68,11 +68,10 @@ jobs:
           jlpm install
           jlpm build:prod
       - name: Build the kuration-lab distribution
-        # Builds below reuse the frontend above via the jupyter-builder hook's
-        # skip-if-exists, so neither shells out to jlpm again. Without it,
-        # `python -m build` compiles from an sdist extracted to a temp dir (so
-        # the frontend never lands in the working tree) and the editable install
-        # then reruns `jlpm install` from scratch.
+        # Reuses the frontend built above through the jupyter-builder hook's
+        # skip-if-exists, so neither the sdist nor the wheel shells out to jlpm.
+        # Without it `python -m build` compiles from an sdist extracted into a
+        # temp dir, where no frontend exists, and rebuilds it there.
         run: |
           python -m pip install 'build>=1.5,<2' 'twine>=6.2,<7' \
             'check-wheel-contents>=0.6.3,<1'
@@ -81,7 +80,11 @@ jobs:
           check-wheel-contents lab-dist/*.whl
       - name: Install and smoke the lab extension
         run: |
-          python -m pip install -e 'plugins/lab[test]'
+          # hatch-jupyter-builder honors skip-if-exists only for version ==
+          # "standard", so an editable install always reruns the npm build no
+          # matter what is already on disk. The frontend step above produced it,
+          # so skip the hook outright rather than build the frontend twice.
+          SKIP_JUPYTER_BUILDER=1 python -m pip install -e 'plugins/lab[test]'
           jupyter labextension develop --overwrite plugins/lab
           jupyter labextension list 2>&1 | grep -q kuration-lab
           jupyter server extension list 2>&1 | grep -q kuration_lab
