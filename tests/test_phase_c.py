@@ -16,7 +16,7 @@ from kuration import (
     load_strategy,
     select,
 )
-from kuration.select import assign_splits, enforce_group_cap, enforce_tag_coverage
+from kuration.core.select import assign_splits, enforce_group_cap, enforce_tag_coverage
 
 SCHEMA = SchemaSpec.from_dict({
     "name": "c", "entity_axis": "e", "sample_hz": 1.0,
@@ -59,6 +59,35 @@ def _curate(strategy, target_size, **kw):
     data = _sources(range(1, 7))
     return curate(schema=SCHEMA, adapter=MemAdapter(SCHEMA, data), sources=list(data),
                   strategy=strategy, segmenter=Segmenter(4, 4), target_size=target_size, **kw)
+
+
+def test_curate_rejects_empty_sources():
+    strategy = _strategy(
+        {"selection": {"method": "top-k", "weights": {"am": 1.0}}})
+
+    with pytest.raises(ValueError, match="at least one source"):
+        curate(
+            schema=SCHEMA,
+            adapter=MemAdapter(SCHEMA, {}),
+            sources=[],
+            strategy=strategy,
+            segmenter=Segmenter(4, 4),
+            target_size=1,
+        )
+
+
+def test_score_sources_rejects_an_empty_generator():
+    from kuration.core.scoring import score_sources
+
+    with pytest.raises(ValueError, match="at least one source"):
+        score_sources(
+            schema=SCHEMA,
+            adapter=MemAdapter(SCHEMA, {}),
+            sources=iter(()),
+            define={},
+            registered=[],
+            segmenter=Segmenter(4, 4),
+        )
 
 
 def test_top_k_picks_highest():

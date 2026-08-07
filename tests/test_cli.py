@@ -42,7 +42,7 @@ def _run(args):
 
 
 def test_kur_curate_help():
-    p = _run(["kuration.cli.curate", "--help"])
+    p = _run(["kuration.core.cli.curate", "--help"])
     assert p.returncode == 0 and "job" in p.stdout
 
 
@@ -53,17 +53,17 @@ def test_cli_failure_is_one_line_no_traceback(tmp_path):
     spec["adapter"]["fields"]["act"] = "activity"       # column doesn't exist -> empty pool
     job = tmp_path / "job.json"
     job.write_text(json.dumps(spec))
-    p = _run(["kuration.cli.curate", str(job)])
+    p = _run(["kuration.core.cli.curate", str(job)])
     assert p.returncode == 1
     assert "Traceback" not in p.stderr, p.stderr
     assert "error: RuntimeError: segment pool is EMPTY" in p.stderr
 
-    p = _run(["kuration.cli.curate", str(job), "--debug"])          # --debug re-raises
+    p = _run(["kuration.core.cli.curate", str(job), "--debug"])          # --debug re-raises
     assert p.returncode != 0 and "Traceback" in p.stderr
 
 
 def test_cli_missing_job_file_is_one_line(tmp_path):
-    p = _run(["kuration.cli.curate", str(tmp_path / "nope.json")])
+    p = _run(["kuration.core.cli.curate", str(tmp_path / "nope.json")])
     assert p.returncode == 1
     assert "Traceback" not in p.stderr and "error:" in p.stderr and "not found" in p.stderr
 
@@ -73,25 +73,42 @@ def test_kur_curate_runs(tmp_path):
     out = tmp_path / "out"
     job = tmp_path / "job.json"
     job.write_text(json.dumps(_job(csv_path, out)))
-    p = _run(["kuration.cli.curate", str(job)])
+    p = _run(["kuration.core.cli.curate", str(job)])
     assert p.returncode == 0, p.stderr
     manifest = json.loads((out / "dataset_manifest.json").read_text())
     assert manifest["count"] > 0
     assert (out / "config.json").exists()
 
 
+def test_kur_curate_requires_explicit_force_to_replace(tmp_path):
+    csv_path = _make_csv(tmp_path)
+    out = tmp_path / "out"
+    job = tmp_path / "job.json"
+    job.write_text(json.dumps(_job(csv_path, out)))
+
+    assert _run(["kuration.core.cli.curate", str(job)]).returncode == 0
+    guarded = _run(["kuration.core.cli.curate", str(job)])
+    assert guarded.returncode == 1
+    assert "force=True" in guarded.stderr
+
+    replaced = _run(["kuration.core.cli.curate", str(job), "--force"])
+    assert replaced.returncode == 0, replaced.stderr
+
+
 def test_kur_explain_is_actionable_in_text_and_json(tmp_path):
     csv_path = _make_csv(tmp_path)
     job = tmp_path / "job.json"
     job.write_text(json.dumps(_job(csv_path, tmp_path / "out")))
-    text_plan = _run(["kuration.cli.explain", str(job)])
+    text_plan = _run(["kuration.core.cli.explain", str(job)])
     assert text_plan.returncode == 0, text_plan.stderr
     assert "selection: top-k (train=100h, test=0h)" in text_plan.stdout
     assert "execution: local; workers=1" in text_plan.stdout
+    assert "force=False" in text_plan.stdout
     assert "fix: Set mode='strict'" in text_plan.stdout
-    json_plan = _run(["kuration.cli.explain", str(job), "--json"])
+    json_plan = _run(["kuration.core.cli.explain", str(job), "--json"])
     plan = json.loads(json_plan.stdout)
     assert plan["selection"]["budget"] == {"kind": "hours", "train": 100, "test": 0}
+    assert plan["execution"]["force"] is False
     assert plan["validation"]["n_sources"] == 1
 
 
@@ -111,7 +128,7 @@ def test_kur_report_with_scorer(tmp_path):
     }
     out_json = tmp_path / "report.json"
     job.write_text(json.dumps(spec))
-    p = _run(["kuration.cli.report", str(job), "--out", str(out_json)])
+    p = _run(["kuration.core.cli.report", str(job), "--out", str(out_json)])
     assert p.returncode == 0, p.stderr
     assert "unknown registered metric" not in p.stderr
     assert "segment pool is" not in p.stderr.replace("\n", " ")   # the all-skipped warning
@@ -138,14 +155,14 @@ def test_kur_experiment_runs(tmp_path):
     })
     job.write_text(json.dumps(spec))
     cmp_out = tmp_path / "cmp.json"
-    p = _run(["kuration.cli.experiment", str(job), "--out", str(cmp_out)])
+    p = _run(["kuration.core.cli.experiment", str(job), "--out", str(cmp_out)])
     assert p.returncode == 0, p.stderr
     out = json.loads(cmp_out.read_text())
     assert out["baseline"] == "base" and "hi" in out["arms"]
 
 
 def test_cli_error_formatter_enforces_one_line_contract():
-    from kuration.cli._common import format_error
+    from kuration.core.cli._common import format_error
     rendered = format_error(ValueError("first line\nsecond\tline"))
     assert rendered == "error: ValueError: first line second line"
     assert len(rendered.splitlines()) == 1

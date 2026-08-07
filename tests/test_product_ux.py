@@ -75,7 +75,7 @@ def test_inspect_dataset_summarizes_and_verifies_written_artifact(tmp_path):
 def test_kur_inspect_cli_text_and_json(tmp_path):
     destination = tmp_path / "dataset"
     _pipeline().output(destination, container="npz", categorical="omit", shard_length=4)
-    command = [sys.executable, "-m", "kuration.cli.inspect", str(destination)]
+    command = [sys.executable, "-m", "kuration.core.cli.inspect", str(destination)]
     text = subprocess.run(command, check=True, capture_output=True, text=True)
     assert "shards: 3" in text.stdout and "x()/float32" in text.stdout
     structured = subprocess.run([*command, "--json"], check=True,
@@ -85,7 +85,7 @@ def test_kur_inspect_cli_text_and_json(tmp_path):
 
 def test_cli_empty_pool_error_includes_remedy(tmp_path):
     # Existing CLI tests cover the failure itself; this pins the new actionable suffix.
-    from kuration.cli._common import format_error
+    from kuration.core.cli._common import format_error
     error = RuntimeError("segment pool is EMPTY: no windows")
     rendered = format_error(error)
     assert "hint:" in rendered and "window is not longer" in rendered

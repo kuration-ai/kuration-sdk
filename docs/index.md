@@ -40,7 +40,7 @@ the package's module layout.
   deprecation.
 - [Release notes](releases.md) — what changed in the current release candidate and any migration
   considerations.
-- [Security policy](https://github.com/aintropy-ai/kuration-sdk/blob/main/SECURITY.md) — private reporting and runtime trust boundaries.
+- [Security policy](security.md) — private reporting and runtime trust boundaries.
 - [Releasing](releasing.md) — build, smoke-test, tag, and trusted-publishing process.
 
 ## Reference
@@ -58,6 +58,7 @@ public-data workflows. Start with:
 ```bash
 python examples/quickstart.py --out quickstart-out
 python examples/05_custom_operators.py
+python examples/06_gameplay_operator_methods.py
 ```
 
 Every example used as a primary documentation path is exercised by CI.

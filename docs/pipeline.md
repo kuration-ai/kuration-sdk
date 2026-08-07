@@ -2,7 +2,7 @@
 
 The primary way to drive the SDK for the common case: no explicit `SchemaSpec`,
 no explicit adapter, no raw strategy dict. `kuration.input(...)` sniffs a source, infers a
-schema (via [`kuration.infer`](#schema-inference-kurationinfer)), and returns an immutable `Pipeline`; every
+schema (via [`kuration.core.infer`](#schema-inference-kurationcoreinfer)), and returns an immutable `Pipeline`; every
 operator returns a *new* `Pipeline` (nothing is mutated in place); a terminal compiles the
 chain into the classic strategy dict and calls the existing engine
 (`curate` / `write_dataset` / `dataset_report` / `run_experiment` — see [api.md](api.md)).
@@ -43,7 +43,7 @@ the right adapter, eagerly — a bad source fails at `input()` time, not mid-pip
 | `{source_id: list[Tick]}` | in-memory ticks, **multi-source** |
 | `input(adapter=<InputAdapter or registered name>, sources=[...], schema=..., registry=...)` | escape hatch — no inference, `schema=` is required; a named adapter resolves only through the supplied registry snapshot |
 
-File-kind sniffing (`kuration.infer.sniff`): `.csv`/`.parquet` → timeseries, `.jsonl` → JSONL
+File-kind sniffing (`kuration.core.infer.sniff`): `.csv`/`.parquet` → timeseries, `.jsonl` → JSONL
 (one row-object per line), `.json` → a JSON array of row objects *or* a columnar dict of
 equal-length lists, `.npz` → NpzAdapter, `.h5`/`.hdf5` → HDF5Adapter, a directory containing
 `.parquet` parts → `ParquetDatasetAdapter`; `.mp4`/`.m4v`/`.mov` → `VideoAdapter`. Anything else raises with a pointer at
@@ -60,11 +60,11 @@ Notes:
 - `time=`/`entity=`/`hz=`/`kinds=` steer inference (see below) without forcing a full explicit
   schema.
 
-## Schema inference (`kuration.infer`)
+## Schema inference (`kuration.core.infer`)
 
 `input()` calls `infer_schema(sample, ...)` on a small sample (`sample=200` rows by default)
 pulled by `sample_source`. It is deliberately conservative and loud: an ambiguous column
-raises rather than guessing. Summary (full behavior: [`src/kuration/infer.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/src/kuration/infer.py),
+raises rather than guessing. Summary (full behavior: [`src/kuration/core/infer.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/src/kuration/core/infer.py),
 concepts: [schema.md](schema.md)):
 
 - **Time column** — first case-insensitive match among `t, time, timestamp, ts, step, frame,
@@ -88,10 +88,16 @@ concepts: [schema.md](schema.md)):
 ## Operator reference
 
 Each operator returns a new `Pipeline`; the pipeline being extended is never mutated.
+Importing `kuration.gameplay` registers the gameplay methods below on this same core type;
+custom domains and plugins follow the same registered-operator mechanism.
 
 | operator | signature | compiles to |
 |---|---|---|
 | `.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None)` | a `JoinedMediaAdapter` with a resolved source→video mapping and lazy media column |
+| `.pixel_shift` | `(*, controls=None, boundary="exclude")` | the built-in `aintropy/pixel-shift` operator |
+| `.action_state_consistency` | `(*, baselines=None, anomaly_type="action_state", controls=None, calibration=None, boundary="exclude", mode=None, inputs=None, batch_size=None, metadata_key="action_state_consistency", replace=False, **dataset_options)` | runs the built-in analyzer once and returns a pipeline carrying its verdict under `metadata["gameplay"][metadata_key]`; `baselines=` checks against external calibration, `controls=` alone self-calibrates against the other clips' leave-one-out consensus |
+| `.slam_motion_diversity` | `(*, axis="slam_path_length", bins=8)` | the built-in `aintropy/slam-motion-diversity` operator |
+| `.slam_quality` | `(*, min_score=None, **quality_options)` | the built-in `aintropy/slam-quality` operator |
 | `.window` | `(window, stride=None, unit="steps")` | the `Segmenter` (stride defaults to `window`) |
 | `.measure` | `(name, spec=None, *, of=None, map=None, filter=None, scope=None)` | a `strategy.define[name]` entry — 4 forms below |
 | `.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params)` | a registered bounded batch transform whose scalar outputs become selection features |
@@ -107,14 +113,16 @@ Each operator returns a new `Pipeline`; the pipeline being extended is never mut
 | `.as_position/.as_angular/.as_bitmask` | semantic convenience wrappers | `.semantic(...)` |
 | `.at_rate` | `(hz)` | `SchemaSpec.sample_hz` |
 | `.using` | `(Registry)` | explicit component-resolution overlay |
-| `.apply` | `(name, **params)` | a registered composition expanded into ordinary operators |
+| `.with_metadata` | `(namespace, key, value, *, replace=False)` | caller-owned, namespaced strict-JSON metadata on a new pipeline |
+| `.enrich` | `(analyzer_name, parameters=None, *, namespace=None, key=None, replace=False, mode=None, inputs=None, batch_size=None, analyzer=None, **options)` | runs a registered analyzer once and attaches its result, descriptor, request, and input-basis fingerprint to a new pipeline |
+| `.apply` | `(name, **params)` | compatibility-only string dispatch; prefer the generated direct method |
 
 `.measure`'s four forms:
 ```python
-.measure("hp")                            # bare name -> mean of the auto-qualified field
-.measure("hp_p95", "p95", of="hp")        # reduce string + of=/map=/filter=/scope= kwargs
-.measure("hp_max", {"source": "e.hp", "reduce": "max"})   # a full DSL dict, passed through
-.measure("wlen", lambda w: float(w.T))    # a callable(WindowBuffer) -> float (registered)
+pipeline.measure("hp")                            # bare name -> mean of the auto-qualified field
+pipeline.measure("hp_p95", "p95", of="hp")        # reduce string + of=/map=/filter=/scope= kwargs
+pipeline.measure("hp_max", {"source": "e.hp", "reduce": "max"})  # full DSL dict
+pipeline.measure("wlen", lambda w: float(w.T))    # callable(WindowBuffer) -> float
 ```
 A bare token auto-qualifies against the schema: an entity field becomes `<entity_axis>.field`,
 a global stays bare, an event-stream name raises (name a field on it: `"stream.field"`).
@@ -149,7 +157,10 @@ Transforms that declare bounded lookbehind/lookahead read neighboring field/medi
 the typed `TransformContext`: `ctx.before(token)` and `ctx.after(token)`. The `rightmost-start`
 ownership policy supplies immutable `ctx.owned_lengths`, one prefix length per window, so
 overlapping windows produce deterministic event ownership. The rc2 batch keys remain available
-during the release-candidate compatibility window.
+during the release-candidate compatibility window. `inputs=` remaps a transform's declared input
+roles for one use; the transform resolves them through `ctx.input_token(role)`/`ctx.inputs`, and
+`ctx.valid_steps` reports each row's real timestep count within the NaN-padded `(B,T,E,D)` field
+batch.
 Framework imports and model loading remain inside the optional transform implementation; core
 import and ordinary pipelines stay NumPy-only.
 
@@ -165,7 +176,7 @@ aliases case-insensitively (`le`/`lte`/`leq`/`<=`, `ge`/`gte`/`geq`/`>=`, `lt`/`
 pre-filter**: they gate every selection method (not only `"filter"`), on both the count and
 hours paths — see [strategies.md](strategies.md).
 
-### Reusable compositions with `.apply()`
+### Reusable compositions as direct methods
 
 `register_operator()` packages a validated sequence of existing operators under a discoverable
 name. The handler receives a cloned pipeline and keyword parameters, and must return a pipeline
@@ -191,13 +202,17 @@ def balance_motion(pipeline, *, field, bins=8):
             .measure("motion", "mean", of=field)
             .bin("motion", bins=bins))
 
-pipeline = pipeline.apply("acme/balance-motion", field="velocity", bins=8)
+pipeline = pipeline.balance_motion(field="velocity", bins=8)
 ```
 
 Parameter names and required keys are checked before expansion; the ordinary operators then
 perform their usual schema and value validation. `config.json` records the named call, component
 descriptor/code fingerprint, parameters, and nested expansion. Operators resolve through the
 pipeline's active registry, so `.using(local_registry)` and plugin entry points work normally.
+Hyphens and dots in the local component name become underscores. When two namespaces register
+the same local spelling, use the qualified form such as
+`pipeline.acme__balance_motion(...)`. `Pipeline.apply(name, **params)` remains a compatibility
+wrapper for serialized integrations, but normal Python code does not need it.
 
 This is deliberately a composition seam, not a native execution-stage seam: a handler cannot
 introduce a new terminal or bypass the validation and execution contracts of existing operators.
@@ -241,9 +256,91 @@ retain the compatible reference implementation and appear as materialization war
 |---|---|---|
 | `.collect` | `(n=None)` | `curate()` — count-path selection → `CurateResult` |
 | `.review` | `(n=None, *, path=None, examples=10, hist_bins=10, **output_options)` | count selection review; hours selection writes to `path=` and reviews admission/budget decisions without rescoring |
-| `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, dry_run=False, inspect_sources=False)` | validate/estimate with `dry_run=True`, otherwise write through the ordinary `OutputSpec` path |
+| `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, force=False, dry_run=False, inspect_sources=False)` | validate/estimate with `dry_run=True`, otherwise write through the ordinary no-clobber `OutputSpec` path; `force=True` explicitly replaces an existing destination |
 | `.report` | `(**kw)` | feature pass only (no selection) → `dataset_report` |
+| `.stats` | `(**kwargs)` | `kuration.stats(pipeline, **kwargs)` — lifecycle statistics for the pipeline's current stage |
+| `.analyze` | `(name, parameters=None, *, mode=None, inputs=None, batch_size=None, analyzer=None, **options)` | a registered stateful analyzer: `run_stream_analyzer` over the tick stream, or `run_dataset_analyzer`'s `check_dataset` hook for an artifact-backed pipeline |
+| `.check` | `(policy=None, *, verify=False, **expectations)` | `evaluate_quality` over the cheapest evidence this pipeline can produce — the fluent `kur-check --policy` |
 | `.experiment` | `(arms, n, baseline=None)` | `run_experiment`; `arms` maps name → `Pipeline` (its compiled strategy) or a raw strategy dict |
+
+### Stateful analyzers: retain or return the result
+
+An analyzer accumulates evidence across segments, so it cannot honestly be a per-segment
+selection stage. A domain method such as `.action_state_consistency(...)` is the normal
+pipeline-preserving spelling: it drives the analyzer once and returns a new pipeline with the
+result attached.
+
+```python
+pipeline = (
+    input({"clip1": rows})
+    .join_video({"clip1": "clip1.mp4"})
+    .window(64, stride=32)
+    .options(streaming=True)
+    .action_state_consistency(baselines=baselines, controls=["W"])
+)
+verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
+print(verdict["passed"], verdict["summary"])
+```
+
+The pipeline remains usable: continue with `.measure()`, `.filter()`, `.sample()`, `.output()`,
+or any other downstream operation. Caller metadata uses the same carrier:
+`pipeline.with_metadata("project", "review", {"owner": "training"})`. Metadata is defensively
+copied, strict JSON, preserved by immutable chaining, and included in written `config.json`
+after private path values are made publishable. A repeated namespace/key is a loud error unless
+`replace=True`.
+
+Materialized analyzer evidence is bound to the input/schema/media/window/registry state that
+produced it. Downstream selection and output calls preserve it; attempts to change that upstream
+basis afterwards raise instead of silently making the result stale.
+
+Use generic `.enrich(name, ...)` when a domain has no convenience operator. Use `.analyze(...)`
+when the detached result itself is the goal:
+
+```python
+result = pipeline.analyze(
+    "aintropy/action-state-consistency",
+    {"anomaly_type": "action_state", "baselines": baselines},
+    controls=["W"],
+)
+```
+
+Both return policies use the same driver:
+
+- **Tick-stream mode** (default for a raw pipeline) drives the analyzer's `add_batch` hook over
+  this pipeline's segmented tick stream, using the same bounded batch/decode machinery as
+  `.transform(...)`: declared `field:`/`media:` inputs, per-input lookbehind/lookahead context,
+  lazy media decoded once per batch. It is a single pass with one batch of windows resident, so
+  it works under `.options(streaming=True)`. `segment_ids` are real
+  `(source_id, start_idx, end_idx)` source coordinates.
+- **Dataset mode** (default when the source *is* a written kuration dataset, i.e. the adapter
+  names its artifacts) drives `check_dataset` and returns exactly what `run_dataset_analyzer()`
+  and `kur-check --analyzer` return.
+- `parameters` are the analyzer's construction parameters, validated against its registered
+  descriptor; `**options` belong to the hook being driven; `inputs=`/`batch_size=` remap and size
+  the stream path; `analyzer=` drives an instance you already own, so its accumulated evidence
+  (per-instance ledgers, printed reports) stays yours after the call.
+- Loud, never silent: an unknown analyzer raises the registry error, an analyzer missing the hook
+  for the resolved mode raises a `ValueError` naming the hook it needs *and* the mode it does
+  support, and an analyzer that measured zero segments raises instead of reporting a vacuous pass.
+
+See [customization.md](customization.md#stateful-analyzers) for the registration contract and
+[action-state-consistency.md](action-state-consistency.md) for the bundled gameplay analyzer.
+
+### `.check()` — quality policies in Python
+
+`.expect(...)` declares gates; `.check()` evaluates them and returns a `QualityGateResult`
+without raising (`check_quality()` is the raising spelling). An artifact-backed pipeline is
+inspected and gated exactly as `kur-check --policy` gates it; any other pipeline is gated on a
+bounded input preview. Expectations merge from `.expect(...)`, a `policy` mapping (the
+`{"expectations": {...}}` policy-file shape is accepted), then keywords.
+
+```python
+gates = input("logs/*.parquet").expect(max_missing={"hp": 0.01}).check(min_sources=8)
+print(gates.render())
+```
+
+Selection, budget, and shard gates need selection or artifact evidence: run those through
+`.review()` (which raises on failure) or gate the written dataset.
 
 `.output` details:
 - `dry_run=True` resolves and validates the actual output declaration without creating the
@@ -263,6 +360,11 @@ retain the compatible reference implementation and appear as materialization war
   options win; strict mode raises on source errors and implicit categorical omission.
 - The count path rewrites its selection deterministically per run, so `resume=True` on it
   raises (hours path only).
+- Output destinations are protected by default. Pass `force=True` to replace an existing
+  committed or interrupted artifact; selection completes before the old commit is invalidated.
+- A destination-scoped writer lease prevents concurrent fluent, classic, or import publishers
+  from interleaving. Container dependencies and count-output memory minima are checked before
+  publication begins.
 
 `.review()` intentionally materializes the complete candidate pool so it can compare it with the
 selection. Run the output dry run first for a large corpus; use `preview()` when you only need a

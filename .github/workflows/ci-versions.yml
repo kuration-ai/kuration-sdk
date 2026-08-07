@@ -1,0 +1,68 @@
+# Split out of ci.yml so each run's job list stays small enough for the ACA
+# runner's KEDA scaler to enumerate within its 3s HTTP timeout. See
+# .github/aca-runner/ci-workflow-split-plan.md. The aggregate gate lives in
+# ci.yml's `required-ci`, which waits on this workflow's conclusion.
+name: CI - Versions
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python }}
+    runs-on: [self-hosted, aca]
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install
+        run: python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p,pixel-shift]'
+      - name: Import cloud backends
+        if: matrix.python == '3.11'
+        run: python -c 'import adlfs, gcsfs, s3fs'
+      - name: Test with coverage
+        if: matrix.python == '3.11'
+        run: python -m pytest tests/ -q --cov=kuration --cov-report=term --cov-report=xml --cov-fail-under=80
+      - name: Test
+        if: matrix.python != '3.11'
+        run: python -m pytest tests/ -q
+      - name: Upload coverage report
+        if: matrix.python == '3.11'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report
+          path: coverage.xml
+      - name: Compile
+        if: matrix.python == '3.11'
+        run: python -m compileall -q src/kuration examples
+      - name: Lint
+        if: matrix.python == '3.11'
+        run: python -m ruff check src tests examples
+      - name: Type check
+        if: matrix.python == '3.11'
+        run: python -m mypy
+      - name: Run examples
+        if: matrix.python == '3.11'
+        run: |
+          python examples/01_timeseries_to_shards.py
+          python examples/02_robotics_action_aware.py
+          python examples/03_compare_strategies.py
+          python examples/04_operator_pipeline.py
+          python examples/05_custom_operators.py
+          python examples/06_gameplay_operator_methods.py
+          python examples/07_action_state_consistency.py

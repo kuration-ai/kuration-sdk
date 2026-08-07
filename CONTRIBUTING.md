@@ -3,8 +3,8 @@
 Thanks for helping improve kuration-sdk. Contributions may include bug fixes, adapters,
 selection methods, documentation, tests, and runnable examples.
 
-For user and integrator questions, see [SUPPORT.md](SUPPORT.md). Project ownership, decisions,
-and release responsibilities are described in [GOVERNANCE.md](GOVERNANCE.md).
+For user and integrator questions, see [SUPPORT.md](https://aintropy-ai.github.io/kuration-sdk/support/). Project ownership, decisions,
+and release responsibilities are described in [GOVERNANCE.md](https://aintropy-ai.github.io/kuration-sdk/governance/).
 
 ## Development setup
 
@@ -26,15 +26,15 @@ methods, or framework support:
 python -m pip install -e '.[all,dev]'
 ```
 
-Optional dependencies must remain optional. The core package depends only on NumPy; imports of
+Optional dependencies must remain optional. The base install depends only on NumPy; imports of
 heavy integrations should be lazy and should raise a clear installation hint when unavailable.
 
 ## Design rules
 
-- Keep domain knowledge out of the core. Dataset-specific behavior belongs in an
-  `InputAdapter`, `MediaProvider`, `OutputEncoder`, registered metric, `BatchTransform`,
-  `SegmentScorer`, or another documented
-  extension seam.
+- Keep the execution framework domain-neutral. First-party domain behavior may ship as a
+  namespaced built-in adapter, analyzer, operator, or transform when it has an owner, a closed
+  contract, focused tests, documentation, and lazy optional dependencies. External or
+  independently versioned behavior belongs behind the same extension seams as a plugin.
 - Validate configuration early and loudly. Unknown fields, operators, methods, and parameters
   must not silently fall back.
 - Preserve deterministic results across worker counts for a fixed seed.
@@ -44,8 +44,8 @@ heavy integrations should be lazy and should raise a clear installation hint whe
 - Prefer `.bin()` and `.sample()` in new fluent-pipeline code. `.organize()` and `.curate()` are
   compatibility aliases and must not be removed without a documented migration.
 
-See [docs/architecture.md](docs/architecture.md) for the data contracts and
-[docs/customization.md](docs/customization.md) for supported extension points.
+See [docs/architecture.md](https://aintropy-ai.github.io/kuration-sdk/architecture/) for the data contracts and
+[docs/customization.md](https://aintropy-ai.github.io/kuration-sdk/customization/) for supported extension points.
 
 ## Making a change
 
@@ -55,9 +55,10 @@ error handling and assert that their candidate and output pools are non-empty.
 
 Keep public interfaces synchronized across:
 
-- implementation and exports in `src/kuration/`;
-- exact signatures in [docs/api.md](docs/api.md);
-- fluent behavior in [docs/pipeline.md](docs/pipeline.md);
+- generic implementation and exports in `src/kuration/core/`;
+- maintained domain implementation in `src/kuration/gameplay/`;
+- exact signatures in [docs/api.md](https://aintropy-ai.github.io/kuration-sdk/api/);
+- fluent behavior in [docs/pipeline.md](https://aintropy-ai.github.io/kuration-sdk/pipeline/);
 - runnable examples when the recommended workflow changes;
 - artifact or job schema versions when serialized contracts change.
 
@@ -73,8 +74,10 @@ Use the narrowest supported seam for the behavior:
 |---|---|
 | Reuse a named sequence of fluent calls | compositional operator |
 | Read a new source format | input adapter |
+| Compute bounded model/device features over batches | batch transform |
 | Compute one scalar from one segment window | registered metric |
 | Score segments using a whole pool, model, or reference set | segment scorer |
+| Accumulate state across a stream or audit a written artifact | analyzer |
 | Derive an output tensor or encoded value | output encoder |
 | Change how segments receive selection priority | selection method |
 | Remove segments before selection | pre-pass filter |
@@ -82,7 +85,7 @@ Use the narrowest supported seam for the behavior:
 | Package a reusable `OutputSpec` policy | output preset |
 
 Do not add dataset-specific parsing, model imports, or storage branches to the generic pipeline
-when one of these seams fits. See [docs/customization.md](docs/customization.md) for descriptors,
+when one of these seams fits. See [docs/customization.md](https://aintropy-ai.github.io/kuration-sdk/customization/) for descriptors,
 isolated registries, discovery, and versioning.
 
 ### Compositional operators
@@ -116,7 +119,7 @@ def balance_signal(pipeline, *, field, bins=8):
     )
 
 
-pipeline = pipeline.apply("acme/balance-signal", field="signal", bins=6)
+pipeline = pipeline.balance_signal(field="signal", bins=6)
 ```
 
 The handler must return a pipeline derived from its argument and add at least one ordinary
@@ -330,13 +333,11 @@ An output preset is a factory `(schema, **parameters) -> OutputSpec` registered 
 `register_preset`. It should assemble ordinary declared modalities rather than bypass output
 validation. Include a closed parameter schema and test strict categorical behavior.
 
-### Packaging extension plugins
+### Packaging external plugins
 
-Maintained plugins live under [`plugins/`](plugins/README.md). Copy `plugins/_template` and keep
-each child as an independent distribution rather than adding it to the `kuration-sdk` wheel.
-That keeps optional dependencies isolated and lets contributors test or release one plugin at a
-time. Registration code may be loaded explicitly through a job's `plugins` list or automatically
-by the `kuration.plugins` entry-point group:
+Copy [`plugins/_template`](https://github.com/aintropy-ai/kuration-sdk/blob/main/plugins/README.md) for extensions that should remain independently
+versioned or distributed outside `kuration-sdk`. Registration code may be loaded explicitly
+through a job's `plugins` list or automatically by the `kuration.plugins` entry-point group:
 
 ```toml
 [project.entry-points."kuration.plugins"]
@@ -404,6 +405,8 @@ Keep pull requests focused and describe:
 
 - the problem and intended behavior;
 - the compatibility or artifact-format impact;
+- the extension kind affected (adapter, analyzer, container, encoder, filter, method, metric,
+  operator, preset, scorer, or transform);
 - tests and examples run;
 - optional dependencies or compute implications;
 - documentation updated.
@@ -415,5 +418,5 @@ by migration guidance when they affect public APIs, jobs, or stored artifacts.
 ## Releases
 
 Contributors should not publish package artifacts. Maintainers release through the trusted PyPI
-workflow described in [docs/releasing.md](docs/releasing.md). The project license and author
+workflow described in [docs/releasing.md](https://aintropy-ai.github.io/kuration-sdk/releasing/). The project license and author
 metadata must be resolved before the first public release.

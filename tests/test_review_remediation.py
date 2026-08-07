@@ -11,11 +11,11 @@ from kuration import (
     load_plugins,
     register_metric,
 )
-from kuration.adapters.huggingface import HuggingFaceAdapter
-from kuration.adapters.timeseries import TimeseriesAdapter
-from kuration.scoring import score_sources
-from kuration.io import staged_write
-from kuration.checkpoints import _publish_attempt
+from kuration.core.adapters.huggingface import HuggingFaceAdapter
+from kuration.core.adapters.timeseries import TimeseriesAdapter
+from kuration.core.scoring import score_sources
+from kuration.core.io import staged_write
+from kuration.core.checkpoints import _publish_attempt
 
 
 SCHEMA = SchemaSpec.from_dict({
@@ -132,8 +132,11 @@ class _NonOverwritingMoveFilesystem:
     def exists(self, path):
         return path in self.objects
 
-    def rm(self, path):
+    def rm_file(self, path):
         self.objects.pop(path, None)
+
+    def _strip_protocol(self, path):
+        return path
 
     def mv(self, source, destination):
         if destination in self.objects:
@@ -145,7 +148,7 @@ class _NonOverwritingMoveFilesystem:
 
 
 def test_remote_staged_write_keeps_previous_generation_when_publish_fails(monkeypatch):
-    import kuration.io as io_module
+    import kuration.core.io as io_module
 
     filesystem = _NonOverwritingMoveFilesystem()
     monkeypatch.setattr(io_module, "_fs", lambda path: filesystem)
@@ -158,7 +161,7 @@ def test_remote_staged_write_keeps_previous_generation_when_publish_fails(monkey
 
 
 def test_remote_checkpoint_publish_keeps_previous_generation_on_failure(monkeypatch):
-    import kuration.io as io_module
+    import kuration.core.io as io_module
 
     filesystem = _NonOverwritingMoveFilesystem()
     filesystem.objects["memory://bucket/attempt.bin"] = b"replacement"
@@ -172,8 +175,8 @@ def test_remote_checkpoint_publish_keeps_previous_generation_on_failure(monkeypa
 
 def test_explicit_plugin_failure_rolls_back_registry_and_can_retry(tmp_path, monkeypatch):
     import sys
-    import kuration.plugins as plugin_state
-    from kuration.dsl.registry import METRICS
+    import kuration.core.plugins as plugin_state
+    from kuration.core.dsl.registry import METRICS
 
     module = tmp_path / "review_broken_plugin.py"
     module.write_text(
@@ -193,8 +196,8 @@ def test_explicit_plugin_failure_rolls_back_registry_and_can_retry(tmp_path, mon
 
 
 def test_broken_ambient_entry_point_does_not_hide_healthy_plugins(monkeypatch, capsys):
-    import kuration.plugins as plugin_state
-    from kuration.dsl.registry import METRICS
+    import kuration.core.plugins as plugin_state
+    from kuration.core.dsl.registry import METRICS
 
     def broken():
         @register_metric("review/ambient-partial")
@@ -244,7 +247,7 @@ def test_broken_ambient_entry_point_does_not_hide_healthy_plugins(monkeypatch, c
                       if entry.get("kind") == "error")
         assert marker["error"] == "plugin entry point failed; run kur-plugin-check broken"
 
-        from kuration.cli.discovery import _report_plugin_failures
+        from kuration.core.cli.discovery import _report_plugin_failures
         _report_plugin_failures()
         assert "ERROR plugin broken" in capsys.readouterr().err
     finally:

@@ -8,4 +8,5 @@ include mkdocs.yml
 recursive-include docs *.md *.svg
 recursive-include docs *.css
 recursive-include examples *.md *.py
+recursive-include examples *.ipynb
 recursive-include scripts *.py

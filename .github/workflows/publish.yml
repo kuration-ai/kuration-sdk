@@ -13,13 +13,13 @@ jobs:
   prepare:
     name: Prepare tested distributions
     if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'plugin-')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, aca]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.release.tag_name || github.sha }}
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Require approved license metadata for a release
@@ -35,6 +35,21 @@ jobs:
               raise SystemExit(
                   "release blocked: project.license is missing from pyproject.toml; "
                   "record the company-approved license before publishing"
+              )
+          authors = project.get("authors")
+          if (
+              not isinstance(authors, list)
+              or not authors
+              or any(
+                  not isinstance(author, dict)
+                  or not isinstance(author.get("name"), str)
+                  or not author["name"].strip()
+                  for author in authors
+              )
+          ):
+              raise SystemExit(
+                  "release blocked: project.authors must contain at least one approved "
+                  "non-empty author name before publishing"
               )
           if not Path("LICENSE").is_file():
               raise SystemExit(
@@ -112,27 +127,36 @@ jobs:
       - name: Smoke-test installed wheel
         shell: bash
         run: |
-          python -m venv /tmp/kuration-release-smoke
-          /tmp/kuration-release-smoke/bin/python -m pip install dist/*.whl
-          cd /tmp
-          /tmp/kuration-release-smoke/bin/python - <<'PY'
+          python -m venv "$RUNNER_TEMP"/kuration-release-smoke
+          "$RUNNER_TEMP"/kuration-release-smoke/bin/python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP"/kuration-release-smoke/bin/python - <<'PY'
           from importlib.metadata import version
           from importlib.resources import files
           from pathlib import Path
 
           import kuration
+          import kuration.core
 
           package = files("kuration")
-          assert package.joinpath("schemas/job.schema.json").is_file()
+          core_package = files("kuration.core")
+          assert core_package.joinpath("schemas/job.schema.json").is_file()
           assert package.joinpath("py.typed").is_file()
           assert "site-packages" in str(Path(kuration.__file__).resolve())
           assert kuration.__version__ == version("kuration-sdk")
           PY
-          for command in kur-curate kur-experiment kur-report kur-validate kur-list \
-                         kur-describe kur-migrate kur-explain kur-inspect kur-diff kur-check \
-                         kur-plugin-check; do
-            /tmp/kuration-release-smoke/bin/"$command" --help
-          done
+          while IFS= read -r command; do
+            "$RUNNER_TEMP"/kuration-release-smoke/bin/"$command" --help
+          done < <(
+            "$RUNNER_TEMP"/kuration-release-smoke/bin/python - <<'PY'
+          from importlib.metadata import distribution
+
+          scripts = distribution("kuration-sdk").entry_points
+          for entry_point in sorted(scripts, key=lambda item: item.name):
+              if entry_point.group == "console_scripts":
+                  print(entry_point.name)
+          PY
+          )
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-distributions-${{ github.run_id }}
@@ -146,7 +170,7 @@ jobs:
     name: Publish and attach release artifacts
     if: github.event_name == 'release' && github.event.release.prerelease == false
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, aca]
     timeout-minutes: 10
     environment:
       name: pypi
@@ -159,7 +183,7 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-distributions-${{ github.run_id }}
-      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/
       - name: Attach distributions and hashes to the GitHub release

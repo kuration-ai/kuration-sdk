@@ -68,7 +68,7 @@ def test_kur_diff_cli_json_and_html(tmp_path):
     html = tmp_path / "diff.html"
     _pipeline(3).output(left, categorical="omit", shard_length=4)
     _pipeline(2).output(right, categorical="omit", shard_length=4)
-    command = [sys.executable, "-m", "kuration.cli.diff", str(left), str(right),
+    command = [sys.executable, "-m", "kuration.core.cli.diff", str(left), str(right),
                "--json", "--html", str(html)]
     result = subprocess.run(command, check=True, capture_output=True, text=True)
     assert json.loads(result.stdout)["identical"] is False

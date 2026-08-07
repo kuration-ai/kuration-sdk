@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/aintropy-ai/kuration-sdk/main/docs/assets/kuration-hero.svg" alt="Kuration turns raw sequential data into selected, verified training shards" width="100%">
+  <img src="docs/assets/kuration-hero.svg" alt="Kuration turns raw sequential data into selected, verified training shards" width="100%">
 </p>
 
 # kuration-sdk
@@ -38,35 +38,81 @@ and SHA-256 integrity metadata.
 | Make a large corpus trainable | Count- or duration-budget selection over fixed or overlapping windows |
 | Preserve useful diversity | Quantile bins, tag coverage, weighted ranking, filters, and feature-space methods |
 | Avoid train/test leakage | Source- and group-aware deterministic splits |
-| Understand what changed | Input previews, candidate-versus-selected review, artifact comparison, and static HTML reports |
-| Resume long runs safely | Atomic writes, complete run fingerprints, and checksum-verified shard reuse |
+| Understand what changed | Lifecycle stats, candidate-versus-selected review, artifact comparison, plots, and static HTML reports |
+| Resume long runs safely | Staged writes, fail-closed commits, complete run fingerprints, and checksum-verified shard reuse |
 | Add domain intelligence | Discoverable operators, analyzers, metrics, scorers, adapters, transforms, encoders, and presets |
 | Move from laptop to scale | Streaming sources, bounded Arrow checkpoints, process workers, cloud paths, and optional Ray execution |
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/aintropy-ai/kuration-sdk/main/docs/assets/curation-flow.svg" alt="Sources flow through windows, features, selection, and verified dataset artifacts" width="95%">
+  <img src="docs/assets/curation-flow.svg" alt="Sources flow through windows, features, selection, and verified dataset artifacts" width="95%">
 </p>
 
 ## Install
 
+Until the public PyPI launch gates in the roadmap are complete, install from a source checkout:
+
 ```bash
-python -m pip install kuration-sdk
+git clone https://github.com/aintropy-ai/kuration-sdk.git
+cd kuration-sdk
+python -m pip install -e .
 ```
 
 The NumPy-only core handles in-memory, CSV, JSON, and NPZ workflows. Add only the integrations a
 pipeline needs:
 
 ```bash
-python -m pip install 'kuration-sdk[methods,parquet]'  # selection methods + Parquet
-python -m pip install 'kuration-sdk[video]'            # PyAV video frames
-python -m pip install 'kuration-sdk[ray]'              # distributed source execution
-python -m pip install 'kuration-sdk[s3]'               # fsspec + the S3 backend
-python -m pip install 'kuration-sdk[all]'              # every runtime integration/backend
+python -m pip install -e '.[methods,parquet]'  # selection methods + Parquet
+python -m pip install -e '.[video]'            # PyAV video frames
+python -m pip install -e '.[stats]'            # Matplotlib stats plots
+python -m pip install -e '.[gameplay]'         # pixel shift, action-state, and SLAM
+python -m pip install -e '.[ray]'              # distributed source execution
+python -m pip install -e '.[s3]'               # fsspec + the S3 backend
+python -m pip install -e '.[all]'              # every runtime integration/backend
 ```
 
 `pipeline.explain()` reports the extras required by a planned run before it reads the full
 dataset. The provider-specific cloud extras are `s3`, `gcs`, and `azure`; `cloud` installs only
 the backend-neutral fsspec layer for environments that manage provider packages separately.
+
+Domain APIs are grouped without changing the core execution engine:
+
+```python
+import kuration.gameplay as gameplay
+
+pipeline = (
+    gameplay.slam_pipeline("slam-export/manifest.json")
+    .window(32, stride=16)
+    .slam_motion_diversity()
+    .slam_quality(min_score=0.6)
+    .options(progress="auto")
+)
+
+report = pipeline.stats()                 # rich HTML in Jupyter
+report.plot()                             # automatically chooses the gameplay plot
+evidence = report.examples(
+    metric="slam_quality_score",
+    compare="selected-vs-rejected",
+)
+```
+
+`kuration.gameplay` is an operator domain, not a second pipeline implementation. Importing it
+registers gameplay methods and relevant stats on the ordinary `kuration.Pipeline`; the core
+stats call remains unchanged. `report.available()` discovers the plots, evidence modes, and
+media support present on that concrete report. On a video-backed live pipeline, evidence renders
+bounded frame strips and action context automatically. For whole-video review,
+`gameplay.compare_videos(before, after)` renders synchronized players and can save a standalone
+HTML comparison.
+
+Stateful input checks follow the same pipeline-first rule:
+
+```python
+pipeline = pipeline.action_state_consistency(baselines=baselines, controls=["W"])
+verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
+```
+
+The returned value is still the ordinary immutable pipeline, so selection, inspection, and
+output can continue from it. `.analyze(...)` remains available when a detached result is the
+intended endpoint.
 
 ## Try it in five minutes
 
@@ -91,7 +137,7 @@ operator-by-operator explanation.
 out/training-v1/
 ├── config.json                 # resolved job, pipeline, versions, and provenance
 ├── dataset_manifest.json       # shard index, splits, shapes, sizes, and SHA-256
-├── dataset.commit.json         # final atomic-publication state and metadata checksums
+├── dataset.commit.json         # final publication state and metadata checksums
 ├── train/
 │   └── <source>_<entity>_<hash>_shard0000.npz
 └── test/
@@ -100,8 +146,32 @@ out/training-v1/
 
 ```bash
 kur-inspect out/training-v1 --verify
+kur-stats out/training-v1 --html stats.html
 kur-diff out/training-v0 out/training-v1
 kur-check out/training-v1 --policy quality.json
+kur-export out/training-v1 --out arrays/ --format parquet
+```
+
+Starting from raw files with no job spec yet? Infer the schema, scaffold a job, and look at
+the data before running anything:
+
+```bash
+kur-infer   telemetry.csv --out schema.json
+kur-init    telemetry.csv --out job.json --dataset-out out/training-v1
+kur-preview job.json
+kur-curate  job.json --review
+```
+
+Every command is also a `kur` subcommand (`kur curate job.json`); `kur --help` lists them and
+`kur completion zsh` prints a completion script.
+
+Already have a supported dataset? Detect its adapter and import it without a strategy or
+selection:
+
+```bash
+kur-import gameplay.npz --out out/gameplay
+kur-import telemetry.csv --out out/telemetry
+kur-inspect out/gameplay --verify
 ```
 
 - Selection is deterministic across supported worker counts and executors.
@@ -109,43 +179,6 @@ kur-check out/training-v1 --policy quality.json
 - Jobs, artifact formats, and installed components are versioned and fail loudly when
   incompatible.
 - Every optional integration remains outside the NumPy-only core.
-
-## Operators: package a curation decision
-
-Operators turn a reviewed sequence of normal pipeline steps into a named, validated component:
-
-```python
-from kuration import register_operator
-
-@register_operator(
-    "acme/balance-signal",
-    description="Balance windows by signal variability",
-    parameters={
-        "type": "object",
-        "properties": {
-            "field": {"type": "string"},
-            "bins": {"type": "integer", "minimum": 2},
-        },
-        "required": ["field"],
-        "additionalProperties": False,
-    },
-    version="1",
-)
-def balance_signal(pipeline, *, field, bins=8):
-    return (pipeline
-            .measure("signal_variability", "std", of=field)
-            .bin("signal_variability", bins=bins))
-
-pipeline = pipeline.apply("acme/balance-signal", field="signal", bins=6)
-```
-
-The parameter contract is checked when the operator is added. The named call, descriptor, code
-fingerprint, and expanded ordinary operations are retained in provenance. For computation over
-whole windows or video frames, pair an operator with a registered bounded batch transform.
-
-See **[Building operators](https://aintropy-ai.github.io/kuration-sdk/operators/)** for compositional, transform-backed, testing,
-discovery, and packaging examples, or run
-[`examples/05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py).
 
 ## Choose your path
 
@@ -171,7 +204,9 @@ started, guides, extensions, operations, and reference.
 |---|---|
 | [`quickstart.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection |
 | [`02_robotics_action_aware.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Action-aware scoring composed with geometric and phase coverage |
-| [`05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py) | A compositional operator and a transform-backed operator with discovery metadata |
+| [`05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py) | Custom compositional and transform-backed operators called through generated fluent methods |
+| [`06_gameplay_operator_methods.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py) | Built-in gameplay operators on the core `Pipeline`, including namespace-qualified syntax |
+| [`gameplay_stats.ipynb`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb) | JupyterLab progress, lifecycle stats, gameplay plots, output inspection, and synchronized video review |
 | [TeaPearce Counter-Strike](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | HDF5 adaptation, rare-event coverage, and optional image output |
 | [Open P2P](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Protobuf annotations, cross-game action coverage, corrections, instructions, and video joins |
 
@@ -192,9 +227,10 @@ remaining public-release gates.
 
 ## Contributing
 
-Core changes follow [CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md).
-New maintained extensions start from the independent-distribution template in
-[`plugins/`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins).
+Core and maintained domain changes follow
+[CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md).
+First-party domain capabilities ship in the SDK; independently distributed extensions can start
+from the template in [`plugins/`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins).
 
 ```bash
 python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p]'

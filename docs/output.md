@@ -136,17 +136,40 @@ and group-cap exclusions.
 With the `filter` method, spans whose segments all fail the predicates get `-inf` priority and
 are **never admitted**, even when the budget has room — the fill emits only predicate-passing
 data (an under-filled budget is reported, not silently topped up with rejects).
+The same hard boundary applies to count selection: tag coverage can only repair coverage from
+the predicate-passing pool. Fractional count floors round up, so a positive configured minimum
+never becomes zero through rounding.
 
-**`executor` / `workers` / `on_error` / `resume`**: `write_dataset(..., workers=8)` parallelizes the feature
-pass; `on_error="skip"` (default) skips+logs an unreadable source (but a *fully empty* segment
-pool raises — see the troubleshooting recipe); `resume=True` reuses an existing shard only when
+**`executor` / `workers` / `on_error` / `resume` / `force`**:
+`write_dataset(..., workers=8)` parallelizes the feature
+pass; `on_error="skip"` (default) skips+logs a source that fails feature reading, transform
+execution, or scorer buffer rereading (but a *fully empty* segment pool raises — see the
+troubleshooting recipe); `resume=True` reuses an existing shard only when
 its recorded byte size and SHA-256 still match. Missing, legacy, or corrupt shards are rebuilt.
+An existing destination is protected by default: use `resume=True` for the same pinned hours run
+or `force=True` to replace it. These intents are mutually exclusive. Validation and selection
+finish before publication begins, so a pre-publication failure leaves the published
+manifest, config, shards, and commit byte-identical and readable. Bounded checkpoint caches are
+stored in run-fingerprint namespaces, so a failed replacement cannot overwrite the prior run's
+reusable cache.
 Resume is safe by construction: local shards use same-directory temp files plus replace; remote
-shards upload a complete attempt object before moving it into place. The resolved output spec is
-pinned in `.kuration_output_spec.json`, so a different run cannot silently reuse stale shards.
+shards upload a complete attempt object before asking the configured fsspec backend to move it
+into place. Native atomic rename and conditional-create guarantees vary by backend; the
+checksummed commit protocol keeps readers fail-closed, but does not turn every object store into
+a filesystem with atomic rename. The resolved output spec is
+pinned in `.kuration_output_spec.json`, and that marker's checksum is itself pinned by
+`dataset.commit.json`, so a missing, legacy-unpinned, or changed marker cannot authorize reuse.
 Before any shard can be replaced, `dataset.commit.json` moves to `state=writing`; readers reject
 that dataset until the manifest and config are durable and the final checksummed
 `state=committed` record is published. Interrupted runs retain checksum-safe resume metadata.
+An exclusive destination lease spans preflight through the final commit, so two SDK writers
+cannot interleave one artifact. Local leases release automatically on process exit. A remote
+lease is a persistent exclusive-create object; after a crashed writer, remove
+`.kuration-writer.lock` manually only after confirming that no writer still owns the destination.
+Persisted reuse also requires a strong source identity: an adapter-provided fingerprint, local
+content hash, or immutable remote version/ETag. Logical IDs and metadata-only remote objects can
+run without reuse, but cannot authorize an old shard or checkpoint; a hard memory budget that
+requires checkpoints fails with instructions to provide a fingerprint.
 
 Pass `executor="ray"` for the optional ordered Ray source backend (`[ray]`); the default remains
 `"local"`. Canonical segment sorting keeps selection independent of task completion order.
@@ -161,8 +184,8 @@ out/
   test/<source>_<entity>[_spanNNN]_<hash12>_shard0000.npz, ...
   dataset_manifest.json         # shards plus requested/admitted/emitted budget accounting
   config.json                   # resolved job, results, timestamps, and full provenance
-  dataset.commit.json           # final state + manifest/config SHA-256 publication record
-  .kuration_output_spec.json    # complete run fingerprint checked by resume
+  dataset.commit.json           # final state + metadata SHA-256 publication record
+  .kuration_output_spec.json    # hours-only, commit-pinned run fingerprint checked by resume
 ```
 
 The readable filename prefix is portable and length-bounded; the 12-char hash disambiguates
@@ -177,8 +200,8 @@ to reuse shards when any fingerprinted input changes.
 ## Reading a dataset back
 
 The write side produces shards + a manifest; the read side turns them back into arrays. This is
-**numpy-only** (`kuration.loaders`) so a JAX/TF/plain-numpy consumer needs no extra dependency;
-the PyTorch wrapper (`kuration.torch`, the `[torch]` extra) is a thin layer over it.
+**numpy-only** (`kuration.core.loaders`) so a JAX/TF/plain-numpy consumer needs no extra dependency;
+the PyTorch wrapper (`kuration.core.torch`, the `[torch]` extra) is a thin layer over it.
 
 ```python
 from kuration import iter_shards
@@ -193,7 +216,10 @@ with_meta=False, registry=None, verify=True)`
 accepts a **dataset directory** or a path to its `dataset_manifest.json`. Legacy absolute-path
 manifest dictionaries remain usable, but current portable manifests must be loaded by path so
 their relative shard paths and commit sidecar can be resolved and verified. It
-handles all four containers, stages remote shards (`gs://`/`s3://`/…) automatically, **trims pad
+rejects duplicate object keys, non-finite JSON numbers, malformed embedded schemas, symlinked
+metadata, and special files before decoding shards. It
+handles all four containers, stages supported object-store shards (`gs://`, `s3://`, and
+Azure URLs) automatically, **trims pad
 rows** to each shard's real `n_steps`, **reshapes** tensor modalities back to their declared
 rank (Parquet stores them flat), and **restores the declared dtype** (the json/parquet
 round-trips widen to float64/int64 on disk; the loaders cast back, so a `uint8` frame comes
@@ -246,7 +272,7 @@ minimum sources/shards, full verification, budget utilization, and skipped-sourc
 **PyTorch.**
 
 ```python
-from kuration.torch import ShardDataset            # pip install 'kuration-sdk[torch]'
+from kuration.core.torch import ShardDataset            # from repo root: pip install -e '.[torch]'
 from torch.utils.data import DataLoader
 
 ds = ShardDataset("out/", split="train")           # one shard = one item, modalities -> tensors
@@ -261,4 +287,6 @@ With `short_policy="keep"` shards have **variable length** — supply a `collate
 **Remote output.** `out_dir` may be a cloud URL — `write_dataset("gs://bucket/run1", …)` writes
 shards, manifest, and config straight to the bucket (use `[s3]`, `[gcs]`, or `[azure]`; managed
 environments may use `[cloud]` plus their separately supplied backend). The dataset is then
-re-ingestable with `CuratedDatasetAdapter("gs://bucket/run1")`. Local paths need nothing.
+re-ingestable with `CuratedDatasetAdapter("gs://bucket/run1")`. Mutating hierarchical fsspec
+backends such as FTP/SFTP is rejected because symlink-safe replacement and deletion cannot be
+guaranteed. Local paths need nothing.

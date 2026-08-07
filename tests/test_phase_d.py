@@ -17,7 +17,7 @@ from kuration import (
     write_dataset,
     write_track,
 )
-from kuration.output.shardwriter import _chunks
+from kuration.core.output.shardwriter import _chunks
 
 SCHEMA = SchemaSpec.from_dict({
     "name": "d", "entity_axis": "e", "sample_hz": 1.0,

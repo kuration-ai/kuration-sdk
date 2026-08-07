@@ -1,12 +1,34 @@
 # Release notes
 
 These notes highlight user-visible changes in the current release candidate. The repository
-[changelog](https://github.com/aintropy-ai/kuration-sdk/blob/main/CHANGELOG.md) is the authoritative
+[changelog](changelog.md) is the authoritative
 history for every release.
 
-## 0.1.0rc4
+## Current `0.1.0rc5` candidate (`0.1.0rc5.dev0` development build)
 
-`0.1.0rc4` focuses on correctness, artifact integrity, and explicit extension contracts.
+The changes on this branch target `0.1.0rc5`. The candidate:
+
+- separates the dataset-agnostic implementation into `kuration.core` and ships pixel shift,
+  action-state consistency, and SLAM together under the maintained `kuration.gameplay` domain;
+- adds direct fluent operator methods, lifecycle statistics and evidence, synchronized video
+  review, smart dataset import, artifact export, checkpoint maintenance, and the unified `kur`
+  command;
+- makes analyzers first-class fluent terminals, including bounded tick-stream execution and
+  artifact-backed checks;
+- integrates native SLAM reconstruction, portable exports, trajectory quality/diversity
+  curation, point-cloud reduction, preflight, and `kur-slam`; and
+- strengthens fail-closed publication and reuse, exact cross-executor selection semantics,
+  pinned artifact reads, source-level error handling, and boundary validation.
+
+Dataset writes are no-clobber by default, persisted reuse requires a strong source identity,
+and unsupported future artifact or job versions fail loudly. See the
+[0.1.0rc5 changelog](changelog.md#010rc5)
+for the complete evolving list.
+
+## Prior `0.1.0rc4` candidate
+
+The `0.1.0rc4` candidate focused on correctness, artifact integrity, and explicit extension
+contracts. It was not tagged or published to PyPI from this repository.
 
 ### New analyzer capabilities
 
@@ -14,7 +36,8 @@ history for every release.
   evidence across multiple segments. Register and resolve analyzers with `register_analyzer()`
   and `get_analyzer()`, or inspect them with `kur-list analyzers` and
   `kur-describe analyzer ...`.
-- The action-state consistency plugin now exposes its clip-level checker as an analyzer.
+- The gameplay domain's action-state consistency capability now exposes its clip-level checker
+  as an analyzer.
 - The dependency-free `kuration/split-leakage` analyzer audits existing source and group
   assignments across dataset splits.
 
@@ -40,7 +63,7 @@ history for every release.
 - Shard filenames and manifest entity IDs preserve value types. Values such as integer `1` and
   string `"1"` no longer collide, and unsupported extension objects fail before writing.
 
-### SLAM plugin
+### Built-in SLAM
 
 - Exported timestamp maps must cover every trajectory exactly; each timestamp array must match
   the trajectory length, contain finite values, and increase strictly.
@@ -55,8 +78,7 @@ history for every release.
   NumPy scalars.
 - A plugin entry point must register at least one owned component; a successful import with no
   registration is reported as a plugin failure.
-- The action-state consistency plugin requires `kuration-sdk>=0.1.0rc4` because it uses the new
-  analyzer registry API.
+- Action-state consistency now ships as a built-in analyzer using the analyzer registry API.
 
 See the [compatibility policy](compatibility.md) for beta-version guarantees and the
 [releasing guide](releasing.md) for the maintainer workflow.

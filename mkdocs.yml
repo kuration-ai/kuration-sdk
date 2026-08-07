@@ -49,6 +49,9 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
 
 extra_css:
   - assets/stylesheets/extra.css
@@ -69,6 +72,10 @@ nav:
   - Extend:
       - Operators: operators.md
       - Customization and discovery: customization.md
+      - Pixel shift: pixel-shift.md
+      - Action-state consistency: action-state-consistency.md
+      - SLAM trajectory curation: slam.md
+      - Domain modules: domains.md
       - Architecture: architecture.md
   - Operate:
       - Jobs and CLI: jobs.md
@@ -79,5 +86,12 @@ nav:
   - Reference:
       - Python API: api.md
       - Documentation contract: documentation-contract.md
+  - Project:
+      - Changelog: changelog.md
+      - Roadmap: roadmap.md
+      - Contributing: contributing.md
+      - Governance: governance.md
+      - Security policy: security.md
+      - Support: support.md
 
 copyright: Kuration SDK documentation

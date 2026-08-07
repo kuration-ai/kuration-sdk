@@ -10,14 +10,14 @@ import pytest
 
 from kuration import (SchemaSpec, Segment, SegmentBatch, evaluate_quality, input,
                        load_strategy, segment_priorities)
-from kuration.binning import bin_segments
-from kuration.external import (iter_external_top_k_priorities,
+from kuration.core.binning import bin_segments
+from kuration.core.external import (iter_external_top_k_priorities,
                                iter_external_uniform_priorities,
                                iter_external_weighted_priorities)
-from kuration.methods import feature_matrix
-from kuration.output.external_fill import external_fill_to_hours
-from kuration.output.fill import fill_to_hours
-from kuration.strategy import _normalize
+from kuration.core.methods import feature_matrix
+from kuration.core.output.external_fill import external_fill_to_hours
+from kuration.core.output.fill import fill_to_hours
+from kuration.core.strategy import _normalize
 
 
 HAS_PYARROW = importlib.util.find_spec("pyarrow") is not None

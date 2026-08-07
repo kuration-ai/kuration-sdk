@@ -31,9 +31,9 @@ format, reproducibly.
 
 1. **Closed grammar, loud validation.** Metrics/strategies are data in an enumerated grammar;
    unknown tokens fail at load with an actionable error. No silent fallbacks.
-2. **Reproducible from the artifact.** Every run writes `config.json` embedding the resolved
-   schema + strategy + output spec. A dataset reproduces from its own directory (softens to
-   "given the same pinned model" for a model-backed scorer).
+2. **Auditable from the artifact.** Every run writes `config.json` embedding the resolved
+   schema + strategy + output spec. Replay requires the same immutable/content-addressed sources
+   and compatible implementations (including the pinned model for a model-backed scorer).
 3. **Determinism under parallelism.** Segments are sorted to a canonical `(source_id,
    start_idx)` order before binning/selection → worker-count-independent results.
 4. **Right tool, measured.** Vectorize hot paths (binning); parallelize only where per-worker

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from kuration.cli.validate import job_kind, validate_job
+from kuration.core.cli.validate import job_kind, validate_job
 
 
 def _csv(tmp_path):
@@ -67,6 +67,21 @@ def test_validate_accepts_bounded_execution_job_keys(tmp_path):
                 "checkpoint_dir": str(tmp_path / "checkpoints"),
                 "spill_dir": str(tmp_path / "spill"), "approximation": "exact"})
     assert validate_job(job)["kind"] == "curate"
+
+
+def test_validate_accepts_force_and_rejects_conflicting_write_intents(tmp_path):
+    job = _curate_job(_csv(tmp_path), tmp_path / "out")
+    job["force"] = True
+    assert validate_job(job)["kind"] == "curate"
+
+    job["resume"] = True
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        validate_job(job)
+
+    job["resume"] = False
+    job["force"] = "yes"
+    with pytest.raises(ValueError, match="force must be true or false"):
+        validate_job(job)
 
 
 def test_validate_catches_bad_metric_reference(tmp_path):
@@ -142,7 +157,7 @@ def test_cli_missing_dep_is_error_not_invalid(tmp_path, monkeypatch):
 
 # ---- CLI wiring -------------------------------------------------------------
 def _run(args):
-    return subprocess.run([sys.executable, "-m", "kuration.cli.validate"] + args,
+    return subprocess.run([sys.executable, "-m", "kuration.core.cli.validate"] + args,
                           capture_output=True, text=True, timeout=60)
 
 
@@ -169,7 +184,7 @@ def test_cli_print_schema():
 
 def test_shipped_json_schema_is_valid_and_supports_media_only_jobs():
     jsonschema = pytest.importorskip("jsonschema")
-    from kuration.cli.validate import SCHEMA_PATH
+    from kuration.core.cli.validate import SCHEMA_PATH
     shipped = json.loads(SCHEMA_PATH.read_text())
     jsonschema.Draft7Validator.check_schema(shipped)
     job = {

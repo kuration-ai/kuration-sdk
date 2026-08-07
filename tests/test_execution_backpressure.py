@@ -5,7 +5,7 @@ import time
 import pytest
 
 from kuration import LocalExecutionBackend, RayExecutionBackend
-from kuration.versioning import _major
+from kuration.core.versioning import _major
 
 
 def test_local_iter_batches_bounds_work_and_preserves_input_order():
