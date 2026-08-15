@@ -1,0 +1,224 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 420" role="img" aria-labelledby="ktitle kdesc" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+  <title id="ktitle">Kuration turns raw physical-AI corpora into verified training shards</title>
+  <desc id="kdesc">A three column story. Raw sources on the left, the kuration operator pipeline in the middle, verified training shards on the right.</desc>
+
+  <style>
+    /* Aintropy brand palette. Dark navy stage, cyan primary accent, green for verified. */
+    .stage      { fill: #081420; }
+    .grid       { stroke: #12283a; stroke-width: 1; fill: none; }
+    .panel      { fill: #0d2030; stroke: #16324a; stroke-width: 1; }
+    .card       { fill: #101f2d; stroke: #1e3c56; stroke-width: 1; }
+    .ink        { fill: #e6edf3; }
+    .ink-soft   { fill: #7c8ea1; }
+    .accent     { fill: #00d4ff; }
+    .accent-line{ stroke: #00d4ff; stroke-width: 1.6; fill: none; stroke-linecap: round; }
+    .accent-dim { fill: #103a4a; }
+    .verify     { fill: #4ade80; }
+    .rule       { stroke: #7c8ea1; stroke-width: 1; fill: none; stroke-linecap: round; opacity: .5; }
+
+    .h-section  { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; fill: #7c8ea1; }
+    .h-title    { font-size: 16px; font-weight: 600; fill: #e6edf3; }
+    .t-mono     { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 13px; fill: #e6edf3; }
+    .t-mono-s   { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 11px; fill: #7c8ea1; }
+    .t-body     { font-size: 12.5px; fill: #b9c5d1; }
+    .tagline    { font-size: 14px; font-weight: 500; fill: #7c8ea1; letter-spacing: 0.03em; }
+  </style>
+
+  <!-- ── STAGE ──────────────────────────────────────────────────────── -->
+  <rect class="stage" width="1280" height="420" rx="12"/>
+  <!-- subtle grid -->
+  <g class="grid">
+    <path d="M 0 88 H 1280" opacity=".4"/>
+    <path d="M 0 340 H 1280" opacity=".4"/>
+  </g>
+
+  <!-- ── SECTION HEADERS ───────────────────────────────────────────── -->
+  <text class="h-section" x="60"  y="72">Raw corpus</text>
+  <text class="h-section" x="410" y="72">Kuration pipeline</text>
+  <text class="h-section" x="1050" y="72">Verified shards</text>
+
+  <!-- ── LEFT PANEL: Raw corpus ────────────────────────────────────── -->
+  <g transform="translate(60 92)">
+    <rect class="panel" x="0" y="0" width="290" height="248" rx="10"/>
+
+    <!-- gameplay clip -->
+    <g transform="translate(20 24)">
+      <rect class="card" x="0" y="0" width="250" height="54" rx="6"/>
+      <rect class="accent-dim" x="16" y="18" width="10" height="22"/>
+      <rect class="accent-dim" x="34" y="12" width="12" height="28"/>
+      <rect class="accent-dim" x="54" y="20" width="14" height="20"/>
+      <rect class="accent-dim" x="76" y="14" width="10" height="26"/>
+      <text class="t-mono" x="112" y="24">gameplay.mp4</text>
+      <text class="t-mono-s" x="112" y="40">first-person, 16 fps</text>
+    </g>
+
+    <!-- telemetry -->
+    <g transform="translate(20 100)">
+      <rect class="card" x="0" y="0" width="250" height="54" rx="6"/>
+      <polyline class="accent-line" points="18,34 30,22 42,36 54,16 66,28 78,20 90,32"/>
+      <text class="t-mono" x="112" y="24">telemetry.csv</text>
+      <text class="t-mono-s" x="112" y="40">tick-by-tick actions</text>
+    </g>
+
+    <!-- robot log -->
+    <g transform="translate(20 176)">
+      <rect class="card" x="0" y="0" width="250" height="54" rx="6"/>
+      <circle class="accent" cx="26" cy="27" r="4"/>
+      <line class="accent-line" x1="32" y1="27" x2="92" y2="27"/>
+      <circle class="ink" cx="92" cy="27" r="3"/>
+      <text class="t-mono" x="112" y="24">robot.jsonl</text>
+      <text class="t-mono-s" x="112" y="40">teleop trajectories</text>
+    </g>
+  </g>
+
+  <!-- flow lines raw -> pipeline -->
+  <g fill="none">
+    <path class="rule" d="M 350 130 C 380 130, 388 190, 410 190"/>
+    <path class="rule" d="M 350 200 C 380 200, 388 210, 410 210"/>
+    <path class="rule" d="M 350 268 C 380 268, 388 230, 410 230"/>
+  </g>
+
+  <!-- ── MIDDLE PANEL: Kuration pipeline ──────────────────────────── -->
+  <g transform="translate(410 92)">
+    <rect class="panel" x="0" y="0" width="620" height="248" rx="10"/>
+
+    <text class="h-title" x="20" y="34">Compose the pipeline. Explain the run.</text>
+    <text class="t-body"  x="20" y="54">Every step is inspectable. Every run is reproducible from a committed config.</text>
+
+    <!-- op node row -->
+    <g transform="translate(20 108)">
+      <!-- op 1: input -->
+      <g transform="translate(0 0)">
+        <rect class="card" x="0" y="0" width="86" height="44" rx="6"/>
+        <text class="t-mono" x="12" y="18">input()</text>
+        <text class="t-mono-s" x="12" y="34">adapter</text>
+      </g>
+
+      <!-- op 2: window -->
+      <g transform="translate(98 0)">
+        <rect class="card" x="0" y="0" width="106" height="44" rx="6"/>
+        <text class="t-mono" x="12" y="18">.window()</text>
+        <text class="t-mono-s" x="12" y="34">segment</text>
+      </g>
+
+      <!-- op 3: measure -->
+      <g transform="translate(216 0)">
+        <rect class="card" x="0" y="0" width="110" height="44" rx="6"/>
+        <text class="t-mono" x="12" y="18">.measure()</text>
+        <text class="t-mono-s" x="12" y="34">features</text>
+      </g>
+
+      <!-- op 4: bin -->
+      <g transform="translate(338 0)">
+        <rect class="card" x="0" y="0" width="80" height="44" rx="6"/>
+        <text class="t-mono" x="12" y="18">.bin()</text>
+        <text class="t-mono-s" x="12" y="34">quantile</text>
+      </g>
+
+      <!-- op 5: sample -->
+      <g transform="translate(430 0)">
+        <rect class="card" x="0" y="0" width="98" height="44" rx="6"/>
+        <text class="t-mono" x="12" y="18">.sample()</text>
+        <text class="t-mono-s" x="12" y="34">selection</text>
+      </g>
+
+      <!-- op 6: output -->
+      <g transform="translate(540 0)">
+        <rect class="card" x="0" y="0" width="94" height="44" rx="6"/>
+        <text class="t-mono" x="12" y="18">.output()</text>
+        <text class="t-mono-s" x="12" y="34">write</text>
+      </g>
+
+      <!-- connectors -->
+      <line class="accent-line" x1="86"  y1="22" x2="98"  y2="22"/>
+      <line class="accent-line" x1="204" y1="22" x2="216" y2="22"/>
+      <line class="accent-line" x1="326" y1="22" x2="338" y2="22"/>
+      <line class="accent-line" x1="418" y1="22" x2="430" y2="22"/>
+      <line class="accent-line" x1="528" y1="22" x2="540" y2="22"/>
+
+      <!-- moving particle -->
+      <circle class="accent" r="4.5">
+        <animateMotion dur="6s" repeatCount="indefinite"
+          path="M 43 22 L 151 22 L 271 22 L 378 22 L 479 22 L 587 22"/>
+      </circle>
+    </g>
+
+    <!-- Bin coverage sub-viz, below the row -->
+    <g transform="translate(20 180)">
+      <text class="t-mono-s" x="0" y="0">coverage across bins</text>
+      <g transform="translate(0 8)">
+        <rect class="accent-dim" x="0"   y="24" width="22" height="12"/>
+        <rect class="accent-dim" x="28"  y="14" width="22" height="22"/>
+        <rect class="accent-dim" x="56"  y="26" width="22" height="10"/>
+        <rect class="accent"     x="84"  y="4"  width="22" height="32">
+          <animate attributeName="height" values="24;32;24" dur="2.4s" repeatCount="indefinite"/>
+          <animate attributeName="y"      values="12;4;12"  dur="2.4s" repeatCount="indefinite"/>
+        </rect>
+        <rect class="accent-dim" x="112" y="20" width="22" height="16"/>
+        <rect class="accent-dim" x="140" y="12" width="22" height="24"/>
+        <rect class="accent-dim" x="168" y="26" width="22" height="10"/>
+        <rect class="accent-dim" x="196" y="18" width="22" height="18"/>
+      </g>
+    </g>
+
+    <!-- Gameplay add-on callout, right of coverage sub-viz -->
+    <g transform="translate(310 180)">
+      <text class="t-mono-s" x="0" y="0">plus gameplay operators</text>
+      <g transform="translate(0 12)">
+        <rect class="card" x="0"   y="0" width="140" height="26" rx="13"/>
+        <text class="t-mono" x="12" y="18">.action_state_consistency()</text>
+      </g>
+      <g transform="translate(146 12)">
+        <rect class="card" x="0" y="0" width="72" height="26" rx="13"/>
+        <text class="t-mono" x="10" y="18">.collision()</text>
+      </g>
+      <g transform="translate(224 12)">
+        <rect class="card" x="0" y="0" width="76" height="26" rx="13"/>
+        <text class="t-mono" x="10" y="18">.slam_pipeline()</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- flow lines pipeline -> shards -->
+  <g fill="none">
+    <path class="rule" d="M 1030 210 C 1040 210, 1050 210, 1060 210"/>
+  </g>
+
+  <!-- ── RIGHT PANEL: Verified shards ─────────────────────────────── -->
+  <g transform="translate(1060 92)">
+    <rect class="panel" x="0" y="0" width="180" height="248" rx="10"/>
+
+    <!-- stacked shard cards -->
+    <g transform="translate(20 24)">
+      <rect class="card" x="14" y="14" width="130" height="62" rx="6"/>
+      <rect class="card" x="7"  y="7"  width="130" height="62" rx="6"/>
+      <rect class="card" x="0"  y="0"  width="130" height="62" rx="6"/>
+      <text class="t-mono"   x="12" y="22">shard_0000.npz</text>
+      <text class="t-mono-s" x="12" y="38">150 x 280 x 3</text>
+      <text class="t-mono-s" x="12" y="52">51-dim action</text>
+    </g>
+
+    <!-- verified checks -->
+    <g transform="translate(20 130)">
+      <g transform="translate(0 0)">
+        <circle class="verify" cx="8" cy="8" r="6"/>
+        <text class="t-mono-s" x="22" y="12">SHA-256 verified</text>
+      </g>
+      <g transform="translate(0 24)">
+        <circle class="verify" cx="8" cy="8" r="6"/>
+        <text class="t-mono-s" x="22" y="12">physics-checked</text>
+      </g>
+      <g transform="translate(0 48)">
+        <circle class="verify" cx="8" cy="8" r="6"/>
+        <text class="t-mono-s" x="22" y="12">leak-safe split</text>
+      </g>
+      <g transform="translate(0 72)">
+        <circle class="verify" cx="8" cy="8" r="6"/>
+        <text class="t-mono-s" x="22" y="12">re-derivable</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- ── BOTTOM TAGLINE ───────────────────────────────────────────── -->
+  <text class="tagline" x="640" y="386" text-anchor="middle">Chaos in. Verified training shards out.</text>
+</svg>

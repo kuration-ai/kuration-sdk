@@ -1,12 +1,24 @@
 <p align="center">
-  <img src="docs/assets/kuration-hero.svg" alt="Kuration turns raw sequential data into selected, verified training shards" width="100%">
+  <img src="docs/assets/aintropy-hero.svg" alt="Kuration turns raw physical-AI corpora into verified, physics-checked training shards" width="100%">
 </p>
 
 # kuration-sdk
 
-**Build reproducible training datasets from time-series, telemetry, trajectories, and
-synchronized video.** Kuration segments raw sources, measures what matters, selects a useful
-subset, and writes verified training shards with the decisions needed to reproduce them.
+Play the published DIAMOND world model on Counter-Strike for thirty seconds and it will
+let a player walk through a parked car. Give it a little longer and it will chain three
+jumps against a wall the game engine only permits one of, or teleport the viewpoint into
+geometry it has not seen enough of.
+
+None of that is a modeling bug. The model learned exactly what the footage showed it,
+including all the moments a game engine's lag compensation, buffered input, and physically
+forgiving collision handling silently made an action look like a rule it was not. That is
+the Virtual2Real gap. Not physics-engine fidelity the way Sim2Real is. Data distribution.
+
+Kuration is the SDK for curating physical-AI datasets against that gap. Point it at raw
+gameplay, telemetry, trajectories, or robot demonstrations. It segments the sources,
+measures what physically matters, verifies each action-to-state contract, oversamples the
+collision and rare events the tail depends on, and writes verified training shards you can
+re-derive months later from a committed config alone.
 
 ```python
 from kuration import input
@@ -31,6 +43,13 @@ The result is not just a directory of arrays. It is a portable dataset artifact 
 shards, source identity, selection metadata, a resolved configuration, component provenance,
 and SHA-256 integrity metadata.
 
+## Full write-up of the Virtual2Real gap
+
+For the failure modes end to end, with concrete clips: **[Why Raw Gameplays Don't Make
+Good World Models](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/intro-world-model-data-curation)**.
+For the quantitative study on DIAMOND across three curation strategies: **[Garbage In,
+Robot Out](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/virtual2real-gap-paper)**.
+
 ## Why teams use kuration
 
 | Need | What kuration provides |
@@ -46,6 +65,23 @@ and SHA-256 integrity metadata.
 <p align="center">
   <img src="docs/assets/curation-flow.svg" alt="Sources flow through windows, features, selection, and verified dataset artifacts" width="95%">
 </p>
+
+## Out of the box, not from scratch
+
+Every operator below is a one-liner in kuration. The right-hand column is what shipping the
+same behavior *without* kuration typically looks like.
+
+| Physical-AI curation task | With kuration | Without kuration |
+|---|---|---|
+| **Verify the action-to-state contract.** Did pressing W actually move the camera forward the way it should? | `pipeline.action_state_consistency(controls=["W","S"])`. Returns a per-clip verdict with the exact frame and shift attached. | Extract single-key presses, compute optical flow per press, build percentile baselines per (control, press-length), diff each instance. Multi-week build. |
+| **Reconstruct camera trajectory from raw video** | `gameplay.slam_pipeline("clips/*.mp4", depth_model="da3-base")` | Chunk clips, run monocular depth per chunk, aggregate multiview, stitch with loop closure, handle rescaling. Weeks of infra plus a GPU cluster. |
+| **Sample so rare collision windows aren't lost** | `.sample("rare")` over a `collision`-flagged column | Custom weighted sampler, per-map geometry lookup, manual review to build labels. |
+| **Split without leaking a source across train/test** | `.split(test=0.1)` at source or entity scope | Track group IDs by hand, verify no leakage, add a test that catches regressions. |
+| **Re-derive the exact same shards a year from now** | Commit `config.json`, re-run against pinned kuration version | Reconstruct scripts, chase down data versions, reproduce transforms. Usually irreducible. |
+
+The full inventory (45 registered components across sampling methods, adapters, output presets,
+filters, and fluent pipeline methods) is at
+[`docs/reference/inventory.md`](docs/reference/inventory.md).
 
 ## Install
 
@@ -131,6 +167,11 @@ patterns, writes train/test NPZ shards, and reads one back. Follow the
 **[guided quickstart](https://aintropy-ai.github.io/kuration-sdk/quickstart/)** for the
 operator-by-operator explanation.
 
+Or launch the same walkthrough in a browser, no local install required:
+
+[![Open in Colab](https://img.shields.io/badge/Open%20In-Colab-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/alpha-solutions/blob/main/notebooks/quickstart.ipynb)
+[![Launch Binder](https://img.shields.io/badge/Launch-Binder-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/alpha-solutions/HEAD?labpath=notebooks%2Fquickstart.ipynb)
+
 ## A dataset you can inspect and defend
 
 ```text
@@ -200,15 +241,36 @@ started, guides, extensions, operations, and reference.
 
 ## Realistic examples
 
-| Example | Demonstrates |
+| Example | Demonstrates | Try it |
+|---|---|---|
+| [`quickstart.py`](examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection | [Colab](https://colab.research.google.com/github/aintropy-solutions/alpha-solutions/blob/main/notebooks/quickstart.ipynb) |
+| [`02_robotics_action_aware.py`](examples/02_robotics_action_aware.py) | Action-aware scoring composed with geometric and phase coverage |  |
+| [`05_custom_operators.py`](examples/05_custom_operators.py) | Custom compositional and transform-backed operators called through generated fluent methods |  |
+| [`06_gameplay_operator_methods.py`](examples/06_gameplay_operator_methods.py) | Built-in gameplay operators on the core `Pipeline`, including namespace-qualified syntax |  |
+| [`gameplay_stats.ipynb`](examples/notebooks/gameplay_stats.ipynb) | JupyterLab progress, lifecycle stats, gameplay plots, output inspection, and synchronized video review |  |
+| [TeaPearce Counter-Strike](examples/public_data/teapearce_csgo.md) | HDF5 adaptation, rare-event coverage, and optional image output |  |
+| [Open P2P](examples/public_data/open_p2p.md) | Protobuf annotations, cross-game action coverage, corrections, instructions, and video joins |  |
+
+## Blogs and long-form solutions
+
+Written walkthroughs, each with a runnable notebook alongside, live in the
+[**aintropy-solutions/alpha-solutions**](https://github.com/aintropy-solutions/alpha-solutions)
+repository. Start with the intro; explore the deep dives when you need one.
+
+**Start here:** [Why raw gameplays don't make good world models](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/intro-world-model-data-curation). The three failure modes and the three operators that address each.
+
+<details>
+<summary><b>Read more:</b> five deep dives and papers</summary>
+
+| Blog / paper | What it walks through |
 |---|---|
-| [`quickstart.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection |
-| [`02_robotics_action_aware.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Action-aware scoring composed with geometric and phase coverage |
-| [`05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py) | Custom compositional and transform-backed operators called through generated fluent methods |
-| [`06_gameplay_operator_methods.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py) | Built-in gameplay operators on the core `Pipeline`, including namespace-qualified syntax |
-| [`gameplay_stats.ipynb`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb) | JupyterLab progress, lifecycle stats, gameplay plots, output inspection, and synchronized video review |
-| [TeaPearce Counter-Strike](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | HDF5 adaptation, rare-event coverage, and optional image output |
-| [Open P2P](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Protobuf annotations, cross-game action coverage, corrections, instructions, and video joins |
+| [Is your model learning reality, or just engine quirks?](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/action-state-consistency) | `action_state_consistency`: how the per-clip verdict is computed, when it fires, how to compose it |
+| [Why your CS2 world model thinks walls are optional](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/collision-aware) | The collision operator: telemetry + map geometry, no pixel labels |
+| [The missing primitive in world models (HoJEPA)](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/hojepa-embedding) | Interaction-embedding research feeding future curation operators |
+| [Garbage in, robot out (paper)](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/virtual2real-gap-paper) | The full Virtual2Real gap study on CS2, JEDi vs FVD, three curation strategies |
+| [DIAMOND baseline_v1 paper](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/diamond-baseline) | Parity with DIAMOND, upsampler batch-size sensitivity, cross-evaluation matrix |
+
+</details>
 
 ## Reliability and project status
 
@@ -219,18 +281,31 @@ integration paths.
 
 The SDK is a `0.x` beta. The supported surface and deprecation rules are documented in the
 **[compatibility policy](https://aintropy-ai.github.io/kuration-sdk/compatibility/)**. See
-[SECURITY.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/SECURITY.md) for private
+[SECURITY.md](SECURITY.md) for private
 reporting and runtime trust boundaries,
-[CHANGELOG.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CHANGELOG.md) for notable
-changes, and [ROADMAP.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/ROADMAP.md) for the
+[CHANGELOG.md](CHANGELOG.md) for notable
+changes, and [ROADMAP.md](ROADMAP.md) for the
 remaining public-release gates.
+
+## Coming next
+
+Not in the initial gameplay set, on the roadmap:
+
+- **HoJEPA / SceneJEPA**: an interaction-embedding scorer that flags physically implausible
+  clips without a hand-built collision detector. Early results and design in the
+  [HoJEPA blog](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/hojepa-embedding).
+- **Robot-teleop and motion-capture adapters**: same curation checks (kinematic validity,
+  action-state consistency, spatial coverage) with a robot-dynamics validator standing in for
+  a game-physics one.
+- **Egocentric video without action streams**: hand-object contact density and
+  embodiment-matching scorers for cooking, assembly, and manipulation footage.
 
 ## Contributing
 
 Core and maintained domain changes follow
-[CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md).
+[CONTRIBUTING.md](CONTRIBUTING.md).
 First-party domain capabilities ship in the SDK; independently distributed extensions can start
-from the template in [`plugins/`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins).
+from the template in [`plugins/`](plugins/).
 
 ```bash
 python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p]'
@@ -245,5 +320,5 @@ Validate one repository plugin in the same isolated environment used by CI:
 python scripts/check_plugin.py plugins/<plugin-name>
 ```
 
-Read [CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md)
+Read [CONTRIBUTING.md](CONTRIBUTING.md)
 before proposing a component or public contract change.
