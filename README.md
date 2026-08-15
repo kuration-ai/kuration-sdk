@@ -46,9 +46,9 @@ and SHA-256 integrity metadata.
 ## Full write-up of the Virtual2Real gap
 
 For the failure modes end to end, with concrete clips: **[Why Raw Gameplays Don't Make
-Good World Models](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/intro-world-model-data-curation)**.
+Good World Models](https://aintropy.ai/blog/intro-world-model-data-curation)**.
 For the quantitative study on DIAMOND across three curation strategies: **[Garbage In,
-Robot Out](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/virtual2real-gap-paper)**.
+Robot Out](https://aintropy.ai/blog/virtual2real-gap-paper)**.
 
 ## Why teams use kuration
 
@@ -169,8 +169,8 @@ operator-by-operator explanation.
 
 Or launch the same walkthrough in a browser, no local install required:
 
-[![Open in Colab](https://img.shields.io/badge/Open%20In-Colab-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/alpha-solutions/blob/main/notebooks/quickstart.ipynb)
-[![Launch Binder](https://img.shields.io/badge/Launch-Binder-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/alpha-solutions/HEAD?labpath=notebooks%2Fquickstart.ipynb)
+[![Open in Colab](https://img.shields.io/badge/Open%20In-Colab-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/notebooks/quickstart.ipynb)
+[![Launch Binder](https://img.shields.io/badge/Launch-Binder-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/beta-solutions/HEAD?labpath=notebooks%2Fquickstart.ipynb)
 
 ## A dataset you can inspect and defend
 
@@ -243,7 +243,7 @@ started, guides, extensions, operations, and reference.
 
 | Example | Demonstrates | Try it |
 |---|---|---|
-| [`quickstart.py`](examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection | [Colab](https://colab.research.google.com/github/aintropy-solutions/alpha-solutions/blob/main/notebooks/quickstart.ipynb) |
+| [`quickstart.py`](examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection | [Colab](https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/notebooks/quickstart.ipynb) |
 | [`02_robotics_action_aware.py`](examples/02_robotics_action_aware.py) | Action-aware scoring composed with geometric and phase coverage |  |
 | [`05_custom_operators.py`](examples/05_custom_operators.py) | Custom compositional and transform-backed operators called through generated fluent methods |  |
 | [`06_gameplay_operator_methods.py`](examples/06_gameplay_operator_methods.py) | Built-in gameplay operators on the core `Pipeline`, including namespace-qualified syntax |  |
@@ -253,22 +253,20 @@ started, guides, extensions, operations, and reference.
 
 ## Blogs and long-form solutions
 
-Written walkthroughs, each with a runnable notebook alongside, live in the
-[**aintropy-solutions/alpha-solutions**](https://github.com/aintropy-solutions/alpha-solutions)
-repository. Start with the intro; explore the deep dives when you need one.
+Written walkthroughs live at [**aintropy.ai/blog**](https://aintropy.ai/blog); their runnable notebooks live in [**aintropy-solutions/beta-solutions**](https://github.com/aintropy-solutions/beta-solutions). Start with the intro; explore the deep dives when you need one.
 
-**Start here:** [Why raw gameplays don't make good world models](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/intro-world-model-data-curation). The three failure modes and the three operators that address each.
+**Start here:** [Why raw gameplays don't make good world models](https://aintropy.ai/blog/intro-world-model-data-curation). The three failure modes and the three operators that address each.
 
 <details>
 <summary><b>Read more:</b> five deep dives and papers</summary>
 
 | Blog / paper | What it walks through |
 |---|---|
-| [Is your model learning reality, or just engine quirks?](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/action-state-consistency) | `action_state_consistency`: how the per-clip verdict is computed, when it fires, how to compose it |
-| [Why your CS2 world model thinks walls are optional](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/collision-aware) | The collision operator: telemetry + map geometry, no pixel labels |
-| [The missing primitive in world models (HoJEPA)](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/hojepa-embedding) | Interaction-embedding research feeding future curation operators |
-| [Garbage in, robot out (paper)](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/virtual2real-gap-paper) | The full Virtual2Real gap study on CS2, JEDi vs FVD, three curation strategies |
-| [DIAMOND baseline_v1 paper](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/diamond-baseline) | Parity with DIAMOND, upsampler batch-size sensitivity, cross-evaluation matrix |
+| [Is your model learning reality, or just engine quirks?](https://aintropy.ai/blog/action-state-consistency) | `action_state_consistency`: how the per-clip verdict is computed, when it fires, how to compose it |
+| [Why your CS2 world model thinks walls are optional](https://aintropy.ai/blog/collision-aware) | The collision operator: telemetry + map geometry, no pixel labels |
+| [The missing primitive in world models (HoJEPA)](https://aintropy.ai/blog/hojepa-embedding) | Interaction-embedding research feeding future curation operators |
+| [Garbage in, robot out (paper)](https://aintropy.ai/blog/virtual2real-gap-paper) | The full Virtual2Real gap study on CS2, JEDi vs FVD, three curation strategies |
+| [DIAMOND baseline_v1 paper](https://aintropy.ai/blog/diamond-baseline) | Parity with DIAMOND, upsampler batch-size sensitivity, cross-evaluation matrix |
 
 </details>
 
@@ -293,7 +291,7 @@ Not in the initial gameplay set, on the roadmap:
 
 - **HoJEPA / SceneJEPA**: an interaction-embedding scorer that flags physically implausible
   clips without a hand-built collision detector. Early results and design in the
-  [HoJEPA blog](https://github.com/aintropy-solutions/alpha-solutions/tree/main/blogs/hojepa-embedding).
+  [HoJEPA blog](https://aintropy.ai/blog/hojepa-embedding).
 - **Robot-teleop and motion-capture adapters**: same curation checks (kinematic validity,
   action-state consistency, spatial coverage) with a robot-dynamics validator standing in for
   a game-physics one.
