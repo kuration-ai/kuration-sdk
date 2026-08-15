@@ -169,8 +169,8 @@ operator-by-operator explanation.
 
 Or launch the same walkthrough in a browser, no local install required:
 
-[![Open in Colab](https://img.shields.io/badge/Open%20In-Colab-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/notebooks/quickstart.ipynb)
-[![Launch Binder](https://img.shields.io/badge/Launch-Binder-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/beta-solutions/HEAD?labpath=notebooks%2Fquickstart.ipynb)
+[![Open in Colab](https://img.shields.io/badge/Open%20In-Colab-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/kuration-wrapper-and-guide/notebooks/quickstart.ipynb)
+[![Launch Binder](https://img.shields.io/badge/Launch-Binder-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/beta-solutions/HEAD?labpath=kuration-wrapper-and-guide%2Fnotebooks%2Fquickstart.ipynb)
 
 ## A dataset you can inspect and defend
 
@@ -243,7 +243,7 @@ started, guides, extensions, operations, and reference.
 
 | Example | Demonstrates | Try it |
 |---|---|---|
-| [`quickstart.py`](examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection | [Colab](https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/notebooks/quickstart.ipynb) |
+| [`quickstart.py`](examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection | [Colab](https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/kuration-wrapper-and-guide/notebooks/quickstart.ipynb) |
 | [`02_robotics_action_aware.py`](examples/02_robotics_action_aware.py) | Action-aware scoring composed with geometric and phase coverage |  |
 | [`05_custom_operators.py`](examples/05_custom_operators.py) | Custom compositional and transform-backed operators called through generated fluent methods |  |
 | [`06_gameplay_operator_methods.py`](examples/06_gameplay_operator_methods.py) | Built-in gameplay operators on the core `Pipeline`, including namespace-qualified syntax |  |
