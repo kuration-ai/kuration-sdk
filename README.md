@@ -4,10 +4,10 @@
 
 # kuration-sdk
 
-Play the published DIAMOND world model on Counter-Strike for thirty seconds and it will
-let a player walk through a parked car. Give it a little longer and it will chain three
-jumps against a wall the game engine only permits one of, or teleport the viewpoint into
-geometry it has not seen enough of.
+Play the published DIAMOND world model on Counter-Strike and for the first thirty frames the
+scene is coherent. Past that horizon it starts to lose track of the player's position, teleport
+the viewpoint into geometry it has not seen enough of, let a player walk through a parked car,
+and chain the double and triple jumps the game engine never permits.
 
 None of that is a modeling bug. The model learned exactly what the footage showed it,
 including all the moments a game engine's lag compensation, buffered input, and physically
