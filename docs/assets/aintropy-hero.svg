@@ -16,12 +16,12 @@
     .verify     { fill: #4ade80; }
     .rule       { stroke: #7c8ea1; stroke-width: 1; fill: none; stroke-linecap: round; opacity: .5; }
 
-    .h-section  { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; fill: #7c8ea1; }
-    .h-title    { font-size: 16px; font-weight: 600; fill: #e6edf3; }
-    .t-mono     { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 13px; fill: #e6edf3; }
-    .t-mono-s   { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 11px; fill: #7c8ea1; }
-    .t-body     { font-size: 12.5px; fill: #b9c5d1; }
-    .tagline    { font-size: 14px; font-weight: 500; fill: #7c8ea1; letter-spacing: 0.03em; }
+    .h-section  { font-size: 16px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; fill: #7c8ea1; }
+    .h-title    { font-size: 22px; font-weight: 600; fill: #e6edf3; }
+    .t-mono     { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 17px; fill: #e6edf3; }
+    .t-mono-s   { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 14px; fill: #7c8ea1; }
+    .t-body     { font-size: 17px; fill: #b9c5d1; }
+    .tagline    { font-size: 19px; font-weight: 500; fill: #7c8ea1; letter-spacing: 0.03em; }
   </style>
 
   <!-- ── STAGE ──────────────────────────────────────────────────────── -->
