@@ -2,13 +2,13 @@
 
 Fit an unobstructed-movement model from real telemetry, flag ticks where velocity falls short toward a nearby wall, and upsample them for training.
 
-![](https://img.shields.io/badge/400_ticks-64_ticks_per_second-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/residual_>_100_u/s-wall_within_50_u-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/telemetry_only-no_pixel_labels-0D9488?style=for-the-badge)
+![](https://img.shields.io/badge/aintropy%2Fcollision--directional-operator-0D9488?style=for-the-badge)
+![](https://img.shields.io/badge/telemetry_%2B_map_geometry-no_pixel_labels-0D9488?style=for-the-badge)
+![](https://img.shields.io/badge/catches-blind--spot_and_off--screen_contacts-0D9488?style=for-the-badge)
 
-![](https://img.shields.io/badge/target_speed-250_u/s-0D9488)
-![](https://img.shields.io/badge/ramp-8_ticks_to_plateau-0D9488)
-![](https://img.shields.io/badge/wall_window-ticks_200_to_260-0D9488)
+![](https://img.shields.io/badge/per--player-unobstructed_velocity_model-0D9488)
+![](https://img.shields.io/badge/output-one_row_per_tick-0D9488)
+![](https://img.shields.io/badge/directions-front_back_left_right_corner-0D9488)
 
 [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/kuration-wrapper-and-guide/notebooks/collision-aware/collision-aware.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/beta-solutions/HEAD?labpath=kuration-wrapper-and-guide%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb)
 
