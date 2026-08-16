@@ -17,16 +17,16 @@ Runnable notebooks and operator reference for solutions built on the [Kuration S
 
 ## What's in here
 
-- **[`notebooks/`](./notebooks/)**. One-click Binder and Colab launchers. Zero setup. The SDK is pre-installed in the launched environment.
+- **[`notebooks/`](./notebooks/)**. One-click Binder and Colab launchers. The first cell in each notebook installs the SDK.
 - **[`solutions-guide/`](./solutions-guide/)**. The companion `kuration-ai` Python package (`kai` CLI, three shipped operations: `BalancedSelector`, `DiverseSubset`, `RareEventCoverage`), mirrored from `kuration-ai/python-sdk`.
 
 Long-form blog posts on physical-AI data curation live on [aintropy.ai/blog](https://aintropy.ai/blog), published directly from Drive through the content pipeline.
 
-## Try any of it in a browser
+## Run any notebook in a browser
 
 Every notebook has a Colab and a Binder badge. Click, wait, run.
 
-> **Launcher status.** The URLs below point at `aintropy-solutions/beta-solutions`. Colab and Binder can only clone public repositories, so the badges activate once this repo goes public. In the meantime, clone and run any notebook locally with `pip install kuration-sdk[gameplay]`.
+> **Launcher status.** The URLs below point at `aintropy-solutions/beta-solutions`. Colab and Binder can only clone public repositories, so the badges activate once this repo goes public. In the meantime, clone and run each notebook locally. See the notebook's own README for the exact install command (the `[gameplay]` extra is only needed by `action-state-consistency` and `collision-aware`).
 
 
 | Notebook | Read | Launch |
