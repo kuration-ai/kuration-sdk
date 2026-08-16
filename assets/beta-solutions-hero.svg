@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 520" role="img" aria-labelledby="stitle sdesc" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 540" role="img" aria-labelledby="stitle sdesc" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
   <title id="stitle">Three shipped Kuration operators: action-state consistency, collision, and coverage-based sampling</title>
   <desc id="sdesc">Three product cards. Each shows what the operator actually produces on real CS:GO and CS2 gameplay recordings.</desc>
 
@@ -30,19 +30,19 @@
     .tagline    { font-size: 18px; font-weight: 500; fill: #7c8ea1; letter-spacing: 0.03em; }
   </style>
 
-  <rect class="stage" width="1320" height="520" rx="12"/>
+  <rect class="stage" width="1320" height="540" rx="12"/>
 
   <!-- ── Header ──────────────────────────────────────────────────────── -->
   <g transform="translate(40 44)">
     <text class="h-eyebrow" x="0" y="0">Aintropy Solutions</text>
     <text class="h-title"   x="0" y="30">Three of the Kuration SDK's shipped operators.</text>
     <text class="tagline"   x="0" y="58">Chaos in. Verified training shards out.</text>
-    <text class="t-body"    x="0" y="88">Or <a href="https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/kuration-wrapper-and-guide/notebooks/starter/starter.ipynb" target="_blank"><tspan class="accent" text-decoration="underline">create your own here</tspan></a>.</text>
+    <text class="t-body"    x="0" y="90" font-size="17">Create your very own operators too by clicking <a href="https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/kuration-wrapper-and-guide/notebooks/starter/starter.ipynb" target="_blank"><tspan class="accent" text-decoration="underline">here</tspan></a>.</text>
   </g>
 
   <!-- ── PANEL 1: action-state consistency ──────────────────────────── -->
   <g transform="translate(40 148)">
-    <rect class="panel" x="0" y="0" width="392" height="328" rx="12"/>
+    <rect class="panel" x="0" y="0" width="392" height="340" rx="12"/>
 
     <text class="h-eyebrow" x="24" y="34">action_state_consistency</text>
     <text class="h-panel"   x="24" y="62">Verdict per clip</text>
@@ -88,7 +88,7 @@
 
   <!-- ── PANEL 2: collision ─────────────────────────────────────────── -->
   <g transform="translate(464 148)">
-    <rect class="panel" x="0" y="0" width="392" height="328" rx="12"/>
+    <rect class="panel" x="0" y="0" width="392" height="340" rx="12"/>
 
     <text class="h-eyebrow" x="24" y="34">aintropy/collision-directional</text>
     <text class="h-panel"   x="24" y="62">Contact events, off-screen too</text>
@@ -153,14 +153,15 @@
 
     <g transform="translate(24 274)">
       <text class="t-out-label" x="0" y="0">Output</text>
-      <text class="t-out-value" x="0" y="24">collision / residual / dist_to_wall / direction</text>
-      <text class="t-caption"   x="0" y="42">runs on telemetry + map geometry</text>
+      <text class="t-out-value" x="0" y="22">collision / residual</text>
+      <text class="t-out-value" x="0" y="42">dist_to_wall / direction</text>
+      <text class="t-caption"   x="0" y="60">runs on telemetry + map geometry</text>
     </g>
   </g>
 
   <!-- ── PANEL 3: coverage-based sampling ──────────────────────────── -->
   <g transform="translate(888 148)">
-    <rect class="panel" x="0" y="0" width="392" height="328" rx="12"/>
+    <rect class="panel" x="0" y="0" width="392" height="340" rx="12"/>
 
     <text class="h-eyebrow" x="24" y="34">.sample("equal")</text>
     <text class="h-panel"   x="24" y="62">Uniform per bin</text>
