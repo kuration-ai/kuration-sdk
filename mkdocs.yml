@@ -1,8 +1,8 @@
 site_name: Kuration
 site_description: Build reproducible training datasets from sequential data.
-site_url: https://aintropy-ai.github.io/kuration-sdk/
-repo_url: https://github.com/aintropy-ai/kuration-sdk
-repo_name: aintropy-ai/kuration-sdk
+site_url: https://aintropy-solutions.github.io/kuration-sdk/
+repo_url: https://github.com/aintropy-solutions/kuration-sdk
+repo_name: aintropy-solutions/kuration-sdk
 edit_uri: edit/main/docs/
 docs_dir: docs
 

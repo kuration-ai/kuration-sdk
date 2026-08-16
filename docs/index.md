@@ -52,7 +52,7 @@ the package's module layout.
 
 ## Runnable examples
 
-The [`examples/`](https://github.com/aintropy-ai/kuration-sdk/tree/main/examples) directory contains download-free demos plus bounded
+The [`examples/`](https://github.com/aintropy-solutions/kuration-sdk/tree/main/examples) directory contains download-free demos plus bounded
 public-data workflows. Start with:
 
 ```bash

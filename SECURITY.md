@@ -10,7 +10,7 @@ validating a suspected issue.
 ## Reporting a vulnerability
 
 Use GitHub's [private vulnerability reporting
-form](https://github.com/aintropy-ai/kuration-sdk/security/advisories/new). Please do not open a
+form](https://github.com/aintropy-solutions/kuration-sdk/security/advisories/new). Please do not open a
 public issue containing vulnerability details. Include the affected version, a minimal
 reproduction, impact, and any suggested mitigation.
 

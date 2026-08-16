@@ -37,7 +37,7 @@
     <text class="h-eyebrow" x="0" y="0">Aintropy Solutions</text>
     <text class="h-title"   x="0" y="30">Three of the Kuration SDK's shipped operators.</text>
     <text class="tagline"   x="0" y="58">Chaos in. Verified training shards out.</text>
-    <text class="t-body"    x="0" y="90" font-size="17">Create your very own operators too by clicking <a href="https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/kuration-wrapper-and-guide/notebooks/starter/starter.ipynb" target="_blank"><tspan class="accent" text-decoration="underline">here</tspan></a>.</text>
+    <text class="t-body"    x="0" y="90" font-size="17">Create your very own operators too by clicking <a href="https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/starter/starter.ipynb" target="_blank"><tspan class="accent" text-decoration="underline">here</tspan></a>.</text>
   </g>
 
   <!-- ── PANEL 1: action-state consistency ──────────────────────────── -->

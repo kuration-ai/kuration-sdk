@@ -22,7 +22,7 @@ follow the compatibility policy, security policy, and published deprecation proc
 
 Only maintainers authorized for the protected PyPI environment may publish. Releases use the
 documented CI and trusted-publishing workflow; contributors should never upload artifacts directly.
-Undisclosed vulnerability handling stays private under [SECURITY.md](https://aintropy-ai.github.io/kuration-sdk/security/).
+Undisclosed vulnerability handling stays private under [SECURITY.md](https://aintropy-solutions.github.io/kuration-sdk/security/).
 
 ## Changes to governance
 

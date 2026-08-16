@@ -10,9 +10,9 @@ Sample equally across feature bins so training sees the whole distribution, not 
 ![](https://img.shields.io/badge/35-candidate_strategies_triaged-0D9488)
 ![](https://img.shields.io/badge/FVD_3,043,786-best_at_epoch_85-0D9488)
 
-[![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/kuration-wrapper-and-guide/notebooks/coverage-based-curation/coverage-based-curation.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/beta-solutions/HEAD?labpath=kuration-wrapper-and-guide%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb)
+[![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/coverage-based-curation/coverage-based-curation.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb)
 
-> **Launcher status.** The URLs above point at `aintropy-solutions/beta-solutions`. Colab and Binder can only clone public repositories, so the badges activate once this repo goes public. In the meantime, clone and run the notebook locally with `pip install kuration-sdk matplotlib`.
+> **Launcher status.** The URLs above point at `aintropy-solutions/kuration-sdk`. Colab and Binder can only clone public repositories, so the badges activate once this repo goes public. In the meantime, clone and run the notebook locally with `pip install kuration-sdk matplotlib`.
 
 <details><summary><b>Contents</b></summary>
 
@@ -119,8 +119,8 @@ See cell 10.
 ## Try it locally
 
 ```bash
-git clone https://github.com/aintropy-solutions/beta-solutions.git
-cd beta-solutions/kuration-wrapper-and-guide/notebooks/coverage-based-curation
+git clone https://github.com/aintropy-solutions/kuration-sdk.git
+cd kuration-sdk/kuration-ai/notebooks/coverage-based-curation
 uv pip install kuration-sdk matplotlib jupyter
 uv run jupyter lab coverage-based-curation.ipynb
 ```

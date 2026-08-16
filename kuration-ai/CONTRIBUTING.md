@@ -10,14 +10,14 @@ source .venv/bin/activate
 
 # Kuration AI depends on kuration-sdk, which is a private repo until PyPI launch.
 # Install it from source first:
-git clone git@github.com:aintropy-ai/kuration-sdk.git
+git clone git@github.com:aintropy-solutions/kuration-sdk.git
 pip install -e ./kuration-sdk[methods,parquet]
 
 # Then install Kuration AI editable + dev extras:
 pip install -e .[dev]
 ```
 
-Access to `aintropy-ai/kuration-sdk` is required. If you do not have it, please contact know@aintropy.ai.
+Access to `aintropy-solutions/kuration-sdk` is required. If you do not have it, please contact know@aintropy.ai.
 
 ## Run the tests
 
@@ -29,7 +29,7 @@ Expected: `52 passed`.
 
 ## Continuous integration
 
-CI runs on push to `main` and on pull requests. It requires a `KURATION_SDK_TOKEN` repository secret: a personal access token with read access to `aintropy-ai/kuration-sdk`. Without the secret, the workflow passes green with a notice explaining how to enable it.
+CI runs on push to `main` and on pull requests. It requires a `KURATION_SDK_TOKEN` repository secret: a personal access token with read access to `aintropy-solutions/kuration-sdk`. Without the secret, the workflow passes green with a notice explaining how to enable it.
 
 ## Adding a new operation
 

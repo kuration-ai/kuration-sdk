@@ -19,7 +19,7 @@ jobs:
         run: |
           if [ -z "$TOKEN" ]; then
             echo "run_tests=false" >> $GITHUB_OUTPUT
-            echo "::notice::Skipping tests. Set the KURATION_SDK_TOKEN repo secret to enable CI (PAT with read access to aintropy-ai/kuration-sdk). See CONTRIBUTING.md."
+            echo "::notice::Skipping tests. Set the KURATION_SDK_TOKEN repo secret to enable CI (PAT with read access to aintropy-solutions/kuration-sdk). See CONTRIBUTING.md."
           else
             echo "run_tests=true" >> $GITHUB_OUTPUT
           fi
@@ -35,7 +35,7 @@ jobs:
           TOKEN: ${{ secrets.KURATION_SDK_TOKEN }}
         run: |
           python -m pip install --upgrade pip
-          pip install "kuration-sdk[methods,parquet] @ git+https://$TOKEN@github.com/aintropy-ai/kuration-sdk.git"
+          pip install "kuration-sdk[methods,parquet] @ git+https://$TOKEN@github.com/aintropy-solutions/kuration-sdk.git"
           pip install -e .[dev]
 
       - name: Run tests

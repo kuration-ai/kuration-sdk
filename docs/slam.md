@@ -220,9 +220,9 @@ highest-confidence rows when a scalar confidence attribute was exported.
 
 ## Notebook and leakage boundary
 
-The checked-in [SLAM notebook](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) is output-free and uses
+The checked-in [SLAM notebook](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) is output-free and uses
 parameterized paths; it is a walkthrough, not a bundled gameplay dataset. The separate
-[gameplay stats notebook](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb)
+[gameplay stats notebook](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb)
 is model-free and demonstrates lifecycle stats, notebook progress, domain plots, and optional
 video comparison.
 

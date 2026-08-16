@@ -3,8 +3,8 @@
 Thanks for helping improve kuration-sdk. Contributions may include bug fixes, adapters,
 selection methods, documentation, tests, and runnable examples.
 
-For user and integrator questions, see [SUPPORT.md](https://aintropy-ai.github.io/kuration-sdk/support/). Project ownership, decisions,
-and release responsibilities are described in [GOVERNANCE.md](https://aintropy-ai.github.io/kuration-sdk/governance/).
+For user and integrator questions, see [SUPPORT.md](https://aintropy-solutions.github.io/kuration-sdk/support/). Project ownership, decisions,
+and release responsibilities are described in [GOVERNANCE.md](https://aintropy-solutions.github.io/kuration-sdk/governance/).
 
 ## Development setup
 
@@ -44,8 +44,8 @@ heavy integrations should be lazy and should raise a clear installation hint whe
 - Prefer `.bin()` and `.sample()` in new fluent-pipeline code. `.organize()` and `.curate()` are
   compatibility aliases and must not be removed without a documented migration.
 
-See [docs/architecture.md](https://aintropy-ai.github.io/kuration-sdk/architecture/) for the data contracts and
-[docs/customization.md](https://aintropy-ai.github.io/kuration-sdk/customization/) for supported extension points.
+See [docs/architecture.md](https://aintropy-solutions.github.io/kuration-sdk/architecture/) for the data contracts and
+[docs/customization.md](https://aintropy-solutions.github.io/kuration-sdk/customization/) for supported extension points.
 
 ## Making a change
 
@@ -57,8 +57,8 @@ Keep public interfaces synchronized across:
 
 - generic implementation and exports in `src/kuration/core/`;
 - maintained domain implementation in `src/kuration/gameplay/`;
-- exact signatures in [docs/api.md](https://aintropy-ai.github.io/kuration-sdk/api/);
-- fluent behavior in [docs/pipeline.md](https://aintropy-ai.github.io/kuration-sdk/pipeline/);
+- exact signatures in [docs/api.md](https://aintropy-solutions.github.io/kuration-sdk/api/);
+- fluent behavior in [docs/pipeline.md](https://aintropy-solutions.github.io/kuration-sdk/pipeline/);
 - runnable examples when the recommended workflow changes;
 - artifact or job schema versions when serialized contracts change.
 
@@ -85,7 +85,7 @@ Use the narrowest supported seam for the behavior:
 | Package a reusable `OutputSpec` policy | output preset |
 
 Do not add dataset-specific parsing, model imports, or storage branches to the generic pipeline
-when one of these seams fits. See [docs/customization.md](https://aintropy-ai.github.io/kuration-sdk/customization/) for descriptors,
+when one of these seams fits. See [docs/customization.md](https://aintropy-solutions.github.io/kuration-sdk/customization/) for descriptors,
 isolated registries, discovery, and versioning.
 
 ### Compositional operators
@@ -335,7 +335,7 @@ validation. Include a closed parameter schema and test strict categorical behavi
 
 ### Packaging external plugins
 
-Copy [`plugins/_template`](https://github.com/aintropy-ai/kuration-sdk/blob/main/plugins/README.md) for extensions that should remain independently
+Copy [`plugins/_template`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/plugins/README.md) for extensions that should remain independently
 versioned or distributed outside `kuration-sdk`. Registration code may be loaded explicitly
 through a job's `plugins` list or automatically by the `kuration.plugins` entry-point group:
 
@@ -418,5 +418,5 @@ by migration guidance when they affect public APIs, jobs, or stored artifacts.
 ## Releases
 
 Contributors should not publish package artifacts. Maintainers release through the trusted PyPI
-workflow described in [docs/releasing.md](https://aintropy-ai.github.io/kuration-sdk/releasing/). The project license and author
+workflow described in [docs/releasing.md](https://aintropy-solutions.github.io/kuration-sdk/releasing/). The project license and author
 metadata must be resolved before the first public release.

@@ -10,7 +10,7 @@ Questions about private deployments, private datasets, account access, or commer
 a company-approved private support channel. No such channel is published in this repository yet;
 do not put confidential information in a public issue.
 
-Security vulnerabilities follow [SECURITY.md](https://aintropy-ai.github.io/kuration-sdk/security/), not the ordinary issue tracker.
+Security vulnerabilities follow [SECURITY.md](https://aintropy-solutions.github.io/kuration-sdk/security/), not the ordinary issue tracker.
 
 ## What to include
 

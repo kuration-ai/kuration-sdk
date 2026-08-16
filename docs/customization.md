@@ -165,7 +165,7 @@ array length/uniqueness/`items`, and nested object `properties`, `required`, and
 First-party standard capabilities such as pixel shift, action-state consistency, and SLAM ship in
 the SDK wheel under `kuration.gameplay`, register when that domain is imported or discovered,
 and keep heavy frameworks in optional extras.
-Use [`plugins/_template`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins/_template)
+Use [`plugins/_template`](https://github.com/aintropy-solutions/kuration-sdk/tree/main/plugins/_template)
 for independently versioned or externally distributed behavior. An external plugin owns its
 dependencies, tests, documentation, and `kuration.plugins` entry point.
 

@@ -13,7 +13,7 @@ repository is available locally.
 Clone the repository and install the NumPy-only core in a Python 3.11 or newer environment:
 
 ```bash
-git clone https://github.com/aintropy-ai/kuration-sdk.git
+git clone https://github.com/aintropy-solutions/kuration-sdk.git
 cd kuration-sdk
 python -m pip install -e .
 ```

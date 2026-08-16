@@ -258,7 +258,7 @@ currently installed and imported environment.
 First-party gameplay operators accepted into the SDK live under `src/kuration/gameplay/`, register
 when that domain is imported or discovered, and declare optional framework requirements through
 SDK extras. For an independently versioned or external plugin, copy
-[`plugins/_template`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins/_template)
+[`plugins/_template`](https://github.com/aintropy-solutions/kuration-sdk/tree/main/plugins/_template)
 to `plugins/<plugin-name>`. The external package uses this layout:
 
 ```text
