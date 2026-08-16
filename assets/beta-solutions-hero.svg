@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 520" role="img" aria-labelledby="stitle sdesc" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
   <title id="stitle">Three shipped Kuration operators: action-state consistency, collision, and SLAM</title>
-  <desc id="sdesc">Three product cards. Each shows what the operator actually produces on real Aintropy-partner CS2 gameplay.</desc>
+  <desc id="sdesc">Three product cards. Each shows what the operator actually produces on real CS:GO and CS2 gameplay recordings.</desc>
 
   <style>
     /* Aintropy brand palette */
@@ -36,7 +36,6 @@
   <g transform="translate(40 44)">
     <text class="h-eyebrow" x="0" y="0">Aintropy Solutions</text>
     <text class="h-title"   x="0" y="30">Three shipped operators.</text>
-    <text class="t-body"    x="0" y="56">Each pairs with a long-form blog and a runnable notebook in this repo.</text>
   </g>
 
   <!-- ── PANEL 1: action-state consistency ──────────────────────────── -->
@@ -89,7 +88,7 @@
   <g transform="translate(464 148)">
     <rect class="panel" x="0" y="0" width="392" height="328" rx="12"/>
 
-    <text class="h-eyebrow" x="24" y="34">collision</text>
+    <text class="h-eyebrow" x="24" y="34">aintropy/collision-directional</text>
     <text class="h-panel"   x="24" y="62">Contact events, off-screen too</text>
 
     <line class="divider" x1="24" y1="82" x2="368" y2="82"/>
@@ -152,7 +151,7 @@
 
     <g transform="translate(24 274)">
       <text class="t-out-label" x="0" y="0">Output</text>
-      <text class="t-out-value" x="0" y="24">collision / residual / dist_to_wall</text>
+      <text class="t-out-value" x="0" y="24">collision / residual / dist_to_wall / direction</text>
       <text class="t-caption"   x="0" y="42">runs on telemetry + map geometry</text>
     </g>
   </g>
@@ -201,7 +200,7 @@
     <g transform="translate(24 274)">
       <text class="t-out-label" x="0" y="0">Output</text>
       <text class="t-out-value" x="0" y="24">trajectory + point cloud</text>
-      <text class="t-caption"   x="0" y="42">DepthAnything V3 + loop closure</text>
+      <text class="t-caption"   x="0" y="42">Depth Anything 3 + loop closure</text>
     </g>
   </g>
 
