@@ -1,61 +1,12 @@
 <p align="center">
-  <img src="assets/kuration-operators-hero.svg" alt="Three of the Kuration SDK's shipped operators — action-state consistency, collision, and coverage-based sampling — showing what each produces on real gameplay recordings" width="100%">
+  <img src="docs/assets/kuration-hero.svg" alt="Kuration turns raw sequential data into selected, verified training shards" width="100%">
 </p>
 
-# Kuration SDK
+# kuration-sdk
 
-**A fluent Python pipeline for curating training data.** Kuration takes raw sequential inputs — telemetry, sensor logs, trajectories, gameplay recordings, synchronized video — segments them into windows, measures features per window, selects a useful subset using configurable strategies (equal coverage, weighted, rare-event, diversity clustering, k-center, DSIR, and more), and writes verified training shards with the provenance metadata needed to reproduce the same result later against the same package versions.
-
-It is a curation SDK, not a data generator or a training framework. Input is raw sequential data you already have; output is a portable, versioned dataset artifact — deterministic across worker counts, format-agnostic, plugin-extensible.
-
-Two Python packages ship in this repo:
-
-| Package | Path | Use it when |
-|---|---|---|
-| **`kuration-sdk`** | repo root | You want the pipeline primitive — a fluent API for windowing, measuring, filtering, selecting, splitting, and writing verified shards. Deterministic across worker counts, plugin-extensible, format-agnostic. |
-| **`kuration-ai`** | [`kuration-ai/`](./kuration-ai/) | You want a shipped operation for a common curation job — `BalancedSelector`, `RareEventCoverage`, or `DiverseSubset` — plus a `kai` CLI and runnable notebooks. Sits on top of `kuration-sdk`. |
-
-The SDK is the primitive engineers extend. The companion is the accessible entrypoint practitioners run today. Both are Apache-2.0.
-
-![](https://img.shields.io/badge/20.9%25-LPIPS_improvement_over_DIAMOND-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/62%25-JEDi_reduction_across_600_epochs-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/<18%25-training_budget_to_reach_near--baseline-0D9488?style=for-the-badge)
-
-![](https://img.shields.io/badge/4-runnable_notebooks-0D9488)
-![](https://img.shields.io/badge/1,090-test_episodes_scored-0D9488)
-![](https://img.shields.io/badge/4--second_segments-16_fps-0D9488)
-![](https://img.shields.io/badge/51--dim_action-20_categories-0D9488)
-
-## Contents
-
-- [Quick tour](#quick-tour)
-- [Kuration SDK — the pipeline primitive](#kuration-sdk--the-pipeline-primitive)
-  - [Why teams use kuration](#why-teams-use-kuration)
-  - [Install](#install)
-  - [Try it in five minutes](#try-it-in-five-minutes)
-  - [A dataset you can inspect and defend](#a-dataset-you-can-inspect-and-defend)
-  - [Choose your path](#choose-your-path)
-  - [Realistic examples](#realistic-examples)
-- [kuration-ai — the shipped companion](#kuration-ai--the-shipped-companion)
-  - [Getting started](#getting-started)
-  - [Runnable notebooks](#runnable-notebooks)
-  - [Use cases](#use-cases)
-    - [Balanced sensor shards](#balanced-sensor-shards)
-    - [Rare-event coverage](#rare-event-coverage)
-    - [Diverse subset](#diverse-subset)
-  - [Beyond the gallery](#beyond-the-gallery)
-  - [Reproducibility](#reproducibility)
-  - [Writing your own operation](#writing-your-own-operation)
-  - [`kai` CLI reference](#kai-cli-reference)
-  - [Coming next](#coming-next)
-- [Design and reference](#design-and-reference)
-- [Reliability and project status](#reliability-and-project-status)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Quick tour
-
-The SDK's fluent pipeline, end to end:
+**Build reproducible training datasets from time-series, telemetry, trajectories, and
+synchronized video.** Kuration segments raw sources, measures what matters, selects a useful
+subset, and writes verified training shards with the decisions needed to reproduce them.
 
 ```python
 from kuration import input
@@ -76,24 +27,11 @@ print(dataset.explain().render())
 dataset.output("out/training-v1", preset="numpy-timeseries")
 ```
 
-The result is not just a directory of arrays. It is a portable dataset artifact with train/test shards, source identity, selection metadata, a resolved configuration, component provenance, and SHA-256 integrity metadata.
+The result is not just a directory of arrays. It is a portable dataset artifact with train/test
+shards, source identity, selection metadata, a resolved configuration, component provenance,
+and SHA-256 integrity metadata.
 
-For a one-line entrypoint via the companion package:
-
-```python
-from kuration_ai import input, BalancedSelector
-
-pipeline = input("logs/*.csv", time="t").window(8, stride=4)
-result = BalancedSelector(feature="activity", of="signal", bins=4, count=20).apply(pipeline).options(seed=1).collect()
-```
-
-Same primitive underneath, one shipped operation on top.
-
-Long-form blog posts on physical-AI data curation live on [aintropy.ai/blog](https://aintropy.ai/blog), published directly from Drive through the content pipeline.
-
-## Kuration SDK — the pipeline primitive
-
-### Why teams use kuration
+## Why teams use kuration
 
 | Need | What kuration provides |
 |---|---|
@@ -109,17 +47,18 @@ Long-form blog posts on physical-AI data curation live on [aintropy.ai/blog](htt
   <img src="docs/assets/curation-flow.svg" alt="Sources flow through windows, features, selection, and verified dataset artifacts" width="95%">
 </p>
 
-### Install
+## Install
 
 Until the public PyPI launch gates in the roadmap are complete, install from a source checkout:
 
 ```bash
-git clone https://github.com/aintropy-solutions/kuration-sdk.git
+git clone https://github.com/aintropy-ai/kuration-sdk.git
 cd kuration-sdk
 python -m pip install -e .
 ```
 
-The NumPy-only core handles in-memory, CSV, JSON, and NPZ workflows. Add only the integrations a pipeline needs:
+The NumPy-only core handles in-memory, CSV, JSON, and NPZ workflows. Add only the integrations a
+pipeline needs:
 
 ```bash
 python -m pip install -e '.[methods,parquet]'  # selection methods + Parquet
@@ -131,7 +70,9 @@ python -m pip install -e '.[s3]'               # fsspec + the S3 backend
 python -m pip install -e '.[all]'              # every runtime integration/backend
 ```
 
-`pipeline.explain()` reports the extras required by a planned run before it reads the full dataset. The provider-specific cloud extras are `s3`, `gcs`, and `azure`; `cloud` installs only the backend-neutral fsspec layer for environments that manage provider packages separately.
+`pipeline.explain()` reports the extras required by a planned run before it reads the full
+dataset. The provider-specific cloud extras are `s3`, `gcs`, and `azure`; `cloud` installs only
+the backend-neutral fsspec layer for environments that manage provider packages separately.
 
 Domain APIs are grouped without changing the core execution engine:
 
@@ -154,7 +95,13 @@ evidence = report.examples(
 )
 ```
 
-`kuration.gameplay` is an operator domain, not a second pipeline implementation. Importing it registers gameplay methods and relevant stats on the ordinary `kuration.Pipeline`; the core stats call remains unchanged. `report.available()` discovers the plots, evidence modes, and media support present on that concrete report. On a video-backed live pipeline, evidence renders bounded frame strips and action context automatically. For whole-video review, `gameplay.compare_videos(before, after)` renders synchronized players and can save a standalone HTML comparison.
+`kuration.gameplay` is an operator domain, not a second pipeline implementation. Importing it
+registers gameplay methods and relevant stats on the ordinary `kuration.Pipeline`; the core
+stats call remains unchanged. `report.available()` discovers the plots, evidence modes, and
+media support present on that concrete report. On a video-backed live pipeline, evidence renders
+bounded frame strips and action context automatically. For whole-video review,
+`gameplay.compare_videos(before, after)` renders synchronized players and can save a standalone
+HTML comparison.
 
 Stateful input checks follow the same pipeline-first rule:
 
@@ -163,23 +110,28 @@ pipeline = pipeline.action_state_consistency(baselines=baselines, controls=["W"]
 verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
 ```
 
-The returned value is still the ordinary immutable pipeline, so selection, inspection, and output can continue from it. `.analyze(...)` remains available when a detached result is the intended endpoint.
+The returned value is still the ordinary immutable pipeline, so selection, inspection, and
+output can continue from it. `.analyze(...)` remains available when a detached result is the
+intended endpoint.
 
-### Try it in five minutes
+## Try it in five minutes
 
 The repository includes a deterministic, download-free sensor example using only NumPy:
 
 ```bash
-git clone https://github.com/aintropy-solutions/kuration-sdk.git
+git clone https://github.com/aintropy-ai/kuration-sdk.git
 cd kuration-sdk
 python -m pip install .
 python examples/quickstart.py --out quickstart-out
 kur-inspect quickstart-out --verify
 ```
 
-It creates six tiny sessions, scores 42 candidate windows, selects 12 across activity and fault patterns, writes train/test NPZ shards, and reads one back. Follow the **[guided quickstart](https://aintropy-solutions.github.io/kuration-sdk/quickstart/)** for the operator-by-operator explanation.
+It creates six tiny sessions, scores 42 candidate windows, selects 12 across activity and fault
+patterns, writes train/test NPZ shards, and reads one back. Follow the
+**[guided quickstart](https://aintropy-ai.github.io/kuration-sdk/quickstart/)** for the
+operator-by-operator explanation.
 
-### A dataset you can inspect and defend
+## A dataset you can inspect and defend
 
 ```text
 out/training-v1/
@@ -200,7 +152,8 @@ kur-check out/training-v1 --policy quality.json
 kur-export out/training-v1 --out arrays/ --format parquet
 ```
 
-Starting from raw files with no job spec yet? Infer the schema, scaffold a job, and look at the data before running anything:
+Starting from raw files with no job spec yet? Infer the schema, scaffold a job, and look at
+the data before running anything:
 
 ```bash
 kur-infer   telemetry.csv --out schema.json
@@ -209,9 +162,11 @@ kur-preview job.json
 kur-curate  job.json --review
 ```
 
-Every command is also a `kur` subcommand (`kur curate job.json`); `kur --help` lists them and `kur completion zsh` prints a completion script.
+Every command is also a `kur` subcommand (`kur curate job.json`); `kur --help` lists them and
+`kur completion zsh` prints a completion script.
 
-Already have a supported dataset? Detect its adapter and import it without a strategy or selection:
+Already have a supported dataset? Detect its adapter and import it without a strategy or
+selection:
 
 ```bash
 kur-import gameplay.npz --out out/gameplay
@@ -221,41 +176,56 @@ kur-inspect out/gameplay --verify
 
 - Selection is deterministic across supported worker counts and executors.
 - `resume=True` reuses a shard only when its prior byte size and SHA-256 still match.
-- Jobs, artifact formats, and installed components are versioned and fail loudly when incompatible.
+- Jobs, artifact formats, and installed components are versioned and fail loudly when
+  incompatible.
 - Every optional integration remains outside the NumPy-only core.
 
-### Choose your path
+## Choose your path
 
 | I want to… | Start here |
 |---|---|
-| Build my first curated dataset | [Quickstart](https://aintropy-solutions.github.io/kuration-sdk/quickstart/) |
-| Understand the product and its data model | [Core concepts](https://aintropy-solutions.github.io/kuration-sdk/overview/) |
-| Find the right pipeline operation | [Fluent pipeline guide](https://aintropy-solutions.github.io/kuration-sdk/pipeline/) |
-| Solve a task such as streaming, cloud output, or comparison | [Recipe cookbook](https://aintropy-solutions.github.io/kuration-sdk/usage/) |
-| Integrate a data format | [Adapters](https://aintropy-solutions.github.io/kuration-sdk/adapters/) |
-| Build a reusable operator or transform | [Operators](https://aintropy-solutions.github.io/kuration-sdk/operators/) |
-| Run checked JSON jobs and CLIs | [Job and CLI reference](https://aintropy-solutions.github.io/kuration-sdk/jobs/) |
-| Operate or audit generated artifacts | [Output and integrity](https://aintropy-solutions.github.io/kuration-sdk/output/) |
-| Look up an exact Python signature | [API reference](https://aintropy-solutions.github.io/kuration-sdk/api/) |
-| Understand internals and extension boundaries | [Architecture](https://aintropy-solutions.github.io/kuration-sdk/architecture/) |
+| Build my first curated dataset | [Quickstart](https://aintropy-ai.github.io/kuration-sdk/quickstart/) |
+| Understand the product and its data model | [Core concepts](https://aintropy-ai.github.io/kuration-sdk/overview/) |
+| Find the right pipeline operation | [Fluent pipeline guide](https://aintropy-ai.github.io/kuration-sdk/pipeline/) |
+| Solve a task such as streaming, cloud output, or comparison | [Recipe cookbook](https://aintropy-ai.github.io/kuration-sdk/usage/) |
+| Integrate a data format | [Adapters](https://aintropy-ai.github.io/kuration-sdk/adapters/) |
+| Build a reusable operator or transform | [Operators](https://aintropy-ai.github.io/kuration-sdk/operators/) |
+| Run checked JSON jobs and CLIs | [Job and CLI reference](https://aintropy-ai.github.io/kuration-sdk/jobs/) |
+| Operate or audit generated artifacts | [Output and integrity](https://aintropy-ai.github.io/kuration-sdk/output/) |
+| Look up an exact Python signature | [API reference](https://aintropy-ai.github.io/kuration-sdk/api/) |
+| Understand internals and extension boundaries | [Architecture](https://aintropy-ai.github.io/kuration-sdk/architecture/) |
 
-The **[documentation home](https://aintropy-solutions.github.io/kuration-sdk/)** groups the complete documentation by getting started, guides, extensions, operations, and reference.
+The **[documentation home](https://aintropy-ai.github.io/kuration-sdk/)** groups the complete documentation by getting
+started, guides, extensions, operations, and reference.
 
-### Realistic examples
+## Realistic examples
 
 | Example | Demonstrates |
 |---|---|
-| [`quickstart.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection |
-| [`02_robotics_action_aware.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Action-aware scoring composed with geometric and phase coverage |
-| [`05_custom_operators.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/05_custom_operators.py) | Custom compositional and transform-backed operators called through generated fluent methods |
-| [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py) | Built-in gameplay operators on the core `Pipeline`, including namespace-qualified syntax |
-| [`gameplay_stats.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb) | JupyterLab progress, lifecycle stats, gameplay plots, output inspection, and synchronized video review |
-| [TeaPearce Counter-Strike](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | HDF5 adaptation, rare-event coverage, and optional image output |
-| [Open P2P](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Protobuf annotations, cross-game action coverage, corrections, instructions, and video joins |
+| [`quickstart.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/quickstart.py) | Schema inference, measures, diversity bins, train/test output, and inspection |
+| [`02_robotics_action_aware.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Action-aware scoring composed with geometric and phase coverage |
+| [`05_custom_operators.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/05_custom_operators.py) | Custom compositional and transform-backed operators called through generated fluent methods |
+| [`06_gameplay_operator_methods.py`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py) | Built-in gameplay operators on the core `Pipeline`, including namespace-qualified syntax |
+| [`gameplay_stats.ipynb`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb) | JupyterLab progress, lifecycle stats, gameplay plots, output inspection, and synchronized video review |
+| [TeaPearce Counter-Strike](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | HDF5 adaptation, rare-event coverage, and optional image output |
+| [Open P2P](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Protobuf annotations, cross-game action coverage, corrections, instructions, and video joins |
 
-## kuration-ai — the shipped companion
+## kuration-ai — the companion package
 
-The [`kuration-ai/`](./kuration-ai/) subpackage is a higher-level entrypoint aimed at ML engineers who want a curated result without wiring the pipeline themselves. The notebooks walk through the Kuration SDK's gameplay operators against Counter-Strike telemetry. The `kuration-ai` companion package that ships alongside is the same shape of tool for a more general problem: reproducible training-data curation for machine-learning engineers working with telemetry, sensor logs, and other row-oriented data. It ships three operations (`BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
+<p align="center">
+  <img src="assets/kuration-operators-hero.svg" alt="Kuration SDK wrapper and companion package" width="100%">
+</p>
+
+The [`kuration-ai/`](./kuration-ai/) subpackage is a companion library that sits on top of the SDK. It ships runnable notebooks that walk through the Kuration SDK's gameplay operators against Counter-Strike telemetry, plus the `kuration-ai` Python package for reproducible-curation on general row-oriented data (telemetry, sensor logs). It ships three operations (`BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
+
+![](https://img.shields.io/badge/20.9%25-LPIPS_improvement_over_DIAMOND-0D9488?style=for-the-badge)
+![](https://img.shields.io/badge/62%25-JEDi_reduction_across_600_epochs-0D9488?style=for-the-badge)
+![](https://img.shields.io/badge/<18%25-training_budget_to_reach_near--baseline-0D9488?style=for-the-badge)
+
+![](https://img.shields.io/badge/4-runnable_notebooks-0D9488)
+![](https://img.shields.io/badge/1,090-test_episodes_scored-0D9488)
+![](https://img.shields.io/badge/4--second_segments-16_fps-0D9488)
+![](https://img.shields.io/badge/51--dim_action-20_categories-0D9488)
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat)
 [![Tests](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml)
@@ -431,25 +401,14 @@ register("OnlyActiveWindows", OnlyActiveWindows)
 
 For the full extension contract, see [`kuration-ai/design/04_extension_seam.md`](./kuration-ai/design/04_extension_seam.md).
 
-### `kai` CLI reference
+### `kai` CLI
 
 The `kai` command is installed alongside the library.
 
-#### `kai list`
-
 ```bash
-kai list
+kai list                        # available operations plus required extras
+kai describe BalancedSelector   # docstring and parameter contract
 ```
-
-Lists available operations (built-in plus any you have registered), annotated with which extras each one needs at runtime.
-
-#### `kai describe`
-
-```bash
-kai describe BalancedSelector
-```
-
-Shows one operation's docstring and parameter contract.
 
 ### Coming next
 
@@ -459,39 +418,36 @@ Not in the initial release, on the roadmap:
 - **`kai init <profile>`**: project scaffolder for new users starting from scratch.
 - **Property-based test suite**: the initial release ships with a 52-test smoke suite; property-based tests follow.
 
-## Design and reference
+### Companion reference
 
-SDK-side:
-
-- [`DESIGN.md`](./DESIGN.md), [`ROADMAP.md`](./ROADMAP.md), [`GOVERNANCE.md`](./GOVERNANCE.md), [`SECURITY.md`](./SECURITY.md), [`SUPPORT.md`](./SUPPORT.md), [`CHANGELOG.md`](./CHANGELOG.md)
-- Full mkdocs documentation source: [`docs/`](./docs/) → published at [aintropy-solutions.github.io/kuration-sdk](https://aintropy-solutions.github.io/kuration-sdk/) once the visibility flip lands
-- Plugin template: [`plugins/`](./plugins/)
-
-Companion-side:
-
-- [`kuration-ai/design/`](./kuration-ai/design/): five design decisions behind the API (operation abstraction, composition, config model, extension seam, workarounds)
-- [`kuration-ai/CHANGELOG.md`](./kuration-ai/CHANGELOG.md): release notes for `kuration-ai`
-- [`kuration-ai/MIGRATION_NOTE.md`](./kuration-ai/MIGRATION_NOTE.md): where this content came from and why
-- [`kuration-ai/docs/`](./kuration-ai/docs/): companion internal notes and history
-- [`kuration-ai/examples/`](./kuration-ai/examples/): the gallery of runnable use cases
-- Companion issue tracker (upstream mirror): [`kuration-ai/python-sdk` issues](https://github.com/kuration-ai/python-sdk/issues) for feature requests, bug reports, roadmap discussion
+- [`kuration-ai/design/`](./kuration-ai/design/): five design decisions behind the API (operation abstraction, composition, config model, extension seam, workarounds).
+- [`kuration-ai/CHANGELOG.md`](./kuration-ai/CHANGELOG.md): release notes for `kuration-ai`.
+- [`kuration-ai/MIGRATION_NOTE.md`](./kuration-ai/MIGRATION_NOTE.md): where this content came from and why.
+- [`kuration-ai/examples/`](./kuration-ai/examples/): the gallery of runnable use cases.
+- Companion issue tracker (upstream mirror): [`kuration-ai/python-sdk` issues](https://github.com/kuration-ai/python-sdk/issues) for feature requests, bug reports, roadmap discussion.
+- Companion contribution guide: [`kuration-ai/CONTRIBUTING.md`](./kuration-ai/CONTRIBUTING.md).
 
 ## Reliability and project status
 
-Kuration currently targets Python 3.11–3.14 and tests optional integrations at both declared minimums and current versions. CI covers more than 500 tests, property-based invariants, clean wheel installation, all CLI entry points, and real Zarr, PyTorch, Hugging Face, PyAV, and Ray integration paths. The `kuration-ai` companion ships with a 52-test smoke suite; property-based tests follow.
+Kuration currently targets Python 3.11–3.14 and tests optional integrations at both declared
+minimums and current versions. CI covers more than 500 tests, property-based invariants, clean
+wheel installation, all CLI entry points, and real Zarr, PyTorch, Hugging Face, PyAV, and Ray
+integration paths.
 
-The SDK is a `0.x` beta. The supported surface and deprecation rules are documented in the **[compatibility policy](https://aintropy-solutions.github.io/kuration-sdk/compatibility/)**. See [SECURITY.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/SECURITY.md) for private reporting and runtime trust boundaries, [CHANGELOG.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/CHANGELOG.md) for notable changes, and [ROADMAP.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/ROADMAP.md) for the remaining public-release gates.
+The SDK is a `0.x` beta. The supported surface and deprecation rules are documented in the
+**[compatibility policy](https://aintropy-ai.github.io/kuration-sdk/compatibility/)**. See
+[SECURITY.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/SECURITY.md) for private
+reporting and runtime trust boundaries,
+[CHANGELOG.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CHANGELOG.md) for notable
+changes, and [ROADMAP.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/ROADMAP.md) for the
+remaining public-release gates.
 
 ## Contributing
 
-Two contribution scopes coexist in this repo:
-
-- [`CONTRIBUTING.md`](./CONTRIBUTING.md) at the repo root: the `kuration-sdk` primitive (core execution, adapters, plugins, docs, CI). Core and maintained domain changes follow this guide.
-- [`kuration-ai/CONTRIBUTING.md`](./kuration-ai/CONTRIBUTING.md): the `kuration-ai` companion package (shipped operations, `kai` CLI, notebooks, dev install, tests, adding operations).
-
-First-party SDK domain capabilities ship in the SDK; independently distributed extensions can start from the template in [`plugins/`](https://github.com/aintropy-solutions/kuration-sdk/tree/main/plugins).
-
-Core dev environment:
+Core and maintained domain changes follow
+[CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md).
+First-party domain capabilities ship in the SDK; independently distributed extensions can start
+from the template in [`plugins/`](https://github.com/aintropy-ai/kuration-sdk/tree/main/plugins).
 
 ```bash
 python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p]'
@@ -506,8 +462,5 @@ Validate one repository plugin in the same isolated environment used by CI:
 python scripts/check_plugin.py plugins/<plugin-name>
 ```
 
-Read [CONTRIBUTING.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/CONTRIBUTING.md) before proposing a component or public contract change.
-
-## License
-
-Apache 2.0. See [`LICENSE`](./LICENSE). Covers both `kuration-sdk` and `kuration-ai`.
+Read [CONTRIBUTING.md](https://github.com/aintropy-ai/kuration-sdk/blob/main/CONTRIBUTING.md)
+before proposing a component or public contract change.
