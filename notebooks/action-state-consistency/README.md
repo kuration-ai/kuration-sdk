@@ -30,7 +30,7 @@ A per-clip verdict on whether pressing a key actually did what the training data
 
 ## Setup
 
-One install cell registers `pixel_shift` and `action_state_consistency` on the pipeline. The `gameplay` extra pulls in the optical-flow backend the analyzer uses.
+Install the `gameplay` extra, which pulls in the Farneback optical-flow backend. The subsequent `import kuration.gameplay` in the notebook registers `pixel_shift` and `action_state_consistency` on the pipeline.
 
 ```python
 %pip install --quiet 'kuration-sdk[gameplay]'
@@ -44,7 +44,7 @@ An action-conditioned world model learns whatever rule the training footage show
 
 ## A minimal synthetic dataset
 
-Frames come from an in-memory `FakeVideoProvider` that yields shifting-noise textures optical flow can actually track. Actions follow the real 51-dim DIAMOND encoding (`ACTION_WIDTH = N_KEYS(11) + 2 + N_MOUSE_X(23) + N_MOUSE_Y(15) = 51`). One 8-frame clip. One isolated W press at frame 3. Everything else at rest.
+Frames come from an in-memory `FakeVideoProvider` that yields shifting-noise textures optical flow can actually track. Actions follow the DIAMOND action encoding used throughout the SDK. One 8-frame clip. One isolated W press at frame 3. Everything else at rest.
 
 ```python
 N_FRAMES = 8
@@ -86,13 +86,13 @@ See cell 9.
 
 ## Compose downstream
 
-The verdict lives on the pipeline. The pipeline is still just a pipeline. So a `.filter()` on the flagged windows, or a `.sample()` that weights against them, chains directly on top. `.describe()` prints the exact operator chain.
+The verdict lives on the pipeline. The pipeline is still just a pipeline. So a `.filter()` on the flagged windows, or a `.sample()` that weights against them, chains directly on top.
 
 See cell 11.
 
 ## Extending to real footage
 
-The SDK ships a full worked example against the public TeaPearce Counter-Strike Deathmatch dataset at [`examples/public_data/teapearce_csgo.md`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md). The upstream Hugging Face repo stores recordings inside multi-gigabyte archives (no official tiny sample). The smallest practical route is to download one expert archive, extract one HDF5 member, and run only that recording:
+The SDK ships a full worked example against the public TeaPearce Counter-Strike Deathmatch dataset at [`examples/public_data/teapearce_csgo.md`](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md). The notebook's last cell walks through the recipe: download one expert archive, extract one HDF5 member, and run only that recording:
 
 ```bash
 pip install -U huggingface_hub

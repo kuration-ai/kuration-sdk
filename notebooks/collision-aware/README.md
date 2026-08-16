@@ -41,7 +41,7 @@ Good players do not run into walls, so wall-contact events are systematically un
 
 ## Fit an unobstructed-movement model from synthetic telemetry
 
-In production, the ramp model is fit from thousands of real gameplay ticks. The notebook synthesizes a small tick stream with a player pressing forward, then hitting a wall from tick 200 to tick 260. The unobstructed model learns what forward-key-plus-no-obstacle produces on its own: a ramp of 8 ticks toward a target speed of 250 u/s.
+In production, the ramp model is fit from real gameplay telemetry. The notebook synthesizes a small tick stream with a player pressing forward, then hitting a wall from tick 200 to tick 260. The unobstructed model learns what forward-key-plus-no-obstacle produces on its own: a ramp of 8 ticks toward a target speed of 250 u/s (both notebook demo constants).
 
 ```python
 target_speed = 250.0
