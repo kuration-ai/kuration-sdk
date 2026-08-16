@@ -10,8 +10,7 @@ Runnable notebooks and operator reference for solutions built on the [Kuration S
 ![](https://img.shields.io/badge/62%25-JEDi_reduction_across_600_epochs-0D9488?style=for-the-badge)
 ![](https://img.shields.io/badge/<18%25-training_budget_to_reach_near--baseline-0D9488?style=for-the-badge)
 
-![](https://img.shields.io/badge/3-runnable_notebooks-0D9488)
-![](https://img.shields.io/badge/3-gameplay_operators_demoed-0D9488)
+![](https://img.shields.io/badge/4-runnable_notebooks-0D9488)
 ![](https://img.shields.io/badge/1,090-test_episodes_scored-0D9488)
 ![](https://img.shields.io/badge/4--second_segments-16_fps-0D9488)
 ![](https://img.shields.io/badge/51--dim_action-20_categories-0D9488)
