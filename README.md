@@ -11,7 +11,7 @@ Runnable notebooks and operator reference for solutions built on the [Kuration S
 ![](https://img.shields.io/badge/<18%25-training_budget_to_reach_near--baseline-0D9488?style=for-the-badge)
 
 ![](https://img.shields.io/badge/3-runnable_notebooks-0D9488)
-![](https://img.shields.io/badge/3-shipped_operators-0D9488)
+![](https://img.shields.io/badge/3-gameplay_operators_demoed-0D9488)
 ![](https://img.shields.io/badge/1,090-test_episodes_scored-0D9488)
 ![](https://img.shields.io/badge/4--second_segments-16_fps-0D9488)
 ![](https://img.shields.io/badge/51--dim_action-20_categories-0D9488)
@@ -19,7 +19,7 @@ Runnable notebooks and operator reference for solutions built on the [Kuration S
 ## What's in here
 
 - **[`notebooks/`](./notebooks/)**. One-click Binder and Colab launchers. Zero setup. The SDK is pre-installed in the launched environment.
-- **[`solutions-guide/`](./solutions-guide/)**. Operator reference and design notes migrated from `kuration-ai/solutions-guide`.
+- **[`solutions-guide/`](./solutions-guide/)**. The companion `kuration-ai` Python package (`kai` CLI, three shipped operations: `BalancedSelector`, `DiverseSubset`, `RareEventCoverage`), mirrored from `kuration-ai/python-sdk`.
 
 Long-form blog posts on physical-AI data curation live on [aintropy.ai/blog](https://aintropy.ai/blog), published directly from Drive through the content pipeline.
 
