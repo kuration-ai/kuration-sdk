@@ -17,7 +17,7 @@ pip install -e ./kuration-sdk[methods,parquet]
 pip install -e .[dev]
 ```
 
-Access to `aintropy-ai/kuration-sdk` is required. If you do not have it, ask Sahiti or Eric.
+Access to `aintropy-ai/kuration-sdk` is required. If you do not have it, please contact know@aintropy.ai.
 
 ## Run the tests
 
