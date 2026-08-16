@@ -2,12 +2,13 @@
 
 A per-clip verdict on whether pressing a key actually did what the training data claims it did. Real optical flow, real pipeline, no download needed.
 
-![](https://img.shields.io/badge/51--dim_action-DIAMOND_encoding-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/8_frames-1_isolated_W_press-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/synthetic_provider-real_optical_flow-0D9488?style=for-the-badge)
+![](https://img.shields.io/badge/action__state__consistency-per--clip_verdict-0D9488?style=for-the-badge)
+![](https://img.shields.io/badge/Farneback_optical_flow-axis--projected-0D9488?style=for-the-badge)
+![](https://img.shields.io/badge/baseline-no_ground--truth_needed-0D9488?style=for-the-badge)
 
 ![](https://img.shields.io/badge/verdicts-consistent_inconsistent_inconclusive-0D9488)
-![](https://img.shields.io/badge/per--clip-baseline_compared-0D9488)
+![](https://img.shields.io/badge/isolated_presses-1_to_3_frames-0D9488)
+![](https://img.shields.io/badge/percentile_range-10th_to_90th_per_cell-0D9488)
 
 [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/kuration-wrapper-and-guide/notebooks/action-state-consistency/action-state-consistency.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/beta-solutions/HEAD?labpath=kuration-wrapper-and-guide%2Fnotebooks%2Faction-state-consistency%2Faction-state-consistency.ipynb)
 
