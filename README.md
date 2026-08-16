@@ -4,7 +4,9 @@
 
 # Kuration SDK
 
-**Build reproducible training datasets from time-series, telemetry, trajectories, and synchronized video.** Kuration segments raw sources, measures what matters, selects a useful subset, and writes verified training shards with the decisions needed to reproduce them.
+**A fluent Python pipeline for curating training data.** Kuration takes raw sequential inputs — telemetry, sensor logs, trajectories, gameplay recordings, synchronized video — segments them into windows, measures features per window, selects a useful subset using configurable strategies (equal coverage, weighted, rare-event, diversity clustering, k-center, DSIR, and more), and writes verified training shards with the provenance metadata needed to reproduce the same result later against the same package versions.
+
+It is a curation SDK, not a data generator or a training framework. Input is raw sequential data you already have; output is a portable, versioned dataset artifact — deterministic across worker counts, format-agnostic, plugin-extensible.
 
 Two Python packages ship in this repo:
 
@@ -27,7 +29,6 @@ The SDK is the primitive engineers extend. The companion is the accessible entry
 ## Contents
 
 - [Quick tour](#quick-tour)
-- [Repo layout](#repo-layout)
 - [Kuration SDK — the pipeline primitive](#kuration-sdk--the-pipeline-primitive)
   - [Why teams use kuration](#why-teams-use-kuration)
   - [Install](#install)
@@ -89,44 +90,6 @@ result = BalancedSelector(feature="activity", of="signal", bins=4, count=20).app
 Same primitive underneath, one shipped operation on top.
 
 Long-form blog posts on physical-AI data curation live on [aintropy.ai/blog](https://aintropy.ai/blog), published directly from Drive through the content pipeline.
-
-## Repo layout
-
-```
-kuration-sdk/
-├── src/kuration/                     Kuration SDK source
-├── plugins/                          first-party plugins (labextension, gameplay adapters)
-├── examples/                         runnable SDK examples
-├── tests/                            SDK test suite
-├── docs/                             SDK documentation source (mkdocs)
-├── scripts/                          developer scripts
-├── kuration-ai/                      companion package: shipped operations, kai CLI, notebooks
-│   ├── src/kuration_ai/              companion source
-│   ├── notebooks/                    4 runnable notebooks (starter, action-state-consistency, collision-aware, coverage-based-curation)
-│   ├── examples/                     use-case gallery (BalancedSelector, RareEventCoverage, DiverseSubset)
-│   ├── design/                       5 design notes for the companion API
-│   ├── tests/                        companion test suite
-│   ├── docs/                         companion internal notes and history
-│   ├── pyproject.toml                kuration-ai package config
-│   ├── CHANGELOG.md                  companion release notes
-│   ├── CONTRIBUTING.md               companion contribution guide
-│   ├── CLAUDE.md                     companion agent-authoring notes
-│   ├── MIGRATION_NOTE.md             provenance of the companion content
-│   └── README.md                     companion-specific README
-├── assets/kuration-operators-hero.svg    hero visual (top of this README)
-├── pyproject.toml                    kuration-sdk package config
-├── README.md                         you are here
-├── LICENSE                           Apache 2.0 (covers both packages)
-├── CHANGELOG.md                      SDK release notes
-├── ROADMAP.md                        public-release gates
-├── DESIGN.md                         SDK architecture
-├── GOVERNANCE.md                     project governance
-├── SECURITY.md                       security reporting and trust boundaries
-├── SUPPORT.md                        where to ask for help
-├── CONTRIBUTING.md                   SDK contribution guide
-├── PLAN.md, MANIFEST.in, mkdocs.yml
-└── .github/                          CI workflows for both packages
-```
 
 ## Kuration SDK — the pipeline primitive
 
