@@ -29,12 +29,12 @@ compiled chain:
 ## What to try next
 
 - Drop `dedup_threshold=None` to skip the dedup pre-pass entirely.
-- Increase `n_clusters` (5 → 32 → 128) for larger datasets — the pipeline builder default is 2048.
+- Increase `n_clusters` (5 → 32 → 128) for larger datasets: the pipeline builder default is 2048.
 - Change the `features` list to cluster on different measured columns.
 - Measure additional features before applying the operation to see how the diversity axis changes.
 
 ## Related
 
 - [Kit gallery](../README.md)
-- [`design/01_operation_abstraction.md`](../../design/01_operation_abstraction.md) — the Operation contract
-- [`design/03_config_model.md`](../../design/03_config_model.md) — driving this from a YAML config
+- [`design/01_operation_abstraction.md`](../../design/01_operation_abstraction.md): the Operation contract
+- [`design/03_config_model.md`](../../design/03_config_model.md): driving this from a YAML config

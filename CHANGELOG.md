@@ -2,7 +2,7 @@
 
 All notable changes to Kuration AI live here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [v0.0.1] — 2026-08-11
+## [v0.0.1]: 2026-08-11
 
 First release.
 

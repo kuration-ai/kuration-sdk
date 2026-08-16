@@ -1,10 +1,10 @@
-# 05 — Issue #1 body (scope check)
+# 05: Issue #1 body (scope check)
 
 Filed on 2026-08-08 as issue #1 of `kuration-ai/kuration-kit`. This is the scope-check post that opened the whole engagement. The walkthrough log in `04-dx-walkthrough-log.md` was later posted as a comment on this issue.
 
 Live URL: https://github.com/kuration-ai/kuration-kit/issues/1
 
-Title: `scope check: kuration-sdk onboarding wrapper — does my understanding match?`
+Title: `scope check: kuration-sdk onboarding wrapper: does my understanding match?`
 
 ---
 

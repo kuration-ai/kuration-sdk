@@ -1,6 +1,6 @@
 # Kuration SDK Registered-Component Inventory
 
-Source of truth: registration calls found under `~/work/aintropy/kuration-sdk/src/kuration/`. Extras are the SDK's `[project.optional-dependencies]` names from `pyproject.toml`. "Runtime imports" lists top-level heavy imports that would fail at *execution* if the extra isn't installed (all guarded by lazy `import`s inside functions — descriptors still register cleanly).
+Source of truth: registration calls found under `~/work/aintropy/kuration-sdk/src/kuration/`. Extras are the SDK's `[project.optional-dependencies]` names from `pyproject.toml`. "Runtime imports" lists top-level heavy imports that would fail at *execution* if the extra isn't installed (all guarded by lazy `import`s inside functions: descriptors still register cleanly).
 
 Generated: 2026-08-11 as Phase 0.1 deliverable for issue #4.
 
@@ -25,7 +25,7 @@ Base methods and feature-space methods are registered without a JSON-Schema desc
 | `weighted` | `src/kuration/core/strategy.py` line 559 | Rank by a weighted linear combination of normalized features. | strategy-level `weights` / `normalize` | none | numpy only |
 | `top-k` | `src/kuration/core/strategy.py` line 559 | Rank by a single feature (or weighted score) and take the highest priorities. | strategy-level `weights` | none | numpy only |
 | `target-distribution` | `src/kuration/core/strategy.py` line 559 | Match the pool to an explicit target distribution over a scalar feature. | strategy-level `target` | none | numpy only |
-| `filter` | `src/kuration/core/strategy.py` line 559 | Keep every segment passing the predicate list — no ranking. | strategy-level `predicates` | none | numpy only |
+| `filter` | `src/kuration/core/strategy.py` line 559 | Keep every segment passing the predicate list: no ranking. | strategy-level `predicates` | none | numpy only |
 | `cluster-balanced` | `src/kuration/core/methods.py` line 407 (`cluster_balanced_priorities`) | Joint k-means-cluster round-robin coverage over the feature space (DINOv2-style balanced subsampling). | `n_clusters=2048`, `normalize="zscore"`, `seed=0`, `workers=1` | `extra="methods"` | scikit-learn (`KMeans` / `MiniBatchKMeans`, lazy) |
 | `k-center` | `src/kuration/core/methods.py` line 407 (`kcenter_priorities`) | Farthest-point traversal of the cluster centroids ordered by coverage. | `n_clusters=2048`, `normalize="zscore"`, `seed=0`, `workers=1` | `extra="methods"` | scikit-learn |
 | `facility-location` | `src/kuration/core/methods.py` line 407 (`facility_location_priorities`) | Submodular facility-location cluster ordering (greedy coverage gain). | `n_clusters=2048`, `normalize="zscore"`, `seed=0`, `workers=1` | `extra="methods"` | scikit-learn |
@@ -37,7 +37,7 @@ Base methods and feature-space methods are registered without a JSON-Schema desc
 
 | Name | Registered in | Purpose | Required init params | Optional params (default) | `extra` | Runtime imports |
 |---|---|---|---|---|---|---|
-| `aintropy/collision-asg` | `src/kuration/gameplay/collision/__init__.py` (`AsgCollisionAdapter`) | Read ASG `data.json` CS2 match replays as one Tick stream per (match, player). | (none — descriptor empty) | n/a | `extra="collision"` | stdlib `json` + numpy |
+| `aintropy/collision-asg` | `src/kuration/gameplay/collision/__init__.py` (`AsgCollisionAdapter`) | Read ASG `data.json` CS2 match replays as one Tick stream per (match, player). | (none: descriptor empty) | n/a | `extra="collision"` | stdlib `json` + numpy |
 | `aintropy/collision-teapearce` | `src/kuration/gameplay/collision/__init__.py` (`TeaPearceDust2Adapter`) | Read TeaPearce/CounterStrike_Deathmatch dust2 `.npy` metadata files. | (none in descriptor) | n/a | `extra="collision"` | numpy |
 | `aintropy/slam-trajectory` | `src/kuration/gameplay/slam/__init__.py` (`SLAMTrajectoryAdapter`) | Read per-clip camera trajectories from a Kuration SLAM manifest. | `manifest: str` | `schema=None` | `extra="slam"` | numpy (adapter only) |
 | `curated` | `src/kuration/core/adapters/curated.py` (`CuratedDatasetAdapter`) | Wrap one or more Kuration dataset directories as a re-curatable source. | `dataset_dir: str \| str[]` | `schema: SchemaSpec = None`, `registry = None` | delegates to container extras | h5py / pyarrow lazily |
@@ -101,13 +101,13 @@ Registered via a loop in `src/kuration/core/output/containers.py` with `capabili
 ## Uncertain / could-not-confirm findings
 
 - **Adapter descriptors have no JSON-Schema `parameters` on the register call** (`register_adapter("hdf5", HDF5Adapter)` etc. pass just the class). "Required / optional" reported above comes from the class `__init__` signature; `describe_component("adapter", name)` will return the empty `{"type":"object","properties":{}, "additionalProperties":False}` default, not the class kwargs.
-- **`aintropy/collision-asg` and `aintropy/collision-teapearce` adapter descriptors** are explicitly registered with an empty schema — the descriptor accepts no kwargs. Init also takes no configuration (fully driven by schema constant + source URI).
-- **Base methods (`uniform-bins`, `weighted`, `target-distribution`, `top-k`, `filter`)** are registered with only `capabilities={"streaming": True}` — no `description`, `parameters`, or `extra`. "Purpose" cells are from module docstring, not descriptor.
-- **Feature-space methods and filters** are registered with `capabilities={"whole_pool": True}` and `extra="methods"` — no `description` or `parameters` on descriptor.
-- **`pytorch-sequences` preset** — preset is `[parquet]`-free (writes NPZ by default), no explicit `extra=` on register call. Overrides to `container="parquet"` still hit pyarrow at runtime.
-- **`json` and `npz` containers** — registered without `extra`; truly no non-stdlib deps.
-- **SLAM transforms** — own `transform_batch` code is numpy-only, but `[slam]` extra pulls torch/torchvision/faiss/av/opencv because sibling `SLAMReconstructor` needs them for upstream reconstruction that produces the manifests these transforms consume.
-- **Base adapters** (`hdf5`, `huggingface`, `jsonl`, `npz`, `parquet-dataset`, `timeseries`, `zarr`, `curated`) — no `install_hint` on descriptor. Errors surface only at first use.
+- **`aintropy/collision-asg` and `aintropy/collision-teapearce` adapter descriptors** are explicitly registered with an empty schema: the descriptor accepts no kwargs. Init also takes no configuration (fully driven by schema constant + source URI).
+- **Base methods (`uniform-bins`, `weighted`, `target-distribution`, `top-k`, `filter`)** are registered with only `capabilities={"streaming": True}`: no `description`, `parameters`, or `extra`. "Purpose" cells are from module docstring, not descriptor.
+- **Feature-space methods and filters** are registered with `capabilities={"whole_pool": True}` and `extra="methods"`: no `description` or `parameters` on descriptor.
+- **`pytorch-sequences` preset**: preset is `[parquet]`-free (writes NPZ by default), no explicit `extra=` on register call. Overrides to `container="parquet"` still hit pyarrow at runtime.
+- **`json` and `npz` containers**: registered without `extra`; truly no non-stdlib deps.
+- **SLAM transforms**: own `transform_batch` code is numpy-only, but `[slam]` extra pulls torch/torchvision/faiss/av/opencv because sibling `SLAMReconstructor` needs them for upstream reconstruction that produces the manifests these transforms consume.
+- **Base adapters** (`hdf5`, `huggingface`, `jsonl`, `npz`, `parquet-dataset`, `timeseries`, `zarr`, `curated`): no `install_hint` on descriptor. Errors surface only at first use.
 
 ## Extras → deps mapping (from `pyproject.toml`)
 
@@ -115,7 +115,7 @@ Registered via a loop in `src/kuration/core/output/containers.py` with `capabili
 |---|---|---|
 | `methods` | `scikit-learn>=1.5` | methods `cluster-balanced` / `k-center` / `facility-location` / `dsir` / `rare` / `typical`, filters `anomaly` / `dedup`, scorer `action_residual` |
 | `parquet` | `pyarrow>=23.0.1` | adapter `parquet-dataset`, adapter `timeseries` (parquet input), container `parquet`, preset `tabular` |
-| `scale` | `pyarrow>=23.0.1` | (Arrow-IPC feature tables — no registered component references this by name) |
+| `scale` | `pyarrow>=23.0.1` | (Arrow-IPC feature tables: no registered component references this by name) |
 | `array` | `h5py>=3.10` | adapter `hdf5`, container `hdf5` |
 | `cloud` | `fsspec>=2024.2` | remote source URIs used by `zarr` / any adapter reading `gs://` / `s3://` / `az://` |
 | `s3` | `fsspec>=2024.2`, `s3fs>=2024.2` | `s3://` I/O |

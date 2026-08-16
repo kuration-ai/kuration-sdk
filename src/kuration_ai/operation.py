@@ -46,14 +46,14 @@ def register(name: str, operation_class: type) -> None:
         ValueError: if `name` is empty, if `operation_class` has no `.apply`
             method, or if `name` is already registered with a different class.
 
-    Idempotent for the same (name, class) pair — safe to re-run on module
+    Idempotent for the same (name, class) pair: safe to re-run on module
     reload.
     """
     if not isinstance(name, str) or not name:
         raise ValueError("register: 'name' must be a non-empty string")
     if not hasattr(operation_class, "apply"):
         raise ValueError(
-            f"register: '{name}' -> {operation_class!r} has no 'apply' method — "
+            f"register: '{name}' -> {operation_class!r} has no 'apply' method: "
             "cannot register as an Operation"
         )
     existing = _USER_REGISTRY.get(name)
@@ -119,7 +119,7 @@ def describe(operations: list[Any]) -> str:
 
 
 def _available_operations() -> list[str]:
-    """All Operation class names — built-in catalog plus user registry."""
+    """All Operation class names: built-in catalog plus user registry."""
     from kuration_ai import operations as _catalog
     builtin = [
         n for n in dir(_catalog)
@@ -180,5 +180,5 @@ def _resolve(spec: dict, *, index: int) -> Any:
                 f"config item {index} ({cls_name}): unexpected keyword '{bad_kwarg}'."
                 f"{hint_str} Valid fields: {', '.join(valid_fields)}."
             ) from e
-        # missing required argument, wrong type, etc — surface as-is
+        # missing required argument, wrong type, etc: surface as-is
         raise

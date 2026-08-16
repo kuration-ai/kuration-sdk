@@ -1,4 +1,4 @@
-"""DiverseSubset — round-robin across k-means clusters in the feature space.
+"""DiverseSubset: round-robin across k-means clusters in the feature space.
 
 Given a set of pre-measured features on the pipeline, DiverseSubset optionally
 drops near-duplicates in the joint feature space, then samples equally from

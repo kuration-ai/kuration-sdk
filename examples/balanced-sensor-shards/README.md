@@ -29,10 +29,10 @@ compiled chain:
 
 - Increase `bins` (4 → 8 → 16) to see how coverage granularity changes.
 - Swap `kind="std"` for `kind="mean"` or `kind="max"` to balance by a different metric.
-- Replace the synthetic `sessions` dict with a directory of CSV device logs — Kuration's `timeseries` adapter reads a folder the same way.
+- Replace the synthetic `sessions` dict with a directory of CSV device logs: Kuration's `timeseries` adapter reads a folder the same way.
 
 ## Related
 
 - [Kit gallery](../README.md)
-- [`design/01_operation_abstraction.md`](../../design/01_operation_abstraction.md) — the Operation contract
-- [`design/03_config_model.md`](../../design/03_config_model.md) — driving this from a YAML config
+- [`design/01_operation_abstraction.md`](../../design/01_operation_abstraction.md): the Operation contract
+- [`design/03_config_model.md`](../../design/03_config_model.md): driving this from a YAML config

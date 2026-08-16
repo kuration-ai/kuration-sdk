@@ -1,4 +1,4 @@
-"""Balanced sensor shards — cover the whole range of a signal.
+"""Balanced sensor shards: cover the whole range of a signal.
 
 Turn synthetic device-log data into windows selected across the full range of
 signal variability, not just the natural distribution peak. Uses

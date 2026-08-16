@@ -1,4 +1,4 @@
-# 02 — Composition model
+# 02: Composition model
 
 ## Decision
 
@@ -10,7 +10,7 @@ Three equivalent ways to compose Operations. All produce identical results.
 result = op.apply(pipeline).options(seed=1).collect()
 ```
 
-For the "one operation" case (CLAUDE.md principle 2 — a client can pick just one).
+For the "one operation" case (CLAUDE.md principle 2: a client can pick just one).
 
 ### `run()` with instances
 
@@ -47,7 +47,7 @@ def run(
     ...
 ```
 
-- Accepts a mixed list (instances AND dicts) — a partial config can be augmented programmatically at the boundary.
+- Accepts a mixed list (instances AND dicts): a partial config can be augmented programmatically at the boundary.
 - Applies operations in list order.
 - Returns the final pipeline. Caller decides what to do with it (`.collect()`, `.output(...)`, `.describe()`).
 
@@ -67,7 +67,7 @@ pipeline = pipeline.options(seed=1)                          # SDK
 result = pipeline.collect()                                  # SDK
 ```
 
-Never breaks — kit Operations return SDK Pipelines, so SDK methods keep working on them.
+Never breaks: kit Operations return SDK Pipelines, so SDK methods keep working on them.
 
 ## Config-parity (CLAUDE.md principle 3)
 
@@ -91,13 +91,13 @@ If they ever diverge, the wrapper is broken.
 
 **A dedicated `Pipeline` class in kuration_ai that wraps `kuration.Pipeline`.** Rejected because it would force users to learn a new interface for the SDK methods they can already use directly (`.window`, `.measure`, `.filter`, etc.). The additive-not-replacing rule (CLAUDE.md principle 4) forbids hiding the SDK.
 
-**A DAG-based composition model with named edges.** Rejected as premature — every v0.0.1 use case is a linear chain. Add DAG when a real use case demands it.
+**A DAG-based composition model with named edges.** Rejected as premature: every v0.0.1 use case is a linear chain. Add DAG when a real use case demands it.
 
 ## GTM angle
 
-The three composition styles are progressive disclosure made concrete. Tier 1 uses `.apply()` — one line, one import. Tier 2 uses `run(pipeline, config)` from a YAML file — the pattern a team adopts. Tier 3 mixes instances and dicts programmatically. Config-parity as a guaranteed invariant, verified by test, is what keeps this from becoming the declarative-versus-programmatic drift trap common libraries fall into once they add a config layer.
+The three composition styles are progressive disclosure made concrete. Tier 1 uses `.apply()`: one line, one import. Tier 2 uses `run(pipeline, config)` from a YAML file: the pattern a team adopts. Tier 3 mixes instances and dicts programmatically. Config-parity as a guaranteed invariant, verified by test, is what keeps this from becoming the declarative-versus-programmatic drift trap common libraries fall into once they add a config layer.
 
 ## Non-decisions (deferred)
 
-- Parallel `run()` (execute independent branches concurrently) — v0.0.2 if a real use case emerges.
-- Rollback / dry-run mode — the SDK's `.describe()` already covers dry-run.
+- Parallel `run()` (execute independent branches concurrently): v0.0.2 if a real use case emerges.
+- Rollback / dry-run mode: the SDK's `.describe()` already covers dry-run.

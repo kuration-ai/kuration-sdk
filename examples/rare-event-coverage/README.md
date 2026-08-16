@@ -34,5 +34,5 @@ compiled chain:
 ## Related
 
 - [Kit gallery](../README.md)
-- [`design/01_operation_abstraction.md`](../../design/01_operation_abstraction.md) — the Operation contract
-- [`design/03_config_model.md`](../../design/03_config_model.md) — driving this from a YAML config
+- [`design/01_operation_abstraction.md`](../../design/01_operation_abstraction.md): the Operation contract
+- [`design/03_config_model.md`](../../design/03_config_model.md): driving this from a YAML config

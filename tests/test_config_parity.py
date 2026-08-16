@@ -1,4 +1,4 @@
-"""Config-parity invariant — the three call styles must produce identical results.
+"""Config-parity invariant: the three call styles must produce identical results.
 
 CLAUDE.md engineering principle 3: "If they diverge, that's a bug." This file
 formalizes the assertion sketched at the bottom of ``examples/chained.py`` and

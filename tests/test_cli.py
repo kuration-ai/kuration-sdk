@@ -1,4 +1,4 @@
-"""`kai` CLI integration tests — list, describe, error paths."""
+"""`kai` CLI integration tests: list, describe, error paths."""
 import subprocess
 
 

@@ -1,8 +1,8 @@
-# IBM Watson-NLP — structural mechanics worth stealing
+# IBM Watson-NLP: structural mechanics worth stealing
 
 Phase 0.2 deliverable for issue #5. Source: https://github.com/ibm-self-serve-assets/Watson-NLP (fetched 2026-08-11).
 
-Copy nothing — reference by mechanic only.
+Copy nothing: reference by mechanic only.
 
 ## Worth stealing (structural)
 

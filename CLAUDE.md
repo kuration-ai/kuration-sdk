@@ -1,4 +1,4 @@
-# CLAUDE.md — Kuration AI product framing
+# CLAUDE.md: Kuration AI product framing
 
 Anyone opening a session on this repo should read this file first. It is the settled
 context: what we're building, in what priority order, and what we deliberately are not.
@@ -15,7 +15,7 @@ extension pattern for writing your own.
 reproducible curated training dataset without spending their first hour figuring out
 sampling strategy, dedup, or class-imbalance handling from scratch.
 
-**What it does:** ships a small catalog of standalone, configurable operations — each
+**What it does:** ships a small catalog of standalone, configurable operations: each
 one a self-contained composition of pipeline primitives for a recognizable job.
 Operations compose. The same shape works as instances, as a list, or as a config dict.
 
@@ -32,7 +32,7 @@ Read top to bottom. Higher-numbered rules yield to lower-numbered ones when they
 2. **Operation as the unit.** Every capability Kuration AI exposes is a standalone,
    configurable Operation. Operations compose. A user can pick one, chain several, or
    drive them from a config.
-3. **Config-parity.** The same operations are expressible three ways — as instances,
+3. **Config-parity.** The same operations are expressible three ways: as instances,
    as a list of instances, or as a list of config dicts. All three produce identical
    results. If they diverge, that's a bug.
 4. **The underlying engine is settled.** Never modify `kuration-sdk` from Kuration AI.
@@ -48,8 +48,8 @@ Read top to bottom. Higher-numbered rules yield to lower-numbered ones when they
 
 ## GTM tenets
 
-These sit alongside the engineering principles above. Every product decision — API
-shape, error message, README section, gallery entry — needs to survive a "how does this
+These sit alongside the engineering principles above. Every product decision: API
+shape, error message, README section, gallery entry: needs to survive a "how does this
 help us sell" test, not just a "is this technically clean" one.
 
 1. **First shards in 15 minutes.** A cold-start external developer gets to their first
@@ -111,5 +111,5 @@ Deferred to a later cut. Do not re-derive these when they resurface.
 
 v0.0.1 shipped 2026-08-11 at `kuration-ai/python-sdk` (repo renamed from `kuration-ai/kit`
 on 2026-08-12 to match the openai/openai-python convention for company Python SDKs).
-All non-deferred issues from the `v0.0.1 — 2-day ship` milestone are on `main`.
+All non-deferred issues from the `v0.0.1: 2-day ship` milestone are on `main`.
 Cut scope, not polish.

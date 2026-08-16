@@ -1,4 +1,4 @@
-"""BalancedSelector — cover the whole range of a signal, not just its middle.
+"""BalancedSelector: cover the whole range of a signal, not just its middle.
 
 Windows get measured against a feature, quantile-binned across the observed range,
 then sampled equally from each bin. Useful when you want a training set to cover the

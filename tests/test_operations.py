@@ -3,7 +3,7 @@
 One assertion per Operation: at ``seed=1`` on the shared fixture, the SDK
 returns exactly the requested count of selected windows. If a refactor causes
 any of these to drift, the responsible change should update the assertion
-deliberately — silent drift is what this file exists to catch.
+deliberately: silent drift is what this file exists to catch.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def test_diverse_subset_with_dedup_selects_expected_count(measured_pipeline):
 def test_describe_names_the_compiled_sdk_chain():
     """``.describe()`` should surface the SDK primitives the wrapper compiles to.
 
-    This is the "no lock-in" guarantee from CLAUDE.md GTM tenet 4 — a user who
+    This is the "no lock-in" guarantee from CLAUDE.md GTM tenet 4: a user who
     outgrows the kit reads ``.describe()`` and sees the raw SDK chain they
     could write by hand.
     """

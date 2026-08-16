@@ -1,7 +1,7 @@
 """Shared fixtures for the smoke suite.
 
-The fixtures produce a small deterministic synthetic dataset — three sessions
-of 150 ticks, windowed at length 8 stride 4 — that every test file reuses.
+The fixtures produce a small deterministic synthetic dataset: three sessions
+of 150 ticks, windowed at length 8 stride 4: that every test file reuses.
 Kept in-memory so the suite has no filesystem or extras dependency beyond the
 SDK itself.
 """
@@ -15,7 +15,7 @@ def _sessions() -> dict[str, list[dict]]:
     """Three synthetic sessions with a signal, a temp, and a rare fault flag.
 
     Session i's fault fires on ticks where ``step % 30 == i``, so there are ~5
-    faults per session — enough for RareEventCoverage to have something to
+    faults per session: enough for RareEventCoverage to have something to
     upweight without dominating the window pool.
     """
     return {

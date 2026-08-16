@@ -1,4 +1,4 @@
-# DECISIONS.md — calls made without escalating
+# DECISIONS.md: calls made without escalating
 
 Per the standing rule in the kickoff prompt: any call I make on a reversible decision
 without pausing to escalate lands here, so it can be audited without interrupting.
@@ -7,7 +7,7 @@ Newest first.
 ## 2026-08-12 (post-ship rename)
 
 ### Repo renamed to `kuration-ai/python-sdk`
-Discovered during a final QA pass that the repo was renamed from `kuration-ai/kit` to `kuration-ai/python-sdk` (canonical name confirmed via `gh repo view kuration-ai/python-sdk`). Presumably done by Sahiti or Kunal after issue #28 (the naming ping) settled — the new name matches the openai/openai-python and anthropics/anthropic-sdk-python convention that earlier research called out as standard for company Python SDKs.
+Discovered during a final QA pass that the repo was renamed from `kuration-ai/kit` to `kuration-ai/python-sdk` (canonical name confirmed via `gh repo view kuration-ai/python-sdk`). Presumably done by Sahiti or Kunal after issue #28 (the naming ping) settled: the new name matches the openai/openai-python and anthropics/anthropic-sdk-python convention that earlier research called out as standard for company Python SDKs.
 
 Updated in one atomic pass:
 - README badge URL, issue-tracker link
@@ -19,7 +19,7 @@ Old `kuration-ai/kit` URLs still work via GitHub's automatic redirect. Historica
 
 Also caught during the same QA pass:
 - README's "51-test smoke suite" was outdated (actual count is 52 after adding the `kai` bare-invocation test at `f0d5ffe`). Fixed in README + CLAUDE.md.
-- README's phrase "the full API is documented under the SDK" (in the Fluent pipeline methods section) was a broken promise — the underlying `kuration-sdk` docs are private. Dropped the misleading clause.
+- README's phrase "the full API is documented under the SDK" (in the Fluent pipeline methods section) was a broken promise: the underlying `kuration-sdk` docs are private. Dropped the misleading clause.
 
 ## 2026-08-11 (post-ship polish)
 
@@ -41,20 +41,20 @@ Security note: the reused `gh` token has more scopes than strictly needed (`gist
 
 ### Renamed repo `kuration-ai/kuration-ai` → `kuration-ai/kit`
 Sahiti's direction: doubled "kuration-ai/kuration-ai" URL is awkward from a marketing
-perspective — she wants "kuration-ai" to appear only once in the URL customers see.
+perspective: she wants "kuration-ai" to appear only once in the URL customers see.
 
 Considered:
-- `kuration-ai/python` (openai/openai-python style) — rejected because Kuration AI is
+- `kuration-ai/python` (openai/openai-python style): rejected because Kuration AI is
   Python-only per CLAUDE.md non-goals, so a `-python` suffix would misrepresent the
   product as one language among many.
-- `kuration-ai/library` — generic, not distinctive.
-- `kuration-ai/kit` — short, honest for what the library actually is (an onboarding
+- `kuration-ai/library`: generic, not distinctive.
+- `kuration-ai/kit`: short, honest for what the library actually is (an onboarding
   kit + operations catalog). Chosen.
 
 Rename executed via `gh repo rename kit --repo kuration-ai/kuration-ai --yes`.
 Local git remote updated. Internal doc URLs (README issue-tracker link, CLAUDE.md
 ship-target line, release notes) updated to the new path. Old URLs auto-redirect on
-GitHub. The `pip install kuration-ai` package name is unaffected — repo name and
+GitHub. The `pip install kuration-ai` package name is unaffected: repo name and
 PyPI name are separate namespaces.
 
 ### Renamed product to Kuration AI
@@ -68,32 +68,32 @@ Full atomic rename:
 - Python module: `kuration_kit` → `kuration_ai` (via `git mv src/`)
 - CLI command: `kit` → `kai` (via `[project.scripts]`)
 - Install command: `pip install kuration-kit[timeseries]` → `pip install kuration-ai`
-  (sklearn + pyarrow are now regular deps instead of extras — no customer-side
+  (sklearn + pyarrow are now regular deps instead of extras: no customer-side
   profile-picking)
 - README rewritten to Watson-NLP shape: Contents outline first, use cases before
   code, dropped internal Reference section (CLAUDE.md / DECISIONS.md not linked from
   customer view)
 
 Historical prose in earlier DECISIONS.md entries and inside `docs/history/session-notes/`
-still references `kuration-kit`. Preserved verbatim as historical fact — retroactively
+still references `kuration-kit`. Preserved verbatim as historical fact: retroactively
 editing them would corrupt the audit trail.
 
 Design docs (`design/01-05`) retain internal shorthand ("kit", "wrapper") in prose
-that describes the architecture. Only user-visible strings — code imports, install
-commands, CLI examples — were updated to the new names. Reviewers reading the design
+that describes the architecture. Only user-visible strings: code imports, install
+commands, CLI examples: were updated to the new names. Reviewers reading the design
 docs get a technically accurate view; customers reading the README get the product
 view.
 
 ### Archived `aintropy-ai/kuration-kit`
-Old repo archived (read-only) via `gh api /repos/aintropy-ai/kuration-kit -X PATCH -f archived=true` after all files, 25 issues, walkthrough comment, 11 custom labels, and the `v0.0.1 — 2-day ship` milestone verified intact on `kuration-ai/kuration-kit`. Safety check confirmed the new repo is NOT archived. URLs still resolve on the old repo; issues/comments preserved as read-only. Delete not chosen — archive is safer and reversible.
+Old repo archived (read-only) via `gh api /repos/aintropy-ai/kuration-kit -X PATCH -f archived=true` after all files, 25 issues, walkthrough comment, 11 custom labels, and the `v0.0.1: 2-day ship` milestone verified intact on `kuration-ai/kuration-kit`. Safety check confirmed the new repo is NOT archived. URLs still resolve on the old repo; issues/comments preserved as read-only. Delete not chosen: archive is safer and reversible.
 
 ### Wrote `future-sdk-issues.md`
-Closed the internal reference from `design/05_sdk_workarounds.md`. All 8 workaround-table rows carry a verdict (escalate / permanent-wrapper / maybe) and a suggested SDK issue title for the escalation candidates. Doc is the escalation queue, not the trigger — filing happens post-ship at Sahiti's discretion.
+Closed the internal reference from `design/05_sdk_workarounds.md`. All 8 workaround-table rows carry a verdict (escalate / permanent-wrapper / maybe) and a suggested SDK issue title for the escalation candidates. Doc is the escalation queue, not the trigger: filing happens post-ship at Sahiti's discretion.
 
 ### Tagged `v0.0.1` + published GitHub release
 First public release marker. Release notes cover install, three-op gallery, three call styles, extension seam, `kit` CLI, non-goals, and the 51-test verification headline.
 
-## 2026-08-11 (evening — cleanup)
+## 2026-08-11 (evening: cleanup)
 
 ### Moved session-notes/ and scratchpad/ under docs/history/
 The top-level `ls` now reads as a package layout, not a work journal. Motivation: the
@@ -105,9 +105,9 @@ professional-perception bar from CLAUDE.md GTM tenet 2 (the README is the sales 
 
 Historical prose in earlier DECISIONS.md entries and inside the moved session-notes
 files still references the old paths. Those references are preserved verbatim as
-historical fact — retroactively editing them would corrupt the audit trail.
+historical fact: retroactively editing them would corrupt the audit trail.
 
-Also wrote `docs/history/watson_nlp_takeaways.md` — the Phase 0.2 deliverable that was
+Also wrote `docs/history/watson_nlp_takeaways.md`: the Phase 0.2 deliverable that was
 referenced in issue #5 but never actually saved to disk during the original session.
 
 ### One-off git hygiene lesson
@@ -123,11 +123,11 @@ suffered. From here on: explicit `git add <path>` per commit, never `-A`.
   `https://github.com/aintropy-ai/kuration-sdk` (upstream).
 - **[OWNER/REPO]** → `kuration-ai/kuration-kit`.
 
-Both unambiguous from context — asking would have been overhead.
+Both unambiguous from context: asking would have been overhead.
 
 ### Existing MVP scaffold treated as prior thinking, not authoritative
 An earlier MVP scaffold exists in this repo's working tree (`src/kuration_kit/`,
-`examples/`, `pyproject.toml`) — it was built before the kickoff prompt landed. It
+`examples/`, `pyproject.toml`): it was built before the kickoff prompt landed. It
 demonstrates the Operation + `run()` shape but does not go through the phase-gated
 process the plan requires.
 
@@ -151,7 +151,7 @@ placeholder that will split into per-use-case sub-issues after Gate 1.
 ### CLAUDE.md drafted at the same time as issue #3 was created
 The prompt requires CLAUDE.md before Phase 0 starts. Since "go ahead" authorized
 execution, drafted the content into `CLAUDE.md` at repo root immediately alongside
-issue creation. Edit freely — issue #3 acceptance criteria only require the file to
+issue creation. Edit freely: issue #3 acceptance criteria only require the file to
 exist with the three sections; content is starter material.
 
 ### Nothing pushed to remote
@@ -167,13 +167,13 @@ the entry point; the rest of the files back it up. When network returns, re-run
 
 ### Migrated to kuration-ai/kuration-kit (2026-08-11 evening)
 Sahiti wanted Kunal to have visibility. He's a member of `kuration-ai` org (not
-`aintropy-ai`). Repo transfer failed — she's a member of aintropy-ai, not an owner.
+`aintropy-ai`). Repo transfer failed: she's a member of aintropy-ai, not an owner.
 Migration path taken instead:
 1. Created `kuration-ai/kuration-kit` (private).
 2. Re-filed 20 issues (scope check as #1 + 19 planned as #2–#20) via
    `scratchpad/migrate_to_kuration_ai.py`.
 3. Re-posted walkthrough log as a comment on new #1.
-4. Recreated 11 labels + `v0.0.1 — 2-day ship` milestone.
+4. Recreated 11 labels + `v0.0.1: 2-day ship` milestone.
 5. `sed`-replaced `aintropy-ai/kuration-kit` → `kuration-ai/kuration-kit` in every
    `.md` file in the repo.
 6. Repointed local origin to new repo, committed everything, pushed to main.
@@ -193,10 +193,10 @@ training shards. Bring your own operation when you need to.") read AI-generated.
 a durable memory (`feedback-no-ai-marketing-voice`) to keep future copy specific,
 restrained, and free of triple-parallelism / hype-verb / "bring-your-own-X" patterns.
 
-### Phase 2 complete — 5 design docs at `design/01-05_*.md`
-- `01_operation_abstraction.md` — `Operation` Protocol, `.apply()` contract, error rules
-- `02_composition_model.md` — three composition styles + config-parity invariant
-- `03_config_model.md` — tier 1 defaults / tier 2 YAML / tier 3 programmatic
-- `04_extension_seam.md` — user-registered Operations, optional `register()`, SDK interop
-- `05_sdk_workarounds.md` — 8 SDK frictions × wrapper workarounds × cost
+### Phase 2 complete: 5 design docs at `design/01-05_*.md`
+- `01_operation_abstraction.md`: `Operation` Protocol, `.apply()` contract, error rules
+- `02_composition_model.md`: three composition styles + config-parity invariant
+- `03_config_model.md`: tier 1 defaults / tier 2 YAML / tier 3 programmatic
+- `04_extension_seam.md`: user-registered Operations, optional `register()`, SDK interop
+- `05_sdk_workarounds.md`: 8 SDK frictions × wrapper workarounds × cost
 Each doc has an explicit GTM angle section. Ready for Gate 2 review.

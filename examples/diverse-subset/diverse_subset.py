@@ -1,4 +1,4 @@
-"""Diverse subset — compress a redundant dataset by clustering in feature space.
+"""Diverse subset: compress a redundant dataset by clustering in feature space.
 
 Cluster-balanced selection over pre-measured features, with optional dedup for
 near-duplicate windows. Uses `DiverseSubset` from kuration_ai, which compiles

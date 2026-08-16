@@ -1,4 +1,4 @@
-"""Rare-event coverage — don't drop rare failures when sampling.
+"""Rare-event coverage: don't drop rare failures when sampling.
 
 Weighted-sample a telemetry stream toward windows that contain rare fault
 events. Uses `RareEventCoverage` from kuration_ai, which compiles to

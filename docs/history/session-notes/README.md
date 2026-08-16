@@ -7,7 +7,7 @@ Complete snapshot of the working session (2026-08-08 through 2026-08-11) that pr
 
 **These files are historical.** Current settled context lives in `CLAUDE.md` and `DECISIONS.md` at the repo root. Read those first if you are new to the project.
 
-The files below preserve the original path references from the session ("`session-notes/*`" and "`scratchpad/*`") so the audit trail stays intact. Those paths no longer resolve — the actual files now live under `docs/history/`.
+The files below preserve the original path references from the session ("`session-notes/*`" and "`scratchpad/*`") so the audit trail stays intact. Those paths no longer resolve: the actual files now live under `docs/history/`.
 
 ## Index
 
@@ -24,5 +24,5 @@ The files below preserve the original path references from the session ("`sessio
 
 Sibling in this directory:
 
-- `../sdk_operation_inventory.md` — Phase 0.1 deliverable (originally at `scratchpad/sdk_operation_inventory.md`).
-- `../watson_nlp_takeaways.md` — Phase 0.2 deliverable (originally referenced but not written until 2026-08-11 cleanup).
+- `../sdk_operation_inventory.md`: Phase 0.1 deliverable (originally at `scratchpad/sdk_operation_inventory.md`).
+- `../watson_nlp_takeaways.md`: Phase 0.2 deliverable (originally referenced but not written until 2026-08-11 cleanup).

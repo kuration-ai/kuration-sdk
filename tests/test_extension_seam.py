@@ -29,7 +29,7 @@ class OtherDummyOp:
 
 
 class NoApplyClass:
-    """Deliberately missing .apply — should be rejected by register()."""
+    """Deliberately missing .apply: should be rejected by register()."""
 
 
 class TestRegister:

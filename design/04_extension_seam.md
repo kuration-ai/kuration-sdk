@@ -1,11 +1,11 @@
-# 04 — Extension seam for user-registered operations
+# 04: Extension seam for user-registered operations
 
 ## Decision
 
 Anything with `.apply(pipeline) -> pipeline` is a valid Operation. Users:
 
 1. Write a class (dataclass recommended, not required).
-2. Use it directly by importing and instantiating — no registration needed.
+2. Use it directly by importing and instantiating: no registration needed.
 3. Register it with `kit.register("Name", Class)` only if they want to use it via the config-dict style.
 
 Registration is optional and additive. Direct use is always available.
@@ -24,7 +24,7 @@ class ActiveEndEffectorOnly:
 
     def apply(self, pipeline):
         # Uses a distinct feature name so downstream operations that measure
-        # their own columns don't collide — SDK measure names must be unique
+        # their own columns don't collide: SDK measure names must be unique
         # per pipeline.
         return (pipeline
                 .measure("_ee_speed_gate", "mean", of="end_effector_velocity")
@@ -83,7 +83,7 @@ class PixelShiftAll:
         return pipeline.pixel_shift()  # SDK-registered fluent method
 ```
 
-That is the intended interop — kit Operations are a curated presentation layer over whatever the SDK exposes.
+That is the intended interop: kit Operations are a curated presentation layer over whatever the SDK exposes.
 
 ## Registration signature
 
@@ -96,21 +96,21 @@ def register(name: str, operation_class: type) -> None:
     """
 ```
 
-Idempotent for the same (name, class) pair — safe to re-run on module reload. Loud on collision — a user redefining `BalancedSelector` gets an error, not silent shadowing.
+Idempotent for the same (name, class) pair: safe to re-run on module reload. Loud on collision: a user redefining `BalancedSelector` gets an error, not silent shadowing.
 
 ## Alternative considered and rejected
 
-**Entry-point-based auto-discovery (like the SDK's `kuration.plugins`).** Rejected for v0.0.1 because it forces users to publish a wheel to get discoverability. Most kit users write the operation inside their own project's code — one `register()` call in their `__init__.py` is enough. Add entry-point support in v0.0.2 if third parties want to ship kit-compatible packages.
+**Entry-point-based auto-discovery (like the SDK's `kuration.plugins`).** Rejected for v0.0.1 because it forces users to publish a wheel to get discoverability. Most kit users write the operation inside their own project's code: one `register()` call in their `__init__.py` is enough. Add entry-point support in v0.0.2 if third parties want to ship kit-compatible packages.
 
-**Requiring inheritance from a base class.** Same reasoning as `01_operation_abstraction.md` — Protocol beats ABC for user extensibility.
+**Requiring inheritance from a base class.** Same reasoning as `01_operation_abstraction.md`: Protocol beats ABC for user extensibility.
 
 ## GTM angle
 
-This is the no-lock-in tenet made real. A user who has invested in a custom Operation is not captured by the kit — the class is theirs, uses only SDK methods, and can be dropped into raw SDK code without modification. The user story is direct: delete the `kuration_ai` imports and your Operations still work. That claim is only credible because the extension seam requires no kit-specific inheritance or registration to function.
+This is the no-lock-in tenet made real. A user who has invested in a custom Operation is not captured by the kit: the class is theirs, uses only SDK methods, and can be dropped into raw SDK code without modification. The user story is direct: delete the `kuration_ai` imports and your Operations still work. That claim is only credible because the extension seam requires no kit-specific inheritance or registration to function.
 
 The extension surface is also the answer to a common pitch objection: "what if I need a curation step you don't have?" The answer is a class with one method plus, if you want config-dict use, one `register()` call.
 
 ## Non-decisions (deferred)
 
-- `unregister()` — nobody needs this in v0.0.1. Adds surface area for zero real benefit.
-- Namespaced registry (`user/OpName`) — the SDK uses this because it has 45+ registered components. Kit will ship with three. Revisit at 20+.
+- `unregister()`: nobody needs this in v0.0.1. Adds surface area for zero real benefit.
+- Namespaced registry (`user/OpName`): the SDK uses this because it has 45+ registered components. Kit will ship with three. Revisit at 20+.

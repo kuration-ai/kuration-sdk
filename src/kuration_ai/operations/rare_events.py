@@ -1,4 +1,4 @@
-"""RareEventCoverage — sample so rare events don't get dropped.
+"""RareEventCoverage: sample so rare events don't get dropped.
 
 Measures the per-window rate of a target event field, then weighted-samples so
 windows containing the rare event get admitted proportional to how much of the

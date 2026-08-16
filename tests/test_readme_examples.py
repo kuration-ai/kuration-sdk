@@ -1,7 +1,7 @@
 """Runs the README's `Write your own operation` example verbatim.
 
 If this test breaks, the README's claim that the extension seam works is
-broken — GTM tenet 6 (every claim executed) demands we catch it in CI.
+broken: GTM tenet 6 (every claim executed) demands we catch it in CI.
 """
 from dataclasses import dataclass
 
@@ -15,7 +15,7 @@ class OnlyActiveWindows:
 
     def apply(self, pipeline):
         # Uses a distinct feature name so BalancedSelector's default 'activity'
-        # column doesn't collide — SDK measure names must be unique per pipeline.
+        # column doesn't collide: SDK measure names must be unique per pipeline.
         return (pipeline
                 .measure("signal_activity", "std", of="signal")
                 .filter("signal_activity", ">", self.threshold))

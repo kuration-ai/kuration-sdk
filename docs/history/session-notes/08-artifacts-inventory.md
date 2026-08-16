@@ -1,8 +1,8 @@
-# 08 — Artifacts inventory
+# 08: Artifacts inventory
 
 Every file, URL, and artifact created during this session and where it lives.
 
-## On disk — repo working tree (this repo)
+## On disk: repo working tree (this repo)
 
 | Path | What | Committed? | Pushed? |
 |---|---|---|---|
@@ -27,7 +27,7 @@ Every file, URL, and artifact created during this session and where it lives.
 | `session-notes/07-conversation-summary.md` | Session narrative | No | No |
 | `session-notes/08-artifacts-inventory.md` | This file | No | No |
 
-## On disk — scratchpad (session-scoped, ephemeral)
+## On disk: scratchpad (session-scoped, ephemeral)
 
 | Path | What |
 |---|---|
@@ -44,10 +44,10 @@ Every file, URL, and artifact created during this session and where it lives.
 | https://github.com/kuration-ai/kuration-kit/issues/1 | Scope-check issue (open, tagged Kunal + Nirmit + Eric) |
 | https://github.com/kuration-ai/kuration-kit/issues/1#issuecomment-5228328576 | Full walkthrough log comment (tagged Eric + Kunal) |
 
-## Not yet on GitHub — pending network
+## Not yet on GitHub: pending network
 
 - 11 labels: `epic`, `setup`, `phase-0`, `phase-1`, `phase-2`, `phase-3`, `phase-5`, `design-decision`, `packaging`, `deferred`, `blocked`
-- 1 milestone: `v0.0.1 — 2-day ship`
+- 1 milestone: `v0.0.1: 2-day ship`
 - 19 issues (details in `03-planned-issues.md`)
 - Any commit of the working tree above
 
@@ -64,6 +64,6 @@ Every file, URL, and artifact created during this session and where it lives.
 | # | Status | Description |
 |---|---|---|
 | 1 | completed | Fresh-user DX test of Kuration SDK |
-| 2 | in progress | MVP wrapper scaffold — iterate based on shape check |
+| 2 | in progress | MVP wrapper scaffold: iterate based on shape check |
 | 3 | completed | Draft bootstrapping GH issue with to-do list for the wrapper |
 | 4 | completed | Grow issue #1 walkthrough log and post as comment when done |

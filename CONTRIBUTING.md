@@ -29,7 +29,7 @@ Expected: `52 passed`.
 
 ## Continuous integration
 
-CI runs on push to `main` and on pull requests. It requires a `KURATION_SDK_TOKEN` repository secret — a personal access token with read access to `aintropy-ai/kuration-sdk`. Without the secret, the workflow passes green with a notice explaining how to enable it.
+CI runs on push to `main` and on pull requests. It requires a `KURATION_SDK_TOKEN` repository secret: a personal access token with read access to `aintropy-ai/kuration-sdk`. Without the secret, the workflow passes green with a notice explaining how to enable it.
 
 ## Adding a new operation
 
@@ -56,11 +56,11 @@ CI runs on push to `main` and on pull requests. It requires a `KURATION_SDK_TOKE
 
 Every non-trivial design decision has a doc under `design/`. Read those before proposing significant changes:
 
-- `design/01_operation_abstraction.md` — the `Operation` Protocol and return contract
-- `design/02_composition_model.md` — three call styles and config-parity
-- `design/03_config_model.md` — defaults / declarative / programmatic tiers
-- `design/04_extension_seam.md` — `register()` contract and user-op guarantees
-- `design/05_sdk_workarounds.md` — SDK frictions and the wrapper's response, with escalation candidates in [`docs/internal/future-sdk-issues.md`](./docs/internal/future-sdk-issues.md)
+- `design/01_operation_abstraction.md`: the `Operation` Protocol and return contract
+- `design/02_composition_model.md`: three call styles and config-parity
+- `design/03_config_model.md`: defaults / declarative / programmatic tiers
+- `design/04_extension_seam.md`: `register()` contract and user-op guarantees
+- `design/05_sdk_workarounds.md`: SDK frictions and the wrapper's response, with escalation candidates in [`docs/internal/future-sdk-issues.md`](./docs/internal/future-sdk-issues.md)
 
 New design decisions land as new files in `design/` before the code change.
 

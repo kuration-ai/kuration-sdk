@@ -1,7 +1,7 @@
-"""Kuration AI — curated training-dataset selection for Python.
+"""Kuration AI: curated training-dataset selection for Python.
 
 Three built-in curation operations plus an extension pattern for writing your
-own. Each operation is a standalone, configurable unit — use one alone, chain
+own. Each operation is a standalone, configurable unit: use one alone, chain
 several, or drive them from a config dict.
 """
 # Re-exported so users import the pipeline builder from a single place.

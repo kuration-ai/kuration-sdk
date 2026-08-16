@@ -1,12 +1,12 @@
-# future-sdk-issues.md — SDK friction we may escalate upstream
+# future-sdk-issues.md: SDK friction we may escalate upstream
 
 Referenced from [`design/05_sdk_workarounds.md`](./design/05_sdk_workarounds.md). Each row of the workaround table in that doc gets an entry here recording whether we want to file it as an issue on [`aintropy-ai/kuration-sdk`](https://github.com/aintropy-ai/kuration-sdk) after our v0.0.1 ships, or whether the wrapper's workaround is the intended permanent home.
 
 **Verdict per entry:**
 
-- **escalate** — worth an SDK issue post-v0.0.1
-- **permanent-wrapper** — this workaround lives in the wrapper forever
-- **maybe** — depends on user feedback or measurement
+- **escalate**: worth an SDK issue post-v0.0.1
+- **permanent-wrapper**: this workaround lives in the wrapper forever
+- **maybe**: depends on user feedback or measurement
 
 ## 1. `kur list` requires a `kind` argument
 
@@ -24,7 +24,7 @@ Workaround: each kit Operation carries `EXTRAS: ClassVar[tuple[str, ...]]`, and 
 
 **Verdict:** escalate.
 
-Reasoning: a `requires_extras: list[str]` field on the SDK component descriptor would let the SDK's own `kur list` annotate every registered component, not just kit's. Currently a user can list `aintropy/slam-quality` and then hit a runtime install-hint error only at execution — the friction shows up at the wrong point.
+Reasoning: a `requires_extras: list[str]` field on the SDK component descriptor would let the SDK's own `kur list` annotate every registered component, not just kit's. Currently a user can list `aintropy/slam-quality` and then hit a runtime install-hint error only at execution: the friction shows up at the wrong point.
 
 **Suggested SDK issue title:** Add `requires_extras` field to component descriptors so `kur list <kind>` can annotate which optional deps each entry needs at runtime
 
@@ -40,19 +40,19 @@ Reasoning: this is a real SDK design decision, not a bug. Whether `namespace/nam
 
 ## 4. Empty JSON-Schema descriptors on base methods
 
-The five base methods (`uniform-bins`, `weighted`, `top-k`, `target-distribution`, `filter`) register with `capabilities` only — no `parameters`. Their kwargs are strategy-level, not method-level.
+The five base methods (`uniform-bins`, `weighted`, `top-k`, `target-distribution`, `filter`) register with `capabilities` only: no `parameters`. Their kwargs are strategy-level, not method-level.
 
 Workaround: kit re-declares parameters as dataclass fields on each Operation.
 
 **Verdict:** permanent-wrapper.
 
-Reasoning: the SDK's approach is correct for its architecture — base method kwargs live on the strategy. Trying to force them into the descriptor would either duplicate information or split it awkwardly. Wrapper's class-is-schema approach is the right layer for kit-friendly documentation, not the SDK's problem to solve.
+Reasoning: the SDK's approach is correct for its architecture: base method kwargs live on the strategy. Trying to force them into the descriptor would either duplicate information or split it awkwardly. Wrapper's class-is-schema approach is the right layer for kit-friendly documentation, not the SDK's problem to solve.
 
 ## 5. SDK README defaults to editable install
 
 Workaround: Kuration AI README leads with `pip install kuration-ai`; editable install lives under a separate contributor heading.
 
-**Verdict:** escalate — but only after `kuration-sdk` hits PyPI.
+**Verdict:** escalate: but only after `kuration-sdk` hits PyPI.
 
 Reasoning: pre-PyPI, editable install is the only real path. Once the SDK is on PyPI, the SDK's own README should mirror the same pattern (PyPI install for users, editable install for contributors) to reduce onboarding friction. Filing before PyPI launch would be premature.
 
@@ -74,7 +74,7 @@ Workaround: kit does not ship a `gameplay` profile in v0.0.1. Deferred to v0.0.2
 
 **Verdict:** permanent-wrapper.
 
-Reasoning: the install size is a function of the underlying deps (torch alone is ~110MB, plus faiss + av + opencv + huggingface_hub). Not something the SDK can meaningfully shrink without dropping features. Wrapper's job is to hide the cost until the user opts in — nothing for the SDK to fix.
+Reasoning: the install size is a function of the underlying deps (torch alone is ~110MB, plus faiss + av + opencv + huggingface_hub). Not something the SDK can meaningfully shrink without dropping features. Wrapper's job is to hide the cost until the user opts in: nothing for the SDK to fix.
 
 ## 8. `.describe()` uses jargon like `execution: reference; backend=unrecorded`
 
@@ -88,4 +88,4 @@ Reasoning: an SDK-side glossary or friendlier default labels would help every us
 
 ## When to file
 
-Do NOT file any of these on `aintropy-ai/kuration-sdk` while v0.0.1 is in flight. Post-ship, this doc becomes the escalation queue — Sahiti drives which ones actually get filed based on team priority and Eric's SDK roadmap. This is the queue, not the trigger.
+Do NOT file any of these on `aintropy-ai/kuration-sdk` while v0.0.1 is in flight. Post-ship, this doc becomes the escalation queue: Sahiti drives which ones actually get filed based on team priority and Eric's SDK roadmap. This is the queue, not the trigger.

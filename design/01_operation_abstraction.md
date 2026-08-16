@@ -1,4 +1,4 @@
-# 01 — Operation abstraction and return contract
+# 01: Operation abstraction and return contract
 
 ## Decision
 
@@ -9,32 +9,32 @@ class Operation(Protocol):
     def apply(self, pipeline: kuration.Pipeline) -> kuration.Pipeline: ...
 ```
 
-That's the entire contract. Structural, not inheritance-based — a user writes a class with `.apply(...)`, they don't import an ABC.
+That's the entire contract. Structural, not inheritance-based: a user writes a class with `.apply(...)`, they don't import an ABC.
 
 ## Return contract
 
-`.apply()` always returns a Kuration Pipeline. It never returns `None`, never returns anything else. A "no-op" operation still returns its input pipeline unchanged — the caller can then chain freely.
+`.apply()` always returns a Kuration Pipeline. It never returns `None`, never returns anything else. A "no-op" operation still returns its input pipeline unchanged: the caller can then chain freely.
 
 ## Immutability
 
-Operations never mutate their input pipeline. Kuration pipelines are immutable, so `.apply()` returns a *new* pipeline built from calling SDK methods on the input. Operation instances themselves are `@dataclass(frozen=True)` — parameters are set at construction and never change.
+Operations never mutate their input pipeline. Kuration pipelines are immutable, so `.apply()` returns a *new* pipeline built from calling SDK methods on the input. Operation instances themselves are `@dataclass(frozen=True)`: parameters are set at construction and never change.
 
 ## Error contract
 
 - **Bad parameters** at construction time → `ValueError("<field>: <what's wrong>: <fix>")`.
-- **Missing extras** at `.apply()` time → `RuntimeError("this operation needs an optional dependency — install with pip install kuration-ai")`.
+- **Missing extras** at `.apply()` time → `RuntimeError("this operation needs an optional dependency: install with pip install kuration-ai")`.
 - **Semantic mismatch** (e.g. wrong feature name for the pipeline schema) → let the SDK raise, then the wrapper's error surface (issue #16) wraps it with a "did you mean X?" hint.
 
 No silent failures. No default-to-empty-result. If something is wrong, it fails loudly with an actionable message.
 
 ## Real call sites
 
-**Tier 1 — construct with defaults:**
+**Tier 1: construct with defaults:**
 ```python
 op = BalancedSelector(feature="activity", of="signal")
 ```
 
-**Tier 3 — user's own operation:**
+**Tier 3: user's own operation:**
 ```python
 from dataclasses import dataclass
 from kuration_ai import Operation  # Protocol
@@ -57,9 +57,9 @@ No import inheritance, no register call required for the class to work standalon
 
 ## GTM angle
 
-The `.apply(pipeline) -> pipeline` protocol is what makes the "writing your own is a class with one method" line in the README true. It also underpins the no-lock-in tenet: a user leaving the kit doesn't unwrap anything, because every Operation only calls SDK methods that were already available. The extension surface is one class with one method — small enough to fit in the README, small enough to inspect before a prospect commits.
+The `.apply(pipeline) -> pipeline` protocol is what makes the "writing your own is a class with one method" line in the README true. It also underpins the no-lock-in tenet: a user leaving the kit doesn't unwrap anything, because every Operation only calls SDK methods that were already available. The extension surface is one class with one method: small enough to fit in the README, small enough to inspect before a prospect commits.
 
 ## Non-decisions (deferred)
 
-- Async operations (`.apply_async`) — nothing in the SDK is async today, and none of the v0.0.1 use cases need it.
-- Composition operators (`op1 | op2`) — cute, but adds a special-case surface. `run()` already covers this cleanly.
+- Async operations (`.apply_async`): nothing in the SDK is async today, and none of the v0.0.1 use cases need it.
+- Composition operators (`op1 | op2`): cute, but adds a special-case surface. `run()` already covers this cleanly.
