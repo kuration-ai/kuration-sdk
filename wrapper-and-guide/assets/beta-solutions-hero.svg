@@ -1,0 +1,229 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 540" role="img" aria-labelledby="stitle sdesc" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+  <title id="stitle">Three shipped Kuration operators: action-state consistency, collision, and coverage-based sampling</title>
+  <desc id="sdesc">Three product cards. Each shows what the operator actually produces on real CS:GO and CS2 gameplay recordings.</desc>
+
+  <style>
+    /* Aintropy brand palette */
+    .stage      { fill: #081420; }
+    .panel      { fill: #0d2030; stroke: #16324a; stroke-width: 1; }
+    .card       { fill: #101f2d; stroke: #1e3c56; stroke-width: 1; }
+    .divider    { stroke: #16324a; stroke-width: 1; opacity: .7; fill: none; }
+    .ink        { fill: #e6edf3; }
+    .ink-soft   { fill: #7c8ea1; }
+    .accent     { fill: #00d4ff; }
+    .accent-line{ stroke: #00d4ff; stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .accent-line-thin { stroke: #00d4ff; stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .accent-dim { fill: #103a4a; }
+    .verify     { fill: #4ade80; }
+    .flag       { fill: #f87171; }
+    .flag-line  { stroke: #f87171; stroke-width: 2; fill: none; }
+    .baseline   { stroke: #4ade80; stroke-width: 1.5; stroke-dasharray: 4 4; fill: none; opacity: .8; }
+
+    .h-eyebrow  { font-size: 14px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; fill: #00d4ff; }
+    .h-panel    { font-size: 19px; font-weight: 600; fill: #e6edf3; }
+    .h-title    { font-size: 24px; font-weight: 600; fill: #e6edf3; }
+    .t-body     { font-size: 15px; fill: #b9c5d1; }
+    .t-caption  { font-size: 13px; fill: #7c8ea1; }
+    .t-mini     { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 12px; fill: #7c8ea1; }
+    .t-out-label{ font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; fill: #7c8ea1; }
+    .t-out-value{ font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 15px; fill: #e6edf3; }
+    .tagline    { font-size: 18px; font-weight: 500; fill: #7c8ea1; letter-spacing: 0.03em; }
+  </style>
+
+  <rect class="stage" width="1320" height="540" rx="12"/>
+
+  <!-- ── Header ──────────────────────────────────────────────────────── -->
+  <g transform="translate(40 44)">
+    <text class="h-eyebrow" x="0" y="0">Aintropy Solutions</text>
+    <text class="h-title"   x="0" y="30">Three of the Kuration SDK's shipped operators.</text>
+    <text class="tagline"   x="0" y="58">Chaos in. Verified training shards out.</text>
+    <text class="t-body"    x="0" y="90" font-size="17">Create your very own operators too by clicking <a href="https://colab.research.google.com/github/aintropy-solutions/beta-solutions/blob/main/kuration-wrapper-and-guide/notebooks/starter/starter.ipynb" target="_blank"><tspan class="accent" text-decoration="underline">here</tspan></a>.</text>
+  </g>
+
+  <!-- ── PANEL 1: action-state consistency ──────────────────────────── -->
+  <g transform="translate(40 148)">
+    <rect class="panel" x="0" y="0" width="392" height="340" rx="12"/>
+
+    <text class="h-eyebrow" x="24" y="34">action_state_consistency</text>
+    <text class="h-panel"   x="24" y="62">Verdict per clip</text>
+
+    <line class="divider" x1="24" y1="82" x2="368" y2="82"/>
+
+    <!-- pixel-shift graph -->
+    <g transform="translate(24 112)">
+      <text class="t-mini" x="0"   y="-6">pixel shift per key press</text>
+      <text class="t-mini" x="344" y="-6" text-anchor="end">time</text>
+
+      <!-- axes -->
+      <line class="ink-soft" x1="0" y1="120" x2="344" y2="120" opacity=".3"/>
+      <line class="ink-soft" x1="0" y1="0"   x2="0"   y2="120" opacity=".3"/>
+
+      <!-- baseline band -->
+      <rect class="accent-dim" x="0" y="46" width="344" height="34" opacity=".55"/>
+      <line class="baseline" x1="0" y1="46" x2="344" y2="46"/>
+      <line class="baseline" x1="0" y1="80" x2="344" y2="80"/>
+
+      <!-- measured curve -->
+      <path class="accent-line" d="M 0 100 L 24 90 L 48 70 L 72 54 L 96 62 L 120 78 L 144 96 L 168 84 L 192 66 L 216 72 L 240 78 L 264 70 L 288 64 L 312 60 L 344 62"/>
+
+      <!-- anomaly ring at frame 96 -->
+      <g transform="translate(96 62)">
+        <circle class="flag" r="6"/>
+        <circle class="flag-line" r="12">
+          <animate attributeName="r" values="12;20;12" dur="1.8s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="1;0;1" dur="1.8s" repeatCount="indefinite"/>
+        </circle>
+      </g>
+    </g>
+
+    <line class="divider" x1="24" y1="258" x2="368" y2="258"/>
+
+    <!-- output row -->
+    <g transform="translate(24 274)">
+      <text class="t-out-label" x="0" y="0">Output</text>
+      <text class="t-out-value" x="0" y="24">consistent / inconsistent / inconclusive</text>
+      <text class="t-caption"   x="0" y="42">10-90 percentile baseline per control</text>
+    </g>
+  </g>
+
+  <!-- ── PANEL 2: collision ─────────────────────────────────────────── -->
+  <g transform="translate(464 148)">
+    <rect class="panel" x="0" y="0" width="392" height="340" rx="12"/>
+
+    <text class="h-eyebrow" x="24" y="34">aintropy/collision-directional</text>
+    <text class="h-panel"   x="24" y="62">Contact events, off-screen too</text>
+
+    <line class="divider" x1="24" y1="82" x2="368" y2="82"/>
+
+    <!-- top-down map -->
+    <g transform="translate(24 112)">
+      <rect class="card" x="0" y="0" width="344" height="140" rx="8"/>
+      <text class="t-mini" x="6" y="-6">top-down map + player path</text>
+
+      <!-- walls -->
+      <g stroke="#00d4ff" stroke-width="3" fill="none" opacity=".9" stroke-linecap="square">
+        <line x1="26" y1="26" x2="26"  y2="114"/>
+        <line x1="26" y1="26" x2="140" y2="26"/>
+        <line x1="140" y1="26" x2="140" y2="58"/>
+        <line x1="140" y1="58" x2="220" y2="58"/>
+        <line x1="220" y1="58" x2="220" y2="114"/>
+        <line x1="26"  y1="114" x2="220" y2="114"/>
+        <line x1="248" y1="42" x2="318" y2="42"/>
+        <line x1="248" y1="42" x2="248" y2="100"/>
+        <line x1="318" y1="42" x2="318" y2="100"/>
+        <line x1="248" y1="100" x2="318" y2="100"/>
+      </g>
+
+      <!-- animated player path -->
+      <path id="collision-path" class="accent-line-thin" opacity=".7" stroke-dasharray="6 4"
+        d="M 50 50 C 80 45, 100 42, 130 42 L 145 58 L 195 68 L 210 105"/>
+
+      <!-- moving player dot -->
+      <circle class="accent" r="5">
+        <animateMotion dur="6s" repeatCount="indefinite" rotate="0">
+          <mpath href="#collision-path"/>
+        </animateMotion>
+      </circle>
+
+      <!-- collision hits with expanding rings -->
+      <g transform="translate(132 42)">
+        <circle class="flag" r="5"/>
+        <circle class="flag-line" r="10" opacity="0">
+          <animate attributeName="r" values="6;18;6" dur="2.2s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="1;0;1" dur="2.2s" repeatCount="indefinite"/>
+        </circle>
+      </g>
+      <g transform="translate(146 58)">
+        <circle class="flag" r="5"/>
+        <circle class="flag-line" r="10" opacity="0">
+          <animate attributeName="r" values="6;18;6" dur="2.2s" begin="0.5s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="1;0;1" dur="2.2s" begin="0.5s" repeatCount="indefinite"/>
+        </circle>
+      </g>
+      <g transform="translate(212 103)">
+        <circle class="flag" r="5"/>
+        <circle class="flag-line" r="10" opacity="0">
+          <animate attributeName="r" values="6;18;6" dur="2.2s" begin="1s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="1;0;1" dur="2.2s" begin="1s" repeatCount="indefinite"/>
+        </circle>
+      </g>
+    </g>
+
+    <line class="divider" x1="24" y1="258" x2="368" y2="258"/>
+
+    <g transform="translate(24 274)">
+      <text class="t-out-label" x="0" y="0">Output</text>
+      <text class="t-out-value" x="0" y="22">collision / residual</text>
+      <text class="t-out-value" x="0" y="42">dist_to_wall / direction</text>
+      <text class="t-caption"   x="0" y="60">runs on telemetry + map geometry</text>
+    </g>
+  </g>
+
+  <!-- ── PANEL 3: coverage-based sampling ──────────────────────────── -->
+  <g transform="translate(888 148)">
+    <rect class="panel" x="0" y="0" width="392" height="340" rx="12"/>
+
+    <text class="h-eyebrow" x="24" y="34">.sample("equal")</text>
+    <text class="h-panel"   x="24" y="62">Uniform per bin</text>
+
+    <line class="divider" x1="24" y1="82" x2="368" y2="82"/>
+
+    <!-- histograms: raw skewed vs selected uniform -->
+    <g transform="translate(24 112)">
+      <rect class="card" x="0" y="0" width="344" height="140" rx="8"/>
+      <text class="t-mini" x="6" y="-6">activity distribution: raw vs selected</text>
+
+      <!-- baseline axis -->
+      <line class="ink-soft" x1="16" y1="120" x2="328" y2="120" opacity=".3"/>
+
+      <!-- raw histogram (skewed grey bars) -->
+      <g transform="translate(30 20)">
+        <text class="t-caption" x="0" y="-4">raw (skewed)</text>
+        <g fill="#7c8ea1" opacity=".55">
+          <rect x="0"  y="80" width="18" height="20"/>
+          <rect x="22" y="20" width="18" height="80"/>
+          <rect x="44" y="55" width="18" height="45"/>
+          <rect x="66" y="85" width="18" height="15"/>
+        </g>
+      </g>
+
+      <!-- arrow between -->
+      <g transform="translate(160 66)">
+        <path class="accent-line" d="M 0 0 L 26 0" stroke-linecap="round"/>
+        <path class="accent-line" d="M 20 -5 L 26 0 L 20 5" stroke-linecap="round"/>
+      </g>
+
+      <!-- selected histogram (uniform accent bars, animated grow) -->
+      <g transform="translate(210 20)">
+        <text class="t-caption" x="0" y="-4">selected (equal)</text>
+        <g class="accent" opacity=".85">
+          <rect x="0"  y="40" width="18" height="58">
+            <animate attributeName="height" values="0;58;58;58" keyTimes="0;0.35;0.7;1" dur="3s" repeatCount="indefinite"/>
+            <animate attributeName="y" values="98;40;40;40" keyTimes="0;0.35;0.7;1" dur="3s" repeatCount="indefinite"/>
+          </rect>
+          <rect x="22" y="40" width="18" height="58">
+            <animate attributeName="height" values="0;58;58;58" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.25s" repeatCount="indefinite"/>
+            <animate attributeName="y" values="98;40;40;40" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.25s" repeatCount="indefinite"/>
+          </rect>
+          <rect x="44" y="40" width="18" height="58">
+            <animate attributeName="height" values="0;58;58;58" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.5s" repeatCount="indefinite"/>
+            <animate attributeName="y" values="98;40;40;40" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.5s" repeatCount="indefinite"/>
+          </rect>
+          <rect x="66" y="40" width="18" height="58">
+            <animate attributeName="height" values="0;58;58;58" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.75s" repeatCount="indefinite"/>
+            <animate attributeName="y" values="98;40;40;40" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.75s" repeatCount="indefinite"/>
+          </rect>
+        </g>
+      </g>
+    </g>
+
+    <line class="divider" x1="24" y1="258" x2="368" y2="258"/>
+
+    <g transform="translate(24 274)">
+      <text class="t-out-label" x="0" y="0">Output</text>
+      <text class="t-out-value" x="0" y="24">balanced training shards</text>
+      <text class="t-caption"   x="0" y="42">no domain-specific hypothesis</text>
+    </g>
+  </g>
+
+</svg>
