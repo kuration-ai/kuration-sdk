@@ -1,6 +1,6 @@
 # action-state-consistency
 
-A per-clip verdict on whether pressing a key actually did what the training data claims it did. Real optical flow, real pipeline, no download needed.
+A per-clip verdict on whether pressing a key actually did what the training data claims it did. Uses the real Farneback optical-flow backend on a synthetic clip; no download required.
 
 ![](https://img.shields.io/badge/action__state__consistency-per--clip_verdict-0D9488?style=for-the-badge)
 ![](https://img.shields.io/badge/Farneback_optical_flow-axis--projected-0D9488?style=for-the-badge)
@@ -86,7 +86,7 @@ See cell 9.
 
 ## Compose downstream
 
-The verdict lives on the pipeline. The pipeline is still just a pipeline. So a `.filter()` on the flagged windows, or a `.sample()` that weights against them, chains directly on top.
+The verdict lives on the pipeline. The pipeline is still just a pipeline. So a `.filter()` on the flagged windows, or a `.sample()` that weights against them, chains directly on top. `.describe()` on the final pipeline prints the full operator chain.
 
 See cell 11.
 

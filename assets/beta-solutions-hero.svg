@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 520" role="img" aria-labelledby="stitle sdesc" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
-  <title id="stitle">Three shipped Kuration operators: action-state consistency, collision, and SLAM</title>
+  <title id="stitle">Three shipped Kuration operators: action-state consistency, collision, and coverage-based sampling</title>
   <desc id="sdesc">Three product cards. Each shows what the operator actually produces on real CS:GO and CS2 gameplay recordings.</desc>
 
   <style>
@@ -158,51 +158,70 @@
     </g>
   </g>
 
-  <!-- ── PANEL 3: slam_pipeline ─────────────────────────────────────── -->
+  <!-- ── PANEL 3: coverage-based sampling ──────────────────────────── -->
   <g transform="translate(888 148)">
     <rect class="panel" x="0" y="0" width="392" height="328" rx="12"/>
 
-    <text class="h-eyebrow" x="24" y="34">slam_pipeline</text>
-    <text class="h-panel"   x="24" y="62">Camera path from pixels</text>
+    <text class="h-eyebrow" x="24" y="34">.sample("equal")</text>
+    <text class="h-panel"   x="24" y="62">Uniform per bin</text>
 
     <line class="divider" x1="24" y1="82" x2="368" y2="82"/>
 
-    <!-- reconstructed scene -->
+    <!-- histograms: raw skewed vs selected uniform -->
     <g transform="translate(24 112)">
       <rect class="card" x="0" y="0" width="344" height="140" rx="8"/>
-      <text class="t-mini" x="6" y="-6">recovered trajectory + point cloud</text>
+      <text class="t-mini" x="6" y="-6">activity distribution: raw vs selected</text>
 
-      <!-- point cloud dots -->
-      <g class="ink" opacity=".55">
-        <circle cx="30" cy="34" r="1.7"/><circle cx="50" cy="48" r="1.7"/><circle cx="72" cy="26" r="1.7"/>
-        <circle cx="94" cy="56" r="1.7"/><circle cx="116" cy="40" r="1.7"/><circle cx="138" cy="66" r="1.7"/>
-        <circle cx="160" cy="30" r="1.7"/><circle cx="182" cy="62" r="1.7"/><circle cx="200" cy="42" r="1.7"/>
-        <circle cx="220" cy="76" r="1.7"/><circle cx="240" cy="46" r="1.7"/><circle cx="258" cy="82" r="1.7"/>
-        <circle cx="278" cy="56" r="1.7"/><circle cx="298" cy="92" r="1.7"/><circle cx="316" cy="68" r="1.7"/>
-        <circle cx="82" cy="94" r="1.7"/><circle cx="126" cy="102" r="1.7"/><circle cx="168" cy="110" r="1.7"/>
+      <!-- baseline axis -->
+      <line class="ink-soft" x1="16" y1="120" x2="328" y2="120" opacity=".3"/>
+
+      <!-- raw histogram (skewed grey bars) -->
+      <g transform="translate(30 20)">
+        <text class="t-caption" x="0" y="-4">raw (skewed)</text>
+        <g fill="#7c8ea1" opacity=".55">
+          <rect x="0"  y="80" width="18" height="20"/>
+          <rect x="22" y="20" width="18" height="80"/>
+          <rect x="44" y="55" width="18" height="45"/>
+          <rect x="66" y="85" width="18" height="15"/>
+        </g>
       </g>
 
-      <!-- trajectory path (drawing in animation) -->
-      <path id="slam-path" class="accent-line"
-        d="M 20 118 C 60 108, 90 74, 130 78 S 200 44, 240 62 S 300 84, 322 118"
-        stroke-dasharray="600" stroke-dashoffset="600">
-        <animate attributeName="stroke-dashoffset" values="600;0" dur="3.5s" fill="freeze" repeatCount="indefinite"/>
-      </path>
+      <!-- arrow between -->
+      <g transform="translate(160 66)">
+        <path class="accent-line" d="M 0 0 L 26 0" stroke-linecap="round"/>
+        <path class="accent-line" d="M 20 -5 L 26 0 L 20 5" stroke-linecap="round"/>
+      </g>
 
-      <!-- moving camera dot -->
-      <circle class="accent" r="5">
-        <animateMotion dur="4.5s" repeatCount="indefinite" begin="3.5s">
-          <mpath href="#slam-path"/>
-        </animateMotion>
-      </circle>
+      <!-- selected histogram (uniform accent bars, animated grow) -->
+      <g transform="translate(210 20)">
+        <text class="t-caption" x="0" y="-4">selected (equal)</text>
+        <g class="accent" opacity=".85">
+          <rect x="0"  y="40" width="18" height="58">
+            <animate attributeName="height" values="0;58;58;58" keyTimes="0;0.35;0.7;1" dur="3s" repeatCount="indefinite"/>
+            <animate attributeName="y" values="98;40;40;40" keyTimes="0;0.35;0.7;1" dur="3s" repeatCount="indefinite"/>
+          </rect>
+          <rect x="22" y="40" width="18" height="58">
+            <animate attributeName="height" values="0;58;58;58" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.25s" repeatCount="indefinite"/>
+            <animate attributeName="y" values="98;40;40;40" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.25s" repeatCount="indefinite"/>
+          </rect>
+          <rect x="44" y="40" width="18" height="58">
+            <animate attributeName="height" values="0;58;58;58" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.5s" repeatCount="indefinite"/>
+            <animate attributeName="y" values="98;40;40;40" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.5s" repeatCount="indefinite"/>
+          </rect>
+          <rect x="66" y="40" width="18" height="58">
+            <animate attributeName="height" values="0;58;58;58" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.75s" repeatCount="indefinite"/>
+            <animate attributeName="y" values="98;40;40;40" keyTimes="0;0.35;0.7;1" dur="3s" begin="0.75s" repeatCount="indefinite"/>
+          </rect>
+        </g>
+      </g>
     </g>
 
     <line class="divider" x1="24" y1="258" x2="368" y2="258"/>
 
     <g transform="translate(24 274)">
       <text class="t-out-label" x="0" y="0">Output</text>
-      <text class="t-out-value" x="0" y="24">trajectory + point cloud</text>
-      <text class="t-caption"   x="0" y="42">Depth Anything 3 + loop closure</text>
+      <text class="t-out-value" x="0" y="24">balanced training shards</text>
+      <text class="t-caption"   x="0" y="42">no domain-specific hypothesis</text>
     </g>
   </g>
 

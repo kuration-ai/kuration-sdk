@@ -2,7 +2,7 @@
   <img src="assets/beta-solutions-hero.svg" alt="Kuration SDK wrapper and solutions guide" width="100%">
 </p>
 
-# kuration-wrapper-and-guide
+# The Kuration SDK, walked through end to end
 
 Runnable notebooks and operator reference for solutions built on the [Kuration SDK](https://github.com/aintropy-ai/kuration-sdk).
 
