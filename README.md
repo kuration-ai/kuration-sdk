@@ -40,8 +40,9 @@ and SHA-256 integrity metadata.
 - [Choose your path](#choose-your-path)
 - [Realistic examples](#realistic-examples)
 - [kuration-ai — the companion package](#kuration-ai--the-companion-package)
+  - [What's in here](#whats-in-here)
+  - [Run any notebook in a browser](#run-any-notebook-in-a-browser)
   - [Getting started](#getting-started)
-  - [Runnable notebooks](#runnable-notebooks)
   - [Use cases](#use-cases)
     - [Balanced sensor shards](#balanced-sensor-shards)
     - [Rare-event coverage](#rare-event-coverage)
@@ -54,9 +55,13 @@ and SHA-256 integrity metadata.
     - [Fluent pipeline methods](#fluent-pipeline-methods)
   - [Reproducibility](#reproducibility)
   - [Writing your own operation](#writing-your-own-operation)
-  - [`kai` CLI](#kai-cli)
+  - [CLI reference](#cli-reference)
+    - [`kai list`](#kai-list)
+    - [`kai describe`](#kai-describe)
   - [Coming next](#coming-next)
-  - [Companion reference](#companion-reference)
+  - [Reference](#reference)
+  - [Contributing](#contributing-1)
+  - [License](#license)
 - [Reliability and project status](#reliability-and-project-status)
 - [Contributing](#contributing)
 
@@ -253,7 +258,7 @@ started, guides, extensions, operations, and reference.
 
 ## kuration-ai — the companion package
 
-The [`kuration-ai/`](./kuration-ai/) subpackage is a companion library that sits on top of the SDK. It ships runnable notebooks that walk through the Kuration SDK's gameplay operators against Counter-Strike telemetry, plus the `kuration-ai` Python package for reproducible-curation on general row-oriented data (telemetry, sensor logs). It ships three operations (`BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
+The notebooks above walk through the Kuration SDK's gameplay operators against Counter-Strike telemetry. The `kuration-ai` companion package that ships alongside is the same shape of tool for a more general problem: reproducible training-data curation for machine-learning engineers working with telemetry, sensor logs, and other row-oriented data. It ships three operations (`BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
 
 ![](https://img.shields.io/badge/20.9%25-LPIPS_improvement_over_DIAMOND-0D9488?style=for-the-badge)
 ![](https://img.shields.io/badge/62%25-JEDi_reduction_across_600_epochs-0D9488?style=for-the-badge)
@@ -268,6 +273,13 @@ The [`kuration-ai/`](./kuration-ai/) subpackage is a companion library that sits
 [![Tests](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml)
 ![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat)
 ![Status](https://img.shields.io/badge/status-alpha-orange?style=flat)
+
+### What's in here
+
+- **[`kuration-ai/notebooks/`](./kuration-ai/notebooks/)**. One-click Binder and Colab launchers. The first cell in each notebook installs the SDK.
+- **The `kuration-ai` companion package**: source at [`kuration-ai/src/kuration_ai/`](./kuration-ai/src/kuration_ai/), examples at [`kuration-ai/examples/`](./kuration-ai/examples/), design notes at [`kuration-ai/design/`](./kuration-ai/design/), tests at [`kuration-ai/tests/`](./kuration-ai/tests/), package config at [`kuration-ai/pyproject.toml`](./kuration-ai/pyproject.toml), release notes at [`kuration-ai/CHANGELOG.md`](./kuration-ai/CHANGELOG.md). `kai` CLI plus three shipped operations (`BalancedSelector`, `DiverseSubset`, `RareEventCoverage`). Mirrored from `kuration-ai/python-sdk`.
+
+Long-form blog posts on physical-AI data curation live on [aintropy.ai/blog](https://aintropy.ai/blog), published directly from Drive through the content pipeline.
 
 ### Getting started
 
@@ -293,11 +305,11 @@ print(f"selected {len(result.selected)} windows")
 
 Prints `selected 20 windows`. Replace the in-memory `sessions` dict with a folder of CSVs (`input("logs/*.csv", time="t")`), a Parquet dataset, or a Hugging Face dataset. The operation stays identical.
 
-### Runnable notebooks
+### Run any notebook in a browser
 
-Every notebook has a Colab and a Binder badge. Click, wait, run. The first cell in each notebook installs the SDK.
+Every notebook has a Colab and a Binder badge. Click, wait, run.
 
-> **Launcher status.** The URLs below point at `aintropy-solutions/kuration-sdk`. Colab and Binder can only clone public repositories, so the badges activate once this repo goes public. In the meantime, clone and run each notebook locally. See each notebook's own README for its exact install command (the `[gameplay]` extra is only needed by `action-state-consistency` and `collision-aware`).
+> **Launcher status.** The URLs below point at `aintropy-solutions/kuration-sdk`. Colab and Binder can only clone public repositories, so the badges activate once this repo goes public. In the meantime, clone and run each notebook locally. See the notebook's own README for the exact install command (the `[gameplay]` extra is only needed by `action-state-consistency` and `collision-aware`).
 
 | Notebook | Read | Launch |
 |---|---|---|
@@ -438,14 +450,25 @@ register("OnlyActiveWindows", OnlyActiveWindows)
 
 For the full extension contract, see [`kuration-ai/design/04_extension_seam.md`](./kuration-ai/design/04_extension_seam.md).
 
-### `kai` CLI
+### CLI reference
 
 The `kai` command is installed alongside the library.
 
+#### `kai list`
+
 ```bash
-kai list                        # available operations plus required extras
-kai describe BalancedSelector   # docstring and parameter contract
+kai list
 ```
+
+Lists available operations (built-in plus any you have registered), annotated with which extras each one needs at runtime.
+
+#### `kai describe`
+
+```bash
+kai describe BalancedSelector
+```
+
+Shows one operation's docstring and parameter contract.
 
 ### Coming next
 
@@ -455,14 +478,24 @@ Not in the initial release, on the roadmap:
 - **`kai init <profile>`**: project scaffolder for new users starting from scratch.
 - **Property-based test suite**: the initial release ships with a 52-test smoke suite; property-based tests follow.
 
-### Companion reference
+### Reference
 
 - [`kuration-ai/design/`](./kuration-ai/design/): five design decisions behind the API (operation abstraction, composition, config model, extension seam, workarounds).
 - [`kuration-ai/CHANGELOG.md`](./kuration-ai/CHANGELOG.md): release notes for `kuration-ai`.
 - [`kuration-ai/MIGRATION_NOTE.md`](./kuration-ai/MIGRATION_NOTE.md): where this content came from and why.
+- [Issue tracker](https://github.com/kuration-ai/python-sdk/issues) for feature requests, bug reports, roadmap discussion.
 - [`kuration-ai/examples/`](./kuration-ai/examples/): the gallery of runnable use cases.
-- Companion issue tracker (upstream mirror): [`kuration-ai/python-sdk` issues](https://github.com/kuration-ai/python-sdk/issues) for feature requests, bug reports, roadmap discussion.
-- Companion contribution guide: [`kuration-ai/CONTRIBUTING.md`](./kuration-ai/CONTRIBUTING.md).
+
+### Contributing
+
+Two contributing scopes coexist in this repo:
+
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) at the repo root: for the `kuration-sdk` repo as a whole (the pipeline primitive and its docs, examples, plugins, and CI).
+- [`kuration-ai/CONTRIBUTING.md`](./kuration-ai/CONTRIBUTING.md): for the `kuration-ai` companion package specifically (dev install, tests, adding operations).
+
+### License
+
+[Apache 2.0](./LICENSE).
 
 ## Reliability and project status
 
