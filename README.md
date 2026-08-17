@@ -60,10 +60,10 @@ and SHA-256 integrity metadata.
     - [`kai describe`](#kai-describe)
   - [Coming next](#coming-next)
   - [Reference](#reference)
-  - [Contributing](#contributing-1)
+  - [Contributing](#contributing)
   - [License](#license)
 - [Reliability and project status](#reliability-and-project-status)
-- [Contributing](#contributing)
+- [Contributing](#contributing-1)
 
 ## Why teams use kuration
 
@@ -258,8 +258,6 @@ started, guides, extensions, operations, and reference.
 
 ## kuration-ai — the companion package
 
-The notebooks above walk through the Kuration SDK's gameplay operators against Counter-Strike telemetry. The `kuration-ai` companion package that ships alongside is the same shape of tool for a more general problem: reproducible training-data curation for machine-learning engineers working with telemetry, sensor logs, and other row-oriented data. It ships three operations (`BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
-
 ![](https://img.shields.io/badge/20.9%25-LPIPS_improvement_over_DIAMOND-0D9488?style=for-the-badge)
 ![](https://img.shields.io/badge/62%25-JEDi_reduction_across_600_epochs-0D9488?style=for-the-badge)
 ![](https://img.shields.io/badge/<18%25-training_budget_to_reach_near--baseline-0D9488?style=for-the-badge)
@@ -268,11 +266,6 @@ The notebooks above walk through the Kuration SDK's gameplay operators against C
 ![](https://img.shields.io/badge/1,090-test_episodes_scored-0D9488)
 ![](https://img.shields.io/badge/4--second_segments-16_fps-0D9488)
 ![](https://img.shields.io/badge/51--dim_action-20_categories-0D9488)
-
-![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat)
-[![Tests](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml)
-![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat)
-![Status](https://img.shields.io/badge/status-alpha-orange?style=flat)
 
 ### What's in here
 
@@ -317,6 +310,13 @@ Every notebook has a Colab and a Binder badge. Click, wait, run.
 | `action-state-consistency` | [README](./kuration-ai/notebooks/action-state-consistency/) | [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/action-state-consistency/action-state-consistency.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Faction-state-consistency%2Faction-state-consistency.ipynb) |
 | `collision-aware` | [README](./kuration-ai/notebooks/collision-aware/) | [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/collision-aware/collision-aware.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb) |
 | `coverage-based-curation` | [README](./kuration-ai/notebooks/coverage-based-curation/) | [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/coverage-based-curation/coverage-based-curation.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb) |
+
+The notebooks above walk through the Kuration SDK's gameplay operators against Counter-Strike telemetry. The `kuration-ai` companion package that ships alongside is the same shape of tool for a more general problem: reproducible training-data curation for machine-learning engineers working with telemetry, sensor logs, and other row-oriented data. It ships three operations (`BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
+
+![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat)
+[![Tests](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml)
+![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat)
+![Status](https://img.shields.io/badge/status-alpha-orange?style=flat)
 
 ### Use cases
 
