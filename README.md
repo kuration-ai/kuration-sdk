@@ -143,12 +143,6 @@ HTML comparison.
   <sub><em>DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall).</em></sub>
 </p>
 
-<p align="center">
-  <img src="assets/hojepa-collision-flagged.gif" alt="The clip is flagged by the model as it has two instances where the player collides with the wall." width="100%">
-  <br>
-  <sub><em>The clip is flagged by the model as it has two instances where the player collides with the wall.</em></sub>
-</p>
-
 Stateful input checks follow the same pipeline-first rule:
 
 ```python
@@ -159,6 +153,12 @@ verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
 The returned value is still the ordinary immutable pipeline, so selection, inspection, and
 output can continue from it. `.analyze(...)` remains available when a detached result is the
 intended endpoint.
+
+<p align="center">
+  <img src="assets/hojepa-collision-flagged.gif" alt="The clip is flagged by the model as it has two instances where the player collides with the wall." width="100%">
+  <br>
+  <sub><em>The clip is flagged by the model as it has two instances where the player collides with the wall.</em></sub>
+</p>
 
 ## Try it in five minutes
 
