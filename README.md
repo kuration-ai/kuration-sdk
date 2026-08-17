@@ -103,6 +103,16 @@ bounded frame strips and action context automatically. For whole-video review,
 `gameplay.compare_videos(before, after)` renders synchronized players and can save a standalone
 HTML comparison.
 
+<p align="center">
+  <img src="assets/slot_initial.png" alt="Slots Initialised to different Regions in the Scene." width="48%">
+  &nbsp;
+  <img src="assets/slot_collapse.png" alt="Slots Collapsing to the Centre." width="48%">
+  <br>
+  <sub><em>Slots Initialised to different Regions in the Scene.&nbsp;&nbsp;·&nbsp;&nbsp;Slots Collapsing to the Centre.</em></sub>
+  <br>
+  <sub><em>From <a href="https://github.com/aintropy-ai/embedding-physical-ai-paper">Representation learning for curating virtual worlds data</a>.</em></sub>
+</p>
+
 Stateful input checks follow the same pipeline-first rule:
 
 ```python
