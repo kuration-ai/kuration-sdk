@@ -132,6 +132,18 @@ bounded frame strips and action context automatically. For whole-video review,
 `gameplay.compare_videos(before, after)` renders synchronized players and can save a standalone
 HTML comparison.
 
+<p align="center">
+  <img src="assets/diamond-world-model-blur.gif" alt="DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall)." width="100%">
+  <br>
+  <sub><em>DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall).</em></sub>
+</p>
+
+<p align="center">
+  <img src="assets/hojepa-collision-flagged.gif" alt="The clip is flagged by the model as it has two instances where the player collides with the wall." width="100%">
+  <br>
+  <sub><em>The clip is flagged by the model as it has two instances where the player collides with the wall.</em></sub>
+</p>
+
 Stateful input checks follow the same pipeline-first rule:
 
 ```python
