@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/kuration-hero.svg" alt="Kuration turns raw sequential data into selected, verified training shards" width="100%">
+  <img src="assets/kuration-operators-hero.svg" alt="Three of the Kuration SDK's shipped operators — action-state consistency, collision, and coverage-based sampling — showing what each produces on real gameplay recordings" width="100%">
 </p>
 
 # kuration-sdk
@@ -30,6 +30,35 @@ dataset.output("out/training-v1", preset="numpy-timeseries")
 The result is not just a directory of arrays. It is a portable dataset artifact with train/test
 shards, source identity, selection metadata, a resolved configuration, component provenance,
 and SHA-256 integrity metadata.
+
+## Contents
+
+- [Why teams use kuration](#why-teams-use-kuration)
+- [Install](#install)
+- [Try it in five minutes](#try-it-in-five-minutes)
+- [A dataset you can inspect and defend](#a-dataset-you-can-inspect-and-defend)
+- [Choose your path](#choose-your-path)
+- [Realistic examples](#realistic-examples)
+- [kuration-ai — the companion package](#kuration-ai--the-companion-package)
+  - [Getting started](#getting-started)
+  - [Runnable notebooks](#runnable-notebooks)
+  - [Use cases](#use-cases)
+    - [Balanced sensor shards](#balanced-sensor-shards)
+    - [Rare-event coverage](#rare-event-coverage)
+    - [Diverse subset](#diverse-subset)
+  - [Beyond the gallery](#beyond-the-gallery)
+    - [Sampling methods](#sampling-methods)
+    - [Data source adapters](#data-source-adapters)
+    - [Output formats and presets](#output-formats-and-presets)
+    - [Pre-selection filters](#pre-selection-filters)
+    - [Fluent pipeline methods](#fluent-pipeline-methods)
+  - [Reproducibility](#reproducibility)
+  - [Writing your own operation](#writing-your-own-operation)
+  - [`kai` CLI](#kai-cli)
+  - [Coming next](#coming-next)
+  - [Companion reference](#companion-reference)
+- [Reliability and project status](#reliability-and-project-status)
+- [Contributing](#contributing)
 
 ## Why teams use kuration
 
@@ -102,16 +131,6 @@ media support present on that concrete report. On a video-backed live pipeline, 
 bounded frame strips and action context automatically. For whole-video review,
 `gameplay.compare_videos(before, after)` renders synchronized players and can save a standalone
 HTML comparison.
-
-<p align="center">
-  <img src="assets/slot_initial.png" alt="Slots Initialised to different Regions in the Scene." width="48%">
-  &nbsp;
-  <img src="assets/slot_collapse.png" alt="Slots Collapsing to the Centre." width="48%">
-  <br>
-  <sub><em>Slots Initialised to different Regions in the Scene.&nbsp;&nbsp;·&nbsp;&nbsp;Slots Collapsing to the Centre.</em></sub>
-  <br>
-  <sub><em>From <a href="https://github.com/aintropy-ai/embedding-physical-ai-paper">Representation learning for curating virtual worlds data</a>.</em></sub>
-</p>
 
 Stateful input checks follow the same pipeline-first rule:
 
@@ -221,10 +240,6 @@ started, guides, extensions, operations, and reference.
 | [Open P2P](https://github.com/aintropy-ai/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Protobuf annotations, cross-game action coverage, corrections, instructions, and video joins |
 
 ## kuration-ai — the companion package
-
-<p align="center">
-  <img src="assets/kuration-operators-hero.svg" alt="Kuration SDK wrapper and companion package" width="100%">
-</p>
 
 The [`kuration-ai/`](./kuration-ai/) subpackage is a companion library that sits on top of the SDK. It ships runnable notebooks that walk through the Kuration SDK's gameplay operators against Counter-Strike telemetry, plus the `kuration-ai` Python package for reproducible-curation on general row-oriented data (telemetry, sensor logs). It ships three operations (`BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
 
