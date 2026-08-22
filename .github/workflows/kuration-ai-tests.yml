@@ -24,7 +24,7 @@ jobs:
             echo "run_tests=true" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.gate.outputs.run_tests == 'true'
         with:
           python-version: "3.13"
