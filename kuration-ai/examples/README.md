@@ -5,8 +5,9 @@ README with expected output.
 
 - [**Balanced sensor shards**](./balanced-sensor-shards/): cover the whole
   range of a signal's variability instead of the natural distribution peak.
-- [**Rare-event coverage**](./rare-event-coverage/): sample so rare fault
-  events don't get dropped by ordinary distribution matching.
+- [**Rare-event coverage**](./rare-event-coverage/): oversample rare
+  events (like collisions) that a world model needs but that ordinary
+  play barely contains.
 - [**Diverse subset**](./diverse-subset/): cluster in feature space to
   compress a redundant dataset while preserving coverage.
 
