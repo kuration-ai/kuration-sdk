@@ -45,8 +45,8 @@ class OnlyActiveWindows:
 
     def apply(self, pipeline):
         return (pipeline
-                .measure("activity", "std", of="signal")
-                .filter("activity", ">", self.threshold))
+                .measure("motion", "std", of="turn_rate")
+                .filter("motion", ">", self.threshold))
 ```
 
 No import inheritance, no register call required for the class to work standalone. Registration is only needed for the config-dict style (see `03_config_model.md`).

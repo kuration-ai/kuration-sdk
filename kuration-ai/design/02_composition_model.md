@@ -18,8 +18,8 @@ For the "one operation" case (CLAUDE.md principle 2: a client can pick just one)
 from kuration_ai import BalancedSelector, RareEventCoverage, run
 
 result = run(pipeline, [
-    RareEventCoverage(feature="fault_rate", of="fault"),
-    BalancedSelector(feature="activity", of="signal", bins=8, count=100),
+    RareEventCoverage(of="collision"),
+    BalancedSelector(feature="motion", of="turn_rate", bins=8, count=100),
 ]).options(seed=1).collect()
 ```
 
@@ -29,8 +29,8 @@ Ordered application. Same semantics as chaining `.apply()` calls, but reads left
 
 ```python
 result = run(pipeline, [
-    {"type": "RareEventCoverage", "feature": "fault_rate", "of": "fault"},
-    {"type": "BalancedSelector", "feature": "activity", "of": "signal",
+    {"type": "RareEventCoverage", "of": "collision"},
+    {"type": "BalancedSelector", "feature": "motion", "of": "turn_rate",
      "bins": 8, "count": 100},
 ]).options(seed=1).collect()
 ```
@@ -60,7 +60,7 @@ pipeline = (input("data/*.csv", time="t")
             .window(8, stride=4))                            # SDK
 
 pipeline = run(pipeline, [
-    BalancedSelector(feature="activity", of="signal"),       # kit
+    BalancedSelector(feature="motion", of="turn_rate"),      # kit
 ])
 
 pipeline = pipeline.options(seed=1)                          # SDK
@@ -75,8 +75,8 @@ The three composition styles above are guaranteed to produce identical results. 
 
 ```python
 def test_config_parity(pipeline_fixture):
-    op_instances = [BalancedSelector(feature="activity", of="signal")]
-    config_dicts = [{"type": "BalancedSelector", "feature": "activity", "of": "signal"}]
+    op_instances = [BalancedSelector(feature="motion", of="turn_rate")]
+    config_dicts = [{"type": "BalancedSelector", "feature": "motion", "of": "turn_rate"}]
 
     r_direct = op_instances[0].apply(pipeline_fixture).options(seed=1).collect()
     r_list = run(pipeline_fixture, op_instances).options(seed=1).collect()

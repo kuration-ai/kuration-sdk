@@ -30,7 +30,7 @@ compiled chain:
 
 - Drop `dedup_threshold=None` to skip the dedup pre-pass entirely.
 - Increase `n_clusters` (5 → 32 → 128) for larger datasets. The pipeline builder default is 2048.
-- Change the `features` list to cluster on different measured columns. `slam_motion_diversity` uses path length, turning, and climb; those three make a natural feature space.
+- Change the `features` list to cluster on different measured columns. The SDK's SLAM motion axes (`slam_path_length`, `slam_turn_degrees`, `slam_max_turn_degrees`, `slam_motion_efficiency`, `slam_spatial_extent`) make a natural feature space when combined.
 - Measure additional features before applying the operation to see how the diversity axis changes.
 
 ## Related

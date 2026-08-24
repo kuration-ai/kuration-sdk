@@ -6,11 +6,12 @@ from every bin. Uses `BalancedSelector` from kuration_ai, which compiles
 to `.measure(...) -> .bin(...) -> .sample("equal", ...)` on the Kuration
 SDK pipeline.
 
-The blog target is motion-diversity binning: the SDK's
-`slam_motion_diversity` bins windows by how the camera moved (path
-length, turning, climb) and samples equally. The dataset below is a
-synthetic stand-in with the shape a real corpus would have after
-running `slam_pipeline` (per-tick turn-rate column over a set of clips).
+The blog target is motion-diversity binning. The Kuration Introduction
+blog describes `slam_motion_diversity` as binning windows by how the
+camera moved; the SDK ships motion axes like `slam_path_length`
+(default) and `slam_turn_degrees`. The dataset below is a synthetic
+stand-in with the shape a real corpus would have after running
+`slam_pipeline` (per-tick turn-rate column over a set of clips).
 
 Runnable with:
 

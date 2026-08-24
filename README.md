@@ -326,7 +326,7 @@ Three curation jobs come with the library. Each has its own runnable example fol
 
 Most gameplay is the same movement: walking forward, standard turns, level ground. Sample naively and the training set inherits that natural distribution and barely touches the harder motions (tight turns, sharp climbs, high-speed segments). Quantile binning matches the distribution, which is exactly what discards rare events. Coverage has to be measured on the axis you actually care about.
 
-`BalancedSelector` measures a per-window metric on one axis (turning, speed, climb, whatever), bins the values evenly across the observed range, then samples the same count from every bin. That's the pattern the SDK's `slam_motion_diversity` uses on `slam_turn_degrees`, generalized to any per-window column.
+`BalancedSelector` measures a per-window metric on one axis (turning, path length, whatever), bins the values evenly across the observed range, then samples the same count from every bin. That's the pattern the SDK's `slam_motion_diversity` uses (default axis `slam_path_length`; the Intro blog example switches to `slam_turn_degrees`), generalized to any per-window column.
 
 Runnable example: [`kuration-ai/examples/motion-coverage/`](./kuration-ai/examples/motion-coverage/)
 

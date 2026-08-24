@@ -5,11 +5,13 @@ dedup for near-duplicate windows. Uses `DiverseSubset` from kuration_ai,
 which compiles to `.filter("dedup", ...) -> .sample("cluster-balanced", ...)`
 on the Kuration SDK pipeline.
 
-The blog target is multi-axis motion diversity: the Kuration Introduction
-blog describes `slam_motion_diversity` as "binning windows by how the
-camera moved, using path length, turning, and climb." That's three axes;
-DiverseSubset generalizes to any feature space and samples equally from
-k-means clusters over it.
+The blog target is multi-axis motion diversity. The Kuration Introduction
+blog describes `slam_motion_diversity` as binning windows by how the
+camera moved along one axis; the SDK ships motion axes like
+`slam_path_length`, `slam_turn_degrees`, `slam_max_turn_degrees`, and
+`slam_motion_efficiency`. DiverseSubset generalizes single-axis binning
+to any set of pre-measured features and samples equally from k-means
+clusters over that feature space.
 
 Runnable with:
 

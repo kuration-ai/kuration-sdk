@@ -10,7 +10,7 @@ Every operation has sensible defaults. A tier-1 user writes:
 
 ```python
 from kuration_ai import BalancedSelector
-result = BalancedSelector(feature="activity", of="signal").apply(pipeline).collect()
+result = BalancedSelector(feature="motion", of="turn_rate").apply(pipeline).collect()
 ```
 
 Only the two truly-required parameters (`feature`, `of`) are named. Bins, count, kind: all defaulted (`bins=8`, `count=100`, `kind="std"`).
@@ -23,12 +23,11 @@ Same pipeline, expressed as YAML:
 # curate.yaml
 operations:
   - type: RareEventCoverage
-    feature: fault_rate
-    of: fault
+    of: collision
     count: 200
   - type: BalancedSelector
-    feature: activity
-    of: signal
+    feature: motion
+    of: turn_rate
     bins: 8
     count: 100
 ```
@@ -58,9 +57,9 @@ class ThresholdedBalancer:
     threshold: float
     def apply(self, pipeline):
         return (pipeline
-                .measure("activity", "std", of="signal")
-                .filter("activity", ">", self.threshold)
-                .bin("activity", bins=8)
+                .measure("motion", "std", of="turn_rate")
+                .filter("motion", ">", self.threshold)
+                .bin("motion", bins=8)
                 .sample("equal", n=self.dynamic_count()))
     def dynamic_count(self):
         # user's own logic
