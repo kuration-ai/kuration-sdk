@@ -44,9 +44,9 @@ and SHA-256 integrity metadata.
   - [Run any notebook in a browser](#run-any-notebook-in-a-browser)
   - [Getting started](#getting-started)
   - [Use cases](#use-cases)
-    - [Balanced sensor shards](#balanced-sensor-shards)
+    - [Motion-diversity coverage](#motion-diversity-coverage)
     - [Rare-event coverage](#rare-event-coverage)
-    - [Diverse subset](#diverse-subset)
+    - [Diversity sampling](#diversity-sampling)
   - [Beyond the gallery](#beyond-the-gallery)
     - [Sampling methods](#sampling-methods)
     - [Data source adapters](#data-source-adapters)
@@ -287,7 +287,7 @@ Every notebook has a Colab and a Binder badge. Click, wait, run.
 | `collision-aware` | [README](./kuration-ai/notebooks/collision-aware/) | [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/collision-aware/collision-aware.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb) |
 | `coverage-based-curation` | [README](./kuration-ai/notebooks/coverage-based-curation/) | [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/coverage-based-curation/coverage-based-curation.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb) |
 
-The notebooks above walk through the Kuration SDK's gameplay operators against Counter-Strike telemetry. The `kuration-ai` companion package that ships alongside is the same shape of tool for a more general problem: reproducible training-data curation for machine-learning engineers working with telemetry, sensor logs, and other row-oriented data. It ships three operations (`BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
+The notebooks above walk through the Kuration SDK's gameplay operators against Counter-Strike telemetry. The `kuration-ai` companion package that ships alongside is the same shape of tool for the sampling half of world-model curation. It ships three composable operations: `BalancedSelector` for motion-diversity coverage, `RareEventCoverage` for oversampling collisions and other rare events, and `DiverseSubset` for multi-axis diversity sampling. Plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat)
 [![Tests](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml)
@@ -307,48 +307,44 @@ Runs on Python 3.11 or later. Depends on `kuration-sdk[methods,parquet]`.
 Your first curated result, in seven lines:
 
 ```python
-from kuration_ai import input, BalancedSelector
+from kuration_ai import input, RareEventCoverage
 
-sessions = {"device-a": [{"t": float(i), "signal": float(i * 3 % 7)} for i in range(100)]}
+sessions = {"clip-1": [{"t": float(i), "collision": 1 if i % 30 == 0 else 0} for i in range(200)]}
 pipeline = input(sessions, time="t", hz=10.0).window(8, stride=4)
-result = (BalancedSelector(feature="activity", of="signal", bins=4, count=20)
+result = (RareEventCoverage(of="collision", count=15, weight=2.0)
           .apply(pipeline).options(seed=1).collect())
 print(f"selected {len(result.selected)} windows")
 ```
 
-Prints `selected 20 windows`. Replace the in-memory `sessions` dict with a folder of CSVs (`input("logs/*.csv", time="t")`), a Parquet dataset, or a Hugging Face dataset. The operation stays identical.
+Prints `selected 15 windows`. Replace the in-memory `sessions` dict with a folder of CSVs (`input("clips/*.csv", time="t")`), a Parquet dataset, or a Hugging Face dataset. The operation stays identical.
 
 ### Use cases
 
 Three curation jobs come with the library. Each has its own runnable example folder with the expected output baked into the folder's README.
 
-#### Balanced sensor shards
+#### Motion-diversity coverage
 
-Sensor data across multiple devices tends to have uneven activity. Some devices are busy, some are quiet, and row-uniform sampling produces a training set dominated by the busy ones. If the model needs to work on both regimes, that skew is a problem.
+Most gameplay is the same movement: walking forward, standard turns, level ground. Sample naively and the training set inherits that natural distribution and barely touches the harder motions (tight turns, sharp climbs, high-speed segments). Quantile binning matches the distribution, which is exactly what discards rare events. Coverage has to be measured on the axis you actually care about.
 
-`BalancedSelector` measures activity per window (default: standard deviation of a chosen signal), quantile-bins the range, then samples equally from each bin. Quiet and busy windows get equal representation regardless of their volume in the raw data.
+`BalancedSelector` measures a per-window metric on one axis (turning, speed, climb, whatever), bins the values evenly across the observed range, then samples the same count from every bin. That's the pattern the SDK's `slam_motion_diversity` uses on `slam_turn_degrees`, generalized to any per-window column.
 
-The typical alternative is manually oversampling the underrepresented segments in pandas. Works, but doesn't leave a reproducible trail.
-
-Runnable example: [`kuration-ai/examples/balanced-sensor-shards/`](./kuration-ai/examples/balanced-sensor-shards/)
+Runnable example: [`kuration-ai/examples/motion-coverage/`](./kuration-ai/examples/motion-coverage/)
 
 #### Rare-event coverage
 
-Fault detection, safety-critical monitoring, and anomaly detection have the same shape: the rare event is what matters, and row-uniform sampling drops most of it. A model trained without correction learns to predict "no event" and looks fine on aggregate accuracy while failing on the events that actually matter.
+A world model only learns the physics that show up consistently in its training data. And the interactions it most needs to learn (a moving object hitting a solid one, a player-object contact) are the ones good players avoid. That's why DIAMOND's CS:GO world model lets players double- and triple-jump against walls: successive jumps don't appear often enough in real play for the model to learn they shouldn't be possible.
 
-`RareEventCoverage` measures the per-window rate of a target column (a boolean or 0/1 field like `fault`, `alarm`, or `dropout`), then samples with weighted importance toward windows containing the event.
-
-Standard training-time alternatives are SMOTE, class-weighted loss, or focal loss. This is a data-selection-time alternative and composes with any of them.
+The fix isn't more footage. It's finding the events already in the footage you have and oversampling them past their natural base rate. `RareEventCoverage` measures the rare event's per-window rate, then weights the sampler so those windows show up far more often than they do in the wild.
 
 Runnable example: [`kuration-ai/examples/rare-event-coverage/`](./kuration-ai/examples/rare-event-coverage/)
 
-#### Diverse subset
+#### Diversity sampling
 
-Corpora with heavy near-duplication (same device replaying similar conditions, same content re-scraped across sources, same images with augmentations already applied) cost training compute without adding new signal. Row-uniform sampling returns redundant windows.
+Most activity-based metrics move together. A chaotic firefight is high on every axis at once; an idle stretch is low on all of them. Pick a single axis to sample on and you inherit whatever the other axes happen to correlate with. Cluster the windows in a multi-axis feature space and sample equally from each cluster, and the redundant part of the corpus stops crowding out the parts that actually differ from it.
 
-`DiverseSubset` clusters in feature space over pre-measured columns, optionally applies a cosine-similarity dedup filter, then samples equally from each cluster. Similar to the SemDeDup and k-means diversity techniques used in modern LLM pretraining pipelines (Anthropic, Meta, DINOv2), packaged as one operation.
+The Intro World-Model-Data-Curation blog names this "diversity sampling", one of the things "collision detection, kinematics, action-state checks, and diversity sampling all get easier on a dataset that previously had no notion of space." `DiverseSubset` clusters over any set of pre-measured features and takes an equal share from every cluster. Optional dedup pre-pass filters near-duplicates first.
 
-Runnable example: [`kuration-ai/examples/diverse-subset/`](./kuration-ai/examples/diverse-subset/)
+Runnable example: [`kuration-ai/examples/diversity-sampling/`](./kuration-ai/examples/diversity-sampling/)
 
 Each folder holds one runnable script, a README with the exact expected output, and a "what to try next" section for parameter adjustments.
 
@@ -399,18 +395,18 @@ Same operation, three equivalent invocation styles. The three are guaranteed to 
 
 ```python
 # 1. Direct: one operation, one line
-result = BalancedSelector(feature="activity", of="signal").apply(pipeline).collect()
+result = BalancedSelector(feature="motion", of="turn_rate").apply(pipeline).collect()
 
 # 2. Chained instances: pipeline in code
 result = run(pipeline, [
-    RareEventCoverage(of="fault"),
-    BalancedSelector(feature="activity", of="signal"),
+    RareEventCoverage(of="collision"),
+    BalancedSelector(feature="motion", of="turn_rate"),
 ]).collect()
 
 # 3. Config dict: pipeline in YAML, JSON, or TOML
 config = [
-    {"type": "RareEventCoverage", "of": "fault"},
-    {"type": "BalancedSelector", "feature": "activity", "of": "signal"},
+    {"type": "RareEventCoverage", "of": "collision"},
+    {"type": "BalancedSelector", "feature": "motion", "of": "turn_rate"},
 ]
 result = run(pipeline, config).collect()
 ```
@@ -431,13 +427,13 @@ class OnlyActiveWindows:
 
     def apply(self, pipeline):
         return (pipeline
-                .measure("signal_activity", "std", of="signal")
-                .filter("signal_activity", ">", self.threshold))
+                .measure("turn_activity", "std", of="turn_rate")
+                .filter("turn_activity", ">", self.threshold))
 
 # Compose it with the shipped operations
 result = run(pipeline, [
     OnlyActiveWindows(threshold=0.15),
-    BalancedSelector(feature="activity", of="signal", bins=4, count=20),
+    BalancedSelector(feature="motion", of="turn_rate", bins=4, count=20),
 ]).options(seed=1).collect()
 ```
 
