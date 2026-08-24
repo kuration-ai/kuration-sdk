@@ -3,13 +3,15 @@
 Three self-contained examples. Each folder holds a runnable script and its own
 README with expected output.
 
-- [**Balanced sensor shards**](./balanced-sensor-shards/): cover the whole
-  range of a signal's variability instead of the natural distribution peak.
-- [**Rare-event coverage**](./rare-event-coverage/): oversample rare
-  events (like collisions) that a world model needs but that ordinary
-  play barely contains.
-- [**Diverse subset**](./diverse-subset/): cluster in feature space to
-  compress a redundant dataset while preserving coverage.
+- [**Motion-diversity coverage**](./motion-coverage/): cover a motion axis
+  (turning, speed, climb) evenly instead of matching the natural distribution,
+  so the tail isn't crowded out by the boring middle.
+- [**Rare-event coverage**](./rare-event-coverage/): oversample rare events
+  (like collisions) that a world model needs but that ordinary play barely
+  contains.
+- [**Diversity sampling**](./diversity-sampling/): cluster in feature space and
+  sample equally from each cluster, so redundant windows don't crowd out the
+  diverse ones.
 
 Also here:
 
@@ -21,7 +23,7 @@ Also here:
 ## Run any of them
 
 ```
-pip install kuration-kuration-ai
+pip install kuration-ai
 python examples/<folder>/<script>.py
 ```
 
