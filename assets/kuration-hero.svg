@@ -1,274 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 480" role="img" aria-labelledby="title desc" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
-  <title id="title">Kuration</title>
-  <desc id="desc">Kuration curates large gameplay datasets into training-ready shards for world models. Seven gameplay operators: join_video pairs an action log with a video frame by frame; pixel_shift measures how many pixels the screen moves per isolated key or mouse press; action_state_consistency issues a per-clip verdict of consistent, inconsistent, or inconclusive against a percentile baseline; collision detects and classifies wall-hits; slam_pipeline recovers a camera's 3D path from raw video; slam_quality scores each window's reconstruction for gaps, impossible motion, and scale; slam_motion_diversity bins windows by path length, turning, and climb.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 360" role="img" aria-labelledby="title desc" font-family="Avenir Next, Avenir, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+  <title id="title">Kuration SDK</title>
+  <desc id="desc">Kuration curates large gameplay datasets into training-ready data for world models. The gameplay module ships seven operators: join_video, pixel_shift, action_state_consistency, collision, slam_pipeline, slam_quality, and slam_motion_diversity.</desc>
 
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0"    stop-color="#08131f"/>
-      <stop offset="0.5"  stop-color="#0d2030"/>
-      <stop offset="1"    stop-color="#0a1a28"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0"    stop-color="#171d2b"/>
+      <stop offset="1"    stop-color="#273048"/>
     </linearGradient>
-
-    <linearGradient id="wordmark" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0"   stop-color="#ffffff"/>
-      <stop offset="0.5" stop-color="#e6edf3"/>
-      <stop offset="1"   stop-color="#a8b6c4"/>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"    stop-color="#ff9505" stop-opacity="0.9"/>
+      <stop offset="0.55" stop-color="#ff9505" stop-opacity="0.35"/>
+      <stop offset="1"    stop-color="#ff9505" stop-opacity="0"/>
     </linearGradient>
-
-    <linearGradient id="shard" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#00d4ff" stop-opacity="1"/>
-      <stop offset="1" stop-color="#0084a6" stop-opacity="1"/>
+    <linearGradient id="scanHighlight" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"   stop-color="#f8fafc" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#f8fafc" stop-opacity="0.14"/>
+      <stop offset="1"   stop-color="#f8fafc" stop-opacity="0"/>
     </linearGradient>
-
-    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0"   stop-color="#00d4ff" stop-opacity="0.28"/>
-      <stop offset="0.55" stop-color="#00d4ff" stop-opacity="0.08"/>
-      <stop offset="1"   stop-color="#00d4ff" stop-opacity="0"/>
-    </radialGradient>
-
-    <!-- Scanlines: thin repeating horizontal lines, drifts vertically -->
-    <pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse">
-      <rect width="4" height="4" fill="transparent"/>
-      <rect width="4" height="1" fill="#ffffff" opacity="0.03"/>
-    </pattern>
-
-    <!-- Dot grid backdrop (map-viewer feel) -->
-    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
-      <circle cx="14" cy="14" r="0.9" fill="#1a3550" opacity="0.55"/>
-    </pattern>
-
-    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="0.6"/>
-    </filter>
-
-    <style>
-      .word    { font: 800 128px ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace; letter-spacing: -4px; fill: url(#wordmark); }
-      .tagline { font: 400 16px ui-sans-serif, system-ui; fill: #93a1b0; letter-spacing: 0.02em; }
-      .eyebrow { font: 700 10px ui-sans-serif, system-ui; letter-spacing: 0.34em; fill: #00d4ff; }
-      .opname  { font: 600 12.5px ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace; fill: #cbd5e1; }
-      .side-lb { font: 600 9.5px ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: 0.24em; fill: #64748b; }
-      .hudline { stroke: #00d4ff; stroke-width: 1.4; fill: none; opacity: 0.85; stroke-linecap: round; }
-      .subline { stroke: #1e3c56; stroke-width: 1; fill: none; }
-      .icon-line   { stroke: #a8b6c4; stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-      .icon-fill   { fill: #a8b6c4; }
-      .accent-line { stroke: #00d4ff; stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-      .accent-fill { fill: #00d4ff; }
-    </style>
   </defs>
 
-  <!-- Base background -->
-  <rect width="1320" height="480" rx="20" fill="url(#bg)"/>
-  <!-- Dot-grid backdrop (whole canvas) -->
-  <rect width="1320" height="480" rx="20" fill="url(#dots)"/>
-  <!-- Ambient center glow -->
-  <ellipse cx="660" cy="230" rx="520" ry="220" fill="url(#glow)"/>
+  <!-- Background -->
+  <rect width="1320" height="360" rx="28" fill="url(#bg)"/>
 
-  <!-- ========================================================================== -->
-  <!-- LEFT FLANK: raw gameplay frames streaming toward the center                -->
-  <!-- ========================================================================== -->
-  <g transform="translate(0,0)">
-    <!-- side label -->
-    <text x="52" y="70" class="side-lb">RAW  GAMEPLAY</text>
-    <line x1="52" y1="80" x2="176" y2="80" class="subline"/>
+  <!-- Composition anchored left, plenty of whitespace right -->
+  <g transform="translate(96,100)">
+    <!-- Brand mark: the orange stylized K from the existing brand asset -->
+    <path d="M0 12h26v62l58-62h34L63 69l60 79H90L45 88l-19 19v41H0z" fill="#ff9505">
+      <animate attributeName="opacity" values="1;0.86;1" dur="4.4s" repeatCount="indefinite"/>
+    </path>
 
-    <!-- eight small frames drifting rightward, staggered -->
-    <g>
-      <!-- frame set: each rectangle slightly different fill to feel alive -->
-      <g transform="translate(52,110)">
-        <rect width="52" height="34" rx="3" fill="#132638" stroke="#20405e" stroke-width="1"/>
-        <rect x="4" y="4" width="8" height="6" fill="#f59e0b" opacity="0.65"/>
-        <rect x="14" y="4" width="8" height="6" fill="#4ade80" opacity="0.55"/>
-        <animateTransform attributeName="transform" type="translate" values="52 110; 340 110; 340 110" keyTimes="0;0.9;1" dur="6.4s" repeatCount="indefinite"/>
-        <animate attributeName="opacity" values="0;0.85;0" keyTimes="0;0.5;1" dur="6.4s" repeatCount="indefinite"/>
-      </g>
-      <g transform="translate(52,160)">
-        <rect width="52" height="34" rx="3" fill="#0f2030" stroke="#20405e" stroke-width="1"/>
-        <rect x="4" y="4" width="8" height="6" fill="#f87171" opacity="0.55"/>
-        <animateTransform attributeName="transform" type="translate" values="52 160; 340 160; 340 160" keyTimes="0;0.9;1" dur="6.4s" begin="0.8s" repeatCount="indefinite"/>
-        <animate attributeName="opacity" values="0;0.75;0" keyTimes="0;0.5;1" dur="6.4s" begin="0.8s" repeatCount="indefinite"/>
-      </g>
-      <g transform="translate(52,210)">
-        <rect width="52" height="34" rx="3" fill="#132638" stroke="#20405e" stroke-width="1"/>
-        <rect x="6" y="6" width="6" height="6" fill="#4ade80" opacity="0.55"/>
-        <rect x="16" y="8" width="6" height="6" fill="#f59e0b" opacity="0.65"/>
-        <animateTransform attributeName="transform" type="translate" values="52 210; 340 210; 340 210" keyTimes="0;0.9;1" dur="6.4s" begin="1.6s" repeatCount="indefinite"/>
-        <animate attributeName="opacity" values="0;0.85;0" keyTimes="0;0.5;1" dur="6.4s" begin="1.6s" repeatCount="indefinite"/>
-      </g>
-      <g transform="translate(52,260)">
-        <rect width="52" height="34" rx="3" fill="#0f2030" stroke="#20405e" stroke-width="1"/>
-        <rect x="4" y="4" width="8" height="6" fill="#f87171" opacity="0.55"/>
-        <animateTransform attributeName="transform" type="translate" values="52 260; 340 260; 340 260" keyTimes="0;0.9;1" dur="6.4s" begin="2.4s" repeatCount="indefinite"/>
-        <animate attributeName="opacity" values="0;0.75;0" keyTimes="0;0.5;1" dur="6.4s" begin="2.4s" repeatCount="indefinite"/>
-      </g>
-      <g transform="translate(52,310)">
-        <rect width="52" height="34" rx="3" fill="#132638" stroke="#20405e" stroke-width="1"/>
-        <rect x="6" y="6" width="6" height="6" fill="#4ade80" opacity="0.55"/>
-        <animateTransform attributeName="transform" type="translate" values="52 310; 340 310; 340 310" keyTimes="0;0.9;1" dur="6.4s" begin="3.2s" repeatCount="indefinite"/>
-        <animate attributeName="opacity" values="0;0.85;0" keyTimes="0;0.5;1" dur="6.4s" begin="3.2s" repeatCount="indefinite"/>
-      </g>
-    </g>
-  </g>
+    <!-- kuration wordmark -->
+    <text x="150" y="86" fill="#f8fafc" font-size="86" font-weight="600" letter-spacing="-3.4">kuration</text>
 
-  <!-- ========================================================================== -->
-  <!-- RIGHT FLANK: curated training shards, brighter, stacked and steady        -->
-  <!-- ========================================================================== -->
-  <g transform="translate(0,0)">
-    <text x="1268" y="70" text-anchor="end" class="side-lb">TRAINING  SHARDS</text>
-    <line x1="1144" y1="80" x2="1268" y2="80" class="subline"/>
+    <!-- small SDK tag, monospace, orange -->
+    <text x="548" y="42" fill="#ff9505" font-family="ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, monospace" font-size="13" font-weight="700" letter-spacing="3">SDK</text>
 
-    <!-- Stack of curated shards -->
-    <g transform="translate(1080,140)">
-      <!-- three isometric-ish stacked -->
-      <rect x="14" y="70"  width="140" height="22" rx="4" fill="url(#shard)" opacity="0.55"/>
-      <rect x="10" y="46"  width="140" height="22" rx="4" fill="url(#shard)" opacity="0.7"/>
-      <rect x="6"  y="22"  width="140" height="22" rx="4" fill="url(#shard)" opacity="0.85"/>
-      <rect x="2"  y="0"   width="140" height="22" rx="4" fill="url(#shard)"/>
-      <!-- verified ticks on top -->
-      <g transform="translate(20,4)">
-        <rect x="0"  y="0" width="8" height="14" fill="#4ade80" opacity="0.9"/>
-        <rect x="12" y="0" width="8" height="14" fill="#4ade80" opacity="0.9"/>
-        <rect x="24" y="0" width="8" height="14" fill="#4ade80" opacity="0.9"/>
-      </g>
-      <!-- shard filename hint -->
-      <text x="60" y="15" font="600 8.5px ui-monospace" fill="#0d2030">SHA-256 ✓</text>
-    </g>
+    <!-- Tagline -->
+    <text x="152" y="126" fill="#c7cbd4" font-size="21" font-weight="400" letter-spacing="0.01em">Curate large gameplay datasets for training world models.</text>
 
-    <!-- pulse ring on stack, subtle "curated" indicator -->
-    <circle cx="1156" cy="150" r="10" fill="none" stroke="#4ade80" stroke-width="1.4" opacity="0.6">
-      <animate attributeName="r" values="10;28;10" dur="3.2s" repeatCount="indefinite"/>
-      <animate attributeName="opacity" values="0.7;0;0.7" dur="3.2s" repeatCount="indefinite"/>
-    </circle>
-  </g>
+    <!-- Thin accent rule (fades to nothing on the right) -->
+    <line x1="152" y1="156" x2="820" y2="156" stroke="url(#rule)" stroke-width="1.4"/>
 
-  <!-- ========================================================================== -->
-  <!-- CENTER: wordmark + tagline                                                -->
-  <!-- ========================================================================== -->
-  <g>
-    <!-- eyebrow -->
-    <text x="660" y="130" text-anchor="middle" class="eyebrow">CURATE  ·  MEASURE  ·  SELECT  ·  RESUME</text>
+    <!-- Seven operators as a single monospace row -->
+    <text x="152" y="190" fill="#8892a3" font-family="ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, monospace" font-size="13" font-weight="500" letter-spacing="0.06em">
+      join_video &#160; · &#160; pixel_shift &#160; · &#160; action_state_consistency &#160; · &#160; collision
+    </text>
+    <text x="152" y="212" fill="#8892a3" font-family="ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, monospace" font-size="13" font-weight="500" letter-spacing="0.06em">
+      slam_pipeline &#160; · &#160; slam_quality &#160; · &#160; slam_motion_diversity
+    </text>
 
-    <!-- wordmark -->
-    <text x="660" y="242" text-anchor="middle" class="word">kuration</text>
-
-    <!-- underline accent -->
-    <line x1="516" y1="266" x2="804" y2="266" stroke="#00d4ff" stroke-width="1.6" opacity="0.55"/>
-
-    <!-- tagline -->
-    <text x="660" y="296" text-anchor="middle" class="tagline">curate large gameplay datasets into training-ready data for world models</text>
-  </g>
-
-  <!-- ========================================================================== -->
-  <!-- BOTTOM: seven operator sigils, glyph + name (no boxes)                    -->
-  <!-- ========================================================================== -->
-  <g transform="translate(0,352)">
-    <!-- top rule + label -->
-    <line x1="240" y1="0" x2="546" y2="0" class="subline"/>
-    <text x="660" y="4" text-anchor="middle" class="eyebrow">SEVEN  GAMEPLAY  OPERATORS</text>
-    <line x1="774" y1="0" x2="1080" y2="0" class="subline"/>
-
-    <!-- Highlight bar that cycles across operators -->
-    <rect y="34" width="122" height="72" fill="#00d4ff" opacity="0.06" rx="6">
-      <animate attributeName="x" values="86;252;434;624;780;930;1102;86" keyTimes="0;0.14;0.28;0.42;0.56;0.7;0.84;1" dur="9.8s" repeatCount="indefinite"/>
-    </rect>
-
-    <!-- ─── join_video ─── -->
-    <g transform="translate(148,60)">
-      <!-- glyph: two frames linked by a line -->
-      <g class="icon-line">
-        <rect x="-16" y="-8" width="10" height="16" rx="1.5"/>
-        <rect x="6"   y="-8" width="10" height="16" rx="1.5"/>
-        <line x1="-6" y1="12" x2="6" y2="12"/>
-      </g>
-      <circle cx="-11" cy="12" r="1.6" class="accent-fill"/>
-      <circle cx="11"  cy="12" r="1.6" class="accent-fill"/>
-      <text y="40" text-anchor="middle" class="opname">join_video</text>
-    </g>
-
-    <!-- ─── pixel_shift ─── -->
-    <g transform="translate(314,60)">
-      <!-- glyph: arrow with pixel dot behind -->
-      <g class="icon-line">
-        <line x1="-16" y1="0" x2="12" y2="0"/>
-        <polyline points="6,-6 14,0 6,6"/>
-      </g>
-      <rect x="-19" y="-3" width="6" height="6" class="accent-fill" opacity="0.85"/>
-      <text y="40" text-anchor="middle" class="opname">pixel_shift</text>
-    </g>
-
-    <!-- ─── action_state_consistency ─── -->
-    <g transform="translate(496,60)">
-      <!-- glyph: three verdict dots -->
-      <circle cx="-14" cy="0" r="4.2" fill="#4ade80"/>
-      <circle cx="0"   cy="0" r="4.2" fill="#f87171"/>
-      <circle cx="14"  cy="0" r="4.2" fill="#f59e0b"/>
-      <text y="40" text-anchor="middle" class="opname">action_state_consistency</text>
-    </g>
-
-    <!-- ─── collision ─── -->
-    <g transform="translate(686,60)">
-      <!-- glyph: burst / X impact -->
-      <g class="icon-line" stroke="#f87171">
-        <line x1="-10" y1="-10" x2="10" y2="10"/>
-        <line x1="10" y1="-10" x2="-10" y2="10"/>
-        <line x1="-14" y1="0" x2="14" y2="0"/>
-        <line x1="0" y1="-14" x2="0" y2="14"/>
-      </g>
-      <circle r="2" fill="#f87171"/>
-      <text y="40" text-anchor="middle" class="opname">collision</text>
-    </g>
-
-    <!-- ─── slam_pipeline ─── -->
-    <g transform="translate(842,60)">
-      <!-- glyph: S curve trajectory -->
-      <path d="M -18 6 C -10 -8, 4 12, 18 -4" class="icon-line"/>
-      <circle cx="18" cy="-4" r="2.4" class="accent-fill"/>
-      <text y="40" text-anchor="middle" class="opname">slam_pipeline</text>
-    </g>
-
-    <!-- ─── slam_quality ─── -->
-    <g transform="translate(992,60)">
-      <!-- glyph: 3 ascending bars -->
-      <rect x="-14" y="-4" width="6" height="14" rx="1" fill="#a8b6c4"/>
-      <rect x="-4"  y="-10" width="6" height="20" rx="1" fill="#a8b6c4"/>
-      <rect x="6"   y="-16" width="6" height="26" rx="1" fill="#a8b6c4"/>
-      <!-- checkline -->
-      <line x1="-18" y1="12" x2="16" y2="12" class="subline"/>
-      <text y="40" text-anchor="middle" class="opname">slam_quality</text>
-    </g>
-
-    <!-- ─── slam_motion_diversity ─── -->
-    <g transform="translate(1164,60)">
-      <!-- glyph: radiating arrows -->
-      <g class="icon-line">
-        <line x1="0" y1="0" x2="0" y2="-14"/>
-        <line x1="0" y1="0" x2="12" y2="-10"/>
-        <line x1="0" y1="0" x2="14" y2="4"/>
-        <line x1="0" y1="0" x2="6" y2="14"/>
-        <line x1="0" y1="0" x2="-6" y2="14"/>
-        <line x1="0" y1="0" x2="-14" y2="4"/>
-        <line x1="0" y1="0" x2="-12" y2="-10"/>
-      </g>
-      <circle r="2.4" class="accent-fill">
-        <animate attributeName="r" values="2;4;2" dur="1.6s" repeatCount="indefinite"/>
-      </circle>
-      <text y="40" text-anchor="middle" class="opname">slam_motion_diversity</text>
-    </g>
-  </g>
-
-  <!-- ========================================================================== -->
-  <!-- Corner HUD accents (subtle L-brackets)                                     -->
-  <!-- ========================================================================== -->
-  <g class="hudline">
-    <path d="M 20 20 L 42 20 M 20 20 L 20 42"/>
-    <path d="M 1300 20 L 1278 20 M 1300 20 L 1300 42"/>
-    <path d="M 20 460 L 42 460 M 20 460 L 20 438"/>
-    <path d="M 1300 460 L 1278 460 M 1300 460 L 1300 438"/>
-  </g>
-
-  <!-- Scanline overlay (subtle CRT effect, drifts) -->
-  <g>
-    <rect width="1320" height="480" rx="20" fill="url(#scan)">
-      <animateTransform attributeName="transform" type="translate" values="0 0; 0 4; 0 0" dur="6s" repeatCount="indefinite"/>
+    <!-- Subtle scanning highlight that reads across the operator list -->
+    <rect x="152" y="178" width="220" height="42" rx="4" fill="url(#scanHighlight)">
+      <animate attributeName="x" values="152;720;152" dur="8s" repeatCount="indefinite"/>
     </rect>
   </g>
 </svg>
