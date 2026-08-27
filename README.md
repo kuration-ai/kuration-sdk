@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/kuration-operators-hero.svg" alt="Three of the Kuration SDK's shipped operators — action-state consistency, collision, and coverage-based sampling — showing what each produces on real gameplay recordings" width="100%">
+  <img src="assets/kuration-hero.svg" alt="Kuration curates large gameplay datasets into training-ready shards for world models" width="100%">
 </p>
 
 # kuration-sdk
@@ -9,16 +9,14 @@ models.** Point it at time-series data (telemetry, sensor logs) or video, includ
 video paired with a synchronized action log. It selects the windows worth training
 on and writes them as shards, alongside a config that reproduces the run.
 
-For gameplay video specifically, `kuration.gameplay` ships seven operators.
-`join_video` pairs an action log with a video, frame by frame. `pixel_shift`
-measures how many pixels the screen moves for every isolated keypress, and
-`action_state_consistency` uses those measurements to flag clips where a
-keypress didn't produce the on-screen motion it should have. `collision`
-detects and classifies wall-hits, so the rare interaction moments a world
-model needs to learn physics from can be oversampled instead of averaged out.
-`slam_pipeline` recovers a camera's 3D path from raw video; `slam_quality`
-scores each window's reconstruction; `slam_motion_diversity` bins windows by
-how the camera moved.
+For gameplay video, `kuration.gameplay` ships seven operators. `join_video` pairs an
+action log with a video frame by frame. `pixel_shift` measures how many pixels the
+screen moves for every isolated keypress, and `action_state_consistency` flags clips
+where a keypress didn't produce the on-screen motion it should have. `collision`
+detects and classifies wall-hits, so the rare interaction moments a world model needs
+to learn physics from can be oversampled instead of averaged out. `slam_pipeline`
+recovers a camera's 3D path from raw video, `slam_quality` scores each window's
+reconstruction, and `slam_motion_diversity` bins windows by camera motion.
 
 ```python
 from kuration import input
@@ -133,12 +131,11 @@ evidence = report.examples(
 ```
 
 `kuration.gameplay` doesn't create a separate Pipeline class. Importing it adds gameplay
-methods (and gameplay-specific stats) to the standard `kuration.Pipeline`, and the core
-`stats()` call still works the same way. `report.available()` lists the plots and evidence
-modes for that specific report. When the pipeline is running on real video, the evidence
-panel shows the actual frames and the action stream around each example. For side-by-side
-video review, `gameplay.compare_videos(before, after)` renders synchronized players and can
-save the comparison as a standalone HTML file.
+methods and stats to the standard `kuration.Pipeline`. `report.available()` lists the
+plots and evidence modes for a given report. On a live video pipeline, the evidence panel
+shows real frames and the action stream around each example. `gameplay.compare_videos(
+before, after)` renders synchronized players and can save the comparison as a standalone
+HTML file.
 
 <p align="center">
   <img src="assets/diamond-world-model-blur.gif" alt="DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall)." width="100%">
@@ -176,9 +173,9 @@ python examples/quickstart.py --out quickstart-out
 kur-inspect quickstart-out --verify
 ```
 
-The example generates six in-memory sensor sessions and scores 42 windows. It picks the 12
-that cover the widest range of activity and fault patterns, writes them as train/test NPZ
-shards, and reads one back to confirm the output is valid. Follow the
+The example generates six in-memory sensor sessions, scores 42 windows, picks the 12 that
+cover the widest range of activity and fault patterns, writes them as train/test NPZ
+shards, and reads one back. Follow the
 **[guided quickstart](https://aintropy-solutions.github.io/kuration-sdk/quickstart/)** for the
 operator-by-operator explanation.
 
@@ -339,9 +336,9 @@ Runnable example: [`kuration-ai/examples/motion-coverage/`](./kuration-ai/exampl
 
 #### Rare-event coverage
 
-A world model only learns the physics that show up consistently in its training data. And the interactions it most needs to learn (a moving object hitting a solid one, a player-object contact) are the ones good players avoid. That's why DIAMOND's CS:GO world model lets players double- and triple-jump against walls: successive jumps don't appear often enough in real play for the model to learn they shouldn't be possible.
+A world model only learns the physics that show up consistently in its training data. And the interactions it most needs to learn (a moving object hitting a solid one, a player-object contact) are the ones good players avoid. That's why DIAMOND's CS:GO world model lets players double- and triple-jump against walls: successive jumps simply don't appear often enough in the training data for the model to learn that they shouldn't be possible.
 
-The fix isn't more footage. It's finding the events already in the footage you have and oversampling them past their natural base rate. `RareEventCoverage` measures the rare event's per-window rate, then weights the sampler so those windows show up far more often than they do in the wild.
+The fix isn't collecting more footage. It's finding the events already buried in the footage you have and oversampling them relative to their natural, very low, base rate. `RareEventCoverage` measures the rare event's per-window rate, then weights the sampler so those windows show up far more often than they do in the wild.
 
 Runnable example: [`kuration-ai/examples/rare-event-coverage/`](./kuration-ai/examples/rare-event-coverage/)
 
