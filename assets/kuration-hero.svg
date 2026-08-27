@@ -1,381 +1,274 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 720" role="img" aria-labelledby="title desc" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
-  <title id="title">Kuration operators</title>
-  <desc id="desc">Seven gameplay operators shipped in kuration.gameplay: join_video pairs an action log with a video frame by frame; pixel_shift measures how far a picture moves on screen per isolated keypress via Farneback optical flow; action_state_consistency issues a per-clip verdict of consistent, inconsistent, or inconclusive against a baseline; collision detects and classifies wall-hits (head_on, angled, slides); slam_pipeline recovers a camera's 3D path from raw video with loop closure; slam_quality scores each window's reconstruction for gaps, impossible motion, and scale; slam_motion_diversity bins windows by path length, turning, and climb.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 480" role="img" aria-labelledby="title desc" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+  <title id="title">Kuration</title>
+  <desc id="desc">Kuration curates large gameplay datasets into training-ready shards for world models. Seven gameplay operators: join_video pairs an action log with a video frame by frame; pixel_shift measures how many pixels the screen moves per isolated key or mouse press; action_state_consistency issues a per-clip verdict of consistent, inconsistent, or inconclusive against a percentile baseline; collision detects and classifies wall-hits; slam_pipeline recovers a camera's 3D path from raw video; slam_quality scores each window's reconstruction for gaps, impossible motion, and scale; slam_motion_diversity bins windows by path length, turning, and climb.</desc>
 
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#081420"/>
-      <stop offset="1" stop-color="#0d2030"/>
+      <stop offset="0"    stop-color="#08131f"/>
+      <stop offset="0.5"  stop-color="#0d2030"/>
+      <stop offset="1"    stop-color="#0a1a28"/>
     </linearGradient>
-    <linearGradient id="cardGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#132638"/>
-      <stop offset="1" stop-color="#0e1e2c"/>
+
+    <linearGradient id="wordmark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#e6edf3"/>
+      <stop offset="1"   stop-color="#a8b6c4"/>
     </linearGradient>
-    <linearGradient id="qualBar" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="#00d4ff" stop-opacity="0.9"/>
-      <stop offset="1" stop-color="#00d4ff" stop-opacity="0.4"/>
+
+    <linearGradient id="shard" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00d4ff" stop-opacity="1"/>
+      <stop offset="1" stop-color="#0084a6" stop-opacity="1"/>
     </linearGradient>
+
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0"   stop-color="#00d4ff" stop-opacity="0.28"/>
+      <stop offset="0.55" stop-color="#00d4ff" stop-opacity="0.08"/>
+      <stop offset="1"   stop-color="#00d4ff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Scanlines: thin repeating horizontal lines, drifts vertically -->
     <pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse">
-      <rect width="4" height="4" fill="#0a1826"/>
-      <rect width="4" height="1" fill="#0d2030" opacity="0.4"/>
+      <rect width="4" height="4" fill="transparent"/>
+      <rect width="4" height="1" fill="#ffffff" opacity="0.03"/>
     </pattern>
+
+    <!-- Dot grid backdrop (map-viewer feel) -->
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="14" cy="14" r="0.9" fill="#1a3550" opacity="0.55"/>
+    </pattern>
+
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="0.6"/>
+    </filter>
+
     <style>
-      .card       { fill: url(#cardGrad); stroke: #1e3c56; stroke-width: 1; }
-      .card-name  { font: 700 15px ui-monospace, "SFMono-Regular", Menlo, monospace; fill: #e6edf3; }
-      .card-desc  { font: 400 12.5px ui-sans-serif, system-ui; fill: #a8b6c4; }
-      .accent     { stroke: #00d4ff; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-      .accent-fill{ fill: #00d4ff; }
-      .verify     { fill: #4ade80; }
-      .flag       { fill: #f87171; }
-      .amber      { fill: #f59e0b; }
-      .ink        { fill: #e6edf3; }
-      .muted      { fill: #7c8ea1; }
-      .frame-thin { fill: none; stroke: #2a4560; stroke-width: 1; }
-      .frame-key  { fill: #0d2030; stroke: #00d4ff; stroke-width: 1.3; }
-      .key-label  { font: 700 10px ui-monospace, "SFMono-Regular", Menlo, monospace; fill: #00d4ff; }
-      .tick       { fill: #7c8ea1; }
-      .hud-corner { fill: none; stroke: #00d4ff; stroke-width: 1.4; opacity: 0.75; }
+      .word    { font: 800 128px ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace; letter-spacing: -4px; fill: url(#wordmark); }
+      .tagline { font: 400 16px ui-sans-serif, system-ui; fill: #93a1b0; letter-spacing: 0.02em; }
+      .eyebrow { font: 700 10px ui-sans-serif, system-ui; letter-spacing: 0.34em; fill: #00d4ff; }
+      .opname  { font: 600 12.5px ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace; fill: #cbd5e1; }
+      .side-lb { font: 600 9.5px ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: 0.24em; fill: #64748b; }
+      .hudline { stroke: #00d4ff; stroke-width: 1.4; fill: none; opacity: 0.85; stroke-linecap: round; }
+      .subline { stroke: #1e3c56; stroke-width: 1; fill: none; }
+      .icon-line   { stroke: #a8b6c4; stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .icon-fill   { fill: #a8b6c4; }
+      .accent-line { stroke: #00d4ff; stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .accent-fill { fill: #00d4ff; }
     </style>
   </defs>
 
-  <rect width="1320" height="720" rx="24" fill="url(#bg)"/>
+  <!-- Base background -->
+  <rect width="1320" height="480" rx="20" fill="url(#bg)"/>
+  <!-- Dot-grid backdrop (whole canvas) -->
+  <rect width="1320" height="480" rx="20" fill="url(#dots)"/>
+  <!-- Ambient center glow -->
+  <ellipse cx="660" cy="230" rx="520" ry="220" fill="url(#glow)"/>
 
-  <!-- Header: Kuration wordmark + tagline -->
-  <text x="660" y="88" text-anchor="middle" font-size="76" font-weight="800" fill="#e6edf3" letter-spacing="-2.5">Kuration</text>
-  <text x="660" y="122" text-anchor="middle" font-size="16" font-weight="400" fill="#7c8ea1" letter-spacing="0.02em">curate large gameplay datasets for training world models</text>
+  <!-- ========================================================================== -->
+  <!-- LEFT FLANK: raw gameplay frames streaming toward the center                -->
+  <!-- ========================================================================== -->
+  <g transform="translate(0,0)">
+    <!-- side label -->
+    <text x="52" y="70" class="side-lb">RAW  GAMEPLAY</text>
+    <line x1="52" y1="80" x2="176" y2="80" class="subline"/>
 
-  <!-- Section label -->
-  <line x1="452" y1="158" x2="600" y2="158" stroke="#1e3c56" stroke-width="1"/>
-  <text x="660" y="163" text-anchor="middle" font-size="10.5" font-weight="700" fill="#00d4ff" letter-spacing="0.32em">SEVEN&#160;&#160;GAMEPLAY&#160;&#160;OPERATORS</text>
-  <line x1="720" y1="158" x2="868" y2="158" stroke="#1e3c56" stroke-width="1"/>
-
-  <!-- =============== ROW 1: 4 cards (join_video, pixel_shift, action_state, collision) =============== -->
-  <!-- start x = (1320 - (4*196 + 3*20)) / 2 = (1320 - 844) / 2 = 238 -->
-
-  <!-- ─────── Card 1: join_video ─────── -->
-  <g transform="translate(238,196)">
-    <rect width="196" height="256" rx="14" class="card"/>
-    <!-- HUD corner accents -->
-    <path class="hud-corner" d="M 8 8 L 18 8 M 8 8 L 8 18"/>
-    <path class="hud-corner" d="M 188 8 L 178 8 M 188 8 L 188 18"/>
-    <!-- Icon: 5 video frames on top row + 5 action-key chips on bottom row, connected by vertical timeline lines -->
-    <g transform="translate(24,28)">
-      <!-- video frame strip -->
-      <g>
-        <rect x="0"   y="0" width="26" height="18" rx="2" class="frame-thin"/>
-        <rect x="30"  y="0" width="26" height="18" rx="2" class="frame-thin"/>
-        <rect x="60"  y="0" width="26" height="18" rx="2" class="frame-thin"/>
-        <rect x="90"  y="0" width="26" height="18" rx="2" class="frame-thin"/>
-        <rect x="120" y="0" width="26" height="18" rx="2" class="frame-thin"/>
-        <!-- tiny pixel content -->
-        <rect x="4"   y="4" width="4" height="4" fill="#f59e0b" opacity="0.7"/>
-        <rect x="34"  y="4" width="4" height="4" fill="#4ade80" opacity="0.7"/>
-        <rect x="94"  y="4" width="4" height="4" fill="#f87171" opacity="0.7"/>
+    <!-- eight small frames drifting rightward, staggered -->
+    <g>
+      <!-- frame set: each rectangle slightly different fill to feel alive -->
+      <g transform="translate(52,110)">
+        <rect width="52" height="34" rx="3" fill="#132638" stroke="#20405e" stroke-width="1"/>
+        <rect x="4" y="4" width="8" height="6" fill="#f59e0b" opacity="0.65"/>
+        <rect x="14" y="4" width="8" height="6" fill="#4ade80" opacity="0.55"/>
+        <animateTransform attributeName="transform" type="translate" values="52 110; 340 110; 340 110" keyTimes="0;0.9;1" dur="6.4s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;0.85;0" keyTimes="0;0.5;1" dur="6.4s" repeatCount="indefinite"/>
       </g>
-      <!-- timeline axis -->
-      <line x1="0" y1="42" x2="146" y2="42" stroke="#2a4560" stroke-width="1"/>
-      <!-- vertical sync ticks (dashed, animated) -->
-      <g stroke="#00d4ff" stroke-width="1.4" stroke-dasharray="2 3" fill="none">
-        <line x1="13"  y1="18" x2="13"  y2="42"/>
-        <line x1="43"  y1="18" x2="43"  y2="42"/>
-        <line x1="73"  y1="18" x2="73"  y2="42"/>
-        <line x1="103" y1="18" x2="103" y2="42"/>
-        <line x1="133" y1="18" x2="133" y2="42"/>
-        <animate attributeName="stroke-dashoffset" values="0;-10" dur="1.6s" repeatCount="indefinite"/>
+      <g transform="translate(52,160)">
+        <rect width="52" height="34" rx="3" fill="#0f2030" stroke="#20405e" stroke-width="1"/>
+        <rect x="4" y="4" width="8" height="6" fill="#f87171" opacity="0.55"/>
+        <animateTransform attributeName="transform" type="translate" values="52 160; 340 160; 340 160" keyTimes="0;0.9;1" dur="6.4s" begin="0.8s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;0.75;0" keyTimes="0;0.5;1" dur="6.4s" begin="0.8s" repeatCount="indefinite"/>
       </g>
-      <!-- action-key chips row -->
-      <g transform="translate(0,50)">
-        <rect x="0"   y="0" width="26" height="18" rx="2" class="frame-key"/>
-        <text x="13"  y="13" text-anchor="middle" class="key-label">W</text>
-        <rect x="30"  y="0" width="26" height="18" rx="2" class="frame-key"/>
-        <text x="43"  y="13" text-anchor="middle" class="key-label">A</text>
-        <rect x="60"  y="0" width="26" height="18" rx="2" class="frame-key"/>
-        <text x="73"  y="13" text-anchor="middle" class="key-label">W</text>
-        <rect x="90"  y="0" width="26" height="18" rx="2" class="frame-key"/>
-        <text x="103" y="13" text-anchor="middle" class="key-label">D</text>
-        <rect x="120" y="0" width="26" height="18" rx="2" class="frame-key"/>
-        <text x="133" y="13" text-anchor="middle" class="key-label">S</text>
+      <g transform="translate(52,210)">
+        <rect width="52" height="34" rx="3" fill="#132638" stroke="#20405e" stroke-width="1"/>
+        <rect x="6" y="6" width="6" height="6" fill="#4ade80" opacity="0.55"/>
+        <rect x="16" y="8" width="6" height="6" fill="#f59e0b" opacity="0.65"/>
+        <animateTransform attributeName="transform" type="translate" values="52 210; 340 210; 340 210" keyTimes="0;0.9;1" dur="6.4s" begin="1.6s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;0.85;0" keyTimes="0;0.5;1" dur="6.4s" begin="1.6s" repeatCount="indefinite"/>
+      </g>
+      <g transform="translate(52,260)">
+        <rect width="52" height="34" rx="3" fill="#0f2030" stroke="#20405e" stroke-width="1"/>
+        <rect x="4" y="4" width="8" height="6" fill="#f87171" opacity="0.55"/>
+        <animateTransform attributeName="transform" type="translate" values="52 260; 340 260; 340 260" keyTimes="0;0.9;1" dur="6.4s" begin="2.4s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;0.75;0" keyTimes="0;0.5;1" dur="6.4s" begin="2.4s" repeatCount="indefinite"/>
+      </g>
+      <g transform="translate(52,310)">
+        <rect width="52" height="34" rx="3" fill="#132638" stroke="#20405e" stroke-width="1"/>
+        <rect x="6" y="6" width="6" height="6" fill="#4ade80" opacity="0.55"/>
+        <animateTransform attributeName="transform" type="translate" values="52 310; 340 310; 340 310" keyTimes="0;0.9;1" dur="6.4s" begin="3.2s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;0.85;0" keyTimes="0;0.5;1" dur="6.4s" begin="3.2s" repeatCount="indefinite"/>
       </g>
     </g>
-    <!-- name + description (wraps naturally) -->
-    <text x="98" y="164" text-anchor="middle" class="card-name">join_video</text>
-    <text x="98" y="196" text-anchor="middle" class="card-desc">pairs an action log</text>
-    <text x="98" y="214" text-anchor="middle" class="card-desc">with a video,</text>
-    <text x="98" y="232" text-anchor="middle" class="card-desc">frame by frame</text>
   </g>
 
-  <!-- ─────── Card 2: pixel_shift ─────── -->
-  <g transform="translate(454,196)">
-    <rect width="196" height="256" rx="14" class="card"/>
-    <path class="hud-corner" d="M 8 8 L 18 8 M 8 8 L 8 18"/>
-    <path class="hud-corner" d="M 188 8 L 178 8 M 188 8 L 188 18"/>
-    <!-- Icon: viewport with crosshair + pixel-motion arrow + W key + px measurement label -->
-    <g transform="translate(28,26)">
-      <!-- viewport (game screen) -->
-      <rect x="0" y="0" width="140" height="80" rx="4" fill="url(#scan)" stroke="#00d4ff" stroke-width="1.2"/>
-      <!-- crosshair at center -->
-      <line x1="70" y1="34" x2="70" y2="46" stroke="#00d4ff" stroke-width="1" opacity="0.7"/>
-      <line x1="64" y1="40" x2="76" y2="40" stroke="#00d4ff" stroke-width="1" opacity="0.7"/>
-      <!-- motion arrow (animated) -->
-      <g>
-        <line x1="26" y1="40" x2="102" y2="40" class="accent" stroke-width="2.4"/>
-        <polygon points="102,32 118,40 102,48" class="accent-fill"/>
-        <animateTransform attributeName="transform" type="translate" values="-8 0; 10 0; -8 0" dur="1.8s" repeatCount="indefinite"/>
+  <!-- ========================================================================== -->
+  <!-- RIGHT FLANK: curated training shards, brighter, stacked and steady        -->
+  <!-- ========================================================================== -->
+  <g transform="translate(0,0)">
+    <text x="1268" y="70" text-anchor="end" class="side-lb">TRAINING  SHARDS</text>
+    <line x1="1144" y1="80" x2="1268" y2="80" class="subline"/>
+
+    <!-- Stack of curated shards -->
+    <g transform="translate(1080,140)">
+      <!-- three isometric-ish stacked -->
+      <rect x="14" y="70"  width="140" height="22" rx="4" fill="url(#shard)" opacity="0.55"/>
+      <rect x="10" y="46"  width="140" height="22" rx="4" fill="url(#shard)" opacity="0.7"/>
+      <rect x="6"  y="22"  width="140" height="22" rx="4" fill="url(#shard)" opacity="0.85"/>
+      <rect x="2"  y="0"   width="140" height="22" rx="4" fill="url(#shard)"/>
+      <!-- verified ticks on top -->
+      <g transform="translate(20,4)">
+        <rect x="0"  y="0" width="8" height="14" fill="#4ade80" opacity="0.9"/>
+        <rect x="12" y="0" width="8" height="14" fill="#4ade80" opacity="0.9"/>
+        <rect x="24" y="0" width="8" height="14" fill="#4ade80" opacity="0.9"/>
       </g>
-      <!-- measurement label -->
-      <text x="70" y="72" text-anchor="middle" font="600 10px ui-monospace" fill="#00d4ff">Δpx</text>
-      <!-- W key press indicator below viewport -->
-      <g transform="translate(60,92)">
-        <rect x="0" y="0" width="20" height="16" rx="2" class="frame-key">
-          <animate attributeName="fill" values="#0d2030;#00d4ff;#0d2030" dur="1.8s" repeatCount="indefinite"/>
-        </rect>
-        <text x="10" y="12" text-anchor="middle" class="key-label">
-          <animate attributeName="fill" values="#00d4ff;#0d2030;#00d4ff" dur="1.8s" repeatCount="indefinite"/>W</text>
-      </g>
+      <!-- shard filename hint -->
+      <text x="60" y="15" font="600 8.5px ui-monospace" fill="#0d2030">SHA-256 ✓</text>
     </g>
-    <text x="98" y="180" text-anchor="middle" class="card-name">pixel_shift</text>
-    <text x="98" y="206" text-anchor="middle" class="card-desc">measures screen motion</text>
-    <text x="98" y="224" text-anchor="middle" class="card-desc">per isolated</text>
-    <text x="98" y="242" text-anchor="middle" class="card-desc">key or mouse press</text>
+
+    <!-- pulse ring on stack, subtle "curated" indicator -->
+    <circle cx="1156" cy="150" r="10" fill="none" stroke="#4ade80" stroke-width="1.4" opacity="0.6">
+      <animate attributeName="r" values="10;28;10" dur="3.2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.7;0;0.7" dur="3.2s" repeatCount="indefinite"/>
+    </circle>
   </g>
 
-  <!-- ─────── Card 3: action_state_consistency ─────── -->
-  <g transform="translate(670,196)">
-    <rect width="196" height="256" rx="14" class="card"/>
-    <path class="hud-corner" d="M 8 8 L 18 8 M 8 8 L 8 18"/>
-    <path class="hud-corner" d="M 188 8 L 178 8 M 188 8 L 188 18"/>
-    <!-- Icon: baseline range (green band) + measurement dots (some inside, some outside) + verdict badge -->
-    <g transform="translate(22,26)">
-      <!-- axes -->
-      <line x1="8" y1="80" x2="146" y2="80" stroke="#2a4560" stroke-width="1"/>
-      <line x1="8" y1="10" x2="8"   y2="80" stroke="#2a4560" stroke-width="1"/>
-      <!-- baseline range (green band) -->
-      <rect x="8" y="28" width="138" height="30" fill="#4ade80" opacity="0.14"/>
-      <line x1="8" y1="28" x2="146" y2="28" stroke="#4ade80" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>
-      <line x1="8" y1="58" x2="146" y2="58" stroke="#4ade80" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>
-      <text x="150" y="46" font="600 9px ui-monospace" fill="#4ade80">p10–p90</text>
-      <!-- measurement dots -->
-      <circle cx="20"  cy="44" r="3.2" class="verify"/>
-      <circle cx="36"  cy="38" r="3.2" class="verify"/>
-      <circle cx="52"  cy="18" r="3.6" class="flag"/> <!-- outside -->
-      <circle cx="68"  cy="48" r="3.2" class="verify"/>
-      <circle cx="84"  cy="70" r="3.6" class="flag"/> <!-- outside -->
-      <circle cx="100" cy="42" r="3.2" class="verify"/>
-      <circle cx="116" cy="34" r="3.2" class="verify"/>
-      <circle cx="130" cy="52" r="3.2" class="verify"/>
-      <!-- flag rings pulse -->
-      <circle cx="52" cy="18" r="6" fill="none" stroke="#f87171" stroke-width="1.2">
-        <animate attributeName="r" values="4;8;4" dur="1.6s" repeatCount="indefinite"/>
-        <animate attributeName="opacity" values="0.9;0.15;0.9" dur="1.6s" repeatCount="indefinite"/>
+  <!-- ========================================================================== -->
+  <!-- CENTER: wordmark + tagline                                                -->
+  <!-- ========================================================================== -->
+  <g>
+    <!-- eyebrow -->
+    <text x="660" y="130" text-anchor="middle" class="eyebrow">CURATE  ·  MEASURE  ·  SELECT  ·  RESUME</text>
+
+    <!-- wordmark -->
+    <text x="660" y="242" text-anchor="middle" class="word">kuration</text>
+
+    <!-- underline accent -->
+    <line x1="516" y1="266" x2="804" y2="266" stroke="#00d4ff" stroke-width="1.6" opacity="0.55"/>
+
+    <!-- tagline -->
+    <text x="660" y="296" text-anchor="middle" class="tagline">curate large gameplay datasets into training-ready data for world models</text>
+  </g>
+
+  <!-- ========================================================================== -->
+  <!-- BOTTOM: seven operator sigils, glyph + name (no boxes)                    -->
+  <!-- ========================================================================== -->
+  <g transform="translate(0,352)">
+    <!-- top rule + label -->
+    <line x1="240" y1="0" x2="546" y2="0" class="subline"/>
+    <text x="660" y="4" text-anchor="middle" class="eyebrow">SEVEN  GAMEPLAY  OPERATORS</text>
+    <line x1="774" y1="0" x2="1080" y2="0" class="subline"/>
+
+    <!-- Highlight bar that cycles across operators -->
+    <rect y="34" width="122" height="72" fill="#00d4ff" opacity="0.06" rx="6">
+      <animate attributeName="x" values="86;252;434;624;780;930;1102;86" keyTimes="0;0.14;0.28;0.42;0.56;0.7;0.84;1" dur="9.8s" repeatCount="indefinite"/>
+    </rect>
+
+    <!-- ─── join_video ─── -->
+    <g transform="translate(148,60)">
+      <!-- glyph: two frames linked by a line -->
+      <g class="icon-line">
+        <rect x="-16" y="-8" width="10" height="16" rx="1.5"/>
+        <rect x="6"   y="-8" width="10" height="16" rx="1.5"/>
+        <line x1="-6" y1="12" x2="6" y2="12"/>
+      </g>
+      <circle cx="-11" cy="12" r="1.6" class="accent-fill"/>
+      <circle cx="11"  cy="12" r="1.6" class="accent-fill"/>
+      <text y="40" text-anchor="middle" class="opname">join_video</text>
+    </g>
+
+    <!-- ─── pixel_shift ─── -->
+    <g transform="translate(314,60)">
+      <!-- glyph: arrow with pixel dot behind -->
+      <g class="icon-line">
+        <line x1="-16" y1="0" x2="12" y2="0"/>
+        <polyline points="6,-6 14,0 6,6"/>
+      </g>
+      <rect x="-19" y="-3" width="6" height="6" class="accent-fill" opacity="0.85"/>
+      <text y="40" text-anchor="middle" class="opname">pixel_shift</text>
+    </g>
+
+    <!-- ─── action_state_consistency ─── -->
+    <g transform="translate(496,60)">
+      <!-- glyph: three verdict dots -->
+      <circle cx="-14" cy="0" r="4.2" fill="#4ade80"/>
+      <circle cx="0"   cy="0" r="4.2" fill="#f87171"/>
+      <circle cx="14"  cy="0" r="4.2" fill="#f59e0b"/>
+      <text y="40" text-anchor="middle" class="opname">action_state_consistency</text>
+    </g>
+
+    <!-- ─── collision ─── -->
+    <g transform="translate(686,60)">
+      <!-- glyph: burst / X impact -->
+      <g class="icon-line" stroke="#f87171">
+        <line x1="-10" y1="-10" x2="10" y2="10"/>
+        <line x1="10" y1="-10" x2="-10" y2="10"/>
+        <line x1="-14" y1="0" x2="14" y2="0"/>
+        <line x1="0" y1="-14" x2="0" y2="14"/>
+      </g>
+      <circle r="2" fill="#f87171"/>
+      <text y="40" text-anchor="middle" class="opname">collision</text>
+    </g>
+
+    <!-- ─── slam_pipeline ─── -->
+    <g transform="translate(842,60)">
+      <!-- glyph: S curve trajectory -->
+      <path d="M -18 6 C -10 -8, 4 12, 18 -4" class="icon-line"/>
+      <circle cx="18" cy="-4" r="2.4" class="accent-fill"/>
+      <text y="40" text-anchor="middle" class="opname">slam_pipeline</text>
+    </g>
+
+    <!-- ─── slam_quality ─── -->
+    <g transform="translate(992,60)">
+      <!-- glyph: 3 ascending bars -->
+      <rect x="-14" y="-4" width="6" height="14" rx="1" fill="#a8b6c4"/>
+      <rect x="-4"  y="-10" width="6" height="20" rx="1" fill="#a8b6c4"/>
+      <rect x="6"   y="-16" width="6" height="26" rx="1" fill="#a8b6c4"/>
+      <!-- checkline -->
+      <line x1="-18" y1="12" x2="16" y2="12" class="subline"/>
+      <text y="40" text-anchor="middle" class="opname">slam_quality</text>
+    </g>
+
+    <!-- ─── slam_motion_diversity ─── -->
+    <g transform="translate(1164,60)">
+      <!-- glyph: radiating arrows -->
+      <g class="icon-line">
+        <line x1="0" y1="0" x2="0" y2="-14"/>
+        <line x1="0" y1="0" x2="12" y2="-10"/>
+        <line x1="0" y1="0" x2="14" y2="4"/>
+        <line x1="0" y1="0" x2="6" y2="14"/>
+        <line x1="0" y1="0" x2="-6" y2="14"/>
+        <line x1="0" y1="0" x2="-14" y2="4"/>
+        <line x1="0" y1="0" x2="-12" y2="-10"/>
+      </g>
+      <circle r="2.4" class="accent-fill">
+        <animate attributeName="r" values="2;4;2" dur="1.6s" repeatCount="indefinite"/>
       </circle>
-      <circle cx="84" cy="70" r="6" fill="none" stroke="#f87171" stroke-width="1.2">
-        <animate attributeName="r" values="4;8;4" dur="1.6s" repeatCount="indefinite" begin="0.4s"/>
-        <animate attributeName="opacity" values="0.9;0.15;0.9" dur="1.6s" repeatCount="indefinite" begin="0.4s"/>
-      </circle>
+      <text y="40" text-anchor="middle" class="opname">slam_motion_diversity</text>
     </g>
-    <!-- verdict pill (cycles) -->
-    <g transform="translate(38,138)">
-      <rect x="0" y="0" width="120" height="18" rx="9" fill="#0d2030" stroke="#f87171" stroke-width="1"/>
-      <circle cx="12" cy="9" r="3.5" class="flag"/>
-      <text x="24" y="12.5" font="700 9.5px ui-monospace" fill="#f87171">INCONSISTENT</text>
-    </g>
-    <text x="98" y="184" text-anchor="middle" class="card-name">action_state_</text>
-    <text x="98" y="202" text-anchor="middle" class="card-name">consistency</text>
-    <text x="98" y="224" text-anchor="middle" class="card-desc">per-clip verdict against</text>
-    <text x="98" y="242" text-anchor="middle" class="card-desc">a percentile baseline</text>
   </g>
 
-  <!-- ─────── Card 4: collision ─────── -->
-  <g transform="translate(886,196)">
-    <rect width="196" height="256" rx="14" class="card"/>
-    <path class="hud-corner" d="M 8 8 L 18 8 M 8 8 L 8 18"/>
-    <path class="hud-corner" d="M 188 8 L 178 8 M 188 8 L 188 18"/>
-    <!-- Icon: minimap-style top-down view with player, wall, impact burst -->
-    <g transform="translate(18,22)">
-      <rect x="0" y="0" width="160" height="90" rx="4" fill="url(#scan)" stroke="#2a4560" stroke-width="1"/>
-      <!-- grid -->
-      <g stroke="#132638" stroke-width="0.6" opacity="0.9">
-        <line x1="0" y1="30" x2="160" y2="30"/>
-        <line x1="0" y1="60" x2="160" y2="60"/>
-        <line x1="40" y1="0" x2="40" y2="90"/>
-        <line x1="80" y1="0" x2="80" y2="90"/>
-        <line x1="120" y1="0" x2="120" y2="90"/>
-      </g>
-      <!-- wall (thick block) -->
-      <rect x="106" y="18" width="14" height="54" fill="#16324a" stroke="#7c8ea1" stroke-width="1"/>
-      <line x1="108" y1="26" x2="118" y2="26" stroke="#7c8ea1" stroke-width="0.6"/>
-      <line x1="108" y1="38" x2="118" y2="38" stroke="#7c8ea1" stroke-width="0.6"/>
-      <line x1="108" y1="50" x2="118" y2="50" stroke="#7c8ea1" stroke-width="0.6"/>
-      <line x1="108" y1="62" x2="118" y2="62" stroke="#7c8ea1" stroke-width="0.6"/>
-      <!-- player (triangle facing wall) with trail -->
-      <g>
-        <polygon points="0,-6 8,0 0,6" fill="#00d4ff">
-          <animateTransform attributeName="transform" type="translate" values="20 45; 96 45; 20 45" dur="2.6s" repeatCount="indefinite"/>
-        </polygon>
-      </g>
-      <!-- impact burst on contact -->
-      <g>
-        <g opacity="0">
-          <line x1="106" y1="45" x2="96" y2="45" stroke="#f87171" stroke-width="2.4"/>
-          <line x1="106" y1="45" x2="100" y2="38" stroke="#f87171" stroke-width="1.6"/>
-          <line x1="106" y1="45" x2="100" y2="52" stroke="#f87171" stroke-width="1.6"/>
-          <line x1="106" y1="45" x2="102" y2="34" stroke="#f87171" stroke-width="1.4"/>
-          <line x1="106" y1="45" x2="102" y2="56" stroke="#f87171" stroke-width="1.4"/>
-          <animate attributeName="opacity" values="0;1;0" keyTimes="0;0.55;1" dur="2.6s" repeatCount="indefinite"/>
-        </g>
-      </g>
-      <!-- classification labels -->
-      <text x="4" y="86" font="600 8px ui-monospace" fill="#7c8ea1">head_on · angled · slide</text>
-    </g>
-    <text x="98" y="164" text-anchor="middle" class="card-name">collision</text>
-    <text x="98" y="196" text-anchor="middle" class="card-desc">detects and classifies</text>
-    <text x="98" y="214" text-anchor="middle" class="card-desc">wall-hits</text>
-    <text x="98" y="232" text-anchor="middle" class="card-desc">against map geometry</text>
+  <!-- ========================================================================== -->
+  <!-- Corner HUD accents (subtle L-brackets)                                     -->
+  <!-- ========================================================================== -->
+  <g class="hudline">
+    <path d="M 20 20 L 42 20 M 20 20 L 20 42"/>
+    <path d="M 1300 20 L 1278 20 M 1300 20 L 1300 42"/>
+    <path d="M 20 460 L 42 460 M 20 460 L 20 438"/>
+    <path d="M 1300 460 L 1278 460 M 1300 460 L 1300 438"/>
   </g>
 
-  <!-- =============== ROW 2: 3 cards centered (slam_pipeline, slam_quality, slam_motion_diversity) =============== -->
-  <!-- start x = (1320 - (3*196 + 2*20)) / 2 = (1320 - 628) / 2 = 346 -->
-
-  <!-- ─────── Card 5: slam_pipeline ─────── -->
-  <g transform="translate(346,478)">
-    <rect width="196" height="220" rx="14" class="card"/>
-    <path class="hud-corner" d="M 8 8 L 18 8 M 8 8 L 8 18"/>
-    <path class="hud-corner" d="M 188 8 L 178 8 M 188 8 L 188 18"/>
-    <!-- Icon: 3D-ish scene with point cloud + curved trajectory + camera dot -->
-    <g transform="translate(24,20)">
-      <!-- scene point cloud (dots suggesting 3D structure) -->
-      <g opacity="0.55">
-        <circle cx="14" cy="12" r="1.4" fill="#7c8ea1"/>
-        <circle cx="28" cy="6"  r="1.4" fill="#7c8ea1"/>
-        <circle cx="44" cy="10" r="1.4" fill="#7c8ea1"/>
-        <circle cx="62" cy="4"  r="1.4" fill="#7c8ea1"/>
-        <circle cx="80" cy="8"  r="1.4" fill="#7c8ea1"/>
-        <circle cx="98" cy="4"  r="1.4" fill="#7c8ea1"/>
-        <circle cx="118" cy="12" r="1.4" fill="#7c8ea1"/>
-        <circle cx="136" cy="8"  r="1.4" fill="#7c8ea1"/>
-        <circle cx="8"   cy="76" r="1.4" fill="#7c8ea1"/>
-        <circle cx="30"  cy="82" r="1.4" fill="#7c8ea1"/>
-        <circle cx="52"  cy="86" r="1.4" fill="#7c8ea1"/>
-        <circle cx="72"  cy="80" r="1.4" fill="#7c8ea1"/>
-        <circle cx="94"  cy="86" r="1.4" fill="#7c8ea1"/>
-        <circle cx="116" cy="82" r="1.4" fill="#7c8ea1"/>
-        <circle cx="138" cy="78" r="1.4" fill="#7c8ea1"/>
-      </g>
-      <!-- camera trajectory (curved dashed) -->
-      <path d="M 8 46 C 32 26, 54 66, 82 36 S 128 52, 142 40" class="accent" stroke-width="2" stroke-dasharray="3 4">
-        <animate attributeName="stroke-dashoffset" values="0;-14" dur="2.4s" repeatCount="indefinite"/>
-      </path>
-      <!-- moving camera indicator -->
-      <g>
-        <rect x="-4" y="-3" width="8" height="6" rx="1" class="accent-fill"/>
-        <circle cx="4" cy="0" r="2" class="accent-fill"/>
-        <animateMotion dur="4.5s" repeatCount="indefinite" rotate="auto" path="M 8 46 C 32 26, 54 66, 82 36 S 128 52, 142 40"/>
-      </g>
-    </g>
-    <text x="98" y="140" text-anchor="middle" class="card-name">slam_pipeline</text>
-    <text x="98" y="168" text-anchor="middle" class="card-desc">recovers a camera's</text>
-    <text x="98" y="186" text-anchor="middle" class="card-desc">3D path from</text>
-    <text x="98" y="204" text-anchor="middle" class="card-desc">raw video</text>
+  <!-- Scanline overlay (subtle CRT effect, drifts) -->
+  <g>
+    <rect width="1320" height="480" rx="20" fill="url(#scan)">
+      <animateTransform attributeName="transform" type="translate" values="0 0; 0 4; 0 0" dur="6s" repeatCount="indefinite"/>
+    </rect>
   </g>
-
-  <!-- ─────── Card 6: slam_quality ─────── -->
-  <g transform="translate(562,478)">
-    <rect width="196" height="220" rx="14" class="card"/>
-    <path class="hud-corner" d="M 8 8 L 18 8 M 8 8 L 8 18"/>
-    <path class="hud-corner" d="M 188 8 L 178 8 M 188 8 L 188 18"/>
-    <!-- Icon: two trajectories side by side — clean vs glitchy — plus threshold -->
-    <g transform="translate(22,22)">
-      <!-- Left: clean trajectory -->
-      <g>
-        <text x="18" y="8" text-anchor="middle" font="600 8.5px ui-monospace" fill="#4ade80">clean</text>
-        <path d="M 4 62 C 12 40, 22 56, 30 38 S 40 26, 44 30" class="accent" stroke="#4ade80" stroke-width="1.8"/>
-        <circle cx="4"  cy="62" r="1.6" fill="#4ade80"/>
-        <circle cx="24" cy="48" r="1.6" fill="#4ade80"/>
-        <circle cx="44" cy="30" r="1.6" fill="#4ade80"/>
-      </g>
-      <!-- Divider -->
-      <line x1="70" y1="0" x2="70" y2="76" stroke="#1e3c56" stroke-width="1"/>
-      <!-- Right: glitchy trajectory (gaps + teleport) -->
-      <g transform="translate(84,0)">
-        <text x="18" y="8" text-anchor="middle" font="600 8.5px ui-monospace" fill="#f87171">glitchy</text>
-        <path d="M 4 60 C 10 46, 18 52, 24 40" stroke="#f87171" stroke-width="1.8" fill="none"/>
-        <!-- gap (dashed) -->
-        <line x1="24" y1="40" x2="34" y2="22" stroke="#f87171" stroke-width="1.6" stroke-dasharray="2 3" opacity="0.7"/>
-        <!-- teleport line (jumps) -->
-        <path d="M 34 22 L 30 46 L 44 26" stroke="#f87171" stroke-width="1.8" fill="none"/>
-        <circle cx="4"  cy="60" r="1.6" fill="#f87171"/>
-        <circle cx="24" cy="40" r="1.6" fill="#f87171"/>
-        <circle cx="30" cy="46" r="1.6" fill="#f87171"/>
-        <circle cx="44" cy="26" r="1.6" fill="#f87171"/>
-        <!-- pulse marker at gap -->
-        <circle cx="29" cy="30" r="4" fill="none" stroke="#f87171" stroke-width="1">
-          <animate attributeName="r" values="3;7;3" dur="1.6s" repeatCount="indefinite"/>
-          <animate attributeName="opacity" values="0.9;0.15;0.9" dur="1.6s" repeatCount="indefinite"/>
-        </circle>
-      </g>
-    </g>
-    <!-- score display -->
-    <g transform="translate(50,116)">
-      <rect x="0" y="0" width="96" height="14" rx="3" fill="#0d2030" stroke="#1e3c56" stroke-width="1"/>
-      <rect x="2" y="2" width="60" height="10" rx="2" fill="url(#qualBar)"/>
-      <text x="72" y="10.5" font="600 9px ui-monospace" fill="#00d4ff">.63</text>
-    </g>
-    <text x="98" y="152" text-anchor="middle" class="card-name">slam_quality</text>
-    <text x="98" y="180" text-anchor="middle" class="card-desc">scores gaps, jumps,</text>
-    <text x="98" y="198" text-anchor="middle" class="card-desc">and scale per window</text>
-  </g>
-
-  <!-- ─────── Card 7: slam_motion_diversity ─────── -->
-  <g transform="translate(778,478)">
-    <rect width="196" height="220" rx="14" class="card"/>
-    <path class="hud-corner" d="M 8 8 L 18 8 M 8 8 L 8 18"/>
-    <path class="hud-corner" d="M 188 8 L 178 8 M 188 8 L 188 18"/>
-    <!-- Icon: three motion-type mini icons (path, turn, climb) with bin ticks below -->
-    <g transform="translate(20,20)">
-      <!-- Path length icon (straight arrow) -->
-      <g transform="translate(0,0)">
-        <rect x="0" y="0" width="50" height="42" rx="4" fill="#0d2030" stroke="#1e3c56" stroke-width="1"/>
-        <line x1="8" y1="21" x2="38" y2="21" class="accent" stroke-width="2"/>
-        <polygon points="38,15 46,21 38,27" class="accent-fill"/>
-        <text x="25" y="55" text-anchor="middle" font="600 8px ui-monospace" fill="#7c8ea1">path</text>
-      </g>
-      <!-- Turn icon (curved arrow) -->
-      <g transform="translate(56,0)">
-        <rect x="0" y="0" width="50" height="42" rx="4" fill="#0d2030" stroke="#1e3c56" stroke-width="1"/>
-        <path d="M 10 34 Q 10 12, 34 12" class="accent" stroke-width="2"/>
-        <polygon points="34,6 42,12 34,18" class="accent-fill"/>
-        <text x="25" y="55" text-anchor="middle" font="600 8px ui-monospace" fill="#7c8ea1">turn</text>
-      </g>
-      <!-- Climb icon (upward arrow) -->
-      <g transform="translate(112,0)">
-        <rect x="0" y="0" width="50" height="42" rx="4" fill="#0d2030" stroke="#1e3c56" stroke-width="1"/>
-        <line x1="25" y1="34" x2="25" y2="10" class="accent" stroke-width="2"/>
-        <polygon points="19,12 25,4 31,12" class="accent-fill"/>
-        <text x="25" y="55" text-anchor="middle" font="600 8px ui-monospace" fill="#7c8ea1">climb</text>
-      </g>
-      <!-- bin ticks below -->
-      <g transform="translate(0,72)">
-        <line x1="4" y1="0" x2="158" y2="0" stroke="#2a4560" stroke-width="1"/>
-        <g fill="#00d4ff">
-          <rect x="6"   y="-6" width="4" height="6" opacity="0.9"/>
-          <rect x="26"  y="-9" width="4" height="9" opacity="0.9"/>
-          <rect x="46"  y="-4" width="4" height="4" opacity="0.9"/>
-          <rect x="66"  y="-8" width="4" height="8" opacity="0.9"/>
-          <rect x="86"  y="-5" width="4" height="5" opacity="0.9"/>
-          <rect x="106" y="-7" width="4" height="7" opacity="0.9"/>
-          <rect x="126" y="-3" width="4" height="3" opacity="0.9"/>
-          <rect x="146" y="-6" width="4" height="6" opacity="0.9"/>
-        </g>
-        <!-- scanning highlight -->
-        <rect x="4" y="-10" width="10" height="10" fill="#00d4ff" opacity="0.2">
-          <animate attributeName="x" values="4;24;44;64;84;104;124;144;4" keyTimes="0;0.125;0.25;0.375;0.5;0.625;0.75;0.875;1" dur="4s" repeatCount="indefinite"/>
-        </rect>
-      </g>
-    </g>
-    <text x="98" y="140" text-anchor="middle" class="card-name">slam_motion_</text>
-    <text x="98" y="158" text-anchor="middle" class="card-name">diversity</text>
-    <text x="98" y="180" text-anchor="middle" class="card-desc">bins windows by path</text>
-    <text x="98" y="198" text-anchor="middle" class="card-desc">length, turning, and climb</text>
-  </g>
-
 </svg>
