@@ -5,18 +5,28 @@
 # kuration-sdk
 
 **Kuration curates large Physical AI datasets into training-ready data for world
-models.** Point it at time-series data (telemetry, sensor logs) or video, including
-video paired with a synchronized action log. It selects the windows worth training
-on and writes them as shards, alongside a config that reproduces the run.
+models.** Point it at time-series data or video and Kuration picks the windows worth
+training on, writes them as shards, and drops a config alongside so the same run can
+be rebuilt.
 
-For gameplay video, `kuration.gameplay` ships seven operators. `join_video` pairs an
-action log with a video frame by frame. `pixel_shift` measures how many pixels the
-screen moves for every isolated keypress, and `action_state_consistency` flags clips
-where a keypress didn't produce the on-screen motion it should have. `collision`
-detects and classifies wall-hits, so the rare interaction moments a world model needs
-to learn physics from can be oversampled instead of averaged out. `slam_pipeline`
-recovers a camera's 3D path from raw video, `slam_quality` scores each window's
-reconstruction, and `slam_motion_diversity` bins windows by camera motion.
+The gameplay operators map to the three failure modes Eric's Intro World-Model-Data-Curation
+blog names.
+
+- **The action doesn't reliably cause the state change.** `pixel_shift` measures the
+  actual screen motion behind every isolated key or mouse press (Farneback optical flow
+  projected onto the axis that control should move the camera on). `action_state_consistency`
+  compares those measurements against a percentile-pooled baseline and issues a per-clip
+  verdict — consistent, inconsistent, or inconclusive.
+- **The interaction moments a world model needs are the ones good players avoid.**
+  `collision` finds and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`,
+  `slide_end`, `slide_constrained`) so they can be oversampled relative to their natural,
+  very low, base rate.
+- **Most gameplay footage has no sense of place.** `slam_pipeline` reconstructs a camera's
+  3D path from raw video with loop closure. `slam_quality` scores each window for gaps,
+  impossible motion, and scale. `slam_motion_diversity` bins windows by path length,
+  turning, and climb.
+
+`join_video` (core, always available) pairs an action log with a video, frame by frame.
 
 ```python
 from kuration import input
@@ -328,27 +338,27 @@ Three curation jobs come with the library. Each has its own runnable example fol
 
 #### Spatial coverage
 
-Most gameplay is the same movement: walking forward, standard turns, level ground. Sample naively and the training set inherits that natural distribution and barely touches the harder motions (tight turns, sharp climbs, high-speed segments). Quantile binning matches the distribution, which is exactly what discards rare events. Coverage has to be measured on the axis you actually care about.
+Most gameplay is one kind of movement — walking forward, standard turns, level ground. Sample naively on that and your training set barely touches the harder motions: tight turns, sharp climbs, high-speed segments. Eric's Intro blog puts the fix plainly: **coverage has to be measured on the axis you actually care about.**
 
-`BalancedSelector` measures a per-window metric on one axis (turning, path length, whatever), bins the values evenly across the observed range, then samples the same count from every bin. That's the pattern the SDK's `slam_motion_diversity` uses (default axis `slam_path_length`; the Intro blog example switches to `slam_turn_degrees`), generalized to any per-window column.
+`BalancedSelector` does exactly that. It measures a per-window metric on your chosen axis (turning, path length, whatever), bins the values across the observed range, and samples an equal count from every bin. It's the SDK's `slam_motion_diversity` pattern (default axis `slam_path_length`; the Intro blog example switches to `slam_turn_degrees`), generalized to any per-window column.
 
-Runnable example: [`kuration-ai/examples/motion-coverage/`](./kuration-ai/examples/motion-coverage/)
+Runnable: [`kuration-ai/examples/motion-coverage/`](./kuration-ai/examples/motion-coverage/)
 
 #### Rare-event coverage
 
-A world model only learns the physics that show up consistently in its training data. And the interactions it most needs to learn (a moving object hitting a solid one, a player-object contact) are the ones good players avoid. That's why DIAMOND's CS:GO world model lets players double- and triple-jump against walls: successive jumps simply don't appear often enough in the training data for the model to learn that they shouldn't be possible.
+A world model only learns the physics that show up consistently in its training data. And the interactions it most needs — a moving object hitting a solid one, a player-object contact — are the exact ones good players avoid. That's why DIAMOND's CS:GO world model lets a player double- and triple-jump against a wall: successive jumps simply don't appear often enough in the training data for the model to learn that they shouldn't be possible.
 
-The fix isn't collecting more footage. It's finding the events already buried in the footage you have and oversampling them relative to their natural, very low, base rate. `RareEventCoverage` measures the rare event's per-window rate, then weights the sampler so those windows show up far more often than they do in the wild.
+The fix isn't collecting more footage. It's finding the events already buried in the footage you have and oversampling them relative to their natural, very low, base rate. `RareEventCoverage` measures the rare event's per-window rate and weights the sampler so those windows show up far more often than they do in the wild.
 
-Runnable example: [`kuration-ai/examples/rare-event-coverage/`](./kuration-ai/examples/rare-event-coverage/)
+Runnable: [`kuration-ai/examples/rare-event-coverage/`](./kuration-ai/examples/rare-event-coverage/)
 
 #### Diversity sampling
 
-Most activity-based metrics move together. A chaotic firefight is high on every axis at once; an idle stretch is low on all of them. Pick a single axis to sample on and you inherit whatever the other axes happen to correlate with. Cluster the windows in a multi-axis feature space and sample equally from each cluster, and the redundant part of the corpus stops crowding out the parts that actually differ from it.
+Most activity-based metrics move together. A chaotic firefight is high on every axis at once; an idle stretch is low on all of them. Pick one axis to sample on and you inherit whatever the other axes happen to correlate with.
 
-The Intro World-Model-Data-Curation blog names this "diversity sampling", one of the things "collision detection, kinematics, action-state checks, and diversity sampling all get easier on a dataset that previously had no notion of space." `DiverseSubset` clusters over any set of pre-measured features and takes an equal share from every cluster. Optional dedup pre-pass filters near-duplicates first.
+Cluster the windows in a multi-axis feature space and sample equally from each cluster, and the redundant part of the corpus stops crowding out the parts that actually differ. Eric's Intro blog names this "diversity sampling" — one of the checks that "all get easier on a dataset that previously had no notion of space." `DiverseSubset` clusters over any set of pre-measured features and takes an equal share from every cluster. An optional dedup pre-pass filters near-duplicates first.
 
-Runnable example: [`kuration-ai/examples/diversity-sampling/`](./kuration-ai/examples/diversity-sampling/)
+Runnable: [`kuration-ai/examples/diversity-sampling/`](./kuration-ai/examples/diversity-sampling/)
 
 Each folder holds one runnable script, a README with the exact expected output, and a "what to try next" section for parameter adjustments.
 
