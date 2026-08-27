@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/kuration-hero.svg" alt="Kuration curates large gameplay datasets into training-ready shards for world models" width="100%">
-</p>
-
 # kuration-sdk
 
 **Kuration curates large Physical AI datasets into training-ready data for world
