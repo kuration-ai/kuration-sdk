@@ -53,7 +53,7 @@ the manifest, so resume and verification are safe.
   - [Run any notebook in a browser](#run-any-notebook-in-a-browser)
   - [Getting started](#getting-started)
   - [Use cases](#use-cases)
-    - [Motion-diversity coverage](#motion-diversity-coverage)
+    - [Spatial coverage](#spatial-coverage)
     - [Rare-event coverage](#rare-event-coverage)
     - [Diversity sampling](#diversity-sampling)
   - [Beyond the gallery](#beyond-the-gallery)
@@ -291,7 +291,7 @@ Every notebook has a Colab and a Binder badge. Click, wait, run.
 | `collision-aware` | [README](./kuration-ai/notebooks/collision-aware/) | [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/collision-aware/collision-aware.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb) |
 | `coverage-based-curation` | [README](./kuration-ai/notebooks/coverage-based-curation/) | [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/coverage-based-curation/coverage-based-curation.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb) |
 
-The notebooks above walk through the Kuration SDK's gameplay operators against Counter-Strike telemetry. The `kuration-ai` companion package that ships alongside is the same shape of tool for the sampling half of world-model curation. It ships three composable operations: `BalancedSelector` for motion-diversity coverage, `RareEventCoverage` for oversampling collisions and other rare events, and `DiverseSubset` for multi-axis diversity sampling. Plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
+The notebooks above walk through the Kuration SDK's gameplay operators against Counter-Strike telemetry. The `kuration-ai` companion package is the same shape of tool for the sampling half of world-model curation. It ships three composable operations — `BalancedSelector` for spatial coverage, `RareEventCoverage` for oversampling collisions and other rare events, and `DiverseSubset` for multi-axis diversity sampling — plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat)
 [![Tests](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/kuration-ai/python-sdk/actions/workflows/tests.yml)
@@ -326,7 +326,7 @@ Prints `selected 15 windows`. Replace the in-memory `sessions` dict with a folde
 
 Three curation jobs come with the library. Each has its own runnable example folder with the expected output baked into the folder's README.
 
-#### Motion-diversity coverage
+#### Spatial coverage
 
 Most gameplay is the same movement: walking forward, standard turns, level ground. Sample naively and the training set inherits that natural distribution and barely touches the harder motions (tight turns, sharp climbs, high-speed segments). Quantile binning matches the distribution, which is exactly what discards rare events. Coverage has to be measured on the axis you actually care about.
 
