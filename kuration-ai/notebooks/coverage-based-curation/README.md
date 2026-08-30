@@ -51,9 +51,19 @@ See cell 5.
 Enumerate every candidate window, pick 100 at random with numpy. This is what row-uniform sampling produces without any strategy at all: the high-activity tail (devices 8 and 9) is under-represented in proportion to how much time it spends in that regime.
 
 ```python
-pipeline = input(sessions, time="t", entity="device", hz=1).window(50, stride=25)
-all_candidates = pipeline.collect()
+pipeline = input(sessions, time="t", hz=1).window(50, stride=25)
+
+# .collect() always needs a resolvable selection method; "filter" with a trivially-true
+# predicate gets the full, unfiltered candidate pool back.
+all_candidates = (
+    pipeline
+    .measure("_all", "count", of="signal")
+    .filter("_all", ">=", 0)
+    .sample("filter", n=1)
+    .collect()
+)
 uniform_pick_idx = rng.choice(len(all_candidates.selected), size=100, replace=False)
+uniform_devices = [all_candidates.selected[i].source_id for i in uniform_pick_idx]
 ```
 
 See cell 7.
