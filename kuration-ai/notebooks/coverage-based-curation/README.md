@@ -2,10 +2,6 @@
 
 Sample equally across feature bins so training sees the whole distribution, not just the peak.
 
-[![LPIPS 0.5404 at epoch 105](https://img.shields.io/badge/LPIPS_0.5404-at_epoch_105-0D9488?style=for-the-badge)](./coverage-based-curation.ipynb)
-[![JEDi 2.7579 at epoch 355](https://img.shields.io/badge/JEDi_2.7579-at_epoch_355-0D9488?style=for-the-badge)](./coverage-based-curation.ipynb)
-[![under 18% training budget](https://img.shields.io/badge/<18%25-training_budget-0D9488?style=for-the-badge)](./coverage-based-curation.ipynb)
-
 [![7,530 training episodes](https://img.shields.io/badge/7,530-training_episodes-0D9488)](./coverage-based-curation.ipynb)
 [![35 candidate strategies triaged](https://img.shields.io/badge/35-candidate_strategies_triaged-0D9488)](./coverage-based-curation.ipynb)
 [![FVD 3,043,786, best at epoch 85](https://img.shields.io/badge/FVD_3,043,786-best_at_epoch_85-0D9488)](./coverage-based-curation.ipynb)
