@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Kuration AI live here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to kuration-ai live here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [v0.0.1]: 2026-08-11
 
@@ -17,5 +17,5 @@ First release.
 
 ### Notes
 
-- `kuration-sdk` (the underlying pipeline engine) is not on PyPI yet, so `pip install kuration-ai` currently requires source access to `aintropy-ai/kuration-sdk`. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the dev install.
-- GitHub Actions CI (`.github/workflows/tests.yml`) requires the `KURATION_SDK_TOKEN` repo secret to be set to run.
+- `kuration-sdk` (the underlying pipeline engine) is not on PyPI yet, so `pip install kuration-ai` currently requires source access to `aintropy-solutions/kuration-sdk`. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the dev install.
+- GitHub Actions CI (`.github/workflows/kuration-ai-tests.yml`) requires the `KURATION_SDK_TOKEN` repo secret to be set to run.

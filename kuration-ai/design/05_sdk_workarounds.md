@@ -19,7 +19,7 @@ Every awkward SDK behavior is handled inside the wrapper. The SDK is not modifie
 
 ## Alternative considered and rejected
 
-**File issues on `aintropy-ai/kuration-sdk` for the SDK to fix.** Rejected for v0.0.1 scope. The SDK's shape is settled (CLAUDE.md principle 4). We can file the issues later as "wrapper implications": but blocking on SDK fixes turns a 2-day ship into a multi-week ship. Every friction in the table above is solvable inside the wrapper today.
+**File issues on `aintropy-solutions/kuration-sdk` for the SDK to fix.** Rejected for v0.0.1 scope. The SDK's shape is settled (CLAUDE.md principle 4). We can file the issues later as "wrapper implications": but blocking on SDK fixes turns a 2-day ship into a multi-week ship. Every friction in the table above is solvable inside the wrapper today.
 
 ## Note for future SDK collaboration
 

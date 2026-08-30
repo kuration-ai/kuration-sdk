@@ -3,17 +3,18 @@
 ## Development install
 
 ```bash
-git clone git@github.com:kuration-ai/python-sdk.git
-cd python-sdk
+# kuration-ai depends on kuration-sdk, which is a private repo until PyPI launch.
+# kuration-ai lives inside that same repo as a companion package, so one clone
+# gets you both:
+git clone git@github.com:aintropy-solutions/kuration-sdk.git
+cd kuration-sdk
 python -m venv .venv
 source .venv/bin/activate
 
-# Kuration AI depends on kuration-sdk, which is a private repo until PyPI launch.
-# Install it from source first:
-git clone git@github.com:aintropy-solutions/kuration-sdk.git
-pip install -e ./kuration-sdk[methods,parquet]
+pip install -e '.[methods,parquet]'
 
-# Then install Kuration AI editable + dev extras:
+# Then install kuration-ai editable + dev extras:
+cd kuration-ai
 pip install -e .[dev]
 ```
 

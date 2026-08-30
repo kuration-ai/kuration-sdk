@@ -108,8 +108,8 @@ def describe(operations: list[Any]) -> str:
     """
     resolved = plan(operations)
     if not resolved:
-        return "Kuration AI plan: (empty)"
-    lines = ["Kuration AI plan:"]
+        return "kuration-ai plan: (empty)"
+    lines = ["kuration-ai plan:"]
     for i, op in enumerate(resolved, start=1):
         if hasattr(op, "describe"):
             lines.append(f"  {i}. {op.describe()}")
