@@ -57,7 +57,7 @@ See cell 5.
 
 ## The pipeline
 
-Three lines. Input the rows against a schema, join a video source, slice into windows. Then a single `action_state_consistency` call with the baselines and controls to check. A `baseline` says: for this key press, expect pixel shift in this direction and roughly this magnitude. In real use, you compute baselines from the dataset itself (10th to 90th percentile per control cell). Here the notebook hand-writes a plausible one for W.
+Three lines. Input the rows against a schema, join a video source, slice into windows. Then a single `action_state_consistency` call with the baselines and controls to check. A `baseline` says: for this key press, expect pixel shift in this direction and roughly this magnitude. In real use, you compute baselines from the dataset itself (5th to 95th percentile per control cell). Here the notebook hand-writes a plausible one for W.
 
 ```python
 baselines = {"W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1e9}}}
