@@ -4,7 +4,6 @@ Sample equally across feature bins so training sees the whole distribution, not 
 
 [![7,530 training episodes](https://img.shields.io/badge/7,530-training_episodes-0D9488)](./coverage-based-curation.ipynb)
 [![35 candidate strategies triaged](https://img.shields.io/badge/35-candidate_strategies_triaged-0D9488)](./coverage-based-curation.ipynb)
-[![FVD 3,043,786, best at epoch 85](https://img.shields.io/badge/FVD_3,043,786-best_at_epoch_85-0D9488)](./coverage-based-curation.ipynb)
 
 [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/coverage-based-curation/coverage-based-curation.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb)
 
@@ -78,9 +77,9 @@ See cell 9.
 
 ## Why this matters at scale
 
-The paper trains DIAMOND on a coverage-based curation of CS2 gameplay for 120 epochs on 7,530 training episodes. Best checkpoint at epoch 105 hits LPIPS 0.5404, within 13.5% of the 600-epoch `baseline_v1` best (0.4785), at under 18% of the training budget. Best FVD at epoch 85 is 3,043,786, competitive with the baseline's 2.90M range. Coverage-based selection reaches near-baseline quality in a small fraction of the training compute.
+Internal evaluation on a coverage-based curation of CS2 gameplay found that training on this selection reaches near-baseline generation quality in a small fraction of the training compute needed by training on the full, uncurated corpus — without any domain-specific hypothesis about which behavior is most informative.
 
-The CS2 strategy is a JSON spec, not fluent-API code. The `collision-aware` strategy from the paper (Listing 1) uses the same three axes but with a weighted selection method:
+The CS2 strategy is a JSON spec, not fluent-API code. A `collision-aware` variant uses the same three axes but with a weighted selection method:
 
 ```json
 {
@@ -104,11 +103,11 @@ The CS2 strategy is a JSON spec, not fluent-API code. The `collision-aware` stra
 }
 ```
 
-Ten bins per axis. Weighted selection over three axes. Impact rate carries 2x the weight of movement speed and 4x aim velocity. That exact spec produced JEDi 2.7579 at epoch 355 (55 finetune epochs from the ep-300 `baseline_v1` anchor), matching `baseline_v1` at epoch 420 in about 18% of the training compute.
+Ten bins per axis. Weighted selection over three axes. Impact rate carries 2x the weight of movement speed and 4x aim velocity.
 
 The `coverage-based` strategy swaps `weighted` for `uniform-bins` selection over the same three axes. Selecting equally across all three axes at once gives the model the genuinely distinct segments it needs. Selecting by any single axis produces a similar dataset each time because those properties co-occur.
 
-A distribution-only triage the paper ran over 35 candidate strategies found that about half collapsed to near-baseline behavior (Jensen-Shannon divergence roughly 0.03 to 0.04 on all metrics). Coverage-based, rare-trajectory, and collision-aware are three of the genuinely distinct ones.
+Internal triage across dozens of candidate strategies found that many collapsed to near-baseline behavior; coverage-based, rare-trajectory, and collision-aware were among the few that produced genuinely distinct datasets.
 
 See cell 10.
 
