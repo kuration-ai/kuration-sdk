@@ -1,4 +1,4 @@
-# CLAUDE.md: Kuration AI product framing
+# CLAUDE.md: kuration-ai product framing
 
 Anyone opening a session on this repo should read this file first. It is the settled
 context: what we're building, in what priority order, and what we deliberately are not.
@@ -6,10 +6,16 @@ The full "why" lives on the epic issue; this is the short, in-repo version.
 
 ## Product framing
 
-**Kuration AI** is a Python library for curated training-dataset selection, published
-as the `kuration-ai` package. It sits on top of the internal `kuration-sdk` engine
-(kept invisible to end users) and adds three built-in curation operations plus an
-extension pattern for writing your own.
+`kuration-ai` is a companion package to the open-source **Kuration SDK** (`kuration-sdk`),
+published separately as its own pip-installable package. It adds three built-in curation
+operations plus an extension pattern for writing your own on top of the SDK's
+general-purpose pipeline engine.
+
+Earlier drafts of this doc described the underlying engine as "internal" and "kept
+invisible to end users." That premise no longer holds: `kuration-sdk` is the public
+product going through open-source release, not a hidden implementation detail behind
+this package. `kuration-ai` is a convenience layer on top of a SDK end users can and do
+use directly — see "No lock-in" below, which already assumed this and is unaffected.
 
 **Target user:** an external developer at another company who wants to build a
 reproducible curated training dataset without spending their first hour figuring out
@@ -20,8 +26,8 @@ one a self-contained composition of pipeline primitives for a recognizable job.
 Operations compose. The same shape works as instances, as a list, or as a config dict.
 
 **What it is not:** a rewrite of the underlying engine. A plugin marketplace. A hosted
-service. A domain-specific vertical. The engine is settled. Kuration AI packages,
-curates, and smooths the developer experience on top of it.
+service. A domain-specific vertical. The engine's shape is settled from `kuration-ai`'s
+side. `kuration-ai` packages, curates, and smooths the developer experience on top of it.
 
 ## Priority-ordered engineering principles
 
@@ -29,14 +35,14 @@ Read top to bottom. Higher-numbered rules yield to lower-numbered ones when they
 
 1. **Progressive disclosure.** One line for tier 1. Three lines for tier 2. Full
    customization at tier 3. A beginner should never see an expert concept in a tier-1 path.
-2. **Operation as the unit.** Every capability Kuration AI exposes is a standalone,
+2. **Operation as the unit.** Every capability `kuration-ai` exposes is a standalone,
    configurable Operation. Operations compose. A user can pick one, chain several, or
    drive them from a config.
 3. **Config-parity.** The same operations are expressible three ways: as instances,
    as a list of instances, or as a list of config dicts. All three produce identical
    results. If they diverge, that's a bug.
-4. **The underlying engine is settled.** Never modify `kuration-sdk` from Kuration AI.
-   Every workaround for an awkward SDK shape lives inside the wrapper. If tension is real
+4. **The underlying engine is settled from this side.** Never modify `kuration-sdk` from
+   `kuration-ai`. Every workaround for an awkward SDK shape lives inside the wrapper. If tension is real
    enough to warrant an upstream change, it goes in `docs/internal/future-sdk-issues.md` for later.
 5. **Copy-pasteable examples.** Every README snippet has been executed against the real
    library before it lands. No aspirational code. No pseudo-code.
@@ -62,17 +68,17 @@ help us sell" test, not just a "is this technically clean" one.
    self-contained runnable folder. There is no burying the value under an architecture
    overview or a badge parade.
 
-3. **Reproducibility is the differentiator.** Kuration AI guarantees deterministic,
+3. **Reproducibility is the differentiator.** `kuration-ai` guarantees deterministic,
    provenance-tracked curation. The customer story: commit your config file, get
    identical shards from the same package versions a year later. No competitor in the
    data-curation space (Snorkel, Ray Data, dbt, LlamaIndex data loaders) offers this as
    a first-class feature. Every doc surface should make it easy to notice.
 
-4. **No lock-in.** A user who outgrows Kuration AI can drop into the raw underlying
-   engine without rewriting anything. Every Operation is transparent about which pipeline
-   primitives it calls; `.describe()` shows the actual chain. Kuration AI is additive
-   over the engine, never replacing it. This is what neutralizes the "wrapper trap"
-   objection.
+4. **No lock-in.** A user who outgrows `kuration-ai` can drop into the raw underlying
+   Kuration SDK without rewriting anything. Every Operation is transparent about which
+   pipeline primitives it calls; `.describe()` shows the actual chain. `kuration-ai` is
+   additive over the SDK, never replacing it or hiding it. This is what neutralizes the
+   "wrapper trap" objection.
 
 5. **Complexity is opt-in.** Tier 1 is one line and works. Tier 2 is a YAML config.
    Tier 3 is a custom Operation. Same product, three sophistication surfaces. A tier-1
@@ -84,7 +90,7 @@ help us sell" test, not just a "is this technically clean" one.
 
 ## Who this is for
 
-Kuration AI exists for three overlapping personas:
+`kuration-ai` exists for three overlapping personas:
 
 - The ML engineer at a Series B/C startup building a data pipeline from scratch. Wants
   something between a raw pipeline library and a full ML platform.
@@ -113,3 +119,8 @@ v0.0.1 shipped 2026-08-11 at `kuration-ai/python-sdk` (repo renamed from `kurati
 on 2026-08-12 to match the openai/openai-python convention for company Python SDKs).
 All non-deferred issues from the `v0.0.1: 2-day ship` milestone are on `main`.
 Cut scope, not polish.
+
+That standalone repo no longer exists: `kuration-ai` was subsequently merged into
+`aintropy-solutions/kuration-sdk` as the `kuration-ai/` companion package (see
+`MIGRATION_NOTE.md`). Links and clone instructions elsewhere in this package's docs
+should point at the monorepo, not `kuration-ai/python-sdk`.
