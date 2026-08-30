@@ -1,5 +1,5 @@
 [project]
-name = "kuration-lab"
+name = "kuration-sdk-lab"
 version = "0.1.0"
 description = "JupyterLab extension for the kuration SDK: author, run, and inspect curation jobs."
 readme = "README.md"
@@ -33,25 +33,25 @@ requires = ["hatchling>=1.21", "hatch-jupyter-builder>=0.8.3"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.sdist]
-artifacts = ["src/kuration_lab/labextension"]
+artifacts = ["src/kuration_sdk_lab/labextension"]
 exclude = [".github", "node_modules", "lib", "dist"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/kuration_lab"]
+packages = ["src/kuration_sdk_lab"]
 
 [tool.hatch.build.targets.wheel.shared-data]
-"src/kuration_lab/labextension" = "share/jupyter/labextensions/kuration-lab"
-"install.json" = "share/jupyter/labextensions/kuration-lab/install.json"
+"src/kuration_sdk_lab/labextension" = "share/jupyter/labextensions/kuration-sdk-lab"
+"install.json" = "share/jupyter/labextensions/kuration-sdk-lab/install.json"
 "jupyter-config/server-config" = "etc/jupyter/jupyter_server_config.d"
 
 [tool.hatch.build.hooks.jupyter-builder]
 dependencies = ["hatch-jupyter-builder>=0.8.3"]
 build-function = "hatch_jupyter_builder.npm_builder"
 ensured-targets = [
-    "src/kuration_lab/labextension/static/style.js",
-    "src/kuration_lab/labextension/package.json",
+    "src/kuration_sdk_lab/labextension/static/style.js",
+    "src/kuration_sdk_lab/labextension/package.json",
 ]
-skip-if-exists = ["src/kuration_lab/labextension/static/style.js"]
+skip-if-exists = ["src/kuration_sdk_lab/labextension/static/style.js"]
 
 [tool.hatch.build.hooks.jupyter-builder.build-kwargs]
 build_cmd = "build:prod"

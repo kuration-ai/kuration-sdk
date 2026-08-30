@@ -4,12 +4,12 @@ import { KurationClient } from './api/client';
 import { RunRegistryModel } from './models/runRegistry';
 
 export const IKurationClient = new Token<KurationClient>(
-  'kuration-lab:client',
+  'kuration-sdk-lab:client',
   'HTTP/WebSocket client for the kuration server extension.'
 );
 
 export const IKurationRunRegistry = new Token<RunRegistryModel>(
-  'kuration-lab:run-registry',
+  'kuration-sdk-lab:run-registry',
   'Shared model of all kuration runs and their live progress.'
 );
 

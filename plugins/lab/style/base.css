@@ -1,4 +1,4 @@
-/* kuration-lab — themed via JupyterLab CSS variables so light/dark both work. */
+/* kuration-sdk-lab — themed via JupyterLab CSS variables so light/dark both work. */
 
 .kur-widget {
   color: var(--jp-ui-font-color1);

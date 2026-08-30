@@ -175,9 +175,9 @@ jobs:
             "$RUNNER_TEMP"/kuration-plugin-release-smoke/bin/python -m pip install 'jupyterlab>=4.1,<5'
             cd "$RUNNER_TEMP"
             "$RUNNER_TEMP"/kuration-plugin-release-smoke/bin/jupyter labextension list 2>&1 \
-              | grep -q kuration-lab
+              | grep -q kuration-sdk-lab
             "$RUNNER_TEMP"/kuration-plugin-release-smoke/bin/jupyter server extension list 2>&1 \
-              | grep -q kuration_lab
+              | grep -q kuration_sdk_lab
           else
             cd "$RUNNER_TEMP"
             "$RUNNER_TEMP"/kuration-plugin-release-smoke/bin/python - <<'PY'

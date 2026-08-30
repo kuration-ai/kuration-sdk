@@ -1,12 +1,12 @@
 # kuration-sdk
 
-[![4 runnable notebooks](https://img.shields.io/badge/4-runnable_notebooks-0D9488)](./kuration-ai/notebooks/)
-[![1,090 test episodes scored](https://img.shields.io/badge/1,090-test_episodes_scored-0D9488)](./kuration-ai/notebooks/coverage-based-curation/)
-[![4-second segments, 16 fps](https://img.shields.io/badge/4--second_segments-16_fps-0D9488)](./kuration-ai/notebooks/coverage-based-curation/)
-[![51-dim action, 20 categories](https://img.shields.io/badge/51--dim_action-20_categories-0D9488)](./kuration-ai/notebooks/coverage-based-curation/)
+[![4 runnable notebooks](https://img.shields.io/badge/4-runnable_notebooks-0D9488)](./kuration-sdk-wrapper/notebooks/)
+[![1,090 test episodes scored](https://img.shields.io/badge/1,090-test_episodes_scored-0D9488)](./kuration-sdk-wrapper/notebooks/coverage-based-curation/)
+[![4-second segments, 16 fps](https://img.shields.io/badge/4--second_segments-16_fps-0D9488)](./kuration-sdk-wrapper/notebooks/coverage-based-curation/)
+[![51-dim action, 20 categories](https://img.shields.io/badge/51--dim_action-20_categories-0D9488)](./kuration-sdk-wrapper/notebooks/coverage-based-curation/)
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat)
-[![Tests](https://github.com/aintropy-solutions/kuration-sdk/actions/workflows/kuration-ai-tests.yml/badge.svg?branch=main)](https://github.com/aintropy-solutions/kuration-sdk/actions/workflows/kuration-ai-tests.yml)
+[![Tests](https://github.com/aintropy-solutions/kuration-sdk/actions/workflows/kuration-sdk-wrapper-tests.yml/badge.svg?branch=main)](https://github.com/aintropy-solutions/kuration-sdk/actions/workflows/kuration-sdk-wrapper-tests.yml)
 ![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat)
 ![Status](https://img.shields.io/badge/status-alpha-orange?style=flat)
 
@@ -60,7 +60,7 @@ the manifest, so resume and verification are safe.
    4. [Spatial coverage (general)](#spatial-coverage-general)
    5. [Rare-event coverage (general)](#rare-event-coverage-general)
    6. [Diversity sampling (general)](#diversity-sampling-general)
-7. [kuration-ai — the companion package](#kuration-ai--the-companion-package)
+7. [kuration-sdk-wrapper — the companion package](#kuration-sdk-wrapper--the-companion-package)
    1. [What's in here](#whats-in-here)
    2. [Getting started](#getting-started)
    3. [Beyond the gallery](#beyond-the-gallery)
@@ -72,8 +72,8 @@ the manifest, so resume and verification are safe.
    4. [Reproducibility](#reproducibility)
    5. [Writing your own operation](#writing-your-own-operation)
    6. [CLI reference](#cli-reference)
-      1. [`kai list`](#kai-list)
-      2. [`kai describe`](#kai-describe)
+      1. [`ksw list`](#ksw-list)
+      2. [`ksw describe`](#ksw-describe)
    7. [Coming next](#coming-next)
    8. [Reference](#reference)
    9. [Contributing](#contributing)
@@ -218,7 +218,7 @@ An **operator** is a named, discoverable pipeline step (an analyzer, a transform
 scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
 [Operators](docs/operators.md) for the full registry. The six use cases below are ready-made
 curation jobs built from those operators — three gameplay/video-specific, three general-purpose
-sampling jobs from the [`kuration-ai`](#kuration-ai--the-companion-package) companion package.
+sampling jobs from the [`kuration-sdk-wrapper`](#kuration-sdk-wrapper--the-companion-package) companion package.
 Each links to a runnable example and, where one exists, a browser notebook (Colab and Binder can
 only clone public repositories, so the launch badges activate once this repo goes public — until
 then, clone and run locally; see each notebook's own README for the exact install command, the
@@ -248,7 +248,7 @@ analyzer result on its own, without the pipeline.
   <sub><em>The clip is flagged by the model as it has two instances where the player collides with the wall.</em></sub>
 </p>
 
-Runnable: [`examples/07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py). Walkthrough notebook: [README](./kuration-ai/notebooks/action-state-consistency/) — [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/action-state-consistency/action-state-consistency.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Faction-state-consistency%2Faction-state-consistency.ipynb)
+Runnable: [`examples/07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py). Walkthrough notebook: [README](./kuration-sdk-wrapper/notebooks/action-state-consistency/) — [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-sdk-wrapper/notebooks/action-state-consistency/action-state-consistency.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-sdk-wrapper%2Fnotebooks%2Faction-state-consistency%2Faction-state-consistency.ipynb)
 
 ### Collision awareness (gameplay)
 
@@ -262,7 +262,7 @@ and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`, `slide_end
   <sub><em>DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall).</em></sub>
 </p>
 
-Walkthrough notebook: [README](./kuration-ai/notebooks/collision-aware/) — [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/collision-aware/collision-aware.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb)
+Walkthrough notebook: [README](./kuration-sdk-wrapper/notebooks/collision-aware/) — [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-sdk-wrapper/notebooks/collision-aware/collision-aware.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-sdk-wrapper%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb)
 
 ### SLAM motion diversity and quality (gameplay)
 
@@ -302,7 +302,7 @@ Most gameplay is one kind of movement — walking forward, standard turns, level
 
 `BalancedSelector` does exactly that. It measures a per-window metric on your chosen axis (turning, path length, whatever), bins the values across the observed range, and samples an equal count from every bin. It's the SDK's `slam_motion_diversity` pattern (default axis `slam_path_length`; the Intro blog example switches to `slam_turn_degrees`), generalized to any per-window column.
 
-Runnable: [`kuration-ai/examples/motion-coverage/`](./kuration-ai/examples/motion-coverage/). Walkthrough notebook: [README](./kuration-ai/notebooks/coverage-based-curation/) — [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/coverage-based-curation/coverage-based-curation.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb)
+Runnable: [`kuration-sdk-wrapper/examples/motion-coverage/`](./kuration-sdk-wrapper/examples/motion-coverage/). Walkthrough notebook: [README](./kuration-sdk-wrapper/notebooks/coverage-based-curation/) — [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-sdk-wrapper/notebooks/coverage-based-curation/coverage-based-curation.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-sdk-wrapper%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb)
 
 ### Rare-event coverage (general)
 
@@ -310,7 +310,7 @@ A world model only learns the physics that show up consistently in its training 
 
 The fix isn't collecting more footage. It's finding the events already buried in the footage you have and oversampling them relative to their natural, very low, base rate. `RareEventCoverage` measures the rare event's per-window rate and weights the sampler so those windows show up far more often than they do in the wild.
 
-Runnable: [`kuration-ai/examples/rare-event-coverage/`](./kuration-ai/examples/rare-event-coverage/)
+Runnable: [`kuration-sdk-wrapper/examples/rare-event-coverage/`](./kuration-sdk-wrapper/examples/rare-event-coverage/)
 
 ### Diversity sampling (general)
 
@@ -318,30 +318,30 @@ Most activity-based metrics move together. A chaotic firefight is high on every 
 
 Cluster the windows in a multi-axis feature space and sample equally from each cluster, and the redundant part of the corpus stops crowding out the parts that actually differ. The Intro blog names this "diversity sampling" — one of the checks that "all get easier on a dataset that previously had no notion of space." `DiverseSubset` clusters over any set of pre-measured features and takes an equal share from every cluster. An optional dedup pre-pass filters near-duplicates first.
 
-Runnable: [`kuration-ai/examples/diversity-sampling/`](./kuration-ai/examples/diversity-sampling/)
+Runnable: [`kuration-sdk-wrapper/examples/diversity-sampling/`](./kuration-sdk-wrapper/examples/diversity-sampling/)
 
 The three general-purpose use cases above each have their own runnable example folder under
-`kuration-ai/examples/`, with the expected output and a "what to try next" section baked into the
+`kuration-sdk-wrapper/examples/`, with the expected output and a "what to try next" section baked into the
 folder's README.
 
-## kuration-ai — the companion package
+## kuration-sdk-wrapper — the companion package
 
 ### What's in here
 
-- **[`kuration-ai/notebooks/`](./kuration-ai/notebooks/)**. One-click Binder and Colab launchers, linked from the [Use cases](#use-cases) above. New to `kuration-ai`? Start with the `starter` notebook: [README](./kuration-ai/notebooks/starter/) — [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/starter/starter.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fstarter%2Fstarter.ipynb) — it isn't tied to any one use case, just the pipeline shape (window → measure → bin → sample) they all share.
-- **The `kuration-ai` companion package**: source at [`kuration-ai/src/kuration_ai/`](./kuration-ai/src/kuration_ai/), examples at [`kuration-ai/examples/`](./kuration-ai/examples/), design notes at [`kuration-ai/design/`](./kuration-ai/design/), tests at [`kuration-ai/tests/`](./kuration-ai/tests/), package config at [`kuration-ai/pyproject.toml`](./kuration-ai/pyproject.toml), release notes at [`kuration-ai/CHANGELOG.md`](./kuration-ai/CHANGELOG.md). `kai` CLI plus three shipped operations (`BalancedSelector`, `DiverseSubset`, `RareEventCoverage`). Originally developed as its own package, now merged into this repo as a companion.
+- **[`kuration-sdk-wrapper/notebooks/`](./kuration-sdk-wrapper/notebooks/)**. One-click Binder and Colab launchers, linked from the [Use cases](#use-cases) above. New to `kuration-sdk-wrapper`? Start with the `starter` notebook: [README](./kuration-sdk-wrapper/notebooks/starter/) — [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-sdk-wrapper/notebooks/starter/starter.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-sdk-wrapper%2Fnotebooks%2Fstarter%2Fstarter.ipynb) — it isn't tied to any one use case, just the pipeline shape (window → measure → bin → sample) they all share.
+- **The `kuration-sdk-wrapper` companion package**: source at [`kuration-sdk-wrapper/src/kuration_sdk_wrapper/`](./kuration-sdk-wrapper/src/kuration_sdk_wrapper/), examples at [`kuration-sdk-wrapper/examples/`](./kuration-sdk-wrapper/examples/), design notes at [`kuration-sdk-wrapper/design/`](./kuration-sdk-wrapper/design/), tests at [`kuration-sdk-wrapper/tests/`](./kuration-sdk-wrapper/tests/), package config at [`kuration-sdk-wrapper/pyproject.toml`](./kuration-sdk-wrapper/pyproject.toml), release notes at [`kuration-sdk-wrapper/CHANGELOG.md`](./kuration-sdk-wrapper/CHANGELOG.md). `ksw` CLI plus three shipped operations (`BalancedSelector`, `DiverseSubset`, `RareEventCoverage`). Originally developed as its own package, now merged into this repo as a companion.
 
 Long-form blog posts on physical-AI data curation live on [aintropy.ai/blog](https://aintropy.ai/blog), published directly from Drive through the content pipeline.
 
-The `kuration-ai` companion package is a small, separately-installable tool for the sampling half of world-model curation: `BalancedSelector`, `RareEventCoverage`, and `DiverseSubset` (see [Use cases](#use-cases) above), plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
+The `kuration-sdk-wrapper` companion package is a small, separately-installable tool for the sampling half of world-model curation: `BalancedSelector`, `RareEventCoverage`, and `DiverseSubset` (see [Use cases](#use-cases) above), plus a small pattern for writing your own. Runs from a config file you commit alongside your training code, so a curated subset is re-derivable months later against the same package versions.
 
 ### Getting started
 
-`kuration-ai` isn't on PyPI yet — install from source alongside the SDK (see
-[`kuration-ai/CONTRIBUTING.md`](./kuration-ai/CONTRIBUTING.md)):
+`kuration-sdk-wrapper` isn't on PyPI yet — install from source alongside the SDK (see
+[`kuration-sdk-wrapper/CONTRIBUTING.md`](./kuration-sdk-wrapper/CONTRIBUTING.md)):
 
 ```bash
-cd kuration-ai
+cd kuration-sdk-wrapper
 pip install -e .
 ```
 
@@ -350,7 +350,7 @@ Runs on Python 3.11 or later. Depends on `kuration-sdk[methods,parquet]`.
 Your first curated result, in seven lines:
 
 ```python
-from kuration_ai import input, RareEventCoverage
+from kuration_sdk_wrapper import input, RareEventCoverage
 
 sessions = {"clip-1": [{"t": float(i), "collision": 1 if i % 30 == 0 else 0} for i in range(200)]}
 pipeline = input(sessions, time="t", hz=10.0).window(8, stride=4)
@@ -363,7 +363,7 @@ Prints `selected 15 windows`. Replace the in-memory `sessions` dict with a folde
 
 ### Beyond the gallery
 
-The three shipped operations are curated shortcuts. `kuration-ai` sits on top of the broader `kuration-sdk` pipeline library with 45 registered components, and you can drop into the raw fluent API for anything the gallery doesn't cover.
+The three shipped operations are curated shortcuts. `kuration-sdk-wrapper` sits on top of the broader `kuration-sdk` pipeline library with 45 registered components, and you can drop into the raw fluent API for anything the gallery doesn't cover.
 
 #### Sampling methods
 
@@ -396,13 +396,13 @@ Two: `anomaly` (Isolation Forest), `dedup` (SemDeDup).
 
 Core methods used by the shipped operations: `.window()`, `.measure()`, `.filter()`, `.bin()`, `.sample()`, `.split()`, `.output()`, `.options()`, `.describe()`, `.collect()`. Pipeline exposes additional methods for tagging, scoring, video joins, previewing, and lifecycle stats.
 
-Full inventory with parameters, extras, and runtime dependencies at [`kuration-ai/docs/history/sdk_operation_inventory.md`](./kuration-ai/docs/history/sdk_operation_inventory.md).
+Full inventory with parameters, extras, and runtime dependencies at [`kuration-sdk-wrapper/docs/history/sdk_operation_inventory.md`](./kuration-sdk-wrapper/docs/history/sdk_operation_inventory.md).
 
-Every gallery operation is transparent about the primitives it calls. Run `.describe()` on the resulting pipeline and you see the exact chain. Drop the `kuration_ai` imports and your custom pipelines still work. No lock-in.
+Every gallery operation is transparent about the primitives it calls. Run `.describe()` on the resulting pipeline and you see the exact chain. Drop the `kuration_sdk_wrapper` imports and your custom pipelines still work. No lock-in.
 
 ### Reproducibility
 
-Every run of `kuration-ai` is deterministic. Commit a config file alongside your training code, and a teammate re-running it against the same package versions a year from now produces the same curated dataset.
+Every run of `kuration-sdk-wrapper` is deterministic. Commit a config file alongside your training code, and a teammate re-running it against the same package versions a year from now produces the same curated dataset.
 
 Same operation, three equivalent invocation styles. The three are guaranteed to produce identical results, enforced by test.
 
@@ -432,7 +432,7 @@ Any Python class with `.apply(pipeline) -> pipeline` is a valid operation. No in
 
 ```python
 from dataclasses import dataclass
-from kuration_ai import run, BalancedSelector
+from kuration_sdk_wrapper import run, BalancedSelector
 
 @dataclass(frozen=True)
 class OnlyActiveWindows:
@@ -453,28 +453,28 @@ result = run(pipeline, [
 Register it to also drive it from a config dict:
 
 ```python
-from kuration_ai import register
+from kuration_sdk_wrapper import register
 register("OnlyActiveWindows", OnlyActiveWindows)
 ```
 
-For the full extension contract, see [`kuration-ai/design/04_extension_seam.md`](./kuration-ai/design/04_extension_seam.md).
+For the full extension contract, see [`kuration-sdk-wrapper/design/04_extension_seam.md`](./kuration-sdk-wrapper/design/04_extension_seam.md).
 
 ### CLI reference
 
-The `kai` command is installed alongside the library.
+The `ksw` command is installed alongside the library.
 
-#### `kai list`
+#### `ksw list`
 
 ```bash
-kai list
+ksw list
 ```
 
 Lists available operations (built-in plus any you have registered), annotated with which extras each one needs at runtime.
 
-#### `kai describe`
+#### `ksw describe`
 
 ```bash
-kai describe BalancedSelector
+ksw describe BalancedSelector
 ```
 
 Shows one operation's docstring and parameter contract.
@@ -484,23 +484,23 @@ Shows one operation's docstring and parameter contract.
 Not in the initial release, on the roadmap:
 
 - **Gameplay operators**: SLAM motion diversity, SLAM quality, pixel-shift, action-state consistency, and collision detection (both regular and directional variants) for game and video telemetry. The notebook set above previews some of these.
-- **`kai init <profile>`**: project scaffolder for new users starting from scratch.
+- **`ksw init <profile>`**: project scaffolder for new users starting from scratch.
 - **Property-based test suite**: the initial release ships with a 52-test smoke suite; property-based tests follow.
 
 ### Reference
 
-- [`kuration-ai/design/`](./kuration-ai/design/): five design decisions behind the API (operation abstraction, composition, config model, extension seam, workarounds).
-- [`kuration-ai/CHANGELOG.md`](./kuration-ai/CHANGELOG.md): release notes for `kuration-ai`.
-- [`kuration-ai/MIGRATION_NOTE.md`](./kuration-ai/MIGRATION_NOTE.md): where this content came from and why.
+- [`kuration-sdk-wrapper/design/`](./kuration-sdk-wrapper/design/): five design decisions behind the API (operation abstraction, composition, config model, extension seam, workarounds).
+- [`kuration-sdk-wrapper/CHANGELOG.md`](./kuration-sdk-wrapper/CHANGELOG.md): release notes for `kuration-sdk-wrapper`.
+- [`kuration-sdk-wrapper/MIGRATION_NOTE.md`](./kuration-sdk-wrapper/MIGRATION_NOTE.md): where this content came from and why.
 - [Issue tracker](https://github.com/aintropy-solutions/kuration-sdk/issues) for feature requests, bug reports, roadmap discussion.
-- [`kuration-ai/examples/`](./kuration-ai/examples/): the gallery of runnable use cases.
+- [`kuration-sdk-wrapper/examples/`](./kuration-sdk-wrapper/examples/): the gallery of runnable use cases.
 
 ### Contributing
 
 Two contributing scopes coexist in this repo:
 
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md) at the repo root: for the `kuration-sdk` repo as a whole (the pipeline primitive and its docs, examples, plugins, and CI).
-- [`kuration-ai/CONTRIBUTING.md`](./kuration-ai/CONTRIBUTING.md): for the `kuration-ai` companion package specifically (dev install, tests, adding operations).
+- [`kuration-sdk-wrapper/CONTRIBUTING.md`](./kuration-sdk-wrapper/CONTRIBUTING.md): for the `kuration-sdk-wrapper` companion package specifically (dev install, tests, adding operations).
 
 ### License
 

@@ -2,7 +2,7 @@
 
 The package is importable either from an installed environment or straight from the source
 tree (``src/`` is prepended to ``sys.path`` and ``PYTHONPATH`` so spawned worker subprocesses
-can import ``kuration_lab`` too).
+can import ``kuration_sdk_lab`` too).
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ pytest_plugins = ("pytest_jupyter.jupyter_server",)
 @pytest.fixture
 def jp_server_config(jp_server_config, tmp_path):
     return {
-        "ServerApp": {"jpserver_extensions": {"kuration_lab": True}},
+        "ServerApp": {"jpserver_extensions": {"kuration_sdk_lab": True}},
         "KurationLabApp": {"runs_dir": str(tmp_path / "runs")},
     }
 
@@ -65,7 +65,7 @@ def tiny_job(tmp_path) -> dict:
 def written_dataset(tmp_path) -> str:
     """A committed dataset, produced the same way the worker produces one."""
     from kuration.core.cli.job import resolve_job
-    from kuration_lab.jobs.worker import _run_curate
+    from kuration_sdk_lab.jobs.worker import _run_curate
 
     job = make_job(tmp_path)
     _run_curate(job, resolve_job(job), None)

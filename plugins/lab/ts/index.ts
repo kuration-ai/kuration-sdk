@@ -25,7 +25,7 @@ const SUPPORTED_API = 1;
 
 /** Provides the API client and performs the version handshake. */
 const clientPlugin: JupyterFrontEndPlugin<KurationClient> = {
-  id: 'kuration-lab:client',
+  id: 'kuration-sdk-lab:client',
   autoStart: true,
   provides: IKurationClient,
   activate: (_app: JupyterFrontEnd): KurationClient => {
@@ -35,17 +35,17 @@ const clientPlugin: JupyterFrontEndPlugin<KurationClient> = {
       .then(version => {
         if (version.api !== SUPPORTED_API) {
           Notification.warning(
-            `kuration-lab expects API ${SUPPORTED_API} but the server speaks ` +
-              `${version.api}; upgrade with: pip install -U kuration-lab`,
+            `kuration-sdk-lab expects API ${SUPPORTED_API} but the server speaks ` +
+              `${version.api}; upgrade with: pip install -U kuration-sdk-lab`,
             { autoClose: false }
           );
         }
       })
       .catch(() => {
         Notification.error(
-          'The kuration_lab server extension is not responding. ' +
+          'The kuration_sdk_lab server extension is not responding. ' +
             'Install/enable it, then restart the Jupyter server: ' +
-            'pip install kuration-lab',
+            'pip install kuration-sdk-lab',
           { autoClose: false }
         );
       });
@@ -55,7 +55,7 @@ const clientPlugin: JupyterFrontEndPlugin<KurationClient> = {
 
 /** Provides the shared run registry model (list polling + live event streams). */
 const registryPlugin: JupyterFrontEndPlugin<RunRegistryModel> = {
-  id: 'kuration-lab:run-registry',
+  id: 'kuration-sdk-lab:run-registry',
   autoStart: true,
   requires: [IKurationClient],
   provides: IKurationRunRegistry,
@@ -68,7 +68,7 @@ const registryPlugin: JupyterFrontEndPlugin<RunRegistryModel> = {
 
 /** Commands, widget trackers, launcher/palette/context-menu entries, file type. */
 const commandsPlugin: JupyterFrontEndPlugin<void> = {
-  id: 'kuration-lab:commands',
+  id: 'kuration-sdk-lab:commands',
   autoStart: true,
   requires: [IKurationClient, IKurationRunRegistry],
   optional: [ICommandPalette, ILauncher, ILayoutRestorer, IFileBrowserFactory],
@@ -146,7 +146,7 @@ const commandsPlugin: JupyterFrontEndPlugin<void> = {
 
 /** Left-area sidebar: runs list + entry points. */
 const sidebarPlugin: JupyterFrontEndPlugin<void> = {
-  id: 'kuration-lab:sidebar',
+  id: 'kuration-sdk-lab:sidebar',
   autoStart: true,
   requires: [IKurationRunRegistry],
   activate: (app: JupyterFrontEnd, registry: RunRegistryModel): void => {

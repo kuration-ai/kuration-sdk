@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from kuration_lab.paths import normalize_job_paths, resolve_path
+from kuration_sdk_lab.paths import normalize_job_paths, resolve_path
 
 
 def test_relative_resolves_against_root(tmp_path):

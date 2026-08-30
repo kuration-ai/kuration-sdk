@@ -1,7 +1,7 @@
 {
   "ServerApp": {
     "jpserver_extensions": {
-      "kuration_lab": true
+      "kuration_sdk_lab": true
     }
   }
 }

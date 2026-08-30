@@ -11,8 +11,8 @@ from pathlib import Path
 
 from conftest import make_csv, make_job
 
-from kuration_lab.jobs import protocol
-from kuration_lab.jobs.registry import RunRegistry
+from kuration_sdk_lab.jobs import protocol
+from kuration_sdk_lab.jobs.registry import RunRegistry
 
 
 def _prepare_run(tmp_path, job) -> Path:
@@ -23,7 +23,7 @@ def _prepare_run(tmp_path, job) -> Path:
 
 def _run_worker(run_dir, *, wait=True):
     proc = subprocess.Popen(
-        [sys.executable, "-m", "kuration_lab.jobs.worker", str(run_dir)],
+        [sys.executable, "-m", "kuration_sdk_lab.jobs.worker", str(run_dir)],
         stdout=open(run_dir / protocol.LOG_FILE, "ab"),
         stderr=subprocess.STDOUT, start_new_session=True)
     if wait:

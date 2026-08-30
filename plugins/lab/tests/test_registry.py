@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from kuration_lab.jobs import protocol
-from kuration_lab.jobs.registry import RunRegistry, _resume_available
+from kuration_sdk_lab.jobs import protocol
+from kuration_sdk_lab.jobs.registry import RunRegistry, _resume_available
 
 
 @pytest.fixture

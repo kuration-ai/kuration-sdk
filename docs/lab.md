@@ -1,12 +1,12 @@
 # JupyterLab extension
 
-`kuration-lab` puts the whole curation lifecycle inside JupyterLab: author a job document,
+`kuration-sdk-lab` puts the whole curation lifecycle inside JupyterLab: author a job document,
 run it with live progress, and inspect the written artifact — all against the same job spec
 and validators the [CLI](jobs.md) uses. It ships as a separate distribution built from
 `plugins/lab/` in this repository.
 
 ```bash
-pip install kuration-lab
+pip install kuration-sdk-lab
 ```
 
 The install carries both halves: a prebuilt JupyterLab (≥ 4.1) frontend and a
@@ -30,9 +30,9 @@ The install carries both halves: a prebuilt JupyterLab (≥ 4.1) frontend and a
 
 ## How runs execute
 
-Each run is an isolated worker subprocess (`python -m kuration_lab.jobs.worker`) driven by
+Each run is an isolated worker subprocess (`python -m kuration_sdk_lab.jobs.worker`) driven by
 the same job document the CLI takes. Run state lives on disk under
-`<jupyter data dir>/kuration-lab/runs/<run_id>/` — progress events, worker log, and the
+`<jupyter data dir>/kuration-sdk-lab/runs/<run_id>/` — progress events, worker log, and the
 JSON result survive a server restart, and interrupted curate runs surface
 `resume_available` when `write_dataset(resume=True)` applies. Cancellation sends SIGTERM,
 which the worker turns into a clean stop at the next progress event.

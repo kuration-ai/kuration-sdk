@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from kuration_lab.jobs import protocol
+from kuration_sdk_lab.jobs import protocol
 
 
 def test_event_writer_stamps_monotonic_seq_and_run_id(tmp_path):
