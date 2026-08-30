@@ -124,8 +124,7 @@ See cell 10.
 ## Try it locally
 
 ```bash
-git clone https://github.com/aintropy-solutions/kuration-sdk.git
-cd kuration-sdk/kuration-sdk-wrapper/notebooks/coverage-based-curation
+curl -O https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/kuration-sdk-wrapper/notebooks/coverage-based-curation/coverage-based-curation.ipynb
 uv pip install kuration-sdk matplotlib jupyter
 uv run jupyter lab coverage-based-curation.ipynb
 ```

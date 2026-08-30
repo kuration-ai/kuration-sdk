@@ -117,8 +117,7 @@ See cell 10.
 ## Try it locally
 
 ```bash
-git clone https://github.com/aintropy-solutions/kuration-sdk.git
-cd kuration-sdk/kuration-sdk-wrapper/notebooks/collision-aware
+curl -O https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/kuration-sdk-wrapper/notebooks/collision-aware/collision-aware.ipynb
 uv pip install 'kuration-sdk[gameplay]' matplotlib jupyter
 uv run jupyter lab collision-aware.ipynb
 ```

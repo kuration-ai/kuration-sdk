@@ -18,11 +18,11 @@ The public facade handles both execution paths:
 Install the reconstruction runtime only when raw frames or videos must run through SLAM:
 
 ```bash
-python -m pip install -e ".[slam]"
+pip install "kuration-sdk[slam]"
 ```
 
-Run this from the repository root. Use `.[gameplay]` to install SLAM together with Pixel Shift,
-action-state, and point-cloud visualization. Point-cloud notebook visualization additionally
+Use `[gameplay]` to install SLAM together with Pixel Shift, action-state, and point-cloud
+visualization. Point-cloud notebook visualization additionally
 needs `.[slam-viz]`. Consumers that
 receive `manifest.json` can use `input_slam()`, the trajectory transforms, and point-cloud
 curation with the base SDK.

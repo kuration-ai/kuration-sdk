@@ -15,12 +15,8 @@ models.** Point it at time-series data or video and Kuration picks the windows w
 training on, writes them as shards, and drops a config alongside so the same run can
 be rebuilt.
 
-The SDK isn't on PyPI yet — install from source:
-
 ```bash
-git clone https://github.com/aintropy-solutions/kuration-sdk.git
-cd kuration-sdk
-python -m pip install -e .
+pip install kuration-sdk
 ```
 
 ```python
@@ -52,14 +48,14 @@ the manifest, so resume and verification are safe.
 2. [Try it locally](#try-it-locally)
 3. [What's in a written dataset](#whats-in-a-written-dataset)
 4. [Choose your path](#choose-your-path)
-5. [Examples](#examples)
-6. [Use cases](#use-cases)
+5. [Use cases](#use-cases)
    1. [Action-state consistency (gameplay)](#action-state-consistency-gameplay)
    2. [Collision awareness (gameplay)](#collision-awareness-gameplay)
    3. [SLAM motion diversity and quality (gameplay)](#slam-motion-diversity-and-quality-gameplay)
    4. [Spatial coverage (general)](#spatial-coverage-general)
    5. [Rare-event coverage (general)](#rare-event-coverage-general)
    6. [Diversity sampling (general)](#diversity-sampling-general)
+6. [Examples](#examples)
 7. [kuration-sdk-wrapper — the companion package](#kuration-sdk-wrapper--the-companion-package)
    1. [What's in here](#whats-in-here)
    2. [Getting started](#getting-started)
@@ -87,26 +83,21 @@ the manifest, so resume and verification are safe.
 
 ## Install
 
-The SDK isn't on PyPI yet. See ROADMAP.md for what's left before the first release.
-Install from source:
-
 ```bash
-git clone https://github.com/aintropy-solutions/kuration-sdk.git
-cd kuration-sdk
-python -m pip install -e .
+pip install kuration-sdk
 ```
 
 The NumPy-only core handles in-memory, CSV, JSON, and NPZ workflows. Add only the integrations a
 pipeline needs:
 
 ```bash
-python -m pip install -e '.[methods,parquet]'  # selection methods + Parquet
-python -m pip install -e '.[video]'            # PyAV video frames
-python -m pip install -e '.[stats]'            # Matplotlib stats plots
-python -m pip install -e '.[gameplay]'         # all gameplay operators (pixel_shift, action_state_consistency, slam_*, collision)
-python -m pip install -e '.[ray]'              # distributed source execution
-python -m pip install -e '.[s3]'               # fsspec + the S3 backend
-python -m pip install -e '.[all]'              # every runtime integration/backend
+pip install "kuration-sdk[methods,parquet]"  # selection methods + Parquet
+pip install "kuration-sdk[video]"            # PyAV video frames
+pip install "kuration-sdk[stats]"            # Matplotlib stats plots
+pip install "kuration-sdk[gameplay]"         # all gameplay operators (pixel_shift, action_state_consistency, slam_*, collision)
+pip install "kuration-sdk[ray]"              # distributed source execution
+pip install "kuration-sdk[s3]"               # fsspec + the S3 backend
+pip install "kuration-sdk[all]"              # every runtime integration/backend
 ```
 
 `pipeline.explain()` reports the extras required by a planned run before it reads the full
@@ -118,10 +109,9 @@ the backend-neutral fsspec layer for environments that manage provider packages 
 The repository includes a deterministic, download-free sensor example using only NumPy:
 
 ```bash
-git clone https://github.com/aintropy-solutions/kuration-sdk.git
-cd kuration-sdk
-python -m pip install .
-python examples/quickstart.py --out quickstart-out
+pip install kuration-sdk
+curl -O https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/quickstart.py
+python quickstart.py --out quickstart-out
 kur-inspect quickstart-out --verify
 ```
 
@@ -198,20 +188,6 @@ outside the NumPy-only core.
 The **[documentation home](https://aintropy-solutions.github.io/kuration-sdk/)** groups the complete documentation by getting
 started, guides, extensions, operations, and reference.
 
-## Examples
-
-| Example | What it does |
-|---|---|
-| [`quickstart.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/quickstart.py) | Runs the ten-minute quick start: builds six in-memory sensor sessions, selects 12 diverse windows, writes NumPy shards, reads one back. |
-| [`02_robotics_action_aware.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Robotics: combines a learned action-informativeness score with geometric end-effector-speed coverage, plus coverage across motion phases. Needs the `[methods]` extra. |
-| [`05_custom_operators.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/05_custom_operators.py) | Shows two ways to write your own operator: compositional (a function that chains existing operators) and transform-backed (custom batch code that produces a new feature). |
-| [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py) | Uses the gameplay SLAM trajectory operators on synthetic precomputed camera trajectories. NumPy core only — no video decoder or GPU needed. |
-| [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | Runs `.action_state_consistency(...)` on a synthetic clip via an in-memory fake video provider. Shows the verdict (consistent / inconsistent / inconclusive) attached to the pipeline metadata. |
-| [`gameplay_stats.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb) | JupyterLab notebook: runs `slam_motion_diversity` and `slam_quality` on synthetic camera trajectories, shows candidate stats, plots, and selected-vs-rejected evidence. Optional gameplay-video comparison at the end. |
-| [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | JupyterLab notebook demonstrating the SLAM operators end-to-end: reconstructs a trajectory from raw video, then curates windows by quality and motion diversity. |
-| [TeaPearce Counter-Strike](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | Curates human Counter-Strike gameplay for behavioral-cloning or world-model training. Reads the public TeaPearce HDF5 dataset, covers keyboard/mouse activity, reserves budget for rare kill/death events. |
-| [Open P2P](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Curates Elefant AI's Open P2P dataset across games, action patterns, corrections, and text instructions. Reads Protobuf annotations without decoding video. |
-
 ## Use cases
 
 An **operator** is a named, discoverable pipeline step (an analyzer, a transform, a
@@ -221,8 +197,17 @@ curation jobs built from those operators — three gameplay/video-specific, thre
 sampling jobs from the [`kuration-sdk-wrapper`](#kuration-sdk-wrapper--the-companion-package) companion package.
 Each links to a runnable example and, where one exists, a browser notebook (Colab and Binder can
 only clone public repositories, so the launch badges activate once this repo goes public — until
-then, clone and run locally; see each notebook's own README for the exact install command, the
+then, run locally; see each notebook's own README for the exact install command, the
 `[gameplay]` extra is only needed by `action-state-consistency` and `collision-aware`).
+
+| Use case | Category | What it does | Runnable | Notebook |
+|---|---|---|---|---|
+| [Action-state consistency](#action-state-consistency-gameplay) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | [Colab](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-sdk-wrapper/notebooks/action-state-consistency/action-state-consistency.ipynb) / [Binder](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-sdk-wrapper%2Fnotebooks%2Faction-state-consistency%2Faction-state-consistency.ipynb) |
+| [Collision awareness](#collision-awareness-gameplay) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | [Colab](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-sdk-wrapper/notebooks/collision-aware/collision-aware.ipynb) / [Binder](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-sdk-wrapper%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb) |
+| [SLAM motion diversity and quality](#slam-motion-diversity-and-quality-gameplay) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
+| [Spatial coverage](#spatial-coverage-general) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | [`motion-coverage/`](./kuration-sdk-wrapper/examples/motion-coverage/) | [Colab](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-sdk-wrapper/notebooks/coverage-based-curation/coverage-based-curation.ipynb) / [Binder](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-sdk-wrapper%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb) |
+| [Rare-event coverage](#rare-event-coverage-general) | General | Oversamples rare events (like collisions) relative to their natural base rate. | [`rare-event-coverage/`](./kuration-sdk-wrapper/examples/rare-event-coverage/) | — |
+| [Diversity sampling](#diversity-sampling-general) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | [`diversity-sampling/`](./kuration-sdk-wrapper/examples/diversity-sampling/) | — |
 
 ### Action-state consistency (gameplay)
 
@@ -248,8 +233,6 @@ analyzer result on its own, without the pipeline.
   <sub><em>The clip is flagged by the model as it has two instances where the player collides with the wall.</em></sub>
 </p>
 
-Runnable: [`examples/07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py). Walkthrough notebook: [README](./kuration-sdk-wrapper/notebooks/action-state-consistency/) — [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-sdk-wrapper/notebooks/action-state-consistency/action-state-consistency.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-sdk-wrapper%2Fnotebooks%2Faction-state-consistency%2Faction-state-consistency.ipynb)
-
 ### Collision awareness (gameplay)
 
 The interaction moments a world model needs are the ones good players avoid. `collision` finds
@@ -261,8 +244,6 @@ and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`, `slide_end
   <br>
   <sub><em>DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall).</em></sub>
 </p>
-
-Walkthrough notebook: [README](./kuration-sdk-wrapper/notebooks/collision-aware/) — [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-sdk-wrapper/notebooks/collision-aware/collision-aware.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-sdk-wrapper%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb)
 
 ### SLAM motion diversity and quality (gameplay)
 
@@ -294,15 +275,11 @@ as a standalone HTML file. `join_video` (core, always available) pairs an action
 frame by frame — the primitive `pixel_shift`, `action_state_consistency`, and the SLAM operators
 above all build on it.
 
-Runnable: [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) (listed in [Examples](#examples) above).
-
 ### Spatial coverage (general)
 
 Most gameplay is one kind of movement — walking forward, standard turns, level ground. Sample naively on that and your training set barely touches the harder motions: tight turns, sharp climbs, high-speed segments. The Intro blog puts the fix plainly: **coverage has to be measured on the axis you actually care about.**
 
 `BalancedSelector` does exactly that. It measures a per-window metric on your chosen axis (turning, path length, whatever), bins the values across the observed range, and samples an equal count from every bin. It's the SDK's `slam_motion_diversity` pattern (default axis `slam_path_length`; the Intro blog example switches to `slam_turn_degrees`), generalized to any per-window column.
-
-Runnable: [`kuration-sdk-wrapper/examples/motion-coverage/`](./kuration-sdk-wrapper/examples/motion-coverage/). Walkthrough notebook: [README](./kuration-sdk-wrapper/notebooks/coverage-based-curation/) — [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-sdk-wrapper/notebooks/coverage-based-curation/coverage-based-curation.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-sdk-wrapper%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb)
 
 ### Rare-event coverage (general)
 
@@ -310,19 +287,29 @@ A world model only learns the physics that show up consistently in its training 
 
 The fix isn't collecting more footage. It's finding the events already buried in the footage you have and oversampling them relative to their natural, very low, base rate. `RareEventCoverage` measures the rare event's per-window rate and weights the sampler so those windows show up far more often than they do in the wild.
 
-Runnable: [`kuration-sdk-wrapper/examples/rare-event-coverage/`](./kuration-sdk-wrapper/examples/rare-event-coverage/)
-
 ### Diversity sampling (general)
 
 Most activity-based metrics move together. A chaotic firefight is high on every axis at once; an idle stretch is low on all of them. Pick one axis to sample on and you inherit whatever the other axes happen to correlate with.
 
 Cluster the windows in a multi-axis feature space and sample equally from each cluster, and the redundant part of the corpus stops crowding out the parts that actually differ. The Intro blog names this "diversity sampling" — one of the checks that "all get easier on a dataset that previously had no notion of space." `DiverseSubset` clusters over any set of pre-measured features and takes an equal share from every cluster. An optional dedup pre-pass filters near-duplicates first.
 
-Runnable: [`kuration-sdk-wrapper/examples/diversity-sampling/`](./kuration-sdk-wrapper/examples/diversity-sampling/)
-
 The three general-purpose use cases above each have their own runnable example folder under
 `kuration-sdk-wrapper/examples/`, with the expected output and a "what to try next" section baked into the
 folder's README.
+
+## Examples
+
+| Example | What it does |
+|---|---|
+| [`quickstart.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/quickstart.py) | Runs the ten-minute quick start: builds six in-memory sensor sessions, selects 12 diverse windows, writes NumPy shards, reads one back. |
+| [`02_robotics_action_aware.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Robotics: combines a learned action-informativeness score with geometric end-effector-speed coverage, plus coverage across motion phases. Needs the `[methods]` extra. |
+| [`05_custom_operators.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/05_custom_operators.py) | Shows two ways to write your own operator: compositional (a function that chains existing operators) and transform-backed (custom batch code that produces a new feature). |
+| [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py) | Uses the gameplay SLAM trajectory operators on synthetic precomputed camera trajectories. NumPy core only — no video decoder or GPU needed. |
+| [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | Runs `.action_state_consistency(...)` on a synthetic clip via an in-memory fake video provider. Shows the verdict (consistent / inconsistent / inconclusive) attached to the pipeline metadata. |
+| [`gameplay_stats.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb) | JupyterLab notebook: runs `slam_motion_diversity` and `slam_quality` on synthetic camera trajectories, shows candidate stats, plots, and selected-vs-rejected evidence. Optional gameplay-video comparison at the end. |
+| [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | JupyterLab notebook demonstrating the SLAM operators end-to-end: reconstructs a trajectory from raw video, then curates windows by quality and motion diversity. |
+| [TeaPearce Counter-Strike](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | Curates human Counter-Strike gameplay for behavioral-cloning or world-model training. Reads the public TeaPearce HDF5 dataset, covers keyboard/mouse activity, reserves budget for rare kill/death events. |
+| [Open P2P](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Curates Elefant AI's Open P2P dataset across games, action patterns, corrections, and text instructions. Reads Protobuf annotations without decoding video. |
 
 ## kuration-sdk-wrapper — the companion package
 
@@ -337,11 +324,13 @@ The `kuration-sdk-wrapper` companion package is a small, separately-installable 
 
 ### Getting started
 
-`kuration-sdk-wrapper` isn't on PyPI yet — install from source alongside the SDK (see
+`kuration-sdk-wrapper` isn't on PyPI yet — install it from source (`kuration-sdk` itself is
+pulled from PyPI automatically as a dependency; see
 [`kuration-sdk-wrapper/CONTRIBUTING.md`](./kuration-sdk-wrapper/CONTRIBUTING.md)):
 
 ```bash
-cd kuration-sdk-wrapper
+git clone https://github.com/aintropy-solutions/kuration-sdk.git
+cd kuration-sdk/kuration-sdk-wrapper
 pip install -e .
 ```
 

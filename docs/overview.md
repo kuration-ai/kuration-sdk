@@ -54,15 +54,12 @@ the purpose of the call.
 ## Install only what the plan needs
 
 ```bash
-pip install -e .                         # core (numpy only), from a source checkout
-pip install -e '.[methods]'              # + scikit-learn selection/filter methods
-pip install -e '.[parquet,array]'        # + pyarrow / h5py containers and adapters
-pip install -e '.[s3]'                   # + fsspec and the S3 provider backend
-pip install -e '.[video,ray]'            # + PyAV media / ordered Ray source backend
+pip install kuration-sdk                     # core (numpy only)
+pip install "kuration-sdk[methods]"          # + scikit-learn selection/filter methods
+pip install "kuration-sdk[parquet,array]"    # + pyarrow / h5py containers and adapters
+pip install "kuration-sdk[s3]"               # + fsspec and the S3 provider backend
+pip install "kuration-sdk[video,ray]"        # + PyAV media / ordered Ray source backend
 ```
-
-The PyPI project is a pending public-release gate; these development docs therefore use a source
-checkout rather than claiming an already published distribution.
 
 The NumPy-only core handles ordinary in-memory, CSV, and JSON workflows. Optional dependencies
 are lazy and loud: preflight names the missing extra instead of silently changing behavior.

@@ -37,8 +37,7 @@ Before jumping into the operator-specific walkthroughs, get a feel for the pipel
 ## Try it locally
 
 ```bash
-git clone https://github.com/aintropy-solutions/kuration-sdk.git
-cd kuration-sdk/kuration-sdk-wrapper/notebooks/starter
+curl -O https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/kuration-sdk-wrapper/notebooks/starter/starter.ipynb
 uv pip install kuration-sdk jupyter
 uv run jupyter lab starter.ipynb
 ```
