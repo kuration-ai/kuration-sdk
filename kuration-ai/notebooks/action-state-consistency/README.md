@@ -2,13 +2,13 @@
 
 A per-clip verdict on whether pressing a key actually did what the training data claims it did. Uses the real Farneback optical-flow backend on a synthetic clip; no download required.
 
-![](https://img.shields.io/badge/action__state__consistency-per--clip_verdict-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/Farneback_optical_flow-axis--projected-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/baseline-no_ground--truth_needed-0D9488?style=for-the-badge)
+[![action_state_consistency, per-clip verdict](https://img.shields.io/badge/action__state__consistency-per--clip_verdict-0D9488?style=for-the-badge)](./action-state-consistency.ipynb)
+[![Farneback optical flow, axis-projected](https://img.shields.io/badge/Farneback_optical_flow-axis--projected-0D9488?style=for-the-badge)](../../../docs/action-state-consistency.md)
+[![baseline: no ground-truth needed](https://img.shields.io/badge/baseline-no_ground--truth_needed-0D9488?style=for-the-badge)](../../../docs/action-state-consistency.md)
 
-![](https://img.shields.io/badge/verdicts-consistent_inconsistent_inconclusive-0D9488)
-![](https://img.shields.io/badge/isolated_presses-1_to_3_frames-0D9488)
-![](https://img.shields.io/badge/percentile_range-10th_to_90th_per_cell-0D9488)
+[![verdicts: consistent, inconsistent, inconclusive](https://img.shields.io/badge/verdicts-consistent_inconsistent_inconclusive-0D9488)](../../../docs/action-state-consistency.md)
+[![isolated presses, 1 to 3 frames](https://img.shields.io/badge/isolated_presses-1_to_3_frames-0D9488)](../../../docs/action-state-consistency.md)
+[![percentile range, per cell](https://img.shields.io/badge/percentile_range-per_cell-0D9488)](../../../docs/action-state-consistency.md)
 
 [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/action-state-consistency/action-state-consistency.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Faction-state-consistency%2Faction-state-consistency.ipynb)
 

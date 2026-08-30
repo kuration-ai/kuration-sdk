@@ -2,13 +2,13 @@
 
 Sample equally across feature bins so training sees the whole distribution, not just the peak.
 
-![](https://img.shields.io/badge/LPIPS_0.5404-at_epoch_105-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/JEDi_2.7579-at_epoch_355-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/<18%25-training_budget-0D9488?style=for-the-badge)
+[![LPIPS 0.5404 at epoch 105](https://img.shields.io/badge/LPIPS_0.5404-at_epoch_105-0D9488?style=for-the-badge)](./coverage-based-curation.ipynb)
+[![JEDi 2.7579 at epoch 355](https://img.shields.io/badge/JEDi_2.7579-at_epoch_355-0D9488?style=for-the-badge)](./coverage-based-curation.ipynb)
+[![under 18% training budget](https://img.shields.io/badge/<18%25-training_budget-0D9488?style=for-the-badge)](./coverage-based-curation.ipynb)
 
-![](https://img.shields.io/badge/7,530-training_episodes-0D9488)
-![](https://img.shields.io/badge/35-candidate_strategies_triaged-0D9488)
-![](https://img.shields.io/badge/FVD_3,043,786-best_at_epoch_85-0D9488)
+[![7,530 training episodes](https://img.shields.io/badge/7,530-training_episodes-0D9488)](./coverage-based-curation.ipynb)
+[![35 candidate strategies triaged](https://img.shields.io/badge/35-candidate_strategies_triaged-0D9488)](./coverage-based-curation.ipynb)
+[![FVD 3,043,786, best at epoch 85](https://img.shields.io/badge/FVD_3,043,786-best_at_epoch_85-0D9488)](./coverage-based-curation.ipynb)
 
 [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/coverage-based-curation/coverage-based-curation.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb)
 

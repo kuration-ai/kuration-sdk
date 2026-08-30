@@ -2,13 +2,13 @@
 
 Fit an unobstructed-movement model from real telemetry, flag ticks where velocity falls short toward a nearby wall, and upsample them for training.
 
-![](https://img.shields.io/badge/aintropy%2Fcollision--directional-operator-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/telemetry_%2B_map_geometry-no_pixel_labels-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/catches-blind--spot_and_off--screen_contacts-0D9488?style=for-the-badge)
+[![aintropy/collision-directional operator](https://img.shields.io/badge/aintropy%2Fcollision--directional-operator-0D9488?style=for-the-badge)](./collision-aware.ipynb)
+[![telemetry + map geometry, no pixel labels](https://img.shields.io/badge/telemetry_%2B_map_geometry-no_pixel_labels-0D9488?style=for-the-badge)](../../../docs/collision.md)
+[![catches blind-spot and off-screen contacts](https://img.shields.io/badge/catches-blind--spot_and_off--screen_contacts-0D9488?style=for-the-badge)](../../../docs/collision.md)
 
-![](https://img.shields.io/badge/per--player-unobstructed_velocity_model-0D9488)
-![](https://img.shields.io/badge/output-one_row_per_tick-0D9488)
-![](https://img.shields.io/badge/directions-front_back_left_right_corner-0D9488)
+[![per-player unobstructed velocity model](https://img.shields.io/badge/per--player-unobstructed_velocity_model-0D9488)](../../../docs/collision.md)
+[![output: one row per tick](https://img.shields.io/badge/output-one_row_per_tick-0D9488)](../../../docs/collision.md)
+[![directions: front, back, left, right, corner](https://img.shields.io/badge/directions-front_back_left_right_corner-0D9488)](../../../docs/collision.md)
 
 [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/collision-aware/collision-aware.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb)
 

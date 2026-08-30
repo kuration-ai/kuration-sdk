@@ -1,12 +1,24 @@
 # kuration-sdk
 
+[![20.9% LPIPS improvement over DIAMOND](https://img.shields.io/badge/20.9%25-LPIPS_improvement_over_DIAMOND-0D9488?style=for-the-badge)](./kuration-ai/notebooks/coverage-based-curation/)
+[![62% JEDi reduction across 600 epochs](https://img.shields.io/badge/62%25-JEDi_reduction_across_600_epochs-0D9488?style=for-the-badge)](./kuration-ai/notebooks/coverage-based-curation/)
+[![under 18% training budget to reach near-baseline](https://img.shields.io/badge/<18%25-training_budget_to_reach_near--baseline-0D9488?style=for-the-badge)](./kuration-ai/notebooks/coverage-based-curation/)
+
+[![4 runnable notebooks](https://img.shields.io/badge/4-runnable_notebooks-0D9488)](./kuration-ai/notebooks/)
+[![1,090 test episodes scored](https://img.shields.io/badge/1,090-test_episodes_scored-0D9488)](./kuration-ai/notebooks/coverage-based-curation/)
+[![4-second segments, 16 fps](https://img.shields.io/badge/4--second_segments-16_fps-0D9488)](./kuration-ai/notebooks/coverage-based-curation/)
+[![51-dim action, 20 categories](https://img.shields.io/badge/51--dim_action-20_categories-0D9488)](./kuration-ai/notebooks/coverage-based-curation/)
+
 **Kuration curates large Physical AI datasets into training-ready data for world
 models.** Point it at time-series data or video and Kuration picks the windows worth
 training on, writes them as shards, and drops a config alongside so the same run can
 be rebuilt.
 
-The gameplay operators map to the three failure modes Eric's Intro World-Model-Data-Curation
-blog names.
+An **operator** is a named, discoverable pipeline step (an analyzer, a transform, a
+scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
+[Operators](docs/operators.md) for the full registry. The gameplay operators below map
+to the three failure modes described in our companion blog post on world-model data
+curation.
 
 - **The action doesn't reliably cause the state change.** `pixel_shift` measures the
   actual screen motion behind every isolated key or mouse press (Farneback optical flow
@@ -268,15 +280,6 @@ started, guides, extensions, operations, and reference.
 
 ## kuration-ai — the companion package
 
-![](https://img.shields.io/badge/20.9%25-LPIPS_improvement_over_DIAMOND-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/62%25-JEDi_reduction_across_600_epochs-0D9488?style=for-the-badge)
-![](https://img.shields.io/badge/<18%25-training_budget_to_reach_near--baseline-0D9488?style=for-the-badge)
-
-![](https://img.shields.io/badge/4-runnable_notebooks-0D9488)
-![](https://img.shields.io/badge/1,090-test_episodes_scored-0D9488)
-![](https://img.shields.io/badge/4--second_segments-16_fps-0D9488)
-![](https://img.shields.io/badge/51--dim_action-20_categories-0D9488)
-
 ### What's in here
 
 - **[`kuration-ai/notebooks/`](./kuration-ai/notebooks/)**. One-click Binder and Colab launchers. The first cell in each notebook installs the SDK.
@@ -334,7 +337,7 @@ Three curation jobs come with the library. Each has its own runnable example fol
 
 #### Spatial coverage
 
-Most gameplay is one kind of movement — walking forward, standard turns, level ground. Sample naively on that and your training set barely touches the harder motions: tight turns, sharp climbs, high-speed segments. Eric's Intro blog puts the fix plainly: **coverage has to be measured on the axis you actually care about.**
+Most gameplay is one kind of movement — walking forward, standard turns, level ground. Sample naively on that and your training set barely touches the harder motions: tight turns, sharp climbs, high-speed segments. The Intro blog puts the fix plainly: **coverage has to be measured on the axis you actually care about.**
 
 `BalancedSelector` does exactly that. It measures a per-window metric on your chosen axis (turning, path length, whatever), bins the values across the observed range, and samples an equal count from every bin. It's the SDK's `slam_motion_diversity` pattern (default axis `slam_path_length`; the Intro blog example switches to `slam_turn_degrees`), generalized to any per-window column.
 
@@ -352,7 +355,7 @@ Runnable: [`kuration-ai/examples/rare-event-coverage/`](./kuration-ai/examples/r
 
 Most activity-based metrics move together. A chaotic firefight is high on every axis at once; an idle stretch is low on all of them. Pick one axis to sample on and you inherit whatever the other axes happen to correlate with.
 
-Cluster the windows in a multi-axis feature space and sample equally from each cluster, and the redundant part of the corpus stops crowding out the parts that actually differ. Eric's Intro blog names this "diversity sampling" — one of the checks that "all get easier on a dataset that previously had no notion of space." `DiverseSubset` clusters over any set of pre-measured features and takes an equal share from every cluster. An optional dedup pre-pass filters near-duplicates first.
+Cluster the windows in a multi-axis feature space and sample equally from each cluster, and the redundant part of the corpus stops crowding out the parts that actually differ. The Intro blog names this "diversity sampling" — one of the checks that "all get easier on a dataset that previously had no notion of space." `DiverseSubset` clusters over any set of pre-measured features and takes an equal share from every cluster. An optional dedup pre-pass filters near-duplicates first.
 
 Runnable: [`kuration-ai/examples/diversity-sampling/`](./kuration-ai/examples/diversity-sampling/)
 
