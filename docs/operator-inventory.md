@@ -1,8 +1,15 @@
-# Kuration SDK Registered-Component Inventory
+# Registered-component inventory
 
-Source of truth: registration calls found under `~/work/aintropy/kuration-sdk/src/kuration/`. Extras are the SDK's `[project.optional-dependencies]` names from `pyproject.toml`. "Runtime imports" lists top-level heavy imports that would fail at *execution* if the extra isn't installed (all guarded by lazy `import`s inside functions: descriptors still register cleanly).
+A point-in-time listing of every component registered in `src/kuration/`, grouped by
+registry kind (Operators, Methods, Adapters, Analyzers, Containers, Filters, Presets,
+Scorers, Transforms). Extras are the SDK's `[project.optional-dependencies]` names from
+`pyproject.toml`. "Runtime imports" lists top-level heavy imports that would fail at
+*execution* if the extra isn't installed (all guarded by lazy `import`s inside functions:
+descriptors still register cleanly).
 
-Generated: 2026-08-11 as Phase 0.1 deliverable for issue #4.
+This is a snapshot, not a generated artifact — nothing currently regenerates it
+automatically when `src/kuration/` changes, so treat it as accurate as of its last
+edit rather than always-current.
 
 ## Operators
 

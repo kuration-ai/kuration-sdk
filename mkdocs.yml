@@ -71,6 +71,7 @@ nav:
       - Outputs and integrity: output.md
   - Extend:
       - Operators: operators.md
+      - Operator inventory: operator-inventory.md
       - Customization and discovery: customization.md
       - Pixel shift: pixel-shift.md
       - Action-state consistency: action-state-consistency.md

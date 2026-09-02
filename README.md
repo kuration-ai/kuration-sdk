@@ -43,24 +43,18 @@ The SDK is built around **operators** — named pipeline steps that measure a pe
 Install with pip:
 
 ```bash
-pip install kuration-sdk
+pip install "kuration-sdk[parquet]"
 ```
 
-Runnable quickstart — six in-memory sensor sessions, no downloads, no extras:
+Runnable quickstart against a small sample dataset bundled with the package — no downloads,
+no data of your own required:
 
 ```python
 from kuration import input
-
-sessions = {
-    f"session-{i}": [
-        {"t": float(t), "device": f"device-{i}", "signal": 10 + i * 0.5, "fault": int(t % 13 == 0)}
-        for t in range(48)
-    ]
-    for i in range(6)
-}
+from kuration.sample_data import sample_sessions_path
 
 dataset = (
-    input(sessions, time="t", entity="device", hz=1)
+    input(sample_sessions_path(), time="t", entity="device", hz=1)
     .window(12, stride=6)
     .measure("activity", "std", of="signal")
     .measure("fault_rate", "rate", of="fault")
@@ -412,7 +406,7 @@ Two: `anomaly` (Isolation Forest), `dedup` (SemDeDup).
 
 Core methods used by the shipped operations: `.window()`, `.measure()`, `.filter()`, `.bin()`, `.sample()`, `.split()`, `.output()`, `.options()`, `.describe()`, `.collect()`. Pipeline exposes additional methods for tagging, scoring, video joins, previewing, and lifecycle stats.
 
-Full inventory with parameters, extras, and runtime dependencies at [`kuration-ai/docs/history/sdk_operation_inventory.md`](./kuration-ai/docs/history/sdk_operation_inventory.md).
+Full inventory with parameters, extras, and runtime dependencies at [`docs/operator-inventory.md`](./docs/operator-inventory.md).
 
 Every gallery operation is transparent about the primitives it calls. Run `.describe()` on the resulting pipeline and you see the exact chain. Drop the `kuration_ai` imports and your custom pipelines still work. No lock-in.
 

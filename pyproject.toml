@@ -181,6 +181,7 @@ include = ["kuration", "kuration.*"]
 [tool.setuptools.package-data]
 kuration = ["py.typed"]
 "kuration.core" = ["schemas/*.json"]
+"kuration.sample_data" = ["sessions/*.parquet"]
 "kuration.gameplay.slam._vendor.depth_anything_3" = [
     "configs/*.yaml",
     "LICENSE",

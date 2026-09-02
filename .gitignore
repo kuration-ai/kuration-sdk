@@ -42,6 +42,7 @@ out/
 *.npz
 *.h5
 *.parquet
+!src/kuration/sample_data/sessions/*.parquet
 
 CLAUDE.md
 uv.lock
