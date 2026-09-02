@@ -86,24 +86,27 @@ the manifest, so resume and verification are safe.
 3. [What's in a written dataset](#whats-in-a-written-dataset)
 4. [Choose your path](#choose-your-path)
 5. [Use cases](#use-cases)
-    - [Spatial coverage](#spatial-coverage)
-    - [Rare-event coverage](#rare-event-coverage)
-    - [Diversity sampling](#diversity-sampling)
-    - [Action-state consistency](#action-state-consistency)
-6. [Beyond the gallery](#beyond-the-gallery)
+    - [Action-state consistency (gameplay)](#action-state-consistency-gameplay)
+    - [Collision awareness (gameplay)](#collision-awareness-gameplay)
+    - [SLAM motion diversity and quality (gameplay)](#slam-motion-diversity-and-quality-gameplay)
+    - [Spatial coverage (general)](#spatial-coverage-general)
+    - [Rare-event coverage (general)](#rare-event-coverage-general)
+    - [Diversity sampling (general)](#diversity-sampling-general)
+6. [Examples](#examples)
+7. [Beyond the gallery](#beyond-the-gallery)
     - [Sampling methods](#sampling-methods)
     - [Data source adapters](#data-source-adapters)
     - [Output formats and presets](#output-formats-and-presets)
     - [Pre-selection filters](#pre-selection-filters)
     - [Fluent pipeline methods](#fluent-pipeline-methods)
-7. [Reproducibility](#reproducibility)
-8. [Writing your own operation](#writing-your-own-operation)
-9. [Coming next](#coming-next)
-10. [Reference](#reference)
+8. [Reproducibility](#reproducibility)
+9. [Writing your own operation](#writing-your-own-operation)
+10. [Coming next](#coming-next)
+11. [Reference](#reference)
     - [CLI reference](#cli-reference)
-11. [Read more](#read-more)
-12. [Project status](#project-status)
-13. [Contributing](#contributing)
+12. [Read more](#read-more)
+13. [Project status](#project-status)
+14. [Contributing](#contributing)
 
 <p align="center">
   <img src="docs/assets/curation-flow.svg" alt="Sources are cut into windows, scored and filtered, and the selected windows become training shards" width="95%">
@@ -251,57 +254,132 @@ started, guides, extensions, operations, and reference.
 
 ## Use cases
 
-Four curation jobs come with the SDK. Each has a runnable example folder and a browser-launchable notebook.
+An **operator** is a named, discoverable pipeline step (an analyzer, a transform, a
+scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
+[Operators](docs/operators.md) for the full registry. The six use cases below are ready-made
+curation jobs built from those operators — three gameplay/video-specific, three general-purpose
+sampling jobs from the [`kuration-ai`](./kuration-ai/) companion package.
+Each links to a runnable example and, where one exists, a browser notebook (Colab and Binder can
+only clone public repositories, so the launch badges activate once this repo goes public — until
+then, run locally; see each notebook's own README for the exact install command, the
+`[gameplay]` extra is only needed by `action-state-consistency` and `collision-aware`).
 
-### Spatial coverage
+| Use case | Category | What it does | Runnable | Notebook |
+|---|---|---|---|---|
+| [Action-state consistency](#action-state-consistency-gameplay) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | [Colab](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/action-state-consistency/action-state-consistency.ipynb) / [Binder](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Faction-state-consistency%2Faction-state-consistency.ipynb) |
+| [Collision awareness](#collision-awareness-gameplay) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | [Colab](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/collision-aware/collision-aware.ipynb) / [Binder](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb) |
+| [SLAM motion diversity and quality](#slam-motion-diversity-and-quality-gameplay) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
+| [Spatial coverage](#spatial-coverage-general) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | [`motion-coverage/`](./kuration-ai/examples/motion-coverage/) | [Colab](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/coverage-based-curation/coverage-based-curation.ipynb) / [Binder](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb) |
+| [Rare-event coverage](#rare-event-coverage-general) | General | Oversamples rare events (like collisions) relative to their natural base rate. | [`rare-event-coverage/`](./kuration-ai/examples/rare-event-coverage/) | — |
+| [Diversity sampling](#diversity-sampling-general) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | [`diversity-sampling/`](./kuration-ai/examples/diversity-sampling/) | — |
 
-Most gameplay is one kind of movement — walking forward, standard turns, level ground. Sample naively on that and your training set barely touches the harder motions: tight turns, sharp climbs, high-speed segments. Eric's Intro blog puts the fix plainly: **coverage has to be measured on the axis you actually care about.**
+### Action-state consistency (gameplay)
+
+The action doesn't reliably cause the state change. `pixel_shift` measures the actual screen
+motion behind every isolated key or mouse press (Farneback optical flow projected onto the axis
+that control should move the camera on). `action_state_consistency` compares those measurements
+against a percentile-pooled baseline and issues a per-clip verdict — consistent, inconsistent, or
+inconclusive. Continuing from any existing windowed pipeline, once
+`import kuration.gameplay as gameplay` has registered the operator:
+
+```python
+pipeline = pipeline.action_state_consistency(baselines=baselines, controls=["W"])
+verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
+```
+
+The pipeline you get back is the same immutable pipeline. You can keep chaining `.sample()`,
+`.output()`, or any other operator from it. Use `.analyze(...)` instead if you just want the
+analyzer result on its own, without the pipeline.
+
+<p align="center">
+  <img src="assets/hojepa-collision-flagged.gif" alt="The clip is flagged by the model as it has two instances where the player collides with the wall." width="100%">
+  <br>
+  <sub><em>The clip is flagged by the model as it has two instances where the player collides with the wall.</em></sub>
+</p>
+
+### Collision awareness (gameplay)
+
+The interaction moments a world model needs are the ones good players avoid. `collision` finds
+and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`, `slide_end`,
+`slide_constrained`) so they can be oversampled relative to their natural, very low, base rate.
+
+<p align="center">
+  <img src="assets/diamond-world-model-blur.gif" alt="DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall)." width="100%">
+  <br>
+  <sub><em>DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall).</em></sub>
+</p>
+
+### SLAM motion diversity and quality (gameplay)
+
+Most gameplay footage has no sense of place. `slam_pipeline` reconstructs a camera's 3D path from
+raw video with loop closure. `slam_quality` scores each window for gaps, impossible motion, and
+scale. `slam_motion_diversity` bins windows by path length, turning, and climb:
+
+```python
+pipeline = (
+    gameplay.slam_pipeline("slam-export/manifest.json")
+    .window(32, stride=16)
+    .slam_motion_diversity()
+    .slam_quality(min_score=0.6)
+    .options(progress="auto")
+)
+
+report = pipeline.stats()                 # rich HTML in Jupyter
+report.plot()                             # automatically chooses the gameplay plot
+evidence = report.examples(
+    metric="slam_quality_score",
+    compare="selected-vs-rejected",
+)
+```
+
+`report.available()` lists the plots and evidence modes for a given report. On a live video
+pipeline, the evidence panel shows real frames and the action stream around each example.
+`gameplay.compare_videos(before, after)` renders synchronized players and can save the comparison
+as a standalone HTML file. `join_video` (core, always available) pairs an action log with a video,
+frame by frame — the primitive `pixel_shift`, `action_state_consistency`, and the SLAM operators
+above all build on it.
+
+### Spatial coverage (general)
+
+Most gameplay is one kind of movement — walking forward, standard turns, level ground. Sample naively on that and your training set barely touches the harder motions: tight turns, sharp climbs, high-speed segments. The Intro blog puts the fix plainly: **coverage has to be measured on the axis you actually care about.**
 
 `BalancedSelector` does exactly that. It measures a per-window metric on your chosen axis (turning, path length, whatever), bins the values across the observed range, and samples an equal count from every bin. It's the SDK's `slam_motion_diversity` pattern (default axis `slam_path_length`; the Intro blog example switches to `slam_turn_degrees`), generalized to any per-window column.
 
-Runnable: [`kuration-ai/examples/motion-coverage/`](./kuration-ai/examples/motion-coverage/) &nbsp;·&nbsp; [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/coverage-based-curation/coverage-based-curation.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb)
-
-### Rare-event coverage
+### Rare-event coverage (general)
 
 A world model only learns the physics that show up consistently in its training data. And the interactions it most needs — a moving object hitting a solid one, a player-object contact — are the exact ones good players avoid. That's why DIAMOND's CS:GO world model lets a player double- and triple-jump against a wall: successive jumps simply don't appear often enough in the training data for the model to learn that they shouldn't be possible.
 
 The fix isn't collecting more footage. It's finding the events already buried in the footage you have and oversampling them relative to their natural, very low, base rate. `RareEventCoverage` measures the rare event's per-window rate and weights the sampler so those windows show up far more often than they do in the wild.
 
-```python
-from kuration_ai import input, RareEventCoverage
-
-sessions = {"clip-1": [{"t": float(i), "collision": 1 if i % 30 == 0 else 0} for i in range(200)]}
-pipeline = input(sessions, time="t", hz=10.0).window(8, stride=4)
-result = (RareEventCoverage(of="collision", count=15, weight=2.0)
-          .apply(pipeline).options(seed=1).collect())
-print(f"selected {len(result.selected)} windows")
-```
-
-Prints `selected 15 windows`. Replace the in-memory `sessions` dict with a folder of CSVs (`input("clips/*.csv", time="t")`), a Parquet dataset, or a Hugging Face dataset. The operation stays identical.
-
-Runnable: [`kuration-ai/examples/rare-event-coverage/`](./kuration-ai/examples/rare-event-coverage/) &nbsp;·&nbsp; [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/collision-aware/collision-aware.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb)
-
-### Diversity sampling
+### Diversity sampling (general)
 
 Most activity-based metrics move together. A chaotic firefight is high on every axis at once; an idle stretch is low on all of them. Pick one axis to sample on and you inherit whatever the other axes happen to correlate with.
 
-Cluster the windows in a multi-axis feature space and sample equally from each cluster, and the redundant part of the corpus stops crowding out the parts that actually differ. Eric's Intro blog names this "diversity sampling" — one of the checks that "all get easier on a dataset that previously had no notion of space." `DiverseSubset` clusters over any set of pre-measured features and takes an equal share from every cluster. An optional dedup pre-pass filters near-duplicates first.
+Cluster the windows in a multi-axis feature space and sample equally from each cluster, and the redundant part of the corpus stops crowding out the parts that actually differ. The Intro blog names this "diversity sampling" — one of the checks that "all get easier on a dataset that previously had no notion of space." `DiverseSubset` clusters over any set of pre-measured features and takes an equal share from every cluster. An optional dedup pre-pass filters near-duplicates first.
 
-Runnable: [`kuration-ai/examples/diversity-sampling/`](./kuration-ai/examples/diversity-sampling/)
+The three general-purpose use cases above each have their own runnable example folder under
+`kuration-ai/examples/`, with the expected output and a "what to try next" section baked into the
+folder's README.
 
-### Action-state consistency
+## Examples
 
-A world model trained on gameplay footage assumes that when a player presses forward, the camera actually moves forward. When that link is broken, the model learns a wrong dynamics rule and generalizes it.
-
-`action_state_consistency` compares the measured screen motion behind every isolated key or mouse press (via `pixel_shift` and Farneback optical flow, projected onto the axis the control should move the camera on) against a percentile-pooled baseline, and returns a per-clip verdict — consistent, inconsistent, or inconclusive. The result is attached to `pipeline.metadata["gameplay"]["action_state_consistency"]`.
-
-Runnable: [`examples/07_action_state_consistency.py`](./examples/07_action_state_consistency.py) &nbsp;·&nbsp; [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/action-state-consistency/action-state-consistency.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Faction-state-consistency%2Faction-state-consistency.ipynb)
-
-Each use case folder holds a runnable script, a README with the expected output, and a "what to try next" section for parameter adjustments.
+| Example | What it does |
+|---|---|
+| [`quickstart.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/quickstart.py) | Runs the ten-minute quick start: builds six in-memory sensor sessions, selects 12 diverse windows, writes NumPy shards, reads one back. |
+| [`02_robotics_action_aware.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Robotics: combines a learned action-informativeness score with geometric end-effector-speed coverage, plus coverage across motion phases. Needs the `[methods]` extra. |
+| [`05_custom_operators.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/05_custom_operators.py) | Shows two ways to write your own operator: compositional (a function that chains existing operators) and transform-backed (custom batch code that produces a new feature). |
+| [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py) | Uses the gameplay SLAM trajectory operators on synthetic precomputed camera trajectories. NumPy core only — no video decoder or GPU needed. |
+| [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | Runs `.action_state_consistency(...)` on a synthetic clip via an in-memory fake video provider. Shows the verdict (consistent / inconsistent / inconclusive) attached to the pipeline metadata. |
+| [`gameplay_stats.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb) | JupyterLab notebook: runs `slam_motion_diversity` and `slam_quality` on synthetic camera trajectories, shows candidate stats, plots, and selected-vs-rejected evidence. Optional gameplay-video comparison at the end. |
+| [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | JupyterLab notebook demonstrating the SLAM operators end-to-end: reconstructs a trajectory from raw video, then curates windows by quality and motion diversity. |
+| [TeaPearce Counter-Strike](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | Curates human Counter-Strike gameplay for behavioral-cloning or world-model training. Reads the public TeaPearce HDF5 dataset, covers keyboard/mouse activity, reserves budget for rare kill/death events. |
+| [Open P2P](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Curates Elefant AI's Open P2P dataset across games, action patterns, corrections, and text instructions. Reads Protobuf annotations without decoding video. |
 
 ## Beyond the gallery
 
-The three shipped operations are curated shortcuts. Kuration SDK sits on top of a broader pipeline library with 45 registered components, and you can drop into the raw fluent API for anything the gallery doesn't cover.
+The three shipped operations in `kuration-ai` are curated shortcuts. The Kuration SDK itself is a
+broader pipeline library with 45 registered components, and you can drop into the raw fluent API
+for anything the gallery doesn't cover.
 
 ### Sampling methods
 
@@ -410,7 +488,7 @@ Not in the initial release, on the roadmap:
 - [`kuration-ai/design/`](./kuration-ai/design/): five design decisions behind the API (operation abstraction, composition, config model, extension seam, workarounds).
 - [`kuration-ai/CHANGELOG.md`](./kuration-ai/CHANGELOG.md): release notes for `kuration-ai`.
 - [`kuration-ai/MIGRATION_NOTE.md`](./kuration-ai/MIGRATION_NOTE.md): where this content came from and why.
-- [Issue tracker](https://github.com/kuration-ai/python-sdk/issues) for feature requests, bug reports, roadmap discussion.
+- [Issue tracker](https://github.com/aintropy-solutions/kuration-sdk/issues) for feature requests, bug reports, roadmap discussion.
 - [`kuration-ai/examples/`](./kuration-ai/examples/): the gallery of runnable use cases.
 
 ### CLI reference

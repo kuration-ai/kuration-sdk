@@ -14,7 +14,7 @@ python examples/public_data/person_activity_fluent.py --download --out activity-
 ```
 
 ```bash
-pip install -e '.[all]'                           # install every optional capability
+pip install "kuration-sdk[all]"                    # install every optional capability
 python examples/quickstart.py --out quickstart-out
 python examples/01_timeseries_to_shards.py
 python examples/02_robotics_action_aware.py

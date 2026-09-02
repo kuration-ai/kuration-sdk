@@ -2,7 +2,7 @@
 
 Same BalancedSelector applied to a windowed pipeline three different ways.
 Config-parity is a first-class invariant: if the three styles ever diverge,
-Kuration AI is broken.
+kuration-ai's config-parity guarantee is broken.
 """
 from kuration_ai import BalancedSelector, input, run
 

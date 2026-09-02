@@ -18,12 +18,14 @@ Also here:
 - [`chained.py`](./chained.py): the three call styles (direct `.apply()`,
   `run()` with instances, `run()` with a config dict) all producing identical
   results. Not a gallery entry: a config-parity reference for developers
-  extending Kuration AI.
+  extending kuration-ai.
 
 ## Run any of them
 
+kuration-ai isn't on PyPI yet (see [CONTRIBUTING.md](../CONTRIBUTING.md) for the
+source install):
+
 ```
-pip install kuration-ai
 python examples/<folder>/<script>.py
 ```
 

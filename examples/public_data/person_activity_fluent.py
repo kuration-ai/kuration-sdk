@@ -23,6 +23,7 @@ import csv
 import io
 import math
 import random
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -222,10 +223,15 @@ def main() -> None:
 
     if sum(bool(x) for x in (args.sources, args.download, args.demo)) != 1:
         parser.error("pass exactly one of: a source glob, --download, or --demo")
+    if args.demo:
+        # Demo data must live outside --out: output() rejects any pipeline whose
+        # output directory overlaps one of its input sources.
+        with tempfile.TemporaryDirectory(prefix="kuration_person_activity_demo_") as directory:
+            sources = f"{write_demo(Path(directory))}/*.csv"
+            run(sources, args.out, n=args.n)
+        return
     if args.download:
         sources = f"{download(Path('data/person_activity'))}/*.csv"
-    elif args.demo:
-        sources = f"{write_demo(Path(args.out) / '_demo')}/*.csv"
     else:
         sources = args.sources
 

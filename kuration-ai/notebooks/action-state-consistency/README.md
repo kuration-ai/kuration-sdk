@@ -2,6 +2,14 @@
 
 A per-clip verdict on whether pressing a key actually did what the training data claims it did. Uses the real Farneback optical-flow backend on a synthetic clip; no download required.
 
+[![action_state_consistency, per-clip verdict](https://img.shields.io/badge/action__state__consistency-per--clip_verdict-0D9488?style=for-the-badge)](./action-state-consistency.ipynb)
+[![Farneback optical flow, axis-projected](https://img.shields.io/badge/Farneback_optical_flow-axis--projected-0D9488?style=for-the-badge)](../../../docs/action-state-consistency.md)
+[![baseline: no ground-truth needed](https://img.shields.io/badge/baseline-no_ground--truth_needed-0D9488?style=for-the-badge)](../../../docs/action-state-consistency.md)
+
+[![verdicts: consistent, inconsistent, inconclusive](https://img.shields.io/badge/verdicts-consistent_inconsistent_inconclusive-0D9488)](../../../docs/action-state-consistency.md)
+[![isolated presses, 1 to 3 frames](https://img.shields.io/badge/isolated_presses-1_to_3_frames-0D9488)](../../../docs/action-state-consistency.md)
+[![percentile range, per cell](https://img.shields.io/badge/percentile_range-per_cell-0D9488)](../../../docs/action-state-consistency.md)
+
 [![Colab](https://img.shields.io/badge/Colab-open-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/action-state-consistency/action-state-consistency.ipynb) [![Binder](https://img.shields.io/badge/Binder-launch-579ACA?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Faction-state-consistency%2Faction-state-consistency.ipynb)
 
 > **Launcher status.** The URLs above point at `aintropy-solutions/kuration-sdk`. Colab and Binder can only clone public repositories, so the badges activate once this repo goes public. In the meantime, clone and run the notebook locally with `pip install kuration-sdk[gameplay]`.
@@ -49,7 +57,7 @@ See cell 5.
 
 ## The pipeline
 
-Three lines. Input the rows against a schema, join a video source, slice into windows. Then a single `action_state_consistency` call with the baselines and controls to check. A `baseline` says: for this key press, expect pixel shift in this direction and roughly this magnitude. In real use, you compute baselines from the dataset itself (10th to 90th percentile per control cell). Here the notebook hand-writes a plausible one for W.
+Three lines. Input the rows against a schema, join a video source, slice into windows. Then a single `action_state_consistency` call with the baselines and controls to check. A `baseline` says: for this key press, expect pixel shift in this direction and roughly this magnitude. In real use, you compute baselines from the dataset itself (5th to 95th percentile per control cell). Here the notebook hand-writes a plausible one for W.
 
 ```python
 baselines = {"W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1e9}}}

@@ -14,8 +14,12 @@ the official toy dataset is the bounded starting point.
 ## See the workflow without downloading gameplay
 
 ```bash
-python -m pip install -e '.[p2p]'
-python examples/public_data/open_p2p.py --demo --out open-p2p-out
+pip install "kuration-sdk[p2p]"
+mkdir -p adapters
+curl -O https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/open_p2p.py
+curl -o adapters/open_p2p.py https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/adapters/open_p2p.py
+curl -o adapters/__init__.py https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/adapters/__init__.py
+python open_p2p.py --demo --out open-p2p-out
 ```
 
 The demo creates four small, wire-compatible `annotation.proto` files containing synthetic
@@ -31,7 +35,7 @@ git clone https://github.com/elefant-ai/open-p2p.git data/open-p2p-repo
 cd data/open-p2p-repo
 uv run python scripts/download_data.py --toy --output ../open-p2p-toy
 cd ../..
-python examples/public_data/open_p2p.py data/open-p2p-toy/dataset/*/annotation.proto \
+python open_p2p.py data/open-p2p-toy/dataset/*/annotation.proto \
   --out open-p2p-curated --n 100
 ```
 
@@ -89,7 +93,7 @@ The official downloader supports inclusive batch ranges:
 cd data/open-p2p-repo
 uv run python scripts/download_data.py --start 1 --end 5 --output ../open-p2p-batches
 cd ../..
-python examples/public_data/open_p2p.py data/open-p2p-batches/dataset/*/annotation.proto \
+python open_p2p.py data/open-p2p-batches/dataset/*/annotation.proto \
   --out open-p2p-curated --n 5000
 ```
 

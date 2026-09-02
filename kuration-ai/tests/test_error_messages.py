@@ -69,7 +69,7 @@ class TestPlanAndDescribe:
     def test_describe_names_the_sdk_primitives(self):
         config = [{"type": "BalancedSelector", "feature": "activity", "of": "signal"}]
         output = describe(config)
-        assert "Kuration AI plan:" in output
+        assert "kuration-ai plan:" in output
         assert ".measure(" in output
         assert ".bin(" in output
         assert ".sample(" in output
@@ -84,4 +84,4 @@ class TestPlanAndDescribe:
         assert "  2. " in output
 
     def test_describe_empty_plan(self):
-        assert describe([]) == "Kuration AI plan: (empty)"
+        assert describe([]) == "kuration-ai plan: (empty)"

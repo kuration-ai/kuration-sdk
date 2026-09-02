@@ -45,7 +45,7 @@ def _protobuf_imports():
         from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
     except ImportError as exc:
         raise ImportError(
-            "the Open P2P example needs protobuf: python -m pip install -e '.[p2p]'") from exc
+            "the Open P2P example needs protobuf: pip install \"kuration-sdk[p2p]\"") from exc
     return descriptor_pb2, descriptor_pool, message_factory
 
 

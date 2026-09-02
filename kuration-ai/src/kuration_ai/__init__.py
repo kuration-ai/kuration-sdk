@@ -1,4 +1,4 @@
-"""Kuration AI: curated training-dataset selection for Python.
+"""kuration-ai: curated training-dataset selection for Python.
 
 Three built-in curation operations plus an extension pattern for writing your
 own. Each operation is a standalone, configurable unit: use one alone, chain

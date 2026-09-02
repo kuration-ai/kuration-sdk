@@ -16,8 +16,12 @@ code. The dataset card describes approximately 748 GB of HDF5 archives. Each rec
 Install the HDF5 extra and run the structural demo:
 
 ```bash
-python -m pip install -e '.[array]'
-python examples/public_data/teapearce_csgo.py --demo --out teapearce-out
+pip install "kuration-sdk[array]"
+mkdir -p adapters
+curl -O https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/teapearce_csgo.py
+curl -o adapters/teapearce.py https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/adapters/teapearce.py
+curl -o adapters/__init__.py https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/adapters/__init__.py
+python teapearce_csgo.py --demo --out teapearce-out
 ```
 
 The demo generates four tiny HDF5 files with the upstream key layout and synthetic flat-color
@@ -37,7 +41,7 @@ hf download TeaPearce/CounterStrike_Deathmatch dataset_dm_expert_othermaps.tar \
   --repo-type dataset --local-dir data/teapearce
 tar -tf data/teapearce/dataset_dm_expert_othermaps.tar
 tar -xf data/teapearce/dataset_dm_expert_othermaps.tar <one-member-name-from-the-list>
-python examples/public_data/teapearce_csgo.py <extracted-recording.hdf5> \
+python teapearce_csgo.py <extracted-recording.hdf5> \
   --out teapearce-out --n 12
 ```
 
@@ -94,7 +98,7 @@ more than one recording is present, so overlapping windows from one recording ca
 train and test. Shell globs work when expanded by the shell:
 
 ```bash
-python examples/public_data/teapearce_csgo.py data/teapearce/extracted/*.hdf5 \
+python teapearce_csgo.py data/teapearce/extracted/*.hdf5 \
   --out teapearce-curated --n 5000 --include-frames
 ```
 

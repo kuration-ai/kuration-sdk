@@ -1,4 +1,4 @@
-"""Command-line interface for Kuration AI.
+"""Command-line interface for kuration-ai.
 
 Two subcommands:
 
@@ -45,7 +45,7 @@ def _cmd_list(_args: Any) -> int:
 
     total = len(builtin_names) + len(user_names)
     print(
-        f"Kuration AI operations: {len(builtin_names)} built-in, "
+        f"kuration-ai operations: {len(builtin_names)} built-in, "
         f"{len(user_names)} user-registered ({total} total)"
     )
     print()
@@ -100,7 +100,7 @@ def _cmd_describe(args: Any) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="kai",
-        description="Kuration AI CLI: list and inspect available Operations.",
+        description="kuration-ai CLI: list and inspect available Operations.",
     )
     sub = parser.add_subparsers(dest="cmd")
 
