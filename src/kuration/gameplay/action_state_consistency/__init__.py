@@ -163,7 +163,7 @@ def attach_action_state_consistency(
 def register() -> None:
     """Idempotently register the analyzer and pipeline-preserving companion operator."""
     from kuration import default_registry, register_analyzer, register_operator
-    from .._registration import needs_registration
+    from ...core._registration import needs_registration
 
     common: dict[str, Any] = {
         "version": "1",

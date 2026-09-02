@@ -13,16 +13,21 @@ src/kuration/
 │   ├── dsl/
 │   ├── output/
 │   └── ...
-└── gameplay/               # maintained gameplay implementation
-    ├── action_state_consistency/
-    ├── collision/
-    ├── pixel_shift/
-    └── slam/
-        └── _vendor/        # private SLAM runtime dependencies
+├── gameplay/               # maintained gameplay implementation
+│   ├── action_state_consistency/
+│   ├── collision/
+│   ├── pixel_shift/
+│   └── slam/
+│       └── _vendor/        # private SLAM runtime dependencies
+├── selection/              # general-purpose curation recipes
+│   ├── operations.py       # BalancedSelector, RareEventCoverage, DiverseSubset
+│   ├── operators.py        # their fluent-operator wrappers
+│   └── plan.py             # config-driven run/plan/describe runner
+└── sample_data/            # bundled sample datasets for docs and quickstarts
 ```
 
-No implementation modules or domain compatibility packages live beside `core/` and
-`gameplay/`. Third-party code used only by SLAM is private to that domain.
+No implementation modules live beside `core/`, `gameplay/`, `selection/`, and `sample_data/`.
+Third-party code used only by SLAM is private to that domain.
 
 The `_vendor/` subtree is an attributed upstream source snapshot, not Kuration-owned
 implementation. CI validates its packaging, imports, configuration resolution, and integration
@@ -38,6 +43,7 @@ vendored snapshot require the focused SLAM regression suite and preserved licens
 | `kuration.gameplay.collision` | CS2 wall-collision detection/classification against map geometry | `[collision]` |
 | `kuration.gameplay.slam` | reconstruction, trajectory quality/diversity, point clouds | `[slam]`, `[slam-viz]` |
 | `kuration.gameplay` stats/video review | automatic action, media, and SLAM summaries; synchronized comparisons | `[stats]` for plots, `[video]` for probing |
+| `kuration.selection` | balanced coverage, rare-event weighting, cluster-balanced diversity; see [Selection recipes](selection.md) | NumPy; `[methods]` for `DiverseSubset` |
 
 The concise package-level core API remains supported through exports from `kuration.core`:
 

@@ -29,7 +29,7 @@ COMPONENT_NAME = "aintropy/pixel-shift"
 def register() -> None:
     """Idempotently register the transform and compositional operator."""
     from kuration import default_registry, register_batch_transform, register_operator
-    from .._registration import needs_registration
+    from ...core._registration import needs_registration
 
     common = {
         "version": "1",

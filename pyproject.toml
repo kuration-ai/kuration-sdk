@@ -169,6 +169,7 @@ kur-slam = "kuration.gameplay.slam.cli:main"
 
 [project.entry-points."kuration.plugins"]
 gameplay = "kuration.gameplay:register"
+selection = "kuration.selection:register"
 
 [build-system]
 requires = ["setuptools>=80,<84"]

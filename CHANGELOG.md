@@ -7,6 +7,13 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 Target release: `0.1.0rc5` (current development identity: `0.1.0rc5.dev0`).
 
+- Eliminated the standalone `kuration-ai` package. Its three curation recipes
+  (`BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) and config-driven
+  `run`/`plan`/`describe`/`register_operation_type` runner are now first-class SDK
+  components under `kuration.selection`, each also registered as a fluent `Pipeline`
+  operator (`kuration/balanced-selector`, `kuration/rare-event-coverage`,
+  `kuration/diverse-subset`). `kuration-ai` is preserved, unmodified, on the
+  `feature/kuration-ai-legacy` branch.
 - Development builds now use the distinct `0.1.0rc5.dev0` identity instead of reusing the
   prior `0.1.0rc4` candidate identity. `ARTIFACT_FORMAT_VERSION` is `1.2` for the corrected
   bounded/materialized uniform-bin ordering, experiment-arm tag isolation, and zero

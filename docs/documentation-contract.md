@@ -169,6 +169,12 @@ public. Their direct APIs are documented in `docs/api.md` and their focused guid
 `kuration.gameplay` registers these capabilities but must not import OpenCV, PyTorch, FAISS,
 or another optional runtime. Importing the core `kuration` package does not import gameplay.
 
+`kuration.selection.BalancedSelector`, `RareEventCoverage`, `DiverseSubset`, `run`, `plan`,
+`describe`, and `register_operation_type` are public, documented in `docs/api.md` and
+`docs/selection.md`. Importing `kuration.selection` registers these as fluent `Pipeline`
+methods but must not import scikit-learn; that only loads when `DiverseSubset`'s
+`cluster-balanced` sampling path actually executes.
+
 Other module members that are absent from `kuration.__all__` are internal unless a future
 contract explicitly adds them. Underscore-prefixed classes, functions, methods, and CLI helpers
 are always internal.

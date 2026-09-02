@@ -1,17 +1,17 @@
 """Operation protocol + runner for chaining / config-driven use.
 
-An Operation is any object with `.apply(pipeline) -> pipeline`. Everything else
-in kuration_ai follows that one shape, so a client can:
+An Operation is any object with `.apply(pipeline) -> pipeline`. Every recipe in
+:mod:`kuration.selection.operations` follows that one shape, so a client can:
 
-    op.apply(pipeline)                    # one operation, standalone
-    run(pipeline, [op_a, op_b, op_c])     # chain a few
-    run(pipeline, config["operations"])   # drive from a dict / YAML / JSON
+    op.apply(pipeline)                          # one operation, standalone
+    run(pipeline, [op_a, op_b, op_c])           # chain a few
+    run(pipeline, config["operations"])         # drive from a dict / YAML / JSON
 
 Also here:
 
-    plan(config["operations"])            # resolved-but-unrun Operation list
-    describe(config["operations"])        # multi-line human plan summary
-    register("MyOp", MyOpClass)           # add user Operation to config-dict registry
+    plan(config["operations"])                  # resolved-but-unrun Operation list
+    describe(config["operations"])               # multi-line human plan summary
+    register_operation_type("MyOp", MyOpClass)   # add a user Operation for config-dict use
 """
 from __future__ import annotations
 
@@ -27,15 +27,17 @@ class Operation(Protocol):
 
 
 # Runtime registry of user-registered Operations. Keyed by the string name a
-# user picks in a config dict (`{"type": name}`). Populated via `register()`.
+# user picks in a config dict (`{"type": name}`). Populated via `register_operation_type()`.
 _USER_REGISTRY: dict[str, type] = {}
 
 
-def register(name: str, operation_class: type) -> None:
+def register_operation_type(name: str, operation_class: type) -> None:
     """Register a user Operation class under a name for config-dict use.
 
     Once registered, `{"type": name, ...}` in a config list resolves to
-    `operation_class(**kwargs)` inside `run()` or `plan()`.
+    `operation_class(**kwargs)` inside `run()` or `plan()`. This registry is
+    independent of the SDK's fluent-operator ``Registry``: it only affects how
+    dict-shaped config entries resolve in this module's ``run``/``plan``/``describe``.
 
     Args:
         name: the string key used in `{"type": name}` config dicts.
@@ -50,17 +52,17 @@ def register(name: str, operation_class: type) -> None:
     reload.
     """
     if not isinstance(name, str) or not name:
-        raise ValueError("register: 'name' must be a non-empty string")
+        raise ValueError("register_operation_type: 'name' must be a non-empty string")
     if not hasattr(operation_class, "apply"):
         raise ValueError(
-            f"register: '{name}' -> {operation_class!r} has no 'apply' method: "
-            "cannot register as an Operation"
+            f"register_operation_type: '{name}' -> {operation_class!r} has no 'apply' "
+            "method: cannot register as an Operation"
         )
     existing = _USER_REGISTRY.get(name)
     if existing is not None and existing is not operation_class:
         raise ValueError(
-            f"register: '{name}' is already registered with a different class "
-            f"({existing!r}). Use a different name or reload the module."
+            f"register_operation_type: '{name}' is already registered with a different "
+            f"class ({existing!r}). Use a different name or reload the module."
         )
     _USER_REGISTRY[name] = operation_class
 
@@ -71,8 +73,8 @@ def run(pipeline: Any, operations: list[Any]) -> Any:
     Each item in `operations` is either:
       - an Operation instance already configured, or
       - a dict `{"type": "ClassName", ...params}` that gets resolved from the
-        operations catalog (or the user registry populated by `register()`)
-        and instantiated.
+        built-in catalog (or the user registry populated by
+        `register_operation_type()`) and instantiated.
 
     Raises:
         ValueError: on any bad config dict, with a message that names the
@@ -108,8 +110,8 @@ def describe(operations: list[Any]) -> str:
     """
     resolved = plan(operations)
     if not resolved:
-        return "kuration-ai plan: (empty)"
-    lines = ["kuration-ai plan:"]
+        return "selection plan: (empty)"
+    lines = ["selection plan:"]
     for i, op in enumerate(resolved, start=1):
         if hasattr(op, "describe"):
             lines.append(f"  {i}. {op.describe()}")
@@ -120,7 +122,7 @@ def describe(operations: list[Any]) -> str:
 
 def _available_operations() -> list[str]:
     """All Operation class names: built-in catalog plus user registry."""
-    from kuration_ai import operations as _catalog
+    from kuration.selection import operations as _catalog
     builtin = [
         n for n in dir(_catalog)
         if not n.startswith("_") and n[0].isupper()
@@ -130,7 +132,7 @@ def _available_operations() -> list[str]:
 
 def _lookup_class(name: str):
     """Look up an Operation class by name (built-in catalog then user registry)."""
-    from kuration_ai import operations as _catalog
+    from kuration.selection import operations as _catalog
     return getattr(_catalog, name, None) or _USER_REGISTRY.get(name)
 
 

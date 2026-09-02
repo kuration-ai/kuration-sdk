@@ -88,8 +88,8 @@ concepts: [schema.md](schema.md)):
 ## Operator reference
 
 Each operator returns a new `Pipeline`; the pipeline being extended is never mutated.
-Importing `kuration.gameplay` registers the gameplay methods below on this same core type;
-custom domains and plugins follow the same registered-operator mechanism.
+Importing `kuration.gameplay` or `kuration.selection` registers the domain methods below on this
+same core type; custom domains and plugins follow the same registered-operator mechanism.
 
 | operator | signature | compiles to |
 |---|---|---|
@@ -100,6 +100,9 @@ custom domains and plugins follow the same registered-operator mechanism.
 | `.collision_directional` | `(*, map_registry, ramp_models_path, map_for_source=None, default_map=None, fallback_ramp=None, inputs=None, batch_size=None, metadata_key="directional_collision", replace=False, **thresholds)` | runs the built-in `aintropy/collision-directional` analyzer once over the tick stream and returns a pipeline carrying its verdict under `metadata["gameplay"][metadata_key]` |
 | `.slam_motion_diversity` | `(*, axis="slam_path_length", bins=8)` | the built-in `aintropy/slam-motion-diversity` operator |
 | `.slam_quality` | `(*, min_score=None, **quality_options)` | the built-in `aintropy/slam-quality` operator |
+| `.balanced_selector` | `(feature, of, kind="std", bins=8, count=100)` | the built-in `kuration/balanced-selector` operator (`.measure(...).bin(...).sample("equal", ...)`) |
+| `.rare_event_coverage` | `(of, feature="event_rate", count=100, weight=1.0)` | the built-in `kuration/rare-event-coverage` operator (`.measure(..., "rate", ...).sample("weighted", ...)`) |
+| `.diverse_subset` | `(features, count=100, n_clusters=32, dedup_threshold=None)` | the built-in `kuration/diverse-subset` operator (optional `.filter("dedup", ...)` then `.sample("cluster-balanced", ...)`) |
 | `.window` | `(window, stride=None, unit="steps")` | the `Segmenter` (stride defaults to `window`) |
 | `.measure` | `(name, spec=None, *, of=None, map=None, filter=None, scope=None)` | a `strategy.define[name]` entry — 4 forms below |
 | `.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params)` | a registered bounded batch transform whose scalar outputs become selection features |

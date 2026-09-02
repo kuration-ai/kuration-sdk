@@ -252,20 +252,18 @@ An **operator** is a named, discoverable pipeline step (an analyzer, a transform
 scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
 [Operators](docs/operators.md) for the full registry. The six use cases below are ready-made
 curation jobs built from those operators — three gameplay/video-specific, three general-purpose
-sampling jobs from the [`kuration-ai`](./kuration-ai/) companion package.
-Each links to a runnable example and, where one exists, a browser notebook (Colab and Binder can
-only clone public repositories, so the launch badges activate once this repo goes public — until
-then, run locally; see each notebook's own README for the exact install command, the
-`[gameplay]` extra is only needed by `action-state-consistency` and `collision-aware`).
+selection recipes built into the SDK (`kuration.selection`).
+Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
+only needed by `action-state-consistency` and `collision-aware`.
 
 | Use case | Category | What it does | Runnable | Notebook |
 |---|---|---|---|---|
-| [Action-state consistency](#action-state-consistency-gameplay) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | [Colab](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/action-state-consistency/action-state-consistency.ipynb) / [Binder](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Faction-state-consistency%2Faction-state-consistency.ipynb) |
-| [Collision awareness](#collision-awareness-gameplay) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | [Colab](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/collision-aware/collision-aware.ipynb) / [Binder](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcollision-aware%2Fcollision-aware.ipynb) |
+| [Action-state consistency](#action-state-consistency-gameplay) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | — |
+| [Collision awareness](#collision-awareness-gameplay) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | — |
 | [SLAM motion diversity and quality](#slam-motion-diversity-and-quality-gameplay) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
-| [Spatial coverage](#spatial-coverage-general) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | [`motion-coverage/`](./kuration-ai/examples/motion-coverage/) | [Colab](https://colab.research.google.com/github/aintropy-solutions/kuration-sdk/blob/main/kuration-ai/notebooks/coverage-based-curation/coverage-based-curation.ipynb) / [Binder](https://mybinder.org/v2/gh/aintropy-solutions/kuration-sdk/HEAD?labpath=kuration-ai%2Fnotebooks%2Fcoverage-based-curation%2Fcoverage-based-curation.ipynb) |
-| [Rare-event coverage](#rare-event-coverage-general) | General | Oversamples rare events (like collisions) relative to their natural base rate. | [`rare-event-coverage/`](./kuration-ai/examples/rare-event-coverage/) | — |
-| [Diversity sampling](#diversity-sampling-general) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | [`diversity-sampling/`](./kuration-ai/examples/diversity-sampling/) | — |
+| [Spatial coverage](#spatial-coverage-general) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | `pipeline.balanced_selector(feature=..., of=..., bins=..., count=...)` | — |
+| [Rare-event coverage](#rare-event-coverage-general) | General | Oversamples rare events (like collisions) relative to their natural base rate. | `pipeline.rare_event_coverage(of=..., count=...)` | — |
+| [Diversity sampling](#diversity-sampling-general) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | `pipeline.diverse_subset(features=..., count=...)` | — |
 
 ### Action-state consistency (gameplay)
 
@@ -351,9 +349,11 @@ Most activity-based metrics move together. A chaotic firefight is high on every 
 
 Cluster the windows in a multi-axis feature space and sample equally from each cluster, and the redundant part of the corpus stops crowding out the parts that actually differ. The Intro blog names this "diversity sampling" — one of the checks that "all get easier on a dataset that previously had no notion of space." `DiverseSubset` clusters over any set of pre-measured features and takes an equal share from every cluster. An optional dedup pre-pass filters near-duplicates first.
 
-The three general-purpose use cases above each have their own runnable example folder under
-`kuration-ai/examples/`, with the expected output and a "what to try next" section baked into the
-folder's README.
+Each of the three general-purpose recipes above is also available as a direct dataclass
+(`kuration.selection.BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) for standalone use,
+or as a `{"type": "BalancedSelector", ...}`-style config-dict entry for
+`kuration.selection.run(...)` — see [`docs/selection.md`](docs/selection.md) for the full
+parameter reference and the config-driven runner.
 
 ## Examples
 
@@ -371,8 +371,8 @@ folder's README.
 
 ## Beyond the gallery
 
-The three shipped operations in `kuration-ai` are curated shortcuts. The Kuration SDK itself is a
-broader pipeline library with 45 registered components, and you can drop into the raw fluent API
+The three shipped selection recipes are curated shortcuts. The Kuration SDK itself is a
+broader pipeline library with 48 registered components, and you can drop into the raw fluent API
 for anything the gallery doesn't cover.
 
 ### Sampling methods
@@ -408,7 +408,7 @@ Core methods used by the shipped operations: `.window()`, `.measure()`, `.filter
 
 Full inventory with parameters, extras, and runtime dependencies at [`docs/operator-inventory.md`](./docs/operator-inventory.md).
 
-Every gallery operation is transparent about the primitives it calls. Run `.describe()` on the resulting pipeline and you see the exact chain. Drop the `kuration_ai` imports and your custom pipelines still work. No lock-in.
+Every gallery operation is transparent about the primitives it calls. Run `.describe()` on the resulting pipeline and you see the exact chain. Drop the `kuration.selection` imports and your custom pipelines still work. No lock-in.
 
 ## Reproducibility
 
@@ -442,7 +442,7 @@ Any Python class with `.apply(pipeline) -> pipeline` is a valid operation. No in
 
 ```python
 from dataclasses import dataclass
-from kuration_ai import run, BalancedSelector
+from kuration.selection import run, BalancedSelector
 
 @dataclass(frozen=True)
 class OnlyActiveWindows:
@@ -463,47 +463,41 @@ result = run(pipeline, [
 Register it to also drive it from a config dict:
 
 ```python
-from kuration_ai import register
-register("OnlyActiveWindows", OnlyActiveWindows)
+from kuration.selection import register_operation_type
+register_operation_type("OnlyActiveWindows", OnlyActiveWindows)
 ```
 
-For the full extension contract, see [`kuration-ai/design/04_extension_seam.md`](./kuration-ai/design/04_extension_seam.md).
-
-## Coming next
-
-Not in the initial release, on the roadmap:
-
-- **Gameplay operators**: SLAM motion diversity, SLAM quality, pixel-shift, action-state consistency, and collision detection (both regular and directional variants) for game and video telemetry. The notebook set above previews some of these.
-- **`kai init <profile>`**: project scaffolder for new users starting from scratch.
-- **Property-based test suite**: the initial release ships with a 52-test smoke suite; property-based tests follow.
+For the fuller extension model — compositional vs. transform-backed operators, discovery,
+contract testing — see [`docs/operators.md`](docs/operators.md) and
+[`docs/customization.md`](docs/customization.md); for the config-driven runner shown above, see
+[`docs/selection.md`](docs/selection.md).
 
 ## Reference
 
-- [`kuration-ai/design/`](./kuration-ai/design/): five design decisions behind the API (operation abstraction, composition, config model, extension seam, workarounds).
-- [`kuration-ai/CHANGELOG.md`](./kuration-ai/CHANGELOG.md): release notes for `kuration-ai`.
-- [`kuration-ai/MIGRATION_NOTE.md`](./kuration-ai/MIGRATION_NOTE.md): where this content came from and why.
 - [Issue tracker](https://github.com/aintropy-solutions/kuration-sdk/issues) for feature requests, bug reports, roadmap discussion.
-- [`kuration-ai/examples/`](./kuration-ai/examples/): the gallery of runnable use cases.
+- [ROADMAP.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/ROADMAP.md) for what's shipped, next, and planned.
 
 ### CLI reference
 
-The `kai` command is installed alongside the library.
+`kur-list` and `kur-describe` are installed alongside the library and cover every registered
+component kind, not just operators.
 
-#### `kai list`
-
-```bash
-kai list
-```
-
-Lists available operations (built-in plus any you have registered), annotated with which extras each one needs at runtime.
-
-#### `kai describe`
+#### `kur-list`
 
 ```bash
-kai describe BalancedSelector
+kur-list operators
 ```
 
-Shows one operation's docstring and parameter contract.
+Lists available operators (built-in plus any you have registered), annotated with which extras
+each one needs at runtime. Pass `adapters`, `filters`, `presets`, etc. for other component kinds.
+
+#### `kur-describe`
+
+```bash
+kur-describe operator kuration/balanced-selector
+```
+
+Shows one component's docstring and parameter contract.
 
 ## Read more
 
@@ -517,8 +511,8 @@ Long-form blog posts on physical-AI data curation:
 ## Project status
 
 Kuration currently targets Python 3.11 through 3.14. Optional integrations are tested at
-both their declared minimum versions and their current releases. CI runs over 1,200 test
-functions across 96 test files, including property-based invariants, wheel installation,
+both their declared minimum versions and their current releases. CI runs over 1,500 test
+functions across 97 test files, including property-based invariants, wheel installation,
 every CLI entry point, and integration paths for Zarr, PyTorch, Hugging Face, PyAV, and Ray.
 
 The SDK is a `0.x` beta. The supported surface and deprecation rules are documented in the

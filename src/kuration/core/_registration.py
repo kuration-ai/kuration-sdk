@@ -1,4 +1,4 @@
-"""Shared collision-safe idempotence for built-in gameplay registration."""
+"""Shared collision-safe idempotence for built-in component registration."""
 from __future__ import annotations
 
 
@@ -11,5 +11,5 @@ def needs_registration(registry, kind: str, name: str, component) -> bool:
     descriptor = registry.descriptor(kind, name)
     owner = descriptor.module or descriptor.package or "an unknown implementation"
     raise ValueError(
-        f"cannot register gameplay {kind} {name!r}: the name is already owned by {owner!r}"
+        f"cannot register {kind} {name!r}: the name is already owned by {owner!r}"
     )

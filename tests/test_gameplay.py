@@ -55,7 +55,7 @@ def test_action_state_convenience_uses_the_registered_analyzer():
 
 
 def test_gameplay_registration_is_idempotent_but_rejects_name_hijacking():
-    from kuration.gameplay._registration import needs_registration
+    from kuration.core._registration import needs_registration
 
     registry = Registry()
 

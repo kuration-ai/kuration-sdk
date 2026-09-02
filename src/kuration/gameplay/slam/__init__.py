@@ -116,7 +116,7 @@ def register() -> None:
         register_batch_transform,
         register_operator,
     )
-    from .._registration import needs_registration
+    from ...core._registration import needs_registration
 
     common: dict[str, Any] = {
         "package": PACKAGE,

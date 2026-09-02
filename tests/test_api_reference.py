@@ -100,6 +100,31 @@ def test_operator_guides_cover_every_bundled_gameplay_operator():
         assert all(method in text for text in references)
 
 
+def test_operator_guides_cover_every_bundled_selection_operator():
+    import kuration.selection  # noqa: F401
+
+    expected = {
+        "kuration/balanced-selector": "balanced_selector",
+        "kuration/rare-event-coverage": "rare_event_coverage",
+        "kuration/diverse-subset": "diverse_subset",
+    }
+    registered = {
+        name for name in kuration.default_registry.names("operator")
+        if name.startswith("kuration/")
+    }
+    assert registered == set(expected)
+
+    references = [
+        (ROOT / "docs" / "operators.md").read_text(),
+        (ROOT / "docs" / "pipeline.md").read_text(),
+        (ROOT / "docs" / "selection.md").read_text(),
+        REFERENCE.read_text(),
+    ]
+    for component, method in expected.items():
+        assert all(component in text for text in references)
+        assert all(method in text for text in references)
+
+
 def _plain_signature(obj) -> str:
     signature = inspect.signature(obj)
     parameters = [

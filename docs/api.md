@@ -1,7 +1,7 @@
 # API reference — the public Python surface
 
 Every name importable from `kuration` (plus the public `kuration.core`, `kuration.core.torch`,
-and `kuration.gameplay` domain),
+`kuration.gameplay`, and `kuration.selection` domains),
 grouped by layer, with its real
 signature. Optional-extra requirements are tagged (`[methods]`, `[parquet]`, `[array]`,
 `[video]`, `[ray]`,
@@ -34,6 +34,13 @@ objects as noted below.
 | `kuration.gameplay.action_state_checker` | `(*, baselines=None, anomaly_type="action_state", calibration=None) -> Analyzer` | construct the action-state consistency analyzer without a component-name string; omitting `baselines` self-calibrates (leave-one-out consensus outlier detection) |
 | `kuration.gameplay.load_baselines_from_reference` | `(reference, *, controls=None) -> dict` | validate an action-state reference report and derive checker baselines, optionally for a control subset |
 | `kuration.gameplay.compare_videos` | `(left, right, *, labels=None, provider=None) -> VideoComparison` | create a synchronized notebook/HTML gameplay review without eagerly importing PyAV or Matplotlib |
+| `kuration.selection.BalancedSelector` | `(feature, of, kind="std", bins=8, count=100)` | frozen dataclass; `.apply(pipeline) -> Pipeline` and `.describe() -> str` compile to the `kuration/balanced-selector` chain |
+| `kuration.selection.RareEventCoverage` | `(of, feature="event_rate", count=100, weight=1.0)` | frozen dataclass; `.apply(pipeline) -> Pipeline` and `.describe() -> str` compile to the `kuration/rare-event-coverage` chain |
+| `kuration.selection.DiverseSubset` | `(features, count=100, n_clusters=32, dedup_threshold=None)` | frozen dataclass; `.apply(pipeline) -> Pipeline` and `.describe() -> str` compile to the `kuration/diverse-subset` chain (`[methods]`) |
+| `kuration.selection.run` | `(pipeline, operations) -> Pipeline` | chain `Operation` instances or `{"type": "ClassName", ...}` config dicts over a pipeline |
+| `kuration.selection.plan` | `(operations) -> list` | resolve config dicts into `Operation` instances without applying them |
+| `kuration.selection.describe` | `(operations) -> str` | multi-line human summary of a resolved plan, naming each operation's compiled SDK chain |
+| `kuration.selection.register_operation_type` | `(name, operation_class) -> None` | register a user `Operation` class for `{"type": name, ...}` config-dict use |
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
 cap and stratified splits); `tags_of(segment) -> iterable` overrides declarative tags;
@@ -69,6 +76,9 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.collision_directional` | `(*, map_registry, ramp_models_path, map_for_source=None, default_map=None, fallback_ramp=None, disk_cache_dir=None, proximity=None, min_missing_speed=None, concentration_ratio=None, inputs=None, batch_size=None, metadata_key="directional_collision", replace=False) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/collision-directional`; run the tick-stream analyzer once and attach its verdict (including `flagged_ticks` in source coordinates) under `metadata["gameplay"][metadata_key]` |
 | `Pipeline.slam_motion_diversity` | `(*, axis="slam_path_length", bins=8) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/slam-motion-diversity`; add SLAM motion features and bin one diversity axis |
 | `Pipeline.slam_quality` | `(*, min_score=None, min_tracking_confidence=0.5, translation_ratio=10.0, translation_mad_multiplier=8.0, max_translation_step=None, max_turn_degrees=90.0) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/slam-quality`; add SLAM quality features and optionally filter weak windows |
+| `Pipeline.balanced_selector` | `(feature, of, kind="std", bins=8, count=100) -> Pipeline` | registered by `kuration.selection` as `kuration/balanced-selector`; measure a feature, quantile-bin it, and sample equally across bins |
+| `Pipeline.rare_event_coverage` | `(of, feature="event_rate", count=100, weight=1.0) -> Pipeline` | registered by `kuration.selection` as `kuration/rare-event-coverage`; measure a boolean/0-1 field's per-window rate and weighted-sample toward it |
+| `Pipeline.diverse_subset` | `(features, count=100, n_clusters=32, dedup_threshold=None) -> Pipeline` | registered by `kuration.selection` as `kuration/diverse-subset`; optional dedup then cluster-balanced sampling over pre-measured features (`[methods]`) |
 | `Pipeline.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params) -> Pipeline` | add a registered bounded scalar-feature transform |
 | `Pipeline.using` | `(registry) -> Pipeline` | resolve adapters, analyzers, containers, encoders, filters, methods, metrics, operators, presets, scorers, and transforms through one explicit `Registry` overlay |
 | `Pipeline.metadata` | read-only `dict` property | defensive deep copy of namespaced caller/enrichment metadata carried by the pipeline |
@@ -411,6 +421,19 @@ The facade itself also exports four registration modules and its idempotent regi
 The associated validation and decoding helpers are documented in
 [pixel-shift.md](pixel-shift.md), [collision.md](collision.md), and
 [action-state-consistency.md](action-state-consistency.md).
+
+## Built-in selection recipes
+
+The `kuration.selection` domain ships in the SDK wheel: three general-purpose curation recipes
+with no gameplay/video assumptions, plus a config-driven `run`/`plan`/`describe` runner. See
+[selection.md](selection.md).
+
+| name | signature | does |
+|---|---|---|
+| `kuration.selection.operations` | module | `BalancedSelector`, `RareEventCoverage`, `DiverseSubset` dataclasses |
+| `kuration.selection.operators` | module | fluent-operator wrappers (`balanced_selector`, `rare_event_coverage`, `diverse_subset`) and their JSON-Schema parameter descriptors |
+| `kuration.selection.plan` | module | `Operation` protocol and the `run`/`plan`/`describe`/`register_operation_type` config runner |
+| `kuration.selection.register` | `() -> None` | idempotently register the three selection operators |
 
 ## SLAM reconstruction and curation
 

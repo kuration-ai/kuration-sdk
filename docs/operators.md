@@ -253,6 +253,25 @@ The ordinary core operations—`.window()`, `.measure()`, `.transform()`, `.filt
 `kur-list operators` and `list_components("operator")` are the authoritative catalogs for the
 currently installed and imported environment.
 
+Importing `kuration.selection` registers three general-purpose curation recipes on the ordinary
+core pipeline — no gameplay/video assumptions, no heavy runtime dependency except
+`diverse-subset`'s scikit-learn requirement.
+
+| registered operator | fluent method | expands to | execution dependency |
+|---|---|---|---|
+| `kuration/balanced-selector` | `.balanced_selector(feature, of, kind="std", bins=8, count=100)` | `.measure(...).bin(...).sample("equal", ...)` | none (NumPy core) |
+| `kuration/rare-event-coverage` | `.rare_event_coverage(of, feature="event_rate", count=100, weight=1.0)` | `.measure(..., "rate", ...).sample("weighted", ...)` | none (NumPy core) |
+| `kuration/diverse-subset` | `.diverse_subset(features, count=100, n_clusters=32, dedup_threshold=None)` | optional `.filter("dedup", ...)` then `.sample("cluster-balanced", ...)` | scikit-learn via `[methods]` |
+
+Each is also available as a standalone, configurable dataclass
+(`kuration.selection.BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) for direct use, or
+as a `{"type": "BalancedSelector", ...}`-style config-dict entry driven through
+`kuration.selection.run(pipeline, operations)` /
+`kuration.selection.plan(operations)` / `kuration.selection.describe(operations)`. All three
+call styles — fluent method, direct dataclass, config dict — are guaranteed to produce identical
+results; extend the config-dict vocabulary with your own `.apply(pipeline) -> pipeline` class via
+`kuration.selection.register_operation_type("MyRecipe", MyRecipeClass)`.
+
 ## 6. Choose built-in or external packaging
 
 First-party gameplay operators accepted into the SDK live under `src/kuration/gameplay/`, register
