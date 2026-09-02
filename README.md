@@ -533,21 +533,13 @@ remaining public-release gates.
 
 Contributions to the core SDK or the maintained gameplay module should follow
 [CONTRIBUTING.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/CONTRIBUTING.md).
-The gameplay operators ship inside this repo. If you want to publish an independent
-extension, start from the plugin template in
-[`plugins/`](https://github.com/aintropy-solutions/kuration-sdk/tree/main/plugins).
+The gameplay operators ship inside this repo.
 
 ```bash
 python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p]'
 python -m pytest tests/ -q
 python -m ruff check src tests examples
 python -m mypy
-```
-
-Validate one repository plugin in the same isolated environment used by CI:
-
-```bash
-python scripts/check_plugin.py plugins/<plugin-name>
 ```
 
 Read [CONTRIBUTING.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/CONTRIBUTING.md)

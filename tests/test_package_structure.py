@@ -36,7 +36,7 @@ def test_kuration_implementation_is_split_into_explicit_domains() -> None:
     }
 
     assert implementation_modules == set()
-    assert domains == {"core", "gameplay"}
+    assert domains == {"core", "gameplay", "sample_data"}
 
 
 def test_removed_root_compatibility_packages_are_not_importable() -> None:

@@ -1,5 +1,0 @@
-{
-  "packageManager": "python",
-  "packageName": "kuration-lab",
-  "uninstallInstructions": "Use your Python package manager (pip, uv, ...) to uninstall the package kuration-lab."
-}

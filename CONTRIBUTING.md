@@ -335,8 +335,8 @@ validation. Include a closed parameter schema and test strict categorical behavi
 
 ### Packaging external plugins
 
-Copy [`plugins/_template`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/plugins/README.md) for extensions that should remain independently
-versioned or distributed outside `kuration-sdk`. Registration code may be loaded explicitly
+Package extensions that should remain independently versioned or distributed outside
+`kuration-sdk` as their own installable Python package. Registration code may be loaded explicitly
 through a job's `plugins` list or automatically by the `kuration.plugins` entry-point group:
 
 ```toml

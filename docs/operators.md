@@ -257,9 +257,8 @@ currently installed and imported environment.
 
 First-party gameplay operators accepted into the SDK live under `src/kuration/gameplay/`, register
 when that domain is imported or discovered, and declare optional framework requirements through
-SDK extras. For an independently versioned or external plugin, copy
-[`plugins/_template`](https://github.com/aintropy-solutions/kuration-sdk/tree/main/plugins/_template)
-to `plugins/<plugin-name>`. The external package uses this layout:
+SDK extras. For an independently versioned or external plugin, publish your own package with this
+layout:
 
 ```text
 acme-kuration/
@@ -281,14 +280,8 @@ avoid collisions. Keep dataset-specific assumptions visible in the descriptor, R
 schema, and tests. The [customization guide](customization.md) covers registry overlays and the
 other extension types.
 
-Before opening a contribution, reproduce the isolated CI contract from the repository root:
-
-```bash
-python scripts/check_plugin.py plugins/<plugin-name>
-```
-
-For installed packages, `kur-plugin-check acme --json` performs the descriptor and discovery
-portion transactionally.
+Once your package is installed, `kur-plugin-check acme --json` validates its descriptors and
+discovery transactionally.
 
 ## Complete runnable examples
 
