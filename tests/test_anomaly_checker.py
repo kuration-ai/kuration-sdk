@@ -294,15 +294,20 @@ def test_register_adds_the_real_builtin_analyzer():
     asc.register()  # idempotent -- must not raise even if already registered
     assert asc.ANALYZER_NAME in default_registry.names("analyzer")
     descriptor = default_registry.descriptor("analyzer", asc.ANALYZER_NAME)
-    # Both drivable modes are advertised: cross-segment tick-stream accumulation and the
-    # artifact-level check_dataset hook.
+    # Dataset-mode only: the tick-stream path (redundantly re-deriving pixel-shift's own
+    # measurements from raw frames) is retired in favor of the scorer below.
     assert descriptor.capabilities == {"stateful": True, "cross_segment": True,
-                                       "tick_stream": True, "dataset": True}
+                                       "dataset": True}
     assert descriptor.package == "kuration-sdk"
     assert descriptor.extra == "action-state"
+    assert asc.SCORER_NAME in default_registry.names("scorer")
+    scorer = default_registry.descriptor("scorer", asc.SCORER_NAME)
+    assert scorer.package == "kuration-sdk"
+    assert set(scorer.parameters["properties"]) == {"baselines", "controls", "calibration"}
     assert asc.OPERATOR_NAME in default_registry.names("operator")
     operator = default_registry.descriptor("operator", asc.OPERATOR_NAME)
     assert operator.capabilities["pipeline_metadata"] is True
+    assert operator.capabilities["dataset"] is True
     # baselines is no longer schema-required: omitting it (with controls=) selects
     # self-calibrated mode. The handler itself enforces "baselines or controls".
     assert "required" not in operator.parameters

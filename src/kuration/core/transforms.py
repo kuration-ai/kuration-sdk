@@ -686,6 +686,14 @@ class _TransformRunner:
                                          f"{len(chunk)} finite scalars, got shape {vals.shape}")
                     for seg, value in zip(chunk, vals):
                         seg.features[output] = float(value)
+                records = result.get("records")
+                if records is not None:
+                    if len(records) != len(chunk):
+                        raise ValueError(
+                            f"transform {call['name']!r} records must have {len(chunk)} "
+                            f"entries (one per segment), got {len(records)}")
+                    for seg, row in zip(chunk, records):
+                        seg.records[call["name"]] = row
             emit(progress, "transforms", "advance", current=call_i, total=len(self.calls),
                  source=call["name"], status="ok")
         emit(progress, "transforms", "complete", current=len(self.calls), total=len(self.calls))

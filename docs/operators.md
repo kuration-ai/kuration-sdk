@@ -218,7 +218,7 @@ operator's execution path needs them.
 | registered operator | fluent method | expands to | execution dependency |
 |---|---|---|---|
 | `aintropy/pixel-shift` | `.pixel_shift(controls=None, boundary="exclude")` | the bounded transform of the same name | OpenCV via `[pixel-shift]` |
-| `aintropy/action-state-consistency` | `.action_state_consistency(baselines=..., controls=None, ...)` | the analyzer of the same name plus pipeline metadata attachment | OpenCV via `[action-state]` |
+| `aintropy/action-state-consistency` | `.action_state_consistency(baselines=..., controls=None, ...)` | dataset-mode-only: the analyzer of the same name plus pipeline metadata attachment. For a live pipeline, `.score("aintropy/action-state-consistency", out=..., baselines=..., controls=...)` reads pixel-shift's own `Segment.records` instead | OpenCV via `[action-state]` |
 | `aintropy/collision` | `.collision(map_for_source=..., map_registry=..., dist_path=..., **thresholds)` | the bounded transform of the same name | trimesh/rtree via `[collision]` |
 | `aintropy/collision-directional` | `.collision_directional(map_registry=..., ramp_models_path=..., ...)` | the tick-stream analyzer of the same name plus pipeline metadata attachment | trimesh/rtree via `[collision]` |
 | `aintropy/slam-motion-diversity` | `.slam_motion_diversity(axis="slam_path_length", bins=8)` | `aintropy/slam-motion` plus a bin axis | NumPy for a precomputed trajectory |

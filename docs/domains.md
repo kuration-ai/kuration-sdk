@@ -87,10 +87,11 @@ pipeline = pipeline.slam_quality(min_score=0.6)
 pipeline = pipeline.action_state_consistency(baselines=baselines, controls=["W"])
 ```
 
-Input enrichments keep their result on the derived pipeline. For action-state consistency it is
-available at
+Input enrichments keep their result on the derived pipeline. For action-state consistency (a
+dataset-mode-only audit -- `pipeline` above must be artifact-backed) it is available at
 `pipeline.metadata["gameplay"]["action_state_consistency"]["result"]`; `.analyze(...)` remains
-the generic detached-result alternative.
+the generic detached-result alternative. For a live pipeline, `.pixel_shift(...).score(...)` is
+the equivalent per-window path -- see [action-state-consistency.md](action-state-consistency.md).
 
 For a custom name such as `acme/signal-diversity`, use
 `pipeline.signal_diversity(...)`. The namespace-qualified

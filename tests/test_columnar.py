@@ -12,9 +12,9 @@ pytest.importorskip("pyarrow")
 def _segments():
     return [
         Segment("source-a", 0, 4, (0.0, 0.3), {"speed": 1.5, "quality": 0.2},
-                (1, "low"), frozenset({"indoor"}), ("site", 1)),
+                bin=(1, "low"), tags=frozenset({"indoor"}), group=("site", 1)),
         Segment("source-a", 4, 8, (0.4, 0.7), {"speed": 2.5, "quality": 0.8},
-                (2, "high"), frozenset({"indoor", "north"}), ("site", 1)),
+                bin=(2, "high"), tags=frozenset({"indoor", "north"}), group=("site", 1)),
     ]
 
 

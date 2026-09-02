@@ -205,6 +205,37 @@ class ActionStateConsistencyChecker(AnomalyChecker):
     def __init__(self, config):
         super().__init__(validate_action_state_config(config))
 
+    def resolve_controls(self, controls: Sequence[str] | None) -> tuple[str, ...]:
+        """Resolve/validate the control set to check, against configured baselines (or
+        pixel-shift's vocabulary in self-calibrated mode where there is nothing configured
+        to default to). ``controls`` defaults to every control with a configured baseline;
+        an explicit subset must still be a subset of the configured baselines -- there is
+        nothing to check a control against without one. In self-calibrated mode
+        ``controls`` is required, since there is no configured set to default to."""
+        from ..pixel_shift import ALL_CONTROLS
+
+        if self.baselines is None:
+            if controls is None:
+                raise ValueError(
+                    "self-calibrated action-state consistency needs controls=; without "
+                    "baselines there is no configured set to default to"
+                )
+            controls = tuple(controls)
+            unknown = sorted(set(controls) - set(ALL_CONTROLS))
+            if unknown:
+                raise ValueError(
+                    f"unknown control(s) {unknown}; expected {list(ALL_CONTROLS)}"
+                )
+            return controls
+        controls = tuple(self.baselines) if controls is None else tuple(controls)
+        unknown = sorted(set(controls) - set(self.baselines))
+        if unknown:
+            raise ValueError(
+                f"no baseline configured for control(s) {unknown}; "
+                f"configured: {sorted(self.baselines)}"
+            )
+        return controls
+
     def add_segment(
         self,
         frames,
@@ -219,40 +250,16 @@ class ActionStateConsistencyChecker(AnomalyChecker):
         boundary: str = "exclude",
     ) -> None:
         """Check every instance found in this one segment against the configured
-        baselines, and record the result under its clip (segment_id's source_id).
-        ``controls`` defaults to every control with a configured baseline; passing an
-        explicit subset must still be a subset of the configured baselines -- there is
-        nothing to check a control against without one. In self-calibrated mode there is
-        no configured set to default to, so ``controls`` is required and validated against
-        pixel-shift's control vocabulary instead."""
+        baselines, and record the result under its clip (segment_id's source_id). See
+        :meth:`resolve_controls` for how ``controls`` defaults/validates."""
         from ..pixel_shift import (
-            ALL_CONTROLS,
             iter_instances,
             validate_boundary,
             validate_color_space,
             validate_segment_inputs,
         )
 
-        if self.baselines is None:
-            if controls is None:
-                raise ValueError(
-                    "self-calibrated action-state consistency needs controls=; without "
-                    "baselines there is no configured set to default to"
-                )
-            controls = tuple(controls)
-            unknown = sorted(set(controls) - set(ALL_CONTROLS))
-            if unknown:
-                raise ValueError(
-                    f"unknown control(s) {unknown}; expected {list(ALL_CONTROLS)}"
-                )
-        else:
-            controls = tuple(self.baselines) if controls is None else tuple(controls)
-            unknown = sorted(set(controls) - set(self.baselines))
-            if unknown:
-                raise ValueError(
-                    f"no baseline configured for control(s) {unknown}; "
-                    f"configured: {sorted(self.baselines)}"
-                )
+        controls = self.resolve_controls(controls)
         boundary = validate_boundary(boundary)
         color_space = validate_color_space(color_space)
         frames, actions, before, after_actions, after_frames = validate_segment_inputs(
@@ -470,3 +477,78 @@ def action_state_consistency(*, anomaly_type: str, baselines: dict | None = None
     if calibration is not None:
         config["calibration"] = calibration
     return ActionStateConsistencyChecker(config)
+
+
+#: The pixel-shift transform/operator name that emits the ``Segment.records`` this scorer
+#: consumes -- see ``PixelShift.transform_batch`` and ``segment_scalars(records_out=...)``.
+PIXEL_SHIFT_RECORDS_KEY = "aintropy/pixel-shift"
+
+
+class ActionStateAnomalyScorer:
+    """SegmentScorer reporting, per window, how many of its OWN pixel-shift instances are
+    inconsistent with the configured (or self-calibrated) baseline.
+
+    This scores each segment independently from its own ``Segment.records`` content --
+    unlike :meth:`ActionStateConsistencyChecker.add_segment`'s clip-level ledger, it does
+    NOT de-duplicate a physical press across overlapping windows, since a press genuinely
+    inside two overlapping windows is legitimately part of both windows' own content, and a
+    per-segment score should reflect what that segment itself contains. Self-calibration
+    (deriving consensus baselines) still needs the whole pool: it happens once inside
+    :meth:`score`, which receives every segment in one call.
+
+    Reducing this per-segment score back up to a clip-level verdict (matching the old
+    Analyzer's ``consistent``/``inconsistent``/``inconclusive`` per source_id) is not yet a
+    built-in capability -- see docs/architecture.md's extension-points notes. For now, use
+    this scorer's output directly with ``.filter()``/``.bin()``/``.sample()`` per window, or
+    construct :class:`ActionStateConsistencyChecker` directly (via
+    :func:`action_state_consistency`) for the clip-level report.
+    """
+
+    needs_buffers = False
+
+    def __init__(self, *, baselines: dict | None = None,
+                 controls: Sequence[str] | None = None,
+                 calibration: dict | None = None):
+        config: dict[str, Any] = {"anomaly_type": "action_state", "baselines": baselines}
+        if calibration is not None:
+            config["calibration"] = calibration
+        self._checker = ActionStateConsistencyChecker(config)
+        self._controls = self._checker.resolve_controls(controls)
+
+    def _records(self, segment) -> list[dict]:
+        return [
+            record for record in segment.records.get(PIXEL_SHIFT_RECORDS_KEY, [])
+            if record["control"] in self._controls
+        ]
+
+    def score(self, segments, ctx):
+        import numpy as np
+
+        for segment in segments:
+            self._checker.resolve_segment(
+                (segment.source_id, segment.start_idx, segment.end_idx),
+                expected_length=segment.end_idx - segment.start_idx)
+            for record in self._records(segment):
+                self._checker.record_instance(
+                    segment.source_id, record["control"], record["cell_key"],
+                    segment.start_idx + record["local_start"], record["shift"])
+
+        scores = np.zeros(len(segments), dtype=np.float64)
+        resolved_baselines: dict[str, dict] = {}
+        for index, segment in enumerate(segments):
+            records = self._records(segment)
+            if not records:
+                continue
+            source_id = segment.source_id
+            if source_id not in resolved_baselines:
+                resolved_baselines[source_id] = (
+                    self._checker.resolved_baselines_for_clip(source_id))
+            baselines = resolved_baselines[source_id]
+            scores[index] = float(sum(
+                1 for record in records
+                if self._checker.is_instance_consistent(
+                    source_id, record["control"], record["cell_key"], record["shift"],
+                    baselines=baselines,
+                ) is False
+            ))
+        return scores

@@ -95,7 +95,7 @@ same core type; custom domains and plugins follow the same registered-operator m
 |---|---|---|
 | `.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None)` | a `JoinedMediaAdapter` with a resolved source→video mapping and lazy media column |
 | `.pixel_shift` | `(*, controls=None, boundary="exclude")` | the built-in `aintropy/pixel-shift` operator |
-| `.action_state_consistency` | `(*, baselines=None, anomaly_type="action_state", controls=None, calibration=None, boundary="exclude", mode=None, inputs=None, batch_size=None, metadata_key="action_state_consistency", replace=False, **dataset_options)` | runs the built-in analyzer once and returns a pipeline carrying its verdict under `metadata["gameplay"][metadata_key]`; `baselines=` checks against external calibration, `controls=` alone self-calibrates against the other clips' leave-one-out consensus |
+| `.action_state_consistency` | `(*, baselines=None, anomaly_type="action_state", controls=None, calibration=None, boundary="exclude", frames=None, actions=None, color_space=None, verify=None, metadata_key="action_state_consistency", replace=False)` | dataset-mode only (audits an already-written dataset's shards); runs the built-in analyzer once and returns a pipeline carrying its per-clip verdict under `metadata["gameplay"][metadata_key]`. For a live pipeline, use `.pixel_shift(...).score("aintropy/action-state-consistency", out=..., baselines=..., controls=...)` instead -- see [action-state-consistency.md](action-state-consistency.md) |
 | `.collision` | `(*, map_for_source, map_registry, dist_path, **thresholds)` | the built-in `aintropy/collision` operator (per-window CS2 wall-collision counts raycast against map geometry) |
 | `.collision_directional` | `(*, map_registry, ramp_models_path, map_for_source=None, default_map=None, fallback_ramp=None, inputs=None, batch_size=None, metadata_key="directional_collision", replace=False, **thresholds)` | runs the built-in `aintropy/collision-directional` analyzer once over the tick stream and returns a pipeline carrying its verdict under `metadata["gameplay"][metadata_key]` |
 | `.slam_motion_diversity` | `(*, axis="slam_path_length", bins=8)` | the built-in `aintropy/slam-motion-diversity` operator |
@@ -271,21 +271,24 @@ retain the compatible reference implementation and appear as materialization war
 ### Stateful analyzers: retain or return the result
 
 An analyzer accumulates evidence across segments, so it cannot honestly be a per-segment
-selection stage. A domain method such as `.action_state_consistency(...)` is the normal
+selection stage. A domain method such as `.collision_directional(...)` is the normal
 pipeline-preserving spelling: it drives the analyzer once and returns a new pipeline with the
 result attached.
 
 ```python
 pipeline = (
     input({"clip1": rows})
-    .join_video({"clip1": "clip1.mp4"})
     .window(64, stride=32)
     .options(streaming=True)
-    .action_state_consistency(baselines=baselines, controls=["W"])
+    .collision_directional(map_registry=map_registry, ramp_models_path=ramp_models_path)
 )
-verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
-print(verdict["passed"], verdict["summary"])
+verdict = pipeline.metadata["gameplay"]["directional_collision"]["result"]
+print(verdict["total_collisions"], verdict["per_source"])
 ```
+
+Not every domain analyzer stays tick-stream drivable this way — `aintropy/action-state-consistency`
+is dataset-mode only (see [action-state-consistency.md](action-state-consistency.md)); for a live
+pipeline it is a `SegmentScorer` instead, reached through `.score(...)` like any other scorer.
 
 The pipeline remains usable: continue with `.measure()`, `.filter()`, `.sample()`, `.output()`,
 or any other downstream operation. Caller metadata uses the same carrier:
@@ -303,9 +306,8 @@ when the detached result itself is the goal:
 
 ```python
 result = pipeline.analyze(
-    "aintropy/action-state-consistency",
-    {"anomaly_type": "action_state", "baselines": baselines},
-    controls=["W"],
+    "aintropy/collision-directional",
+    {"map_registry": map_registry, "ramp_models_path": ramp_models_path},
 )
 ```
 
