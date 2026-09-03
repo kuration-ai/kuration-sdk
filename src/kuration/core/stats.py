@@ -585,7 +585,7 @@ def _base_stats(
 ) -> StatsReport:
     """Return unified statistics for a pipeline, selection result, or written artifact.
 
-    Pipeline statistics infer their stage from the immutable fluent plan. Written artifacts
+    Pipeline statistics infer their stage from the immutable pipeline plan. Written artifacts
     may be passed as a directory, ``dataset_manifest.json`` path, or the
     ``DatasetWriteResult`` returned by ``output()``/``write_dataset()``.
     """

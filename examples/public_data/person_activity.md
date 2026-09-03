@@ -1,7 +1,7 @@
-# Worked example — wearable person activity, fluent API only
+# Worked example — wearable person activity, pipeline API only
 
 This example curates real wearable-sensor recordings using only `input(...)` and chained
-operators. Where [`ett_fluent.md`](ett_fluent.md) is the smallest possible fluent walkthrough,
+operators. Where [`ett.md`](ett.md) is the smallest possible pipeline walkthrough,
 this one has the shape that actually exercises the SDK: many sources, several entities per
 source, and a categorical label whose rare values are the interesting ones.
 
@@ -23,9 +23,9 @@ Combined tag rate is about 37 Hz (roughly 9.25 Hz per tag), which is what `hz=37
 ## Run it
 
 ```bash
-python examples/public_data/person_activity_fluent.py --download --out activity-out
-python examples/public_data/person_activity_fluent.py 'data/person_activity/*.csv' --out activity-out
-python examples/public_data/person_activity_fluent.py --demo --out activity-out
+python examples/public_data/person_activity.py --download --out activity-out
+python examples/public_data/person_activity.py 'data/person_activity/*.csv' --out activity-out
+python examples/public_data/person_activity.py --demo --out activity-out
 ```
 
 `--download` fetches the archive (~2 MB) and performs one preparation step: the upstream file

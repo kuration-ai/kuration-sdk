@@ -29,17 +29,17 @@ exact signature, accepted value, return type, exception, or artifact field.
 The README is the SDK landing page. It should help a reader choose a path, not attempt to contain
 the complete manual.
 
-1. **Try it** — a copy-and-paste quick start using the fluent API and a tiny local dataset. It
+1. **Try it** — a copy-and-paste quick start using the pipeline API and a tiny local dataset. It
    writes a real artifact, reads one shard back, and links to the next concepts.
 2. **See it on real data** — bounded worked examples for public datasets, beginning with
    TeaPearce Counter-Strike and Open P2P.
-3. **Build a pipeline** — task-oriented recipes and the fluent-pipeline guide.
+3. **Build a pipeline** — task-oriented recipes and the pipeline guide.
 4. **Package a decision** — operator and batch-transform examples for reusable workflows.
 5. **Customize it** — the classic API, schemas, adapters, metric DSL, strategies, output seams,
    and registries.
 6. **Look something up** — the Python API, CLI/job-spec, and artifact references.
 
-The fluent API is the default teaching interface. The classic API is the explicit path for
+The pipeline API is the default teaching interface. The classic API is the explicit path for
 custom adapters, encoders, strategies, and lower-level control. JSON jobs and the `kur-*` CLIs
 are the reproducible operational path. Documentation should name the path being used whenever a
 reader could reasonably confuse them.
@@ -54,7 +54,7 @@ The target structure below mostly reuses the existing pages. New pages are marke
 | Documentation home | `docs/index.md` | journey-based navigation across guides, extensions, operations, and reference |
 | Getting started | `docs/quickstart.md` | complete tested ten-minute path |
 | Worked examples | `examples/README.md`, `examples/public_data/` | runnable synthetic and public-data examples |
-| Task guides | `docs/usage.md`, `docs/pipeline.md` | recipes and the fluent operator workflow |
+| Task guides | `docs/usage.md`, `docs/pipeline.md` | recipes and the operator workflow |
 | Concepts | `docs/overview.md`, `docs/schema.md`, `docs/dsl.md`, `docs/strategies.md` | mental model and core data contracts |
 | Inputs and outputs | `docs/adapters.md`, `docs/output.md` | supported storage, mapping, encoding, and artifacts |
 | Extension guides | `docs/operators.md`, `docs/customization.md`, relevant sections of `docs/architecture.md` | reusable operators, supported seams, registries, plugins, and design constraints |
@@ -68,7 +68,7 @@ Content has one canonical home. Other pages summarize and link instead of mainta
 full explanation. In particular:
 
 - `docs/quickstart.md` owns the complete first run; the README contains a short tested version.
-- `docs/pipeline.md` owns fluent operator behavior; the API reference owns exact signatures.
+- `docs/pipeline.md` owns operator behavior; the API reference owns exact signatures.
 - Layer guides own concepts and examples; `docs/api.md` links to them rather than repeating them.
 - `docs/jobs.md` explains the job format; `src/kuration/core/schemas/job.schema.json` is the
   machine-readable key and validation authority.
@@ -171,7 +171,7 @@ or another optional runtime. Importing the core `kuration` package does not impo
 
 `kuration.selection.BalancedSelector`, `RareEventCoverage`, `DiverseSubset`, `run`, `plan`,
 `describe`, and `register_operation_type` are public, documented in `docs/api.md` and
-`docs/selection.md`. Importing `kuration.selection` registers these as fluent `Pipeline`
+`docs/selection.md`. Importing `kuration.selection` registers these as `Pipeline`
 methods but must not import scikit-learn; that only loads when `DiverseSubset`'s
 `cluster-balanced` sampling path actually executes.
 

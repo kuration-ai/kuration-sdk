@@ -40,8 +40,8 @@ heavy integrations should be lazy and should raise a clear installation hint whe
 - Preserve deterministic results across worker counts for a fixed seed.
 - Keep written datasets reproducible: changes affecting execution must be represented in
   `config.json` and, when applicable, versioned or migrated.
-- Preserve pipeline immutability: every fluent operator returns a new `Pipeline`.
-- Prefer `.bin()` and `.sample()` in new fluent-pipeline code. `.organize()` and `.curate()` are
+- Preserve pipeline immutability: every operator returns a new `Pipeline`.
+- Prefer `.bin()` and `.sample()` in new pipeline code. `.organize()` and `.curate()` are
   compatibility aliases and must not be removed without a documented migration.
 
 See [docs/architecture.md](https://aintropy-solutions.github.io/kuration-sdk/architecture/) for the data contracts and
@@ -58,7 +58,7 @@ Keep public interfaces synchronized across:
 - generic implementation and exports in `src/kuration/core/`;
 - maintained domain implementation in `src/kuration/gameplay/`;
 - exact signatures in [docs/api.md](https://aintropy-solutions.github.io/kuration-sdk/api/);
-- fluent behavior in [docs/pipeline.md](https://aintropy-solutions.github.io/kuration-sdk/pipeline/);
+- pipeline behavior in [docs/pipeline.md](https://aintropy-solutions.github.io/kuration-sdk/pipeline/);
 - runnable examples when the recommended workflow changes;
 - artifact or job schema versions when serialized contracts change.
 
@@ -72,7 +72,7 @@ Use the narrowest supported seam for the behavior:
 
 | need | extension |
 |---|---|
-| Reuse a named sequence of fluent calls | compositional operator |
+| Reuse a named sequence of pipeline calls | compositional operator |
 | Read a new source format | input adapter |
 | Compute bounded model/device features over batches | batch transform |
 | Compute one scalar from one segment window | registered metric |
@@ -90,7 +90,7 @@ isolated registries, discovery, and versioning.
 
 ### Compositional operators
 
-An operator names a validated sequence of existing fluent calls. It does not create a new
+An operator names a validated sequence of existing pipeline calls. It does not create a new
 execution stage:
 
 ```python

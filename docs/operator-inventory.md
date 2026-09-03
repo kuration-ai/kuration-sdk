@@ -24,12 +24,12 @@ edit rather than always-current.
 Category (Selection / Annotation / Aggregation) follows the taxonomy in
 [operators.md](operators.md#5-built-in-operator-catalog); no built-in operator is Aggregation
 today (a confirmed gap, not an oversight). "Backed by" names the registry kind actually doing the
-work underneath the fluent operator, for anyone extending the SDK rather than just using it.
+work underneath the operator, for anyone extending the SDK rather than just using it.
 
 | Name | Category | Backed by | Registered in | One-sentence purpose | Required params | Optional params (default) | Descriptor `extra` / `install_hint` | Runtime imports needed |
 |---|---|---|---|---|---|---|---|---|
-| `aintropy/action-state-consistency` | Annotation | analyzer (dataset mode) | `src/kuration/gameplay/action_state_consistency/__init__.py` (`attach_action_state_consistency`) | Dataset-mode only: audit an already-written dataset's shards for action-state consistency and attach the per-clip verdict to pipeline metadata. For a live pipeline use `action-residual`-style scorer access instead (`.score("aintropy/action-state-consistency", ...)`; no fluent wrapper yet). | (`baselines` OR `controls`) validated by handler | `anomaly_type: str = "action_state"`, `calibration: object`, `boundary: "exclude"|"error"|"assume-inactive" = "exclude"`, `frames: str`, `actions: str`, `color_space: str`, `verify: bool`, `metadata_key: str = "action_state_consistency"`, `replace: bool = False` | `extra="action-state"`, `install_hint='pip install "kuration-sdk[action-state]"'` | opencv-python (`cv2`, lazy in `diamond_action_decode._prep_gray`) |
-| `aintropy/collision` | Annotation | transform | `src/kuration/gameplay/collision/__init__.py` (`collision_mechanics`) | Compose the CS2 collision-detection transform into a fluent pipeline. | `map_for_source: object`, `map_registry: object`, `dist_path: str` | `disk_cache_dir: str = ".kuration_collision_cache"`, `min_score: number = 2.0`, `proximity: number = 40.0`, `min_approach: number = 250.0`, `max_residual: number = 20.0`, `slide_angle: number = 75.0`, `max_slide_speed: number = 400.0`, `min_release_accel: number = 100.0`, `max_release_vn: number = 100.0` | `extra="collision"`, `install_hint='pip install "kuration-sdk[collision]"'` | trimesh + rtree (lazy in `mesh_cache.load_mesh_cached`) |
+| `aintropy/action-state-consistency` | Annotation | analyzer (dataset mode) | `src/kuration/gameplay/action_state_consistency/__init__.py` (`attach_action_state_consistency`) | Dataset-mode only: audit an already-written dataset's shards for action-state consistency and attach the per-clip verdict to pipeline metadata. For a live pipeline use `action-residual`-style scorer access instead (`.score("aintropy/action-state-consistency", ...)`; no operator wrapper yet). | (`baselines` OR `controls`) validated by handler | `anomaly_type: str = "action_state"`, `calibration: object`, `boundary: "exclude"|"error"|"assume-inactive" = "exclude"`, `frames: str`, `actions: str`, `color_space: str`, `verify: bool`, `metadata_key: str = "action_state_consistency"`, `replace: bool = False` | `extra="action-state"`, `install_hint='pip install "kuration-sdk[action-state]"'` | opencv-python (`cv2`, lazy in `diamond_action_decode._prep_gray`) |
+| `aintropy/collision` | Annotation | transform | `src/kuration/gameplay/collision/__init__.py` (`collision_mechanics`) | Compose the CS2 collision-detection transform into a pipeline. | `map_for_source: object`, `map_registry: object`, `dist_path: str` | `disk_cache_dir: str = ".kuration_collision_cache"`, `min_score: number = 2.0`, `proximity: number = 40.0`, `min_approach: number = 250.0`, `max_residual: number = 20.0`, `slide_angle: number = 75.0`, `max_slide_speed: number = 400.0`, `min_release_accel: number = 100.0`, `max_release_vn: number = 100.0` | `extra="collision"`, `install_hint='pip install "kuration-sdk[collision]"'` | trimesh + rtree (lazy in `mesh_cache.load_mesh_cached`) |
 | `aintropy/collision-directional` | Annotation | analyzer | `src/kuration/gameplay/collision/__init__.py` (`attach_directional_collision`) | Run directional collision detection over the tick stream and attach the verdict to pipeline metadata. | `map_registry: object`, `ramp_models_path: str` | `map_for_source: object`, `default_map: str`, `fallback_ramp: [number,number]`, `disk_cache_dir: str`, `proximity: number`, `min_missing_speed: number`, `concentration_ratio: number (0..1)`, `batch_size: int`, `inputs: str[]`, `metadata_key: str = "directional_collision"`, `replace: bool = False` | `extra="collision"`, `install_hint='pip install "kuration-sdk[collision]"'` | trimesh + rtree (lazy) |
 | `aintropy/pixel-shift` | Annotation | transform | `src/kuration/gameplay/pixel_shift/__init__.py` (`pixel_shift`) | Measure pixel shift for every isolated key/mouse press. | (none) | `controls: str[]` (default: all 8 controls W/S/A/D/MOUSE_X_POS/…/MOUSE_Y_NEG), `boundary: "exclude"|"error"|"assume-inactive" = "exclude"` | `extra="pixel-shift"`, `install_hint='pip install "kuration-sdk[pixel-shift]"'` | opencv-python (`cv2`, lazy) |
 | `aintropy/slam-motion-diversity` | Annotation | transform | `src/kuration/gameplay/slam/__init__.py` (`slam_motion_diversity`) | Add SLAM motion features and quantile-bin a selected diversity axis. | (none) | `axis: enum(slam_path_length|slam_displacement|slam_motion_efficiency|slam_mean_step|slam_max_step|slam_turn_degrees|slam_mean_turn_degrees|slam_max_turn_degrees|slam_spatial_extent) = "slam_path_length"`, `bins: int ≥ 2 = 8` | `extra="slam"`, `install_hint='pip install "kuration-sdk[slam]"'` | numpy only for this operator; SLAM extra pulls torch/torchvision/faiss-cpu/av/opencv/etc. needed by sibling reconstruction |
@@ -53,7 +53,7 @@ work underneath the fluent operator, for anyone extending the SDK rather than ju
 
 `top-k`/`weighted`/`uniform-bins`/`target-distribution` ("method (base)" above) and
 `cluster-balanced`/`k-center`/`facility-location`/`dsir`/`rare`/`typical` ("method (module)")
-translate a handful of their fluent-operator kwargs before forwarding to the underlying method
+translate a handful of their operator kwargs before forwarding to the underlying method
 (`clusters`→internal `n_clusters`, `feature_normalize`→internal `normalize`, `dsir_bins`→internal
 `n_bins`, `knn_k`→internal `k`, `rare_sample`→internal `sample`) — confirmed empirically against
 `strategy.py`'s `_resolve`, not merely read off the internal function signatures, since the two
@@ -76,11 +76,11 @@ translation layer for filters or scorers.
 | `timeseries` | `src/kuration/core/adapters/timeseries.py` (`TimeseriesAdapter`) | Turn a CSV/Parquet table (or in-memory list of row dicts) into a canonical Tick stream via a column map. | `schema`, `fields` | `time_column=None`, `entity_column=None`, `globals=None` | none for CSV; parquet needs `[parquet]` | csv (stdlib) or pyarrow (lazy) |
 | `zarr` | `src/kuration/core/adapters/zarr_store.py` (`ZarrAdapter`) | Map arrays in one local or remote Zarr store to a canonical tick stream. | `schema`, `fields` | `globals=None` | runtime hint → `[zarr]` (+ `[cloud]` remote) | `zarr` (lazy); `fsspec` for remote |
 
-## Dataset audits without a fluent operator yet
+## Dataset audits without an operator yet
 
 Everything else stateful is reachable as a named operator (see the Operators table's "Backed
 by" column); `kuration/split-leakage` is the one exception — a `check_dataset`-only analyzer
-with no fluent wrapper, reachable via `.analyze("kuration/split-leakage", ...)`/`.enrich(...)`.
+with no operator wrapper, reachable via `.analyze("kuration/split-leakage", ...)`/`.enrich(...)`.
 
 | Name | Registered in | Purpose | Required params | Optional params | `extra` | Runtime imports |
 |---|---|---|---|---|---|---|
@@ -113,8 +113,8 @@ Registered via a loop in `src/kuration/core/output/containers.py` with `capabili
   their own (often sparser) descriptors** — base methods register with only
   `capabilities={"streaming": True}` and no `description`/`parameters`/`extra`; feature-space
   methods and filters register with `capabilities={"whole_pool": True}` and `extra="methods"`
-  but no `description`/`parameters` either. The Operators table above documents the fluent
-  operator wrapper's descriptor (`src/kuration/core/builtin_operators.py`), which does carry a
+  but no `description`/`parameters` either. The Operators table above documents the operator
+  wrapper's descriptor (`src/kuration/core/builtin_operators.py`), which does carry a
   real description and JSON-Schema parameters — that is now the canonical, discoverable form;
   the underlying kind's sparser descriptor is an implementation detail.
 - **`pytorch-sequences` preset**: preset is `[parquet]`-free (writes NPZ by default), no explicit `extra=` on register call. Overrides to `container="parquet"` still hit pyarrow at runtime.

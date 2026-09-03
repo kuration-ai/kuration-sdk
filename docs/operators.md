@@ -1,6 +1,6 @@
 # Building operators
 
-An operator is a named, validated recipe that expands into ordinary fluent pipeline operations.
+An operator is a named, validated recipe that expands into ordinary pipeline operations.
 It is the right abstraction for a curation decision your team wants to review once and reuse
 across datasets or projects.
 
@@ -14,7 +14,7 @@ operations are recorded in artifact provenance.
 
 ## Programming model
 
-There is one `Pipeline` type. An operator registration adds a fluent method to that type; it does
+There is one `Pipeline` type. An operator registration adds a method to that type; it does
 not create a domain-specific pipeline or require string dispatch:
 
 ```python
@@ -195,7 +195,7 @@ Python callers use `list_components("operator")` and
 schemas, dependency hints, capabilities, package and module identity, stability metadata, and a
 code fingerprint.
 
-Registration also creates the fluent import flow. Import a custom registration module, or let
+Registration also creates the import flow. Import a custom registration module, or let
 Kuration discover an installed `kuration.plugins` entry point, then call the operator by its
 normalized local name:
 
@@ -234,7 +234,7 @@ Importing `kuration.gameplay` registers every maintained gameplay operator on th
 pipeline. Importing the domain remains dependency-light; optional frameworks load only when an
 operator's execution path needs them.
 
-| registered operator | category | fluent method | expands to | execution dependency |
+| registered operator | category | method | expands to | execution dependency |
 |---|---|---|---|---|
 | `aintropy/pixel-shift` | Annotation | `.pixel_shift(controls=None, boundary="exclude")` | the bounded transform of the same name | OpenCV via `[pixel-shift]` |
 | `aintropy/action-state-consistency` | Annotation | `.action_state_consistency(baselines=..., controls=None, ...)` | dataset-mode-only: the analyzer of the same name plus pipeline metadata attachment. For a live pipeline, `.score("aintropy/action-state-consistency", out=..., baselines=..., controls=...)` reads pixel-shift's own `Segment.records` instead | OpenCV via `[action-state]` |
@@ -276,7 +276,7 @@ Importing `kuration.selection` registers three general-purpose curation recipes 
 core pipeline — no gameplay/video assumptions, no heavy runtime dependency except
 `diverse-subset`'s scikit-learn requirement.
 
-| registered operator | category | fluent method | expands to | execution dependency |
+| registered operator | category | method | expands to | execution dependency |
 |---|---|---|---|---|
 | `kuration/balanced-selector` | Selection | `.balanced_selector(feature, of, kind="std", bins=8, count=100)` | `.measure(...).bin(...).sample("equal", ...)` | none (NumPy core) |
 | `kuration/rare-event-coverage` | Selection | `.rare_event_coverage(of, feature="event_rate", count=100, weight=1.0)` | `.measure(..., "rate", ...).sample("weighted", ...)` | none (NumPy core) |
@@ -287,7 +287,7 @@ Each is also available as a standalone, configurable dataclass
 as a `{"type": "BalancedSelector", ...}`-style config-dict entry driven through
 `kuration.selection.run(pipeline, operations)` /
 `kuration.selection.plan(operations)` / `kuration.selection.describe(operations)`. All three
-call styles — fluent method, direct dataclass, config dict — are guaranteed to produce identical
+call styles — operator method, direct dataclass, config dict — are guaranteed to produce identical
 results; extend the config-dict vocabulary with your own `.apply(pipeline) -> pipeline` class via
 `kuration.selection.register_operation_type("MyRecipe", MyRecipeClass)`.
 
@@ -296,7 +296,7 @@ scorer as a named operator too — no separate import needed, these are always a
 wraps the exact same `.curate()`/`.filter()`/`.score()` call the string-keyed form uses (see
 [strategies.md](strategies.md)), so both spellings produce identical results by construction.
 
-| registered operator | category | fluent method | expands to | execution dependency |
+| registered operator | category | method | expands to | execution dependency |
 |---|---|---|---|---|
 | `top-k` | Selection | `.top_k(weights, normalize=None, n=None, hours=None, ...)` | `.curate("top-k", weights=..., ...)` | none (NumPy core) |
 | `weighted` | Selection | `.weighted(weights, normalize=None, n=None, hours=None, ...)` | `.curate("weighted", weights=..., ...)` | none (NumPy core) |

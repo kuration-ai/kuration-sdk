@@ -296,7 +296,7 @@ class Registry:
         if name in self._entries[kind] and not replace:
             raise ValueError(f"{kind} {name!r} already registered in this registry")
         if kind == "operator":
-            # Operators become fluent Pipeline methods; a name whose method spelling is already a
+            # Operators become Pipeline methods; a name whose method spelling is already a
             # real Pipeline attribute would be silently shadowed, so reject it at registration.
             from .pipeline import operator_name_conflict
             conflict = operator_name_conflict(name)
@@ -420,7 +420,7 @@ class Registry:
         self.register("preset", name, component, **metadata)
 
     def register_operator(self, name: str, component: Any, **metadata) -> None:
-        """Register a compositional operator exposed as a fluent ``Pipeline`` method."""
+        """Register a compositional operator exposed as a ``Pipeline`` method."""
         if not callable(component):
             raise ValueError("operator component must be callable")
         self.register("operator", name, component, **metadata)

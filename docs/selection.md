@@ -2,7 +2,7 @@
 
 `kuration.selection` ships three general-purpose dataset-curation recipes — no gameplay or video
 assumptions — plus a small config-driven runner for chaining them (or your own) from a dict, YAML,
-or JSON config instead of hand-written Python. Importing the module registers all three as fluent
+or JSON config instead of hand-written Python. Importing the module registers all three as
 `Pipeline` methods; see [Operators §5](operators.md#5-built-in-operator-catalog) for the catalog
 entry and [the inventory](operator-inventory.md) for exact parameter tables.
 
@@ -12,7 +12,7 @@ user couldn't reproduce by hand.
 
 ## BalancedSelector — cover the whole range of a signal
 
-Registered as the fluent operator `kuration/balanced-selector`.
+Registered as the operator `kuration/balanced-selector`.
 
 Most naturally-occurring signals are middle-heavy: measuring and sampling by natural distribution
 under-represents the tails. `BalancedSelector` measures a per-window feature, quantile-bins it
@@ -27,7 +27,7 @@ Compiles to `.measure(feature, kind, of=of).bin(feature, bins=bins).sample("equa
 
 ## RareEventCoverage — don't let rare events get diluted
 
-Registered as the fluent operator `kuration/rare-event-coverage`.
+Registered as the operator `kuration/rare-event-coverage`.
 
 A rare failure or contact event living inside a much larger stream of healthy telemetry gets
 dropped by ordinary distribution matching. `RareEventCoverage` measures the per-window rate of a
@@ -42,7 +42,7 @@ Compiles to `.measure(feature, "rate", of=of).sample("weighted", n=count, weight
 
 ## DiverseSubset — compress without losing coverage
 
-Registered as the fluent operator `kuration/diverse-subset`.
+Registered as the operator `kuration/diverse-subset`.
 
 Given a set of already-measured features, `DiverseSubset` optionally drops near-duplicates by
 cosine similarity, then samples equally from k-means clusters over the joint feature space.
@@ -58,7 +58,7 @@ followed by `.sample("cluster-balanced", n=count, feature_space=features, cluste
 
 ## Direct dataclass use
 
-Each recipe is also a plain, frozen dataclass with the same fields as its fluent form, an
+Each recipe is also a plain, frozen dataclass with the same fields as its operator-method form, an
 `.apply(pipeline) -> pipeline` method, and a `.describe() -> str` method:
 
 ```python
@@ -76,7 +76,7 @@ touched) and names the invalid field.
 ## Config-driven chaining
 
 `kuration.selection.run`/`plan`/`describe` accept a list of Operation instances, `{"type": ...}`
-config dicts, or a mix of both — all three call styles (fluent method, direct dataclass, config
+config dicts, or a mix of both — all three call styles (operator method, direct dataclass, config
 dict) produce identical results.
 
 ```python
@@ -112,6 +112,6 @@ register_operation_type("OnlyActiveWindows", OnlyActiveWindows)
 run(pipeline, [{"type": "OnlyActiveWindows", "threshold": 0.15}])
 ```
 
-This registry is independent of the SDK's fluent-operator `Registry` — it only affects how
+This registry is independent of the SDK's operator `Registry` — it only affects how
 dict-shaped entries resolve inside `run`/`plan`/`describe`, not what's callable as
 `pipeline.<name>(...)`.

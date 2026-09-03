@@ -48,12 +48,12 @@ def test_pipeline_stats_profiles_uncurated_input_and_candidates():
 
 def test_pipeline_and_curate_result_stats_compare_selection_without_registry_views():
     pipeline = _pipeline(selected=2)
-    fluent = pipeline.stats(examples=1)
+    via_pipeline = pipeline.stats(examples=1)
     result = pipeline.collect()
     direct = result.stats(examples=1)
 
-    assert fluent.stage == direct.stage == "curated"
-    assert fluent.sections["selection"]["selected"] == 2
+    assert via_pipeline.stage == direct.stage == "curated"
+    assert via_pipeline.sections["selection"]["selected"] == 2
     assert direct.sections["selection"]["candidates"] == 6
     assert (
         direct.sections["selection"]["metrics"]["level"]["selected"]["mean"]
@@ -61,7 +61,7 @@ def test_pipeline_and_curate_result_stats_compare_selection_without_registry_vie
     )
     assert (
         direct.sections["selection"]["examples"][0]["priority"]
-        == fluent.sections["selection"]["examples"][0]["priority"]
+        == via_pipeline.sections["selection"]["examples"][0]["priority"]
     )
 
 

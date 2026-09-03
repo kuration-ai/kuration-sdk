@@ -58,7 +58,7 @@ coupling execution to a particular UI.
 - `Arm(name, strategy, transforms=(), registry=None)` — one experiment arm;
   `union_define(arms) -> dict` merges their `define`s.
 
-## Fluent pipeline
+## Pipeline
 
 The higher-level facade over the entry points above — no explicit schema/adapter/strategy
 required; see [pipeline.md](pipeline.md) for the full operator reference.
@@ -66,7 +66,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | name | signature | does |
 |---|---|---|
 | `input` | `(src=None, *, schema=None, adapter=None, sources=None, fields=None, time=None, entity=None, hz=None, kinds=None, sample=200, globals=None, registry=None, **adapter_kw) -> Pipeline` | sniff `src`, infer a schema (unless `schema=`), build the adapter — eagerly, loudly; an explicit registry also resolves named adapters in isolation |
-| `Pipeline` | `(*, schema, adapter, sources, in_memory, ops, registry=None)` | immutable fluent pipeline type; ordinary users construct it through `input(...)`, while extensions receive and return it |
+| `Pipeline` | `(*, schema, adapter, sources, in_memory, ops, registry=None)` | immutable pipeline type; ordinary users construct it through `input(...)`, while extensions receive and return it |
 | `infer_schema` | `(sample, *, name="inferred", time=None, entity=None, hz=None, kinds=None) -> (SchemaSpec, hints)` | classify a sample (rows/dict-of-arrays/ticks) into a schema + adapter `fields=` hints |
 | `Pipeline.window` | `(window, stride=None, unit="steps") -> Pipeline` | set the `Segmenter` |
 | `Pipeline.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None) -> Pipeline` | attach a strictly aligned lazy video media column |
@@ -136,7 +136,7 @@ See [pipeline.md](pipeline.md) for accepted operator forms and validation behavi
 | `SelectionReview` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | candidate-versus-selected metrics, coverage, rationale, and examples |
 | `HoursSelectionReview` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | hours admission/rejection reasons, priorities, budget utilization, and examples |
 | `QualityGateResult` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | complete pass/fail checks for a quality policy |
-| `QualityGateError` | exception carrying `.result` | raised by `check_quality` and failing fluent expectations |
+| `QualityGateError` | exception carrying `.result` | raised by `check_quality` and failing quality expectations |
 | `DatasetComparison` | dict-compatible; `.render()`, `.to_dict()`, and attribute access | structured differences between two curated artifacts |
 | `ValidationResult` | dict-compatible; `.to_dict()` and attribute access | programmatic validation result used by the CLI layer |
 | `ExecutionPlan` | `(source, schema, window, strategy, output, options, stages=(), warnings=(), physical_plan=None)` | immutable mapping returned by `Pipeline.explain`; `.to_dict()` serializes and `.render(detailed=False)` formats text |
@@ -257,7 +257,7 @@ artifact or media source; see [adapters.md](adapters.md).
 | `check_plugins` | `(target=None) -> list[PluginCheckResult]` | transactionally validate all installed plugin entry points, one entry-point name, or an explicit registration module |
 | `PluginCheckResult` | immutable result with `.passed`, `.to_dict()`, and `.render()` | plugin load, descriptor, package, namespace, parameter-schema, and transform-contract diagnostics |
 | `ProgressCallback` | `Callable[[dict], None]` | receives structured `{phase, event, ...}` execution events |
-| `ProgressSpec` | `ProgressCallback \| str \| bool` | user selection accepted by `progress_callback` and fluent pipeline options |
+| `ProgressSpec` | `ProgressCallback \| str \| bool` | user selection accepted by `progress_callback` and pipeline options |
 | `notebook_progress` | `() -> ProgressCallback` | explicit rich notebook renderer |
 | `cli_progress` | `(*, file=None) -> ProgressCallback` | throttled terminal renderer, optionally writing to a selected stream |
 | `progress_callback` | `(progress="auto") -> ProgressCallback \| None` | environment-aware renderer selection; callbacks pass through unchanged |
@@ -432,7 +432,7 @@ with no gameplay/video assumptions, plus a config-driven `run`/`plan`/`describe`
 | name | signature | does |
 |---|---|---|
 | `kuration.selection.operations` | module | `BalancedSelector`, `RareEventCoverage`, `DiverseSubset` dataclasses |
-| `kuration.selection.operators` | module | fluent-operator wrappers (`balanced_selector`, `rare_event_coverage`, `diverse_subset`) and their JSON-Schema parameter descriptors |
+| `kuration.selection.operators` | module | operator wrappers (`balanced_selector`, `rare_event_coverage`, `diverse_subset`) and their JSON-Schema parameter descriptors |
 | `kuration.selection.plan` | module | `Operation` protocol and the `run`/`plan`/`describe`/`register_operation_type` config runner |
 | `kuration.selection.register` | `() -> None` | idempotently register the three selection operators |
 
@@ -447,7 +447,7 @@ workflow.
 | `kuration.gameplay.slam.SLAMReconstructor` | `(depth_model=None, *, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, runtime_factory=None, **runtime_options)` | global reconstruction coordinator; raw execution needs `[slam]` unless a compatible runtime is injected |
 | `SLAMReconstructor.run` / `SLAMReconstructor.__call__` | `(data, *, progress=None) -> SLAMOutput` | notebook-style in-memory reconstruction from `{clip: (T,H,W,3)}` frames |
 | `SLAMReconstructor.reconstruct` | `(source, out_dir=None, *, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False) -> SLAMReconstruction` | reuse/export/run as needed and return a portable manifest artifact |
-| `SLAMReconstruction` | `(manifest: Path)`; `.to_pipeline(join_video=False, tolerance=None, mismatch="error", provider=None)` | typed result that opens the reconstruction as a normal fluent `Pipeline` |
+| `SLAMReconstruction` | `(manifest: Path)`; `.to_pipeline(join_video=False, tolerance=None, mismatch="error", provider=None)` | typed result that opens the reconstruction as a normal `Pipeline` |
 | `SLAMOperator` | `(depth_model, embedding_model=None, embeddings=None, output_pointcloud=True, devices=None, window_size=48, overlap=4, bridge_size=24, process_res=504, conf_thresh=20.0, num_max_points=1000000, top_k=5, similarity_threshold=0.5, seed=0, verbose=False)` | low-level intersection/chunk/depth/stitch engine (`[slam]`) |
 | `CameraPose` / `SLAMOutput` | dataclasses containing camera basis/frustum data and trajectory/pose/point-cloud arrays | stable in-memory reconstruction data contract |
 | `input_slam` | `(manifest, *, join_video=False, tolerance=None, mismatch="error", provider=None) -> Pipeline` | open a precomputed manifest without loading the SLAM runtime |

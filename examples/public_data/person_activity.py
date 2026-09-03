@@ -1,4 +1,4 @@
-"""Curate real wearable-sensor recordings with nothing but the fluent API.
+"""Curate real wearable-sensor recordings with nothing but the pipeline API.
 
 Five people wore four tags (ankles, belt, chest) and repeated the same scenario five times.
 That shape exercises the parts of the SDK a single-entity table cannot:
@@ -10,11 +10,11 @@ That shape exercises the parts of the SDK a single-entity table cannot:
 
 Three ways to run it:
 
-    python examples/public_data/person_activity_fluent.py --download --out activity-out
-    python examples/public_data/person_activity_fluent.py 'data/person_activity/*.csv' --out activity-out
-    python examples/public_data/person_activity_fluent.py --demo --out activity-out
+    python examples/public_data/person_activity.py --download --out activity-out
+    python examples/public_data/person_activity.py 'data/person_activity/*.csv' --out activity-out
+    python examples/public_data/person_activity.py --demo --out activity-out
 
-Provenance, licensing, and the equivalent CLI session: see person_activity_fluent.md.
+Provenance, licensing, and the equivalent CLI session: see person_activity.md.
 """
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ def download(dest_dir: Path) -> Path:
         raise SystemExit(
             f"could not download {SOURCE_URL}: {error}\n"
             f"Download it manually, unzip ConfLongDemo_JSI.txt, and see "
-            f"person_activity_fluent.md for the two-line split step.") from error
+            f"person_activity.md for the two-line split step.") from error
 
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         name = next(n for n in archive.namelist() if n.endswith(".txt"))

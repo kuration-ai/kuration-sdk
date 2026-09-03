@@ -10,10 +10,10 @@ The changes on this branch target `0.1.0rc5`. The candidate:
 
 - separates the dataset-agnostic implementation into `kuration.core` and ships pixel shift,
   action-state consistency, and SLAM together under the maintained `kuration.gameplay` domain;
-- adds direct fluent operator methods, lifecycle statistics and evidence, synchronized video
+- adds direct operator methods, lifecycle statistics and evidence, synchronized video
   review, smart dataset import, artifact export, checkpoint maintenance, and the unified `kur`
   command;
-- makes analyzers first-class fluent terminals, including bounded tick-stream execution and
+- makes analyzers first-class pipeline terminals, including bounded tick-stream execution and
   artifact-backed checks;
 - integrates native SLAM reconstruction, portable exports, trajectory quality/diversity
   curation, point-cloud reduction, preflight, and `kur-slam`; and

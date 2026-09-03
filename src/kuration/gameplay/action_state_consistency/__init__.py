@@ -10,7 +10,7 @@ register() exposes two independent surfaces:
 
 - The ``scorer`` kind (``ActionStateAnomalyScorer``), reachable through the ordinary
   ``.score("aintropy/action-state-consistency", out=..., baselines=..., controls=...)``
-  fluent method like any other registered scorer. It reads each window's own
+  method like any other registered scorer. It reads each window's own
   ``Segment.records["aintropy/pixel-shift"]`` (populated by the pixel-shift transform) rather
   than re-deriving isolated presses from raw frames, so pixel-shift and action-state
   consistency actually share computation instead of redundantly duplicating it.

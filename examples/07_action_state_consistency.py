@@ -1,4 +1,4 @@
-"""One fluent pipeline: detect action-state inconsistency and keep the verdict attached.
+"""One pipeline: detect action-state inconsistency and keep the verdict attached.
 
 `kuration.gameplay` registers `aintropy/action-state-consistency` as both the stateful analyzer
 and a direct pipeline operator. `.action_state_consistency(...)` drives the analyzer once and

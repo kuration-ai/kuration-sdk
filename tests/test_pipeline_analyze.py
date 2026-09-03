@@ -422,12 +422,12 @@ def _artifact_pipeline(dataset):
 
 def test_analyze_on_an_artifact_matches_run_dataset_analyzer(tmp_path):
     dataset = _written_dataset(tmp_path)
-    fluent = _artifact_pipeline(dataset).analyze("test/dataset-only")
+    via_pipeline = _artifact_pipeline(dataset).analyze("test/dataset-only")
     reference = run_dataset_analyzer("test/dataset-only", str(dataset))
 
-    assert fluent == reference
-    assert fluent["passed"] is True
-    assert fluent["shards_checked"] == 3
+    assert via_pipeline == reference
+    assert via_pipeline["passed"] is True
+    assert via_pipeline["shards_checked"] == 3
 
 
 def test_artifact_pipeline_names_its_dataset(tmp_path):
@@ -490,7 +490,7 @@ def test_stats_forwards_every_keyword_the_shared_entry_point_accepts():
 
 
 # ---------------------------------------------------------------------------------------
-# `.check()` — the fluent quality-policy path
+# `.check()` — the pipeline quality-policy path
 # ---------------------------------------------------------------------------------------
 def test_check_gates_input_evidence_without_raising():
     passing = _pipeline().expect(max_missing={"value": 0.0}).check()
@@ -512,11 +512,11 @@ def test_check_accepts_a_policy_file_shape_and_keyword_overrides():
 def test_check_gates_a_written_artifact_exactly_like_the_cli(tmp_path):
     dataset = _written_dataset(tmp_path)
     policy = {"min_shards": 1, "require_modalities": ["value"]}
-    fluent = _artifact_pipeline(dataset).check(policy)
+    via_pipeline = _artifact_pipeline(dataset).check(policy)
     reference = evaluate_quality(inspect_dataset(str(dataset)), policy)
 
-    assert fluent["passed"] is True
-    assert fluent.to_dict() == reference.to_dict()
+    assert via_pipeline["passed"] is True
+    assert via_pipeline.to_dict() == reference.to_dict()
 
 
 def test_check_is_loud_about_missing_or_unknown_expectations():
@@ -708,7 +708,7 @@ def test_action_state_analyzer_runs_on_a_written_artifact(tmp_path):
 
     options = {"frames": "video", "actions": "input", "controls": ["W"]}
     parameters = {"anomaly_type": "action_state", "baselines": BASELINES}
-    fluent = _artifact_pipeline(dataset).analyze(asc.ANALYZER_NAME, parameters, **options)
+    via_pipeline = _artifact_pipeline(dataset).analyze(asc.ANALYZER_NAME, parameters, **options)
     reference = run_dataset_analyzer(asc.ANALYZER_NAME, str(dataset),
                                     parameters=parameters, options=options)
     enriched = _artifact_pipeline(dataset).action_state_consistency(
@@ -718,12 +718,12 @@ def test_action_state_analyzer_runs_on_a_written_artifact(tmp_path):
         controls=["W"],
     )
 
-    assert fluent == reference
+    assert via_pipeline == reference
     assert enriched.metadata["gameplay"]["action_state_consistency"]["result"] == reference
-    assert fluent["passed"] is True
+    assert via_pipeline["passed"] is True
     # The artifact path keeps its deliberately loud frame-space caveat.
-    assert fluent["frame_space"] == "shard-concatenation"
-    assert fluent["cross_shard_dedup"] is False
+    assert via_pipeline["frame_space"] == "shard-concatenation"
+    assert via_pipeline["cross_shard_dedup"] is False
 
 
 def test_action_state_analyzer_is_dataset_mode_only():

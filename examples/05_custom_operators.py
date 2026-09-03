@@ -1,4 +1,4 @@
-"""Package your own curation step as a reusable fluent operator.
+"""Package your own curation step as a reusable operator.
 
 A registered operator becomes an ordinary method on every `Pipeline`, so a recipe your team
 repeats stops being copied around. Two ways to build one:

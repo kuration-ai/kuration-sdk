@@ -102,7 +102,7 @@ def register() -> None:
         register_operator(
             COMPONENT_NAME,
             collision_mechanics,
-            description="Compose the CS2 collision-detection transform into a fluent pipeline",
+            description="Compose the CS2 collision-detection transform into a pipeline",
             parameters=COLLISION_PARAMETERS,
             **common,
         )

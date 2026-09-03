@@ -1,19 +1,20 @@
-# Strategies & selection
+# What your pipeline compiles to, and what gets replayed from disk
 
-A **strategy** is a small JSON document describing *how* to turn scored segments into a
-curated set: inline metric definitions, optional bin axes, and a selection method with its
-knobs. It is pure data, so the resolved strategy lands in `config.json` as part of an auditable,
-self-describing run contract. Replay also requires the same immutable/content-addressed sources
-and compatible component implementations.
+You don't write this by hand. Every pipeline — `input(...).window(...).top_k(...)`, however you
+built it — compiles to a **strategy**: a small JSON document describing *how* to turn scored
+segments into a curated set (inline metric definitions, optional bin axes, a selection method and
+its knobs). That compiled strategy is what actually lands in `config.json` alongside the written
+shards, and it's what a later `kur-migrate`/replay/audit reads back — the resolved strategy *is*
+the run's self-describing, auditable contract, not a summary of it. Replay also requires the same
+immutable/content-addressed sources and compatible component implementations.
 
-This page documents the declarative JSON contract — `"selection": {"method": ...}`,
-`"filters": [...]`, `"scorers": [...]` are the real keys written to and read back from
-`config.json`, so they're named that way here regardless of how you reach the same capability in
-Python. Every method/filter/scorer below is *also* directly callable as a named fluent operator
-(`pipeline.top_k(...)`, `pipeline.anomaly(...)`, `pipeline.action_residual(...)`) — see
-[operators.md](operators.md) and [operator-inventory.md](operator-inventory.md) for that surface.
-Both forms compile to the exact same strategy underneath, so pick whichever fits the caller:
-Python code reaches for the named operator, a config file or CLI flag reaches for the JSON key.
+This page exists for three reasons: to explain what's actually inside `config.json` when you
+need to audit or debug a run, to document the JSON keys (`"selection": {"method": ...}`,
+`"filters": [...]`, `"scorers": [...]`) a job spec or the `kur-*` CLI tools read directly, and to
+name the underlying method/filter/scorer/target-distribution semantics your pipeline's operators
+(`.top_k(...)`, `.anomaly(...)`, `.action_residual(...)` — see [operators.md](operators.md) and
+[operator-inventory.md](operator-inventory.md)) compile down to. You don't need this page to use
+the pipeline; every operator produces one of these strategies for you.
 
 ```python
 from kuration import load_strategy
@@ -93,7 +94,7 @@ when the budget has room to spare:
 // ranks by speed, but a segment with hp > 50 is never selected, on either path
 ```
 
-The fluent pipeline's `.filter(metric, op, value)` (see [pipeline.md](pipeline.md)) compiles
+The pipeline's `.filter(metric, op, value)` (see [pipeline.md](pipeline.md)) compiles
 straight to a `selection.predicates` entry, under any `.sample(method, ...)`.
 
 Scores combine each metric's values, normalized (`quantile` rank by default — robust to
@@ -194,7 +195,11 @@ escape hatch (and overrides the declarative tags).
 - **group cap** — drop excess from any `group` exceeding its fair share × `max_group_overshoot`,
   cutting its most over-represented bins first. (`group`/`tags` are set via `group_of` / `tags_of`.)
 
-## Two ways to run it
+## The two execution paths a strategy runs through
+
+Every strategy — however it was produced, an operator chain on a pipeline or a hand-written
+JSON spec — runs through exactly one of these two paths. `pipeline.collect()`/`.output()` call
+straight into them; there's no separate execution engine underneath the pipeline.
 
 **Count-based** — `curate(...)` returns a `CurateResult(selected, all_segments, splits, ...)`:
 
@@ -209,6 +214,11 @@ res = curate(schema=schema, adapter=adapter, sources=sources, strategy=strategy,
 **Hour-budget-based** — `write_dataset(...)` fills a train/test hour budget and writes shards
 (see [output.md](output.md)). This is the apples-to-apples way to compare strategies: the
 emitted N hours is the strategy's *best* N hours, not a random draw.
+
+Calling either directly (instead of through a pipeline) is the "classic" API: useful when you
+already have a `Strategy` object — loaded from a saved `config.json`, built by a job spec, or
+assembled by tooling outside this process — and want to run it without reconstructing the
+pipeline that produced it.
 
 ## Determinism
 

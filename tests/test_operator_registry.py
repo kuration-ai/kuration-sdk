@@ -227,7 +227,7 @@ def _suggestions(message: str) -> list[str]:
 
 def test_every_ambiguity_suggestion_is_a_spelling_that_resolves():
     """The message used to suggest the ambiguous spelling itself, leaving one operator with no
-    working fluent call. Every suggestion must resolve to the operator it names."""
+    working call. Every suggestion must resolve to the operator it names."""
     registry = Registry(default_registry)
     # 'a.b/c' shares its local shorthand ('c') with both others, its friendly qualified alias
     # ('a_b__c') with 'a-b/c', and its canonical alias ('a_db__c') with 'a_db/c' — so it has no

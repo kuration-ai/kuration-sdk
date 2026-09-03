@@ -21,7 +21,7 @@ src/kuration/
 │       └── _vendor/        # private SLAM runtime dependencies
 ├── selection/              # general-purpose curation recipes
 │   ├── operations.py       # BalancedSelector, RareEventCoverage, DiverseSubset
-│   ├── operators.py        # their fluent-operator wrappers
+│   ├── operators.py        # their operator wrappers
 │   └── plan.py             # config-driven run/plan/describe runner
 └── sample_data/            # bundled sample datasets for docs and quickstarts
 ```
@@ -53,7 +53,7 @@ from kuration.core import Pipeline, SchemaSpec
 ```
 
 Gameplay is an operator domain over the same `Pipeline`. Importing it registers its maintained
-operators; manifest helpers and every immutable fluent operation return the core pipeline type:
+operators; manifest helpers and every immutable operation return the core pipeline type:
 
 ```python
 import kuration.gameplay as gameplay
@@ -79,7 +79,7 @@ video-to-reconstruction workflow, then hands its manifest to `Pipeline` for boun
 
 The methods call the same registered descriptors used by custom modules, plugins, JSON jobs,
 discovery, and provenance. The generic core therefore contains no gameplay component names.
-Every registered operator gets the same direct fluent spelling, including operators imported
+Every registered operator gets the same direct method spelling, including operators imported
 after the pipeline was created:
 
 ```python

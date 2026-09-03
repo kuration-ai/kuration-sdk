@@ -5,7 +5,7 @@ binning, declarative strategies (base + feature-space + filter + pre-pass filter
 learned-scorer seam), the output layer (declared modalities, npz/json/hdf5/parquet shards,
 hours-budget fill, sub-track spans), tag-coverage, experiment + report, parallel /
 skip-and-log / resume / out-of-core execution, path-agnostic local + cloud I/O, schema
-inference, and a fluent `input(...).operator(...)` pipeline API.
+inference, and an `input(...).operator(...)` pipeline API.
 This package contains no gameplay-specific implementation. See README.md and docs/.
 """
 from importlib.metadata import PackageNotFoundError, version
@@ -57,7 +57,7 @@ from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities, register_filter
 from .pipeline import Pipeline, input
 from . import builtin_operators  # noqa: F401 -- registers every built-in Method/Filter/Scorer
-                                 # as a named fluent operator; see builtin_operators.py
+                                 # as a named Pipeline operator; see builtin_operators.py
 from .plugins import load_plugins, loaded_plugin_modules, plugin_failures, plugin_provenance
 from .plugin_validation import PluginCheckResult, check_plugins
 from .progress import (ProgressCallback, ProgressSpec, cli_progress, notebook_progress,

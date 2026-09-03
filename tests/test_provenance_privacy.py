@@ -86,7 +86,7 @@ def test_local_content_descriptor_survives_a_parent_directory_move(tmp_path):
     )
 
 
-def test_preview_and_fluent_plans_redact_host_paths(tmp_path):
+def test_preview_and_pipeline_plans_redact_host_paths(tmp_path):
     source = str(tmp_path / "private-customer" / "session.jsonl")
     schema = SchemaSpec.from_dict({
         "name": "privacy",

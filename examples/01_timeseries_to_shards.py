@@ -5,7 +5,7 @@ files, infers the schema from a sample, and every operator validates itself agai
 
     python examples/01_timeseries_to_shards.py
 
-For the same path against a real published dataset, see public_data/ett_fluent.py.
+For the same path against a real published dataset, see public_data/ett.py.
 """
 import csv
 import math

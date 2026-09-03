@@ -1,11 +1,11 @@
-"""Fluent-operator wrappers around every built-in selection Method, pre-selection Filter,
+"""Operator wrappers around every built-in selection Method, pre-selection Filter,
 and whole-pool Scorer.
 
 Each function has the ordinary compositional-operator shape (``pipeline, **params ->
 pipeline``): it validates nothing itself and adds no new execution machinery, it simply calls
 the existing ``.curate()``/``.filter()``/``.score()`` methods that already implement the
 underlying Method/Filter/Scorer contract. Registering them under the real ``"operator"`` kind
-means every one of these becomes a named fluent method (``pipeline.top_k(...)``,
+means every one of these becomes a named method (``pipeline.top_k(...)``,
 ``pipeline.dedup(...)``, ``pipeline.action_residual(...)``) exactly like
 ``kuration.selection``'s recipes or the gameplay domain's operators -- there is no longer a
 separate "Method"/"Filter"/"Scorer" vocabulary a user needs to learn to find these by name.
@@ -23,7 +23,7 @@ that isn't duplicated here since `.curate()` already raises a clear, specific er
 
 Filters (``anomaly``, ``dedup``) and the ``action_residual`` scorer keep their original
 parameter names verbatim (``contamination``, ``n_clusters``, ``obs``/``action``/``k``) --
-Method's fluent surface is the one with a translated method_params vocabulary
+Method's surface is the one with a translated method_params vocabulary
 (``clusters``/``feature_normalize``/``dsir_bins``/``knn_k``/``rare_sample`` instead of
 ``n_clusters``/``normalize``/``n_bins``/``k``/``sample``), confirmed empirically against
 `strategy.py`'s `_resolve`/`Pipeline.sample`, and preserved here rather than "fixed" -- these
@@ -286,7 +286,7 @@ def action_residual(pipeline, *, obs, action, k=None, out="action_residual"):
 
 
 #: name -> (function, parameters schema, one-line description). Registered under the real
-#: "operator" kind by :func:`register`, so every entry becomes a named fluent Pipeline method.
+#: "operator" kind by :func:`register`, so every entry becomes a named Pipeline method.
 _BUILTIN_OPERATORS: dict[str, tuple[Callable[..., Any], dict, str]] = {
     "top-k": (top_k, WEIGHTS_PARAMETERS,
              "Rank by a weighted score and take the highest priorities"),

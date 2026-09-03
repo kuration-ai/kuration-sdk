@@ -173,7 +173,7 @@ def _pipeline_attribute_names() -> frozenset[str]:
     ``__getattr__`` runs only after normal attribute lookup fails, so an operator whose method
     spelling equals a real attribute would be silently shadowed by the built-in. The reserved set
     is derived from the class itself — class attributes plus every attribute the class's own
-    methods assign — so it can never drift from the real fluent surface. It is deliberately a
+    methods assign — so it can never drift from the real method surface. It is deliberately a
     superset: an attribute a method assigns on a collaborator object is reserved too, which only
     ever makes the guard stricter.
     """
@@ -191,7 +191,7 @@ def _pipeline_attribute_names() -> frozenset[str]:
 
 
 def operator_name_conflict(name: str) -> Optional[str]:
-    """Return a loud message when a registered operator name could never be reached fluently.
+    """Return a loud message when a registered operator name could never be reached as a method.
 
     Registration-time guard shared by ``Registry.register`` and plugin validation: any method
     spelling of the operator that collides with a real ``Pipeline`` attribute resolves to the
@@ -505,7 +505,7 @@ def _input_ticks(data: dict, op, *, schema, time, entity, hz, kinds, sample,
 # Pipeline
 # ======================================================================================
 class Pipeline:
-    """Immutable fluent curation pipeline. Build via `kuration.core.pipeline.input(...)`;
+    """Immutable curation pipeline. Build via `kuration.core.pipeline.input(...)`;
     every operator returns a new Pipeline."""
 
     def __init__(self, *, schema: SchemaSpec, adapter, sources: list, in_memory: bool,
@@ -564,7 +564,7 @@ class Pipeline:
         return copy.deepcopy(self._metadata)
 
     def _operator_method_map(self, *, discover_plugins: bool) -> dict[str, list[str]]:
-        """Map fluent Python spellings to the registered operator names they identify.
+        """Map Python method spellings to the registered operator names they identify.
 
         Claims are resolved by strength (see ``_alias_claim_rank``), so a spelling is reported as
         ambiguous only when several operators claim it equally strongly.
@@ -585,7 +585,7 @@ class Pipeline:
         return {alias: by_rank[min(by_rank)] for alias, by_rank in claims.items()}
 
     def __getattr__(self, name: str) -> Callable[..., "Pipeline"]:
-        """Resolve registered operators as immutable fluent methods.
+        """Resolve registered operators as immutable methods.
 
         The local component name is the normal spelling (``acme/signal-diversity`` becomes
         ``pipeline.signal_diversity(...)``). Namespace-qualified and collision-proof aliases
@@ -645,7 +645,7 @@ class Pipeline:
         p = object.__new__(type(self))
         p.__dict__.update(self.__dict__)
         p.sources = list(self.sources)
-        # Keep clone identities isolated as part of the fluent immutability contract.
+        # Keep clone identities isolated as part of the immutability contract.
         p.schema = copy.deepcopy(self.schema)
         p.adapter = _clone_adapter(self.adapter)
         for configured in _adapter_chain(p.adapter):
@@ -776,7 +776,7 @@ class Pipeline:
 
         The operator receives a clone and must return a derived ``Pipeline`` containing at
         least one additional ordinary operator. Its descriptor validates parameters before
-        expansion. Prefer the direct fluent method generated at registration time, such as
+        expansion. Prefer the direct method generated at registration time, such as
         ``pipeline.signal_diversity(...)`` for ``acme/signal-diversity``.
         """
         if not isinstance(name, str) or not name:
@@ -1274,7 +1274,7 @@ class Pipeline:
                hours: Optional[float] = None, test_hours: Optional[float] = None,
                weights: Optional[dict] = None, target=None, normalize: Optional[str] = None,
                group_cap=None, **method_params) -> "Pipeline":
-        """Configure selection; preferred fluent alias for :meth:`curate`."""
+        """Configure selection; preferred alias for :meth:`curate`."""
         p = self.curate(method, n=n, hours=hours, test_hours=test_hours, weights=weights,
                         target=target, normalize=normalize, group_cap=group_cap,
                         **method_params)
@@ -1782,7 +1782,7 @@ class Pipeline:
     def check(self, policy: Optional[dict] = None, *, verify: bool = False, **expectations):
         """Evaluate quality gates over the cheapest evidence this pipeline can produce.
 
-        The fluent counterpart of ``kur-check --policy``: an artifact-backed pipeline is
+        The programmatic counterpart of ``kur-check --policy``: an artifact-backed pipeline is
         inspected and gated exactly as the CLI gates it, and any other pipeline is gated on a
         bounded input preview. Expectations come from ``.expect(...)``, a ``policy`` mapping
         (the ``{"expectations": {...}}`` policy-file shape is accepted), and keywords, in that

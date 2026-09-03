@@ -1,4 +1,4 @@
-"""Curate real electricity-transformer load curves with nothing but the fluent API.
+"""Curate real electricity-transformer load curves with nothing but the pipeline API.
 
 One real CSV, one chain of operators, no schema, no adapter, no strategy dict:
 
@@ -9,11 +9,11 @@ One real CSV, one chain of operators, no schema, no adapter, no strategy dict:
 
 Three ways to run it:
 
-    python examples/public_data/ett_fluent.py --download --out ett-out   # fetch the real data
-    python examples/public_data/ett_fluent.py data/ETTh1.csv --out ett-out
-    python examples/public_data/ett_fluent.py --demo --out ett-out       # offline, no network
+    python examples/public_data/ett.py --download --out ett-out   # fetch the real data
+    python examples/public_data/ett.py data/ETTh1.csv --out ett-out
+    python examples/public_data/ett.py --demo --out ett-out       # offline, no network
 
-Provenance, licensing, and the equivalent CLI session: see ett_fluent.md.
+Provenance, licensing, and the equivalent CLI session: see ett.md.
 """
 from __future__ import annotations
 

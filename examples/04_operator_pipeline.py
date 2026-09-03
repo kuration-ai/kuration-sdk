@@ -1,4 +1,4 @@
-"""The fluent path in depth: one chain, both budgets, and the provenance it leaves behind.
+"""The pipeline path in depth: one chain, both budgets, and the provenance it leaves behind.
 
 This is the chain documented in docs/pipeline.md, run end to end:
 

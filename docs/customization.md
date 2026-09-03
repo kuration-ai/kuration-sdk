@@ -177,7 +177,7 @@ declarations without retaining its registry mutations. Python callers use `check
 
 ## Compositional operators
 
-Use an operator when you want to name and reuse a sequence of ordinary fluent operations. The
+Use an operator when you want to name and reuse a sequence of ordinary operations. The
 handler must return a pipeline derived from the one it receives and add at least one ordinary
 operator. It may compose `.join_video()` and `.transform()`, but cannot invent an unvalidated
 stage or terminal. The named call and its expansion are both retained in provenance.

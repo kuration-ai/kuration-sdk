@@ -25,7 +25,7 @@ Status labels:
 - Python 3.11–3.14 and declared-minimum dependency testing, real optional integration tests,
   coverage artifacts, checksummed resume repair, and structured worker diagnostics.
 - Release notes, a beta compatibility/deprecation policy, and a security reporting policy.
-- Preferred fluent names `.bin()` and `.sample()` with compatibility aliases retained.
+- Preferred pipeline names `.bin()` and `.sample()` with compatibility aliases retained.
 - Transactional plugin discovery, installed-plugin contract checking, isolated repository-plugin
   validation, and independent exact-CI-artifact plugin releases.
 - Typed transform boundary context, deterministic overlapping-window ownership, and execution
@@ -43,7 +43,7 @@ These items gate public publishing. Pipeline execution optimization does not gat
 - Conventional `src/kuration/` repository layout; the import package remains `kuration`.
 - Output-aware dry runs with optional bounded source, candidate-window, and shard estimates.
 - Post-run Python/CLI artifact inspection with full shard integrity verification.
-- Actionable CLI remedies, execution-path parity coverage, and a fluent-first documentation path.
+- Actionable CLI remedies, execution-path parity coverage, and a pipeline-first documentation path.
 - Bounded input previews, candidate-vs-selected review, artifact diffing, and dependency-free
   static HTML reports.
 - Hours-budget admission review and reusable Python/CLI quality gates.

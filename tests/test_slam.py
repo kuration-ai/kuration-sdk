@@ -140,7 +140,7 @@ def test_build_pointcloud_scene_covers_exported_geometry(monkeypatch):
             build_pointcloud_scene(_output(), max_display_points=invalid)
 
 
-def test_top_level_slam_reconstruct_returns_the_normal_fluent_pipeline(tmp_path):
+def test_top_level_slam_reconstruct_returns_the_normal_pipeline(tmp_path):
     manifest = export_slam_output(_output(), tmp_path / "export", sample_hz=2.0)
 
     pipeline = gameplay.slam_reconstruct(manifest)

@@ -55,7 +55,7 @@ distribution):
 
 - `aintropy/collision-asg`, `aintropy/collision-teapearce` -- `adapter`s.
 - `aintropy/collision` -- a `transform` (the per-window compute) and an `operator` (its
-  fluent-pipeline wrapper, reachable as `.collision(...)`), mirroring
+  pipeline wrapper, reachable as `.collision(...)`), mirroring
   [pixel shift](pixel-shift.md).
 - `aintropy/collision-directional` -- an `analyzer` (tick-stream capable) and an
   `operator` (`.collision_directional(...)`, the pipeline-preserving companion that runs
@@ -89,7 +89,7 @@ pipeline = (
 )
 ```
 
-`.collision(...)` is the registered operator's fluent alias;
+`.collision(...)` is the registered operator's method alias;
 `.apply("aintropy/collision", ...)` is the equivalent explicit form.
 
 ### Output
@@ -158,7 +158,7 @@ logic.
 It is an `Analyzer`, not a `BatchTransform`: the walk carries tick-to-tick state a fixed
 window would corrupt at every boundary. Two ways to drive it:
 
-### Fluent (pipeline-first)
+### Pipeline-first
 
 The analyzer implements the tick-stream contract, so the companion operator runs it in
 one bounded pass over the pipeline's segmented tick stream -- windows arrive per source,

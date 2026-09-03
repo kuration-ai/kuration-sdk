@@ -157,7 +157,7 @@ def load_directional_arrays(source_uri: str) -> dict:
     `hp`, `flags`, `weapon`.
 
     This is the expert direct path for driving the analyzer (or a ramp fit) by hand with
-    whole, correctly-ordered per-source arrays; the fluent path is
+    whole, correctly-ordered per-source arrays; the pipeline path is
     ``pipeline.enrich("aintropy/collision-directional", ...)`` (or the registered
     ``.collision_directional(...)`` operator), which streams the same fields through the
     analyzer's ``add_batch`` hook. Both are built on the exact same
