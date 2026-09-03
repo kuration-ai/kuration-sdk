@@ -3,7 +3,7 @@
 Task-oriented recipes spanning what the SDK can do. Each is a minimal, runnable snippet; see the
 per-layer references ([schema](schema.md), [dsl](dsl.md), [adapters](adapters.md),
 [strategies](strategies.md), [output](output.md)) for full options, [pipeline.md](pipeline.md)
-for the fluent `input(...).operator(...)` API, [api.md](api.md) for every public signature,
+for the `input(...).operator(...)` API, [api.md](api.md) for every public signature,
 [jobs.md](jobs.md) for the CLI job-spec keys, and [overview](overview.md) for the explicit
 end-to-end example.
 
@@ -11,7 +11,7 @@ Choose the shortest entry point:
 
 | need | use |
 |---|---|
-| First dataset or ordinary files/rows | [Quick start](quickstart.md), then the [fluent pipeline guide](pipeline.md#worked-example) |
+| First dataset or ordinary files/rows | [Quick start](quickstart.md), then the [pipeline guide](pipeline.md#worked-example) |
 | Exact schema, adapter, or strategy control | Recipes 1–15 below |
 | Reproducible configuration without Python code | [JSON jobs](jobs.md) |
 | Validate a written dataset | [`inspect_dataset` / `kur-inspect`](output.md#reading-a-dataset-back) |
@@ -227,7 +227,7 @@ or from Python with `load_plugins(...)`. Installed packages may expose a `kurati
 entry point. Set `"include_plugin_entry_points": false` when a reproducible job should resolve
 only built-ins and its explicit plugin modules—even if ambient plugins were discovered earlier
 in the process. For programmatic progress, pass `progress=events.append` (or any callback) to
-`curate`, `run_experiment`, or `write_dataset`; fluent pipelines use
+`curate`, `run_experiment`, or `write_dataset`; pipelines use
 `.options(progress=callback)`. For end-user display, use
 `.options(progress="auto")`: it updates compact rows in JupyterLab and renders throttled terminal
 output in scripts. `"notebook"`, `"terminal"`, and `"off"` make the selection explicit. Run CLIs
@@ -301,7 +301,7 @@ class VisualQuality:
         self.model = load_model(device)
     def transform_batch(self, batch, ctx):
         return {"visual_quality": self.model(batch["media:frame"])}
-# fluent use: pipeline.transform("visual-quality", batch_size=16, device="cuda")
+# pipeline use: pipeline.transform("visual-quality", batch_size=16, device="cuda")
 ```
 
 For raw synchronized video, use `input("clips/*.mp4")` or attach it to ordinary telemetry with
@@ -335,7 +335,7 @@ kur-report     job.json --out rep.json   # profile metric distributions (no sele
 kur-import     SOURCE --out out/raw       # detected-adapter conversion, with no selection
 ```
 
-## 16 · Curate a CSV/JSON in one chain (fluent pipeline, no explicit schema)
+## 16 · Curate a CSV/JSON in one chain (pipeline, no explicit schema)
 
 For the common case, skip `SchemaSpec`/`TimeseriesAdapter`/`load_strategy` entirely — `input()`
 infers the schema and every operator validates against it. Full reference: [pipeline.md](pipeline.md).
@@ -501,7 +501,7 @@ checked.review()   # evaluates count-selection gates; raises QualityGateError on
 | `require_verified=true` | artifact | every shard was decoded successfully |
 | `min_shards=n` | artifact | emitted shard floor |
 
-A combined fluent policy is stage-aware: `preview()` evaluates input checks and `review()`
+A combined policy is stage-aware: `preview()` evaluates input checks and `review()`
 evaluates selection or hours checks. A typo or invalid threshold is always an immediate error.
 
 Written artifacts use a JSON policy and a CI-friendly exit code (`0` pass, `2` gate failure):
@@ -543,7 +543,7 @@ dataset. The ones you're most likely to meet, and what they mean:
 | `binning axis '...': N NaN feature value(s)` | a registered metric or scorer produced NaN on some window; NaN would poison the quantile edges | make the metric total (return 0.0 for degenerate windows), or drop those segments with a pre-pass filter |
 | `dataset ... lacks modalities [...]` | mixing curated datasets with different modalities under a schema derived from the first | pass an explicit `schema=` covering only the shared modalities |
 | `needs fsspec` / `needs h5py` / `needs pyarrow` / `needs zarr` | an optional capability was reached without its extra installed | install the named extra, e.g. `pip install "kuration-sdk[s3]"` |
-| `write_dataset needs sample_hz ... for the hours budget` | fluent-pipeline `.sample(hours=...).output(...)` on a source whose schema has no `sample_hz` (inference found no numeric time column, or duplicate/no-gap timestamps) | pass `hz=` to `input()`, or `.options(sample_hz=...)` before `.output(...)` |
+| `write_dataset needs sample_hz ... for the hours budget` | pipeline `.sample(hours=...).output(...)` on a source whose schema has no `sample_hz` (inference found no numeric time column, or duplicate/no-gap timestamps) | pass `hz=` to `input()`, or `.options(sample_hz=...)` before `.output(...)` |
 | `workers>1 is not supported for in-memory sources` | `.options(workers=2)` on a `Pipeline` built from in-memory rows/ticks/DataFrame — parallel workers rebuild adapters by name per process and can't see in-process data | keep `workers=1` for in-memory input, or write the data to files first and `input()` the paths |
 
 Two habits keep runs debuggable: **`kur-validate job.json` before every CLI run** (all of the

@@ -145,7 +145,7 @@ def input_slam(
     mismatch: str = "error",
     provider=None,
 ):
-    """Open an exported SLAM manifest as a fluent Kuration pipeline."""
+    """Open an exported SLAM manifest as a Kuration pipeline."""
     # Registration is idempotent, which also keeps this direct API safe if an isolated test
     # registry or unusual import order invokes the module explicitly.
     from . import register

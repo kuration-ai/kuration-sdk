@@ -1,7 +1,7 @@
 """Built-in dataset-selection operator domain.
 
 Importing this module registers ``balanced_selector``, ``rare_event_coverage``, and
-``diverse_subset`` as fluent methods on the ordinary ``kuration.Pipeline``. Each is
+``diverse_subset`` as methods on the ordinary ``kuration.Pipeline``. Each is
 also available as a standalone, configurable dataclass (``BalancedSelector``,
 ``RareEventCoverage``, ``DiverseSubset``) for direct use or config-driven pipelines
 via :mod:`kuration.selection.plan`.

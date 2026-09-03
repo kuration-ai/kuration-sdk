@@ -84,7 +84,7 @@ result = pipeline.collect()
 
 Registered under `aintropy/pixel-shift` for both the batch transform (`kur-describe
 transform aintropy/pixel-shift`) and the compositional operator (`kur-describe operator
-aintropy/pixel-shift`). The fluent method delegates to that registered operator, so serialized
+aintropy/pixel-shift`). The method delegates to that registered operator, so serialized
 jobs and provenance retain the stable component name. The lower-level Python API lives at
 `kuration.gameplay.pixel_shift`.
 

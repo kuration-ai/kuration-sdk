@@ -396,5 +396,5 @@ class CollisionMechanics:
 
 
 def collision_mechanics(pipeline, **params):
-    """Compose the registered transform into a fluent pipeline call."""
+    """Compose the registered transform into a pipeline call."""
     return pipeline.transform(COMPONENT_NAME, **params)

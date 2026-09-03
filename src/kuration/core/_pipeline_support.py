@@ -1,6 +1,6 @@
-"""Input adapters and validation helpers used by the fluent pipeline facade.
+"""Input adapters and validation helpers used by the pipeline facade.
 
-Kept separate so ``pipeline.py`` can focus on fluent plan state and terminal execution. These
+Kept separate so ``pipeline.py`` can focus on pipeline plan state and terminal execution. These
 objects remain module-level because in-memory adapters must be pickleable.
 """
 from __future__ import annotations

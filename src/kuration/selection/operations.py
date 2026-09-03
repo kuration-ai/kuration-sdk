@@ -2,7 +2,7 @@
 
 Each recipe is a small, self-contained composition of Kuration SDK primitives
 (`.measure`, `.filter`, `.bin`, `.sample`, ...) exposed as a single configurable unit,
-plus the fluent operator each recipe compiles to (see the module ``register()``).
+plus the operator method each recipe compiles to (see the module ``register()``).
 
 Add your own by writing a class with `.apply(pipeline) -> pipeline` and registering it
 with :func:`kuration.selection.plan.register_operation_type` for config-dict use.

@@ -1,4 +1,4 @@
-# Worked example — Electricity Transformer (ETT), fluent API only
+# Worked example — Electricity Transformer (ETT), pipeline API only
 
 This example curates real hourly transformer telemetry into day-length training windows using
 nothing but `input(...)` and chained operators: no `SchemaSpec`, no adapter class, no strategy
@@ -27,9 +27,9 @@ Cite the dataset's paper if you publish results:
 ## Run it
 
 ```bash
-python examples/public_data/ett_fluent.py --download --out ett-out   # ~2.5 MB
-python examples/public_data/ett_fluent.py data/ETTh1.csv --out ett-out
-python examples/public_data/ett_fluent.py --demo --out ett-out       # offline, synthetic
+python examples/public_data/ett.py --download --out ett-out   # ~2.5 MB
+python examples/public_data/ett.py data/ETTh1.csv --out ett-out
+python examples/public_data/ett.py --demo --out ett-out       # offline, synthetic
 ```
 
 `--demo` generates a tiny file with the upstream column layout and no upstream content, so the

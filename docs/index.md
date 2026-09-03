@@ -10,7 +10,7 @@ the package's module layout.
 |---|---|
 | Evaluating kuration | [Core concepts and product model](overview.md) |
 | Building a first dataset | [Guided quickstart](quickstart.md) |
-| Looking for a specific fluent operation | [Pipeline guide](pipeline.md) |
+| Looking for a specific operation | [Pipeline guide](pipeline.md) |
 | Integrating an internal workflow | [Task cookbook](usage.md) |
 
 ## Build datasets
@@ -46,7 +46,7 @@ the package's module layout.
 ## Reference
 
 - [Python API](api.md) — supported public names and exact signatures.
-- [Pipeline operators](pipeline.md#operator-reference) — fluent forms and validation behavior.
+- [Pipeline operators](pipeline.md#operator-reference) — method forms and validation behavior.
 - [Job specification](jobs.md) — declarative keys and command behavior.
 - [Documentation contract](documentation-contract.md) — audience and public-boundary rules.
 

@@ -109,7 +109,7 @@ quickstart-out/
 ```
 
 - `config.json` records the inferred schema, resolved strategy, output declaration, seed, and
-  fluent operator chain.
+  operator chain.
 - `dataset_manifest.json` indexes every shard and records its source, entity, split, size, shape,
   and dtype.
 - `train/` and `test/` contain the arrays consumed by training code.
@@ -167,7 +167,7 @@ JSON-safe typed results with concise `.render()` output; combine them into a sha
 
 Next:
 
-- Learn every fluent operator in the [pipeline guide](pipeline.md).
+- Learn every operator in the [pipeline guide](pipeline.md).
 - Package a repeatable selection decision in [building operators](operators.md).
 - Find task-oriented variations in the [usage cookbook](usage.md).
 - Use explicit schemas and adapters in the [end-to-end classic API example](overview.md).

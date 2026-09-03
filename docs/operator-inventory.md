@@ -1,11 +1,19 @@
 # Registered-component inventory
 
-A point-in-time listing of every component registered in `src/kuration/`, grouped by
-registry kind (Operators, Methods, Adapters, Analyzers, Containers, Filters, Presets,
-Scorers, Transforms). Extras are the SDK's `[project.optional-dependencies]` names from
-`pyproject.toml`. "Runtime imports" lists top-level heavy imports that would fail at
-*execution* if the extra isn't installed (all guarded by lazy `import`s inside functions:
-descriptors still register cleanly).
+A point-in-time listing of every component registered in `src/kuration/`. Extras are the SDK's
+`[project.optional-dependencies]` names from `pyproject.toml`. "Runtime imports" lists top-level
+heavy imports that would fail at *execution* if the extra isn't installed (all guarded by lazy
+`import`s inside functions: descriptors still register cleanly).
+
+Every pipeline-step component — what used to be documented as separate "Methods", "Filters",
+"Scorers" — is now a single **Operator**, callable as `pipeline.<name>(...)` exactly like any
+other named operator (see [operators.md](operators.md) for the taxonomy and
+[strategies.md](strategies.md) for how the generic `.curate()`/`.filter()`/`.score()` escape
+hatches these operators wrap actually work underneath). `register_method`/`register_filter`/
+`register_scorer` remain real, distinct registration APIs one level below `register_operator`
+(building a genuinely new selection algorithm or pre-pass filter still means implementing one of
+those contracts, not literally writing a `Pipeline` combinator) — but as vocabulary a user
+browsing capabilities needs to learn, there is only "operator."
 
 This is a snapshot, not a generated artifact — nothing currently regenerates it
 automatically when `src/kuration/` changes, so treat it as accurate as of its last
@@ -15,37 +23,42 @@ edit rather than always-current.
 
 Category (Selection / Annotation / Aggregation) follows the taxonomy in
 [operators.md](operators.md#5-built-in-operator-catalog); no built-in operator is Aggregation
-today (a confirmed gap, not an oversight).
+today (a confirmed gap, not an oversight). "Backed by" names the registry kind actually doing the
+work underneath the operator, for anyone extending the SDK rather than just using it.
 
-| Name | Category | Registered in | One-sentence purpose | Required params | Optional params (default) | Descriptor `extra` / `install_hint` | Runtime imports needed |
-|---|---|---|---|---|---|---|---|
-| `aintropy/action-state-consistency` | Annotation | `src/kuration/gameplay/action_state_consistency/__init__.py` (`attach_action_state_consistency`) | Dataset-mode only: audit an already-written dataset's shards for action-state consistency and attach the per-clip verdict to pipeline metadata. For a live pipeline use the scorer of the same name (below) instead. | (`baselines` OR `controls`) validated by handler | `anomaly_type: str = "action_state"`, `calibration: object`, `boundary: "exclude"|"error"|"assume-inactive" = "exclude"`, `frames: str`, `actions: str`, `color_space: str`, `verify: bool`, `metadata_key: str = "action_state_consistency"`, `replace: bool = False` | `extra="action-state"`, `install_hint='pip install "kuration-sdk[action-state]"'` | opencv-python (`cv2`, lazy in `diamond_action_decode._prep_gray`) |
-| `aintropy/collision` | Annotation | `src/kuration/gameplay/collision/__init__.py` (`collision_mechanics`) | Compose the CS2 collision-detection transform into a fluent pipeline. | `map_for_source: object`, `map_registry: object`, `dist_path: str` | `disk_cache_dir: str = ".kuration_collision_cache"`, `min_score: number = 2.0`, `proximity: number = 40.0`, `min_approach: number = 250.0`, `max_residual: number = 20.0`, `slide_angle: number = 75.0`, `max_slide_speed: number = 400.0`, `min_release_accel: number = 100.0`, `max_release_vn: number = 100.0` | `extra="collision"`, `install_hint='pip install "kuration-sdk[collision]"'` | trimesh + rtree (lazy in `mesh_cache.load_mesh_cached`) |
-| `aintropy/collision-directional` | Annotation | `src/kuration/gameplay/collision/__init__.py` (`attach_directional_collision`) | Run directional collision detection over the tick stream and attach the verdict to pipeline metadata. | `map_registry: object`, `ramp_models_path: str` | `map_for_source: object`, `default_map: str`, `fallback_ramp: [number,number]`, `disk_cache_dir: str`, `proximity: number`, `min_missing_speed: number`, `concentration_ratio: number (0..1)`, `batch_size: int`, `inputs: str[]`, `metadata_key: str = "directional_collision"`, `replace: bool = False` | `extra="collision"`, `install_hint='pip install "kuration-sdk[collision]"'` | trimesh + rtree (lazy) |
-| `aintropy/pixel-shift` | Annotation | `src/kuration/gameplay/pixel_shift/__init__.py` (`pixel_shift`) | Measure pixel shift for every isolated key/mouse press. | (none) | `controls: str[]` (default: all 8 controls W/S/A/D/MOUSE_X_POS/…/MOUSE_Y_NEG), `boundary: "exclude"|"error"|"assume-inactive" = "exclude"` | `extra="pixel-shift"`, `install_hint='pip install "kuration-sdk[pixel-shift]"'` | opencv-python (`cv2`, lazy) |
-| `aintropy/slam-motion-diversity` | Annotation | `src/kuration/gameplay/slam/__init__.py` (`slam_motion_diversity`) | Add SLAM motion features and quantile-bin a selected diversity axis. | (none) | `axis: enum(slam_path_length|slam_displacement|slam_motion_efficiency|slam_mean_step|slam_max_step|slam_turn_degrees|slam_mean_turn_degrees|slam_max_turn_degrees|slam_spatial_extent) = "slam_path_length"`, `bins: int ≥ 2 = 8` | `extra="slam"`, `install_hint='pip install "kuration-sdk[slam]"'` | numpy only for this operator; SLAM extra pulls torch/torchvision/faiss-cpu/av/opencv/etc. needed by sibling reconstruction |
-| `aintropy/slam-quality` | Annotation | `src/kuration/gameplay/slam/__init__.py` (`slam_quality`) | Add SLAM reconstruction-quality signals and optionally filter windows. | (none) | `min_tracking_confidence: number [0..1] = 0.5`, `translation_ratio: number > 0 = 10.0`, `translation_mad_multiplier: number > 0 = 8.0`, `max_translation_step: number > 0 = None`, `max_turn_degrees: number (0..180] = 90.0`, `min_score: number [0..1] = None` | `extra="slam"`, `install_hint='pip install "kuration-sdk[slam]"'` | numpy only for this operator |
-| `kuration/balanced-selector` | Selection | `src/kuration/selection/operators.py` (`balanced_selector`) | Sample equally across quantile bins of a measured feature. | `feature: str`, `of: str` | `kind: str = "std"`, `bins: int ≥ 2 = 8`, `count: int ≥ 1 = 100` | none | numpy only |
-| `kuration/rare-event-coverage` | Selection | `src/kuration/selection/operators.py` (`rare_event_coverage`) | Weighted-sample toward windows containing a rare event. | `of: str` | `feature: str = "event_rate"`, `count: int ≥ 1 = 100`, `weight: number > 0 = 1.0` | none | numpy only |
-| `kuration/diverse-subset` | Selection | `src/kuration/selection/operators.py` (`diverse_subset`) | Cluster-balanced selection over pre-measured features. | `features: str[] (non-empty)` | `count: int ≥ 1 = 100`, `n_clusters: int ≥ 2 = 32`, `dedup_threshold: number [-1..1] = None` | `extra="methods"`, `install_hint='pip install "kuration-sdk[methods]"'` | scikit-learn via `.sample("cluster-balanced", ...)` |
+| Name | Category | Backed by | Registered in | One-sentence purpose | Required params | Optional params (default) | Descriptor `extra` / `install_hint` | Runtime imports needed |
+|---|---|---|---|---|---|---|---|---|
+| `aintropy/action-state-consistency` | Annotation | analyzer (dataset mode) | `src/kuration/gameplay/action_state_consistency/__init__.py` (`attach_action_state_consistency`) | Dataset-mode only: audit an already-written dataset's shards for action-state consistency and attach the per-clip verdict to pipeline metadata. For a live pipeline use `action-residual`-style scorer access instead (`.score("aintropy/action-state-consistency", ...)`; no operator wrapper yet). | (`baselines` OR `controls`) validated by handler | `anomaly_type: str = "action_state"`, `calibration: object`, `boundary: "exclude"|"error"|"assume-inactive" = "exclude"`, `frames: str`, `actions: str`, `color_space: str`, `verify: bool`, `metadata_key: str = "action_state_consistency"`, `replace: bool = False` | `extra="action-state"`, `install_hint='pip install "kuration-sdk[action-state]"'` | opencv-python (`cv2`, lazy in `diamond_action_decode._prep_gray`) |
+| `aintropy/collision` | Annotation | transform | `src/kuration/gameplay/collision/__init__.py` (`collision_mechanics`) | Compose the CS2 collision-detection transform into a pipeline. | `map_for_source: object`, `map_registry: object`, `dist_path: str` | `disk_cache_dir: str = ".kuration_collision_cache"`, `min_score: number = 2.0`, `proximity: number = 40.0`, `min_approach: number = 250.0`, `max_residual: number = 20.0`, `slide_angle: number = 75.0`, `max_slide_speed: number = 400.0`, `min_release_accel: number = 100.0`, `max_release_vn: number = 100.0` | `extra="collision"`, `install_hint='pip install "kuration-sdk[collision]"'` | trimesh + rtree (lazy in `mesh_cache.load_mesh_cached`) |
+| `aintropy/collision-directional` | Annotation | analyzer | `src/kuration/gameplay/collision/__init__.py` (`attach_directional_collision`) | Run directional collision detection over the tick stream and attach the verdict to pipeline metadata. | `map_registry: object`, `ramp_models_path: str` | `map_for_source: object`, `default_map: str`, `fallback_ramp: [number,number]`, `disk_cache_dir: str`, `proximity: number`, `min_missing_speed: number`, `concentration_ratio: number (0..1)`, `batch_size: int`, `inputs: str[]`, `metadata_key: str = "directional_collision"`, `replace: bool = False` | `extra="collision"`, `install_hint='pip install "kuration-sdk[collision]"'` | trimesh + rtree (lazy) |
+| `aintropy/pixel-shift` | Annotation | transform | `src/kuration/gameplay/pixel_shift/__init__.py` (`pixel_shift`) | Measure pixel shift for every isolated key/mouse press. | (none) | `controls: str[]` (default: all 8 controls W/S/A/D/MOUSE_X_POS/…/MOUSE_Y_NEG), `boundary: "exclude"|"error"|"assume-inactive" = "exclude"` | `extra="pixel-shift"`, `install_hint='pip install "kuration-sdk[pixel-shift]"'` | opencv-python (`cv2`, lazy) |
+| `aintropy/slam-motion-diversity` | Annotation | transform | `src/kuration/gameplay/slam/__init__.py` (`slam_motion_diversity`) | Add SLAM motion features and quantile-bin a selected diversity axis. | (none) | `axis: enum(slam_path_length|slam_displacement|slam_motion_efficiency|slam_mean_step|slam_max_step|slam_turn_degrees|slam_mean_turn_degrees|slam_max_turn_degrees|slam_spatial_extent) = "slam_path_length"`, `bins: int ≥ 2 = 8` | `extra="slam"`, `install_hint='pip install "kuration-sdk[slam]"'` | numpy only for this operator; SLAM extra pulls torch/torchvision/faiss-cpu/av/opencv/etc. needed by sibling reconstruction |
+| `aintropy/slam-quality` | Annotation | transform | `src/kuration/gameplay/slam/__init__.py` (`slam_quality`) | Add SLAM reconstruction-quality signals and optionally filter windows. | (none) | `min_tracking_confidence: number [0..1] = 0.5`, `translation_ratio: number > 0 = 10.0`, `translation_mad_multiplier: number > 0 = 8.0`, `max_translation_step: number > 0 = None`, `max_turn_degrees: number (0..180] = 90.0`, `min_score: number [0..1] = None` | `extra="slam"`, `install_hint='pip install "kuration-sdk[slam]"'` | numpy only for this operator |
+| `kuration/balanced-selector` | Selection | recipe (`.measure`/`.bin`/`.sample`) | `src/kuration/selection/operators.py` (`balanced_selector`) | Sample equally across quantile bins of a measured feature. | `feature: str`, `of: str` | `kind: str = "std"`, `bins: int ≥ 2 = 8`, `count: int ≥ 1 = 100` | none | numpy only |
+| `kuration/rare-event-coverage` | Selection | recipe | `src/kuration/selection/operators.py` (`rare_event_coverage`) | Weighted-sample toward windows containing a rare event. | `of: str` | `feature: str = "event_rate"`, `count: int ≥ 1 = 100`, `weight: number > 0 = 1.0` | none | numpy only |
+| `kuration/diverse-subset` | Selection | recipe | `src/kuration/selection/operators.py` (`diverse_subset`) | Cluster-balanced selection over pre-measured features. | `features: str[] (non-empty)` | `count: int ≥ 1 = 100`, `n_clusters: int ≥ 2 = 32`, `dedup_threshold: number [-1..1] = None` | `extra="methods"`, `install_hint='pip install "kuration-sdk[methods]"'` | scikit-learn via `.sample("cluster-balanced", ...)` |
+| `top-k` | Selection | method (base) | `src/kuration/core/builtin_operators.py` (`top_k`) | Rank by a weighted score and take the highest priorities. | `weights: object` | `normalize`, `n`/`hours`/`test_hours`, `group_cap` | none | numpy only |
+| `weighted` | Selection | method (base) | `src/kuration/core/builtin_operators.py` (`weighted`) | Sample without replacement, proportional to a weighted score (Gumbel-top-k). | `weights: object` | `normalize`, `n`/`hours`/`test_hours`, `group_cap` | none | numpy only |
+| `uniform-bins` | Selection | method (base) | `src/kuration/core/builtin_operators.py` (`uniform_bins`) | Round-robin declared `.bin(...)` axes for coverage-first selection. Requires `.bin(...)` axes already declared. | (none) | `n`/`hours`/`test_hours`, `group_cap` | none | numpy only |
+| `target-distribution` | Selection | method (base) | `src/kuration/core/builtin_operators.py` (`target_distribution`) | Match the pool to an explicit target distribution over a scalar feature. Requires `.bin(...)` axes already declared. | (none) | `target: "flat"\|{metric}\|{anchor_metric,anchor_quantile}`, `n`/`hours`/`test_hours`, `group_cap` | none | numpy only |
+| `cluster-balanced` | Selection | method (module) | `src/kuration/core/builtin_operators.py` (`cluster_balanced`) | Joint k-means-cluster round-robin coverage over the feature space (DINOv2-style balanced subsampling). | `feature_space: str[]` | `clusters: int = 2048`, `feature_normalize: str = "zscore"`, `n`/`hours`/`test_hours`, `group_cap` | `extra="methods"` | scikit-learn (`KMeans` / `MiniBatchKMeans`, lazy) |
+| `k-center` | Selection | method (module) | `src/kuration/core/builtin_operators.py` (`k_center`) | Farthest-point traversal of the cluster centroids ordered by coverage. | `feature_space: str[]` | same as `cluster-balanced` | `extra="methods"` | scikit-learn |
+| `facility-location` | Selection | method (module) | `src/kuration/core/builtin_operators.py` (`facility_location`) | Submodular facility-location cluster ordering (greedy coverage gain). | `feature_space: str[]` | same as `cluster-balanced` | `extra="methods"` | scikit-learn |
+| `dsir` | Selection | method (module) | `src/kuration/core/builtin_operators.py` (`dsir`) | Multivariate importance resampling with Gumbel-top-k over a quantized joint feature space. | `feature_space: str[]` | `dsir_bins: int = 8`, `target: "flat"\|{metric}\|{anchor_metric,anchor_quantile}`, `feature_normalize: str = "quantile"`, `n`/`hours`/`test_hours`, `group_cap` | `extra="methods"` | numpy only |
+| `rare` | Selection | method (module) | `src/kuration/core/builtin_operators.py` (`rare`) | Density-inverse kNN atypicality (sparse = admitted first). | `feature_space: str[]` | `knn_k: int = 10`, `rare_sample: int = 20000`, `feature_normalize: str = "zscore"`, `n`/`hours`/`test_hours`, `group_cap` | `extra="methods"` | scikit-learn (`NearestNeighbors`) |
+| `typical` | Selection | method (module) | `src/kuration/core/builtin_operators.py` (`typical`) | Prototypicality: the negative of `rare` (densest first). | `feature_space: str[]` | same as `rare` | `extra="methods"` | scikit-learn |
+| `anomaly` | Annotation | filter | `src/kuration/core/builtin_operators.py` (`anomaly`) | Drop multivariate outliers with an Isolation Forest, before selection runs. | (none) | `contamination: number = 0.02`, `normalize: str = "zscore"` | `extra="methods"` | scikit-learn (`IsolationForest`, lazy) |
+| `dedup` | Annotation | filter | `src/kuration/core/builtin_operators.py` (`dedup`) | Feature-space SemDeDup: within each cluster keep one representative per near-duplicate group, before selection runs. | `feature_space: str[]` | `threshold: number = 0.98`, `n_clusters: int = 2048`, `normalize: str = "zscore"` | `extra="methods"` | scikit-learn |
+| `action-residual` | Annotation | scorer | `src/kuration/core/builtin_operators.py` (`action_residual`) | Action-conditioned k-nearest-neighbor predictive residual (whole-pool, buffer-using). | `obs: str`, `action: str` | `k: int = 8`, `out: str = "action_residual"` | none on descriptor (runtime → `[methods]`) | scikit-learn (`KNeighborsRegressor`, lazy) |
 
-## Methods
-
-Base methods and feature-space methods are registered without a JSON-Schema descriptor for their own kwargs (the strategy validates `method_params` at load), so param columns show the callable's kwargs rather than a descriptor schema.
-
-| Name | Registered in | Purpose | Params (defaults) | `extra` | Runtime imports |
-|---|---|---|---|---|---|
-| `uniform-bins` | `src/kuration/core/strategy.py` line 559 (registers `_raw_priorities`) | Quantile-bin along declared axes and round-robin the bins for coverage-first selection. | strategy-level `axes`, no method-specific kwargs | none | numpy only |
-| `weighted` | `src/kuration/core/strategy.py` line 559 | Rank by a weighted linear combination of normalized features. | strategy-level `weights` / `normalize` | none | numpy only |
-| `top-k` | `src/kuration/core/strategy.py` line 559 | Rank by a single feature (or weighted score) and take the highest priorities. | strategy-level `weights` | none | numpy only |
-| `target-distribution` | `src/kuration/core/strategy.py` line 559 | Match the pool to an explicit target distribution over a scalar feature. | strategy-level `target` | none | numpy only |
-| `filter` | `src/kuration/core/strategy.py` line 559 | Keep every segment passing the predicate list: no ranking. | strategy-level `predicates` | none | numpy only |
-| `cluster-balanced` | `src/kuration/core/methods.py` line 407 (`cluster_balanced_priorities`) | Joint k-means-cluster round-robin coverage over the feature space (DINOv2-style balanced subsampling). | `n_clusters=2048`, `normalize="zscore"`, `seed=0`, `workers=1` | `extra="methods"` | scikit-learn (`KMeans` / `MiniBatchKMeans`, lazy) |
-| `k-center` | `src/kuration/core/methods.py` line 407 (`kcenter_priorities`) | Farthest-point traversal of the cluster centroids ordered by coverage. | `n_clusters=2048`, `normalize="zscore"`, `seed=0`, `workers=1` | `extra="methods"` | scikit-learn |
-| `facility-location` | `src/kuration/core/methods.py` line 407 (`facility_location_priorities`) | Submodular facility-location cluster ordering (greedy coverage gain). | `n_clusters=2048`, `normalize="zscore"`, `seed=0`, `workers=1` | `extra="methods"` | scikit-learn |
-| `dsir` | `src/kuration/core/methods.py` line 407 (`dsir_priorities`) | Multivariate importance resampling with Gumbel-top-k over a quantized joint feature space. | `n_bins=8`, `target=None|{metric}|{anchor_metric,anchor_quantile}`, `normalize="quantile"`, `seed=0`, `workers=1` | `extra="methods"` | numpy only |
-| `rare` | `src/kuration/core/methods.py` line 407 (`rare_priorities`) | Density-inverse kNN atypicality (sparse = admitted first). | `k=10`, `normalize="zscore"`, `seed=0`, `workers=1`, `sample=20000` | `extra="methods"` | scikit-learn (`NearestNeighbors`) |
-| `typical` | `src/kuration/core/methods.py` line 407 (`typical_priorities`) | Prototypicality: the negative of `rare` (densest first). | same as `rare` | `extra="methods"` | scikit-learn |
+`top-k`/`weighted`/`uniform-bins`/`target-distribution` ("method (base)" above) and
+`cluster-balanced`/`k-center`/`facility-location`/`dsir`/`rare`/`typical` ("method (module)")
+translate a handful of their operator kwargs before forwarding to the underlying method
+(`clusters`→internal `n_clusters`, `feature_normalize`→internal `normalize`, `dsir_bins`→internal
+`n_bins`, `knn_k`→internal `k`, `rare_sample`→internal `sample`) — confirmed empirically against
+`strategy.py`'s `_resolve`, not merely read off the internal function signatures, since the two
+differ. `anomaly`/`dedup`/`action-residual` keep their parameter names verbatim; there is no
+translation layer for filters or scorers.
 
 ## Adapters
 
@@ -63,12 +76,14 @@ Base methods and feature-space methods are registered without a JSON-Schema desc
 | `timeseries` | `src/kuration/core/adapters/timeseries.py` (`TimeseriesAdapter`) | Turn a CSV/Parquet table (or in-memory list of row dicts) into a canonical Tick stream via a column map. | `schema`, `fields` | `time_column=None`, `entity_column=None`, `globals=None` | none for CSV; parquet needs `[parquet]` | csv (stdlib) or pyarrow (lazy) |
 | `zarr` | `src/kuration/core/adapters/zarr_store.py` (`ZarrAdapter`) | Map arrays in one local or remote Zarr store to a canonical tick stream. | `schema`, `fields` | `globals=None` | runtime hint → `[zarr]` (+ `[cloud]` remote) | `zarr` (lazy); `fsspec` for remote |
 
-## Analyzers
+## Dataset audits without an operator yet
+
+Everything else stateful is reachable as a named operator (see the Operators table's "Backed
+by" column); `kuration/split-leakage` is the one exception — a `check_dataset`-only analyzer
+with no operator wrapper, reachable via `.analyze("kuration/split-leakage", ...)`/`.enrich(...)`.
 
 | Name | Registered in | Purpose | Required params | Optional params | `extra` | Runtime imports |
 |---|---|---|---|---|---|---|
-| `aintropy/action-state-consistency` | `src/kuration/gameplay/action_state_consistency/__init__.py` (`action_state_consistency`) | Dataset-mode only (`check_dataset`): classify clips from cross-segment pixel-shift evidence against user-supplied action baselines. The tick-stream-driven mode is retired; see the scorer of the same name for live-pipeline use. | `anomaly_type: "action_state"` | `baselines: object|null`, `calibration: {min_clips, min_samples, sign_consensus, tolerance}` | `extra="action-state"` | opencv-python (lazy) |
-| `aintropy/collision-directional` | `src/kuration/gameplay/collision/__init__.py` (`directional_collision_analyzer`) | Flag per-tick candidate wall collisions using a fitted acceleration-ramp model + map geometry. | `map_registry: object`, `ramp_models_path: str` | `map_for_source`, `default_map`, `fallback_ramp: [tau,cap]=(3.0,215.0)`, `disk_cache_dir=".kuration_collision_cache"`, `proximity=40.0`, `min_missing_speed=40.0`, `concentration_ratio=0.6` | `extra="collision"` | trimesh + rtree (lazy) |
 | `kuration/split-leakage` | `src/kuration/core/analyzers.py` (`_split_leakage_analyzer`) | Audit source and (optionally) group assignments across dataset splits for train/test leakage. | (none) | `check_groups: bool = True` | none | stdlib only |
 
 ## Containers
@@ -82,13 +97,6 @@ Registered via a loop in `src/kuration/core/output/containers.py` with `capabili
 | `npz` | `.npz` | Dependency-free NumPy `.npz` archive of arrays + `_n_steps`. | numpy |
 | `parquet` | `.parquet` | Flat Parquet shard (scalar/tensor columns) with `_n_steps` in schema metadata. | pyarrow (`[parquet]`) |
 
-## Filters
-
-| Name | Registered in | Purpose | Params (defaults) | `extra` | Runtime imports |
-|---|---|---|---|---|---|
-| `anomaly` | `src/kuration/core/methods.py` line 411 (`anomaly_filter`) | Drop multivariate outliers with an Isolation Forest. | `contamination=0.02`, `normalize="zscore"`, `seed=0`, `workers=1` | `extra="methods"` | scikit-learn (`IsolationForest`, lazy) |
-| `dedup` | `src/kuration/core/methods.py` line 411 (`dedup_filter`) | Feature-space SemDeDup: within each cluster keep one representative per near-duplicate group. | `threshold=0.98`, `n_clusters=2048`, `normalize="zscore"`, `seed=0`, `workers=1` | `extra="methods"` | scikit-learn |
-
 ## Presets
 
 | Name | Registered in | Purpose | Params (defaults) | `extra` | Runtime imports |
@@ -97,28 +105,18 @@ Registered via a loop in `src/kuration/core/output/containers.py` with `capabili
 | `pytorch-sequences` | `src/kuration/core/output/presets.py` (`_pytorch`) | Padded sequence shards for PyTorch (default `short_policy="pad"`). | as above with `short_policy = "pad"` | none | numpy (Torch only in consumer `ShardDataset`) |
 | `tabular` | `src/kuration/core/output/presets.py` (`_tabular`) | Flat Parquet time-series shards (`container="parquet"`, `shard_length=1024`, `short_policy="keep"`). | parquet defaults | `extra="parquet"` | pyarrow |
 
-## Scorers
-
-| Name | Registered in | Purpose | Required params | Optional params | `extra` | Runtime imports |
-|---|---|---|---|---|---|---|
-| `action_residual` | `src/kuration/core/scorers.py` (`ActionResidualScorer`) | Action-conditioned k-nearest-neighbor predictive residual (whole-pool, buffer-using demonstrator scorer). | `obs: str`, `action: str` | `k: int ≥ 1 = 8` | none on descriptor (runtime → `[methods]`) | scikit-learn (`KNeighborsRegressor`, lazy) |
-| `aintropy/action-state-consistency` | `src/kuration/gameplay/action_state_consistency/action_state.py` (`ActionStateAnomalyScorer`) | Per-window count of `Segment.records["aintropy/pixel-shift"]` instances inconsistent with the configured (or self-calibrated) baseline; the live-pipeline replacement for the retired tick-stream analyzer path. | (`baselines` OR `controls`) validated by handler | `calibration: {min_clips, min_samples, sign_consensus, tolerance}` | `extra="action-state"` | opencv-python (lazy, via pixel-shift's own records) |
-
-## Transforms
-
-| Name | Registered in | Purpose | Params + outputs | `extra` | Runtime imports |
-|---|---|---|---|---|---|
-| `aintropy/collision` | `src/kuration/gameplay/collision/__init__.py` (`CollisionMechanics`) | Detect and classify CS2 wall collisions from per-tick position/angle telemetry raycast against map geometry. | Params: same nine as sibling operator. Outputs: `collision_count, head_on_count, angled_count, w_slide_count, wa_slide_count, slide_end_count, slide_constrained_count, max_anomaly_score, min_dist_to_wall_hu` | `extra="collision"` | trimesh + rtree (lazy) |
-| `aintropy/pixel-shift` | `src/kuration/gameplay/pixel_shift/__init__.py` (`PixelShift`) | Per-segment pixel-shift statistics for isolated key/mouse presses. | Params: `controls: str[]` (default: all 8), `boundary: enum = "exclude"`. Outputs: `{control_lower}_{shift_min|shift_max|shift_mean|shift_measured|n_instances|requested}` for each control | `extra="pixel-shift"` | opencv-python (lazy) |
-| `aintropy/slam-motion` | `src/kuration/gameplay/slam/__init__.py` (`SLAMMotion`) | Measure translation and camera-turn motion in SLAM trajectory windows. | Params: `EMPTY_PARAMETERS`. Outputs: `slam_path_length, slam_displacement, slam_motion_efficiency, slam_mean_step, slam_max_step, slam_turn_degrees, slam_mean_turn_degrees, slam_max_turn_degrees, slam_spatial_extent`. Inputs: `field:{CAMERA_POSITION}`, `field:{CAMERA_Z_AXIS}` | `extra="slam"` | numpy only |
-| `aintropy/slam-quality` | `src/kuration/gameplay/slam/__init__.py` (`SLAMQuality`) | Flag tracking gaps, pose jumps, and unstable trajectory scale over aligned camera trajectories. | Params: `min_tracking_confidence=0.5`, `translation_ratio=10.0`, `translation_mad_multiplier=8.0`, `max_translation_step=None`, `max_turn_degrees=90.0`. Outputs: `slam_tracking_confidence_mean, slam_tracking_gap_fraction, slam_translation_jump_fraction, slam_rotation_jump_fraction, slam_step_scale_drift, slam_quality_score` | `extra="slam"` | numpy only |
-
 ## Uncertain / could-not-confirm findings
 
 - **Adapter descriptors have no JSON-Schema `parameters` on the register call** (`register_adapter("hdf5", HDF5Adapter)` etc. pass just the class). "Required / optional" reported above comes from the class `__init__` signature; `describe_component("adapter", name)` will return the empty `{"type":"object","properties":{}, "additionalProperties":False}` default, not the class kwargs.
 - **`aintropy/collision-asg` and `aintropy/collision-teapearce` adapter descriptors** are explicitly registered with an empty schema: the descriptor accepts no kwargs. Init also takes no configuration (fully driven by schema constant + source URI).
-- **Base methods (`uniform-bins`, `weighted`, `target-distribution`, `top-k`, `filter`)** are registered with only `capabilities={"streaming": True}`: no `description`, `parameters`, or `extra`. "Purpose" cells are from module docstring, not descriptor.
-- **Feature-space methods and filters** are registered with `capabilities={"whole_pool": True}` and `extra="methods"`: no `description` or `parameters` on descriptor.
+- **The underlying `"method"`/`"filter"`/`"scorer"` registrations still exist and still carry
+  their own (often sparser) descriptors** — base methods register with only
+  `capabilities={"streaming": True}` and no `description`/`parameters`/`extra`; feature-space
+  methods and filters register with `capabilities={"whole_pool": True}` and `extra="methods"`
+  but no `description`/`parameters` either. The Operators table above documents the operator
+  wrapper's descriptor (`src/kuration/core/builtin_operators.py`), which does carry a
+  real description and JSON-Schema parameters — that is now the canonical, discoverable form;
+  the underlying kind's sparser descriptor is an implementation detail.
 - **`pytorch-sequences` preset**: preset is `[parquet]`-free (writes NPZ by default), no explicit `extra=` on register call. Overrides to `container="parquet"` still hit pyarrow at runtime.
 - **`json` and `npz` containers**: registered without `extra`; truly no non-stdlib deps.
 - **SLAM transforms**: own `transform_batch` code is numpy-only, but `[slam]` extra pulls torch/torchvision/faiss/av/opencv because sibling `SLAMReconstructor` needs them for upstream reconstruction that produces the manifests these transforms consume.
@@ -128,7 +126,7 @@ Registered via a loop in `src/kuration/core/output/containers.py` with `capabili
 
 | Extra | Packages | Components that reference it |
 |---|---|---|
-| `methods` | `scikit-learn>=1.5` | methods `cluster-balanced` / `k-center` / `facility-location` / `dsir` / `rare` / `typical`, filters `anomaly` / `dedup`, scorer `action_residual` |
+| `methods` | `scikit-learn>=1.5` | operators `cluster-balanced` / `k-center` / `facility-location` / `dsir` / `rare` / `typical` / `anomaly` / `dedup` / `action-residual` |
 | `parquet` | `pyarrow>=23.0.1` | adapter `parquet-dataset`, adapter `timeseries` (parquet input), container `parquet`, preset `tabular` |
 | `scale` | `pyarrow>=23.0.1` | (Arrow-IPC feature tables: no registered component references this by name) |
 | `array` | `h5py>=3.10` | adapter `hdf5`, container `hdf5` |

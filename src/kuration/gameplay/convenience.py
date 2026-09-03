@@ -57,7 +57,7 @@ def slam_reconstruct(
     require_gpu: bool = False,
     **runtime_options: Any,
 ) -> "Pipeline":
-    """Prepare SLAM input and return a gameplay fluent pipeline.
+    """Prepare SLAM input and return a gameplay pipeline.
 
     ``source`` may be an existing manifest, completed reconstruction, raw frame mapping,
     or ``{clip: video}`` mapping. Raw input requires ``output`` and the ``slam`` extra.

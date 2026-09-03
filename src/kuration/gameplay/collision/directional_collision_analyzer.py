@@ -542,7 +542,7 @@ def attach_directional_collision(
 ):
     """Run directional collision detection and retain the verdict on a derived pipeline.
 
-    The fluent counterpart of driving the analyzer by hand: one bounded pass over this
+    The pipeline counterpart of driving the analyzer by hand: one bounded pass over this
     pipeline's segmented tick stream (each source's windows stitched back into its
     continuous tick sequence -- see the module docstring), with the summary (including
     `flagged_ticks` in true source coordinates) attached under

@@ -92,7 +92,7 @@ the manifest, so resume and verification are safe.
     - [Data source adapters](#data-source-adapters)
     - [Output formats and presets](#output-formats-and-presets)
     - [Pre-selection filters](#pre-selection-filters)
-    - [Fluent pipeline methods](#fluent-pipeline-methods)
+    - [Pipeline methods](#pipeline-methods)
 8. [Reproducibility](#reproducibility)
 9. [Writing your own operation](#writing-your-own-operation)
 10. [Coming next](#coming-next)
@@ -234,7 +234,7 @@ outside the NumPy-only core.
 |---|---|
 | Build my first curated dataset | [Quickstart](https://aintropy-solutions.github.io/kuration-sdk/quickstart/) |
 | Understand the product and its data model | [Core concepts](https://aintropy-solutions.github.io/kuration-sdk/overview/) |
-| Find the right pipeline operation | [Fluent pipeline guide](https://aintropy-solutions.github.io/kuration-sdk/pipeline/) |
+| Find the right pipeline operation | [Pipeline guide](https://aintropy-solutions.github.io/kuration-sdk/pipeline/) |
 | Solve a task such as streaming, cloud output, or comparison | [Recipe cookbook](https://aintropy-solutions.github.io/kuration-sdk/usage/) |
 | Integrate a data format | [Adapters](https://aintropy-solutions.github.io/kuration-sdk/adapters/) |
 | Build a reusable operator or transform | [Operators](https://aintropy-solutions.github.io/kuration-sdk/operators/) |
@@ -372,7 +372,7 @@ parameter reference and the config-driven runner.
 ## Beyond the gallery
 
 The three shipped selection recipes are curated shortcuts. The Kuration SDK itself is a
-broader pipeline library with 48 registered components, and you can drop into the raw fluent API
+broader pipeline library with 48 registered components, and you can drop into the raw pipeline API
 for anything the gallery doesn't cover.
 
 ### Sampling methods
@@ -402,7 +402,7 @@ Seven total: `numpy-timeseries`, `pytorch-sequences`, `tabular` (flat Parquet), 
 
 Two: `anomaly` (Isolation Forest), `dedup` (SemDeDup).
 
-### Fluent pipeline methods
+### Pipeline methods
 
 Core methods used by the shipped operations: `.window()`, `.measure()`, `.filter()`, `.bin()`, `.sample()`, `.split()`, `.output()`, `.options()`, `.describe()`, `.collect()`. Pipeline exposes additional methods for tagging, scoring, video joins, previewing, and lifecycle stats.
 
@@ -504,7 +504,7 @@ Shows one component's docstring and parameter contract.
 Long-form blog posts on physical-AI data curation:
 
 - **[Why raw gameplays don't make good world models — and how to fix the Virtual2Real gap](https://aintropy.ai/blog)**. The failure modes that make raw gameplay footage a poor training corpus for a world model — actions that don't produce a consistent state change, state changes with no action, rare player-object contact, missing pose or location, eval metrics that look fine when the physics is visibly wrong.
-- **[Quickly convert raw corpus into high-quality world-model training sets](https://aintropy.ai/blog)**. A line-by-line walkthrough of the fluent Pipeline API — `input`, `window`, `measure`, `filter`, `bin`, `split`, `sample`, `output` — on a small runner-telemetry example.
+- **[Quickly convert raw corpus into high-quality world-model training sets](https://aintropy.ai/blog)**. A line-by-line walkthrough of the Pipeline API — `input`, `window`, `measure`, `filter`, `bin`, `split`, `sample`, `output` — on a small runner-telemetry example.
 - **[Action-state consistency with Kuration SDK](https://aintropy.ai/blog)**. How the `action_state_consistency` operator uses Farneback optical flow to catch action-state mismatches — wall collisions, coyote time, input buffering, engine glitches — and returns a per-clip verdict (consistent, inconsistent, inconclusive).
 - **[SLAM with Kuration SDK](https://aintropy.ai/blog)**. Adding scene and trajectory reconstruction to any video or image dataset. Built on DepthAnything V3 with plug-and-play VPR support for loop closure; stitches long clips into one 3D map.
 

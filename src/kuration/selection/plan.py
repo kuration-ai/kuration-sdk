@@ -36,7 +36,7 @@ def register_operation_type(name: str, operation_class: type) -> None:
 
     Once registered, `{"type": name, ...}` in a config list resolves to
     `operation_class(**kwargs)` inside `run()` or `plan()`. This registry is
-    independent of the SDK's fluent-operator ``Registry``: it only affects how
+    independent of the SDK's operator ``Registry``: it only affects how
     dict-shaped config entries resolve in this module's ``run``/``plan``/``describe``.
 
     Args:

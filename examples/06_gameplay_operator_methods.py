@@ -1,7 +1,7 @@
 """Domain operators arrive as ordinary Pipeline methods when you import the domain.
 
 `kuration.gameplay` registers its components on import, so SLAM trajectory operators become
-fluent methods on the plain core `Pipeline` — no subclass, no separate builder. This runs on
+methods on the plain core `Pipeline` — no subclass, no separate builder. This runs on
 synthetic precomputed camera trajectories, so it needs only the NumPy core: no video decoder,
 model download, OpenCV, or GPU.
 

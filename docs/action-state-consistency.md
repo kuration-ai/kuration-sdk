@@ -35,7 +35,7 @@ kinds, split by what each one is actually for:
 
 - as a **scorer** (`ActionStateAnomalyScorer`) — the live-pipeline path. Reachable through
   `.score("aintropy/action-state-consistency", out=..., baselines=..., controls=...)` like any
-  other registered scorer, or fluently as `pipeline.pixel_shift(...).score(...)`. It reads each
+  other registered scorer, or directly as `pipeline.pixel_shift(...).score(...)`. It reads each
   window's own `Segment.records["aintropy/pixel-shift"]` (populated by the pixel-shift
   transform) rather than re-deriving isolated presses from raw frames, so pixel-shift and
   action-state consistency actually share computation. Its output is one anomaly count per

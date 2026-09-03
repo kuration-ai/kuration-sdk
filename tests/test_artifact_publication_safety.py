@@ -615,7 +615,7 @@ def test_forced_hours_to_count_replacement_removes_resume_marker(tmp_path):
     assert shard_entries(str(destination))[0]
 
 
-def test_fluent_hours_output_commits_enriched_config_once(tmp_path, monkeypatch):
+def test_pipeline_hours_output_commits_enriched_config_once(tmp_path, monkeypatch):
     import kuration.core.manifest as manifest_module
 
     commits = []
@@ -642,7 +642,7 @@ def test_fluent_hours_output_commits_enriched_config_once(tmp_path, monkeypatch)
     assert shard_entries(str(destination))[0]
 
 
-def test_fluent_output_config_redacts_input_output_and_adapter_runtime_identity(tmp_path):
+def test_pipeline_output_config_redacts_input_output_and_adapter_runtime_identity(tmp_path):
     source = (
         "s3://private-user:super-secret@bucket.example/private/session.npz"
         "?token=do-not-publish#fragment"

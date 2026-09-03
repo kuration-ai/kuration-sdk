@@ -1,4 +1,4 @@
-# The fluent pipeline — `input(...)` → operators → terminals
+# The pipeline — `input(...)` → operators → terminals
 
 The primary way to drive the SDK for the common case: no explicit `SchemaSpec`,
 no explicit adapter, no raw strategy dict. `kuration.input(...)` sniffs a source, infers a
@@ -265,7 +265,7 @@ retain the compatible reference implementation and appear as materialization war
 | `.report` | `(**kw)` | feature pass only (no selection) → `dataset_report` |
 | `.stats` | `(**kwargs)` | `kuration.stats(pipeline, **kwargs)` — lifecycle statistics for the pipeline's current stage |
 | `.analyze` | `(name, parameters=None, *, mode=None, inputs=None, batch_size=None, analyzer=None, **options)` | a registered stateful analyzer: `run_stream_analyzer` over the tick stream, or `run_dataset_analyzer`'s `check_dataset` hook for an artifact-backed pipeline |
-| `.check` | `(policy=None, *, verify=False, **expectations)` | `evaluate_quality` over the cheapest evidence this pipeline can produce — the fluent `kur-check --policy` |
+| `.check` | `(policy=None, *, verify=False, **expectations)` | `evaluate_quality` over the cheapest evidence this pipeline can produce — the pipeline-API equivalent of `kur-check --policy` |
 | `.experiment` | `(arms, n, baseline=None)` | `run_experiment`; `arms` maps name → `Pipeline` (its compiled strategy) or a raw strategy dict |
 
 ### Stateful analyzers: retain or return the result
@@ -369,7 +369,7 @@ Selection, budget, and shard gates need selection or artifact evidence: run thos
   raises (hours path only).
 - Output destinations are protected by default. Pass `force=True` to replace an existing
   committed or interrupted artifact; selection completes before the old commit is invalidated.
-- A destination-scoped writer lease prevents concurrent fluent, classic, or import publishers
+- A destination-scoped writer lease prevents concurrent pipeline, classic, or import publishers
   from interleaving. Container dependencies and count-output memory minima are checked before
   publication begins.
 

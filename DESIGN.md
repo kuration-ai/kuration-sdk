@@ -7,7 +7,7 @@ five places (`docs/pipeline.md`, `docs/customization.md`, `docs/overview.md`,
 `docs/documentation-contract.md`, `README.md`) but never written down once, end to end, as a
 single governing statement with its concrete mechanism, its deliberate limits, and its known
 gaps. That's what this document is for — a durable reference for **design decisions**, read
-before adding a seam, a fluent method, or a new escalation rung, by a human or an LLM.
+before adding a seam, a pipeline method, or a new escalation rung, by a human or an LLM.
 
 **It is not** another design deep-dive (`docs/architecture.md` already owns "why this layer
 works this way"), not the build log (`PLAN.md` owns "what shipped, in what phase"), and not
@@ -15,11 +15,11 @@ usage documentation (`docs/usage.md`, `docs/pipeline.md` own "how to call this")
 documents already say something well, this one cites and links rather than re-explains
 (`docs/documentation-contract.md`: "Content has one canonical home"). What's new here is
 the cross-cutting synthesis, including the pipeline-carrier direction adopted after the first
-gameplay analyzers exposed a gap between fluent configuration and stateful enrichment.
+gameplay analyzers exposed a gap between pipeline configuration and stateful enrichment.
 
 ## The thesis
 
-> A beginner should be able to drive the entire SDK through one fluent `Pipeline` object,
+> A beginner should be able to drive the entire SDK through one `Pipeline` object,
 > knowing almost nothing about how it works. An expert should be able to replace or extend any
 > single stage without forking the engine or learning the rest. Both must be the *same*
 > pipeline, not two implementations that drift.
@@ -31,9 +31,9 @@ For input-backed work, this has a second, equally important consequence:
 > pipeline. A detached result is appropriate only when the caller explicitly asks to inspect,
 > analyze, compare, publish, or otherwise terminate the pipeline.
 
-This is stated at the API level in `docs/pipeline.md` (the fluent API "calls the existing
+This is stated at the API level in `docs/pipeline.md` (the pipeline "calls the existing
 engine... the explicit APIs remain available"), turned into documentation *policy* in
-`docs/documentation-contract.md` ("The fluent API is the default teaching interface. The
+`docs/documentation-contract.md` ("The pipeline API is the default teaching interface. The
 classic API is the explicit path... Documentation should name the path being used"), and is the
 implicit shape of `docs/customization.md`'s opening sentence: every seam — adapters, metrics,
 scorers, batch transforms, encoders, selection methods, filters, containers, presets, operators,
@@ -48,14 +48,14 @@ the table to consult when deciding where a new piece of behavior belongs.
 | concern | beginner surface | expert escape hatch | why the ceiling sits there |
 |---|---|---|---|
 | Schema | `input(src)` infers it (`infer_schema`) | explicit `SchemaSpec` / `fields=` | inference is "deliberately conservative and loud … no silent guessing" (`infer.py`) — it refuses to guess rather than guess wrong |
-| Source format | file-kind sniffing picks an adapter (`pipeline.md`) | `input(adapter=<name or InputAdapter>, sources=[...])` — "escape hatch — no inference" (`pipeline.md`) | the fluent layer only builds shipped adapters; a bespoke raw format needs a real `InputAdapter` |
+| Source format | file-kind sniffing picks an adapter (`pipeline.md`) | `input(adapter=<name or InputAdapter>, sources=[...])` — "escape hatch — no inference" (`pipeline.md`) | the pipeline layer only builds shipped adapters; a bespoke raw format needs a real `InputAdapter` |
 | Per-segment metric | `.measure(name="...")` against the closed DSL grammar | `@register_metric` — "the escape hatch in `registry.py`" (`dsl/grammar.py` docstring) | the grammar is closed and enumerated *on purpose* (loud validation); an escape hatch is one plain function over a `WindowBuffer`, sharing the same signature so the registry treats both interchangeably (`dsl/registry.py`) |
 | Whole-pool / learned scoring | `.score(name="...")` | `SegmentScorer` + `register_scorer` | this shape is deliberately *not* bent through `@register_metric` — whole-pool/learned/action-aware estimators are "the wrong shape" for a per-segment, single-pass, stateless function (`scorers.py` docstring) |
 | Bounded model/device compute | `.transform(name="...")` | `BatchTransform` + `register_batch_transform` | needs custom NumPy/model code over declared `field:`/`feature:`/`media:` roles — declarative strategy can't express arbitrary compute |
 | Selection | `.bin()/.filter()/.sample(n=…/hours=…)` | raw `Strategy` dict / `load_strategy()` | strategy stays pure data so it round-trips through `config.json` and reproduces from the artifact alone (`strategies.md`) |
-| Reusable curation decisions | generated fluent method (`pipeline.pixel_shift(...)`; `.apply(name, **params)` is the compatibility spelling for serialized integrations) | `register_operator` | an operator is "a composition seam, not a native execution-stage seam" (`pipeline.md`) — see Limits below |
+| Reusable curation decisions | generated pipeline method (`pipeline.pixel_shift(...)`; `.apply(name, **params)` is the compatibility spelling for serialized integrations) | `register_operator` | an operator is "a composition seam, not a native execution-stage seam" (`pipeline.md`) — see Limits below |
 | Stateful / cross-segment checks | generated domain method that runs the named analyzer and returns a pipeline with namespaced metadata (for example `.action_state_consistency(...)`) | `.analyze(name, parameters=...)` for a detached result, or `get_analyzer()` + drive `add_batch`/`check_dataset` by hand | stateful work is still explicit and uses the analyzer lifecycle; the default domain spelling preserves the pipeline while `analyze` remains the intentional result boundary |
-| Pipeline enrichment metadata | immutable, JSON-safe `pipeline.metadata`, populated by pipeline-returning methods | the registered analyzer/transform result plus a generic metadata-attachment primitive | enrichment must survive further fluent calls without becoming a schema field, selection feature, or ad hoc side object |
+| Pipeline enrichment metadata | immutable, JSON-safe `pipeline.metadata`, populated by pipeline-returning methods | the registered analyzer/transform result plus a generic metadata-attachment primitive | enrichment must survive further pipeline calls without becoming a schema field, selection feature, or ad hoc side object |
 | Output | `.output(path, preset="…")` (resolved by `output_preset`) | custom `OutputEncoder` / `containers.write_shard` branch | mirrors the input side: declarative `OutputSpec` + pluggable encoder + generic `ShardWriter` (`output.md`) |
 | Orchestration | JSON job + `kur-curate`/`kur-init`/`kur-preview` | `curate(...)` / `write_dataset(...)` called directly in Python | "every supported job-spec execution key maps onto its kwargs, so graduating from a job file to Python is mechanical" (`jobs.md`) |
 
@@ -101,12 +101,12 @@ subclass. `kuration.gameplay` is the SDK's own proof of this, registered through
    ladder can't silently break itself.
 
 So an expert who writes `register_batch_transform` + `register_operator` against the low-level
-seams hands a beginner a plain fluent method, with zero new concepts to learn and zero risk of
+seams hands a beginner a plain pipeline method, with zero new concepts to learn and zero risk of
 silently shadowing something that already existed.
 
 ## The pipeline is the carrier of input-backed state
 
-The fluent API originally treated `Pipeline` mainly as an immutable execution-plan builder.
+The pipeline API originally treated `Pipeline` mainly as an immutable execution-plan builder.
 That is necessary but not sufficient for domain workflows. A gameplay check can read the same
 input, window, media join, options, and registry view as the rest of the chain; returning a loose
 dict at that point makes the caller manually keep two related objects synchronized. The default
@@ -227,12 +227,12 @@ additive knob (`.options(...)` in `pipeline.md`'s operator table, or the same kw
 
 ## Two escalation axes, not one
 
-It's tempting to flatten "fluent vs. classic" and "CLI/job vs. Python" into a single
+It's tempting to flatten "pipeline vs. classic" and "CLI/job vs. Python" into a single
 beginner/expert line. They're actually orthogonal:
 
 |  | **declarative (JSON job / preset)** | **imperative (Python)** |
 |---|---|---|
-| **fluent ergonomics** | `kur-init` scaffold → `kur-curate job.json` | `input(...).window(...).measure(...).sample(...)` |
+| **pipeline ergonomics** | `kur-init` scaffold → `kur-curate job.json` | `input(...).window(...).measure(...).sample(...)` |
 | **classic/explicit control** | hand-authored job JSON referencing named custom components | `SchemaSpec`, `load_strategy`, `curate()`/`write_dataset()`, arbitrary `group_of`/`tags_of` callables |
 
 A JSON job can already reference a custom, expert-registered adapter or scorer *by name* — the
@@ -241,7 +241,7 @@ real boundary `docs/jobs.md` draws is data/names (jobs) vs. arbitrary code
 directly... graduating from a job file to Python is mechanical" (`jobs.md`). Don't
 assume "the CLI is beginner, Python is expert" — plenty of expert work (registering a new
 operator, writing a `BatchTransform`) happens once, in Python, and is then consumed by *both*
-a fluent Python chain and a JSON job, at the same rung.
+a Python pipeline chain and a JSON job, at the same rung.
 
 ## Deliberate limits — where disclosure stops on purpose
 
@@ -254,7 +254,7 @@ Progressive disclosure is bounded, and the bounds are load-bearing, not accident
   at load, always — "no silent fallbacks" (`architecture.md` "Invariants"). The escape hatch is a new
   named metric, never a bypass flag.
 - **Operators are a shallow seam, easy to mistake for the top of the ladder.** They read as the
-  most "fluent-feeling" extension mechanism, but `pipeline.md` and
+  most chain-native extension mechanism, but `pipeline.md` and
   `customization.md` both stress a handler "cannot introduce a new terminal or bypass
   the validation and execution contracts of existing operators" — it can only *compose* already
   validated operations. The deeper seams (`BatchTransform`, `SegmentScorer`, a custom
@@ -280,13 +280,13 @@ runtime implementation, not kuration API design.
 
 | area | status | finding |
 |---|---|---|
-| `input()` and fluent configuration (`pipeline.py`) | adheres | input, schema refinement, media joins, segmentation, features, selection, expectations, and execution options all preserve the single immutable pipeline |
+| `input()` and pipeline configuration (`pipeline.py`) | adheres | input, schema refinement, media joins, segmentation, features, selection, expectations, and execution options all preserve the single immutable pipeline |
 | registered operators (`pipeline.py`, `registry.py`) | adheres | generated methods return a derived `Pipeline`, retain registry identity/provenance, and reject method-name collisions |
 | transforms/scorers/metrics | adheres | they contribute segment features inside execution rather than inventing domain result containers |
 | inspectors (`head`, `describe`, `preview`, `explain`) | intentional boundary | they explicitly ask to observe pipeline state or bounded input and therefore return inspection values |
 | terminals (`collect`, `review`, `output`, `report`, `stats`, `check`, `experiment`) | intentional boundary | each method names the result/artifact it produces; detached output is the point of the call |
 | analyzer drivers, `enrich`, and `analyze` | adheres | one driver owns stateful execution; `enrich` attaches the result to a pipeline while `analyze` intentionally returns it |
-| classic functional APIs and CLI commands | adheres as escape hatches | `curate`, `write_dataset`, analyzer drivers, reports, and CLI outputs are deliberately explicit non-fluent/result surfaces |
+| classic functional APIs and CLI commands | adheres as escape hatches | `curate`, `write_dataset`, analyzer drivers, reports, and CLI outputs are deliberately explicit non-pipeline/result surfaces |
 
 `Pipeline.metadata` is defensively copied, preserved by cloning, described and published with
 the pipeline, and populated through strict-JSON `with_metadata`/`enrich` primitives.
@@ -369,16 +369,16 @@ compatibility:
 
 ## Known tensions (surfaced, not smoothed over)
 
-- **`PLAN.md` predates the fluent pipeline.** Its "non-negotiable" design principles
-  and phase log never mention `input()` or fluent operators at all — they
-  were written for the classic-API-only era. If you're looking for *why* the fluent layer was
+- **`PLAN.md` predates the pipeline layer.** Its "non-negotiable" design principles
+  and phase log never mention `input()` or pipeline operators at all — they
+  were written for the classic-API-only era. If you're looking for *why* the pipeline layer was
   added on top, that rationale lives in `docs/pipeline.md` and
   `docs/documentation-contract.md`, not in the historical build log. Treat `PLAN.md` as
   authoritative for the classic engine's invariants, and this document plus `pipeline.md` as
   authoritative for the two-tier API story layered on top later.
-- **Job-spec vs. Python is not a strict subset of fluent vs. classic** — see the two-axes table
+- **Job-spec vs. Python is not a strict subset of pipeline vs. classic** — see the two-axes table
   above. Don't reason "CLI = simple, Python = powerful"; reason "declarative-by-name" vs.
-  "arbitrary code," independently of fluent vs. classic.
+  "arbitrary code," independently of pipeline vs. classic.
 - **Every extension you add should be checked against the ladder, not just shipped.** Before
   registering a new component kind or adding a `Pipeline` method by hand, ask: does an existing
   row in the decision ladder already cover this shape? If a new capability doesn't fit any of
@@ -391,7 +391,7 @@ When adding a new capability, ask, in order:
 1. Which row of the decision ladder does this belong to? (If none fit, that's worth a
    conversation before writing code — see the tension above.)
 2. Does the beginner-facing default stay a strict subset of the expert escape hatch — could a
-   fluent method for this be *generated* from a registry entry, the way operators are, rather
+   pipeline method for this be *generated* from a registry entry, the way operators are, rather
    than hand-written?
 3. Does it preserve "one `Pipeline` type" and the collision guard, so an expert's registration
    can't silently break a beginner's existing call?

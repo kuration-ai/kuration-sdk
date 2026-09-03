@@ -1,4 +1,4 @@
-"""Coverage for the kuration.selection domain: recipes, fluent operators, and the
+"""Coverage for the kuration.selection domain: recipes, Pipeline operators, and the
 config-driven plan/run/describe runner.
 
 Ported from the standalone kuration-ai package (preserved untouched on the
@@ -66,7 +66,7 @@ def measured_pipeline(base_pipeline):
 
 # ---------- Registration -----------------------------------------------------
 
-def test_recipes_are_registered_as_fluent_operators():
+def test_recipes_are_registered_as_operators():
     names = default_registry.names("operator")
     assert "kuration/balanced-selector" in names
     assert "kuration/rare-event-coverage" in names
@@ -86,13 +86,13 @@ def test_balanced_selector_selects_expected_count(base_pipeline):
     assert len(result.selected) == 20
 
 
-def test_balanced_selector_fluent_operator_matches_dataclass(base_pipeline):
+def test_balanced_selector_operator_matches_dataclass(base_pipeline):
     op = BalancedSelector(feature="activity", of="signal", kind="std", bins=4, count=20)
     direct = op.apply(base_pipeline).options(mode="strict", seed=1).collect()
-    fluent = base_pipeline.balanced_selector(
+    via_pipeline = base_pipeline.balanced_selector(
         feature="activity", of="signal", kind="std", bins=4, count=20
     ).options(mode="strict", seed=1).collect()
-    assert len(direct.selected) == len(fluent.selected) == 20
+    assert len(direct.selected) == len(via_pipeline.selected) == 20
 
 
 def test_rare_event_coverage_selects_expected_count(base_pipeline):
@@ -101,13 +101,13 @@ def test_rare_event_coverage_selects_expected_count(base_pipeline):
     assert len(result.selected) == 15
 
 
-def test_rare_event_coverage_fluent_operator_matches_dataclass(base_pipeline):
+def test_rare_event_coverage_operator_matches_dataclass(base_pipeline):
     op = RareEventCoverage(of="fault", count=15)
     direct = op.apply(base_pipeline).options(mode="strict", seed=1).collect()
-    fluent = base_pipeline.rare_event_coverage(of="fault", count=15).options(
+    via_pipeline = base_pipeline.rare_event_coverage(of="fault", count=15).options(
         mode="strict", seed=1
     ).collect()
-    assert len(direct.selected) == len(fluent.selected) == 15
+    assert len(direct.selected) == len(via_pipeline.selected) == 15
 
 
 def test_diverse_subset_selects_expected_count(measured_pipeline):
@@ -127,13 +127,13 @@ def test_diverse_subset_with_dedup_selects_expected_count(measured_pipeline):
     assert len(result.selected) == 15
 
 
-def test_diverse_subset_fluent_operator_matches_dataclass(measured_pipeline):
+def test_diverse_subset_operator_matches_dataclass(measured_pipeline):
     op = DiverseSubset(features=("act", "temp_mean"), count=15, n_clusters=4)
     direct = op.apply(measured_pipeline).options(mode="strict", seed=1).collect()
-    fluent = measured_pipeline.diverse_subset(
+    via_pipeline = measured_pipeline.diverse_subset(
         features=("act", "temp_mean"), count=15, n_clusters=4
     ).options(mode="strict", seed=1).collect()
-    assert len(direct.selected) == len(fluent.selected) == 15
+    assert len(direct.selected) == len(via_pipeline.selected) == 15
 
 
 def test_describe_names_the_compiled_sdk_chain():

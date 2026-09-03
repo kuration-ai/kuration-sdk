@@ -14,7 +14,7 @@ strategies, and output contracts.
   <img src="assets/curation-flow.svg" alt="Sources become candidate windows, measured features, selected data, and verified artifacts" width="96%">
 </p>
 
-Five concepts carry through every fluent pipeline, Python API call, and JSON job:
+Five concepts carry through every pipeline, Python API call, and JSON job:
 
 1. **Source** — one leakage boundary such as a session, trajectory, recording, or clip. An
    adapter presents every source as canonical timestamped ticks.
@@ -45,7 +45,7 @@ operate on written artifacts. This separation lets a team answer three different
   filled, then writes the dataset artifact. It is the production path when emitted training
   volume is the real constraint.
 
-The fluent `Pipeline` is the default authoring interface. The explicit `curate(...)` and
+The `Pipeline` is the default authoring interface. The explicit `curate(...)` and
 `write_dataset(...)` functions expose the same engine for declarative jobs and custom low-level
 components. Input-backed enrichments also return a pipeline and retain their namespaced result
 in `pipeline.metadata`; inspectors and terminals return detached results only when that result is
@@ -130,7 +130,7 @@ content-addressed or immutable source versions and compatible component implemen
 
 ## Where to go next
 
-- Build a fluent pipeline in the [pipeline guide](pipeline.md).
+- Build a pipeline in the [pipeline guide](pipeline.md).
 - Package a reviewed workflow in [building operators](operators.md).
 - Find task variations in the [cookbook](usage.md).
 - Learn the artifact contract in [outputs and integrity](output.md).

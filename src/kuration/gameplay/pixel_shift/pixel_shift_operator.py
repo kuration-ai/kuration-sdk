@@ -631,7 +631,7 @@ class PixelShift:
 
 
 def pixel_shift(pipeline, *, controls=None, boundary: str = "exclude"):
-    """Compose the registered transform into a fluent pipeline."""
+    """Compose the registered transform into a pipeline."""
     params = {"boundary": boundary}
     if controls is not None:
         params["controls"] = controls
