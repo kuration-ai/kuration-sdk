@@ -21,6 +21,7 @@ import argparse
 import csv
 import math
 import random
+import tempfile
 from pathlib import Path
 
 from kuration import input, iter_shards
@@ -150,10 +151,15 @@ def main() -> None:
 
     if sum(bool(x) for x in (args.source, args.download, args.demo)) != 1:
         parser.error("pass exactly one of: a source path, --download, or --demo")
+    if args.demo:
+        # Demo data must live outside --out: output() rejects any pipeline whose
+        # output directory overlaps one of its input sources.
+        with tempfile.TemporaryDirectory(prefix="kuration_ett_demo_") as directory:
+            source = str(write_demo(Path(directory) / "ETTh1-demo.csv"))
+            run(source, args.out, n=args.n)
+        return
     if args.download:
         source = str(download(Path("data/ett/ETTh1.csv")))
-    elif args.demo:
-        source = str(write_demo(Path(args.out) / "_demo" / "ETTh1-demo.csv"))
     else:
         source = args.source
 

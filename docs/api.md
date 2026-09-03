@@ -1,7 +1,7 @@
 # API reference — the public Python surface
 
 Every name importable from `kuration` (plus the public `kuration.core`, `kuration.core.torch`,
-and `kuration.gameplay` domain),
+`kuration.gameplay`, and `kuration.selection` domains),
 grouped by layer, with its real
 signature. Optional-extra requirements are tagged (`[methods]`, `[parquet]`, `[array]`,
 `[video]`, `[ray]`,
@@ -30,10 +30,17 @@ objects as noted below.
 | `stats` | `(subject, *, hist_bins=10, max_sources=3, max_ticks_per_source=10000, examples=5, max_values=100000, content=True, verify=False, progress=None, registry=None) -> StatsReport` | unified statistics for a pipeline, count selection, write result, typed report, or existing artifact path |
 | `progress_callback` | `(progress="auto") -> ProgressCallback \| None` | resolve `"auto"`, `"notebook"`, `"terminal"`, `"cli"`, `"off"`, a boolean, or an existing callback; pipeline users normally select this through `.options(progress=...)` |
 | `kuration.core` | module | explicit import facade for the domain-agnostic top-level API |
-| `kuration.gameplay.slam_pipeline` | `(source, output=None, *, depth_model=None, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, runtime_factory=None, join_video=False, tolerance=None, mismatch="error", provider=None, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False, **runtime_options) -> Pipeline` | convenience function—not a class—that reconstructs raw input when needed or opens an existing SLAM manifest, then returns the sole curation pipeline type |
+| `kuration.gameplay.slam_reconstruct` | `(source, output=None, *, depth_model=None, embedding_model=None, embeddings=None, depth_model_id=None, embedding_model_id=None, runtime_factory=None, join_video=False, tolerance=None, mismatch="error", provider=None, run_if_needed=True, decoder_options=None, export_options=None, resume=False, cache_key=None, progress=None, preflight=True, require_gpu=False, **runtime_options) -> Pipeline` | convenience function—not a class—that reconstructs raw input when needed or opens an existing SLAM manifest, then returns the sole curation pipeline type |
 | `kuration.gameplay.action_state_checker` | `(*, baselines=None, anomaly_type="action_state", calibration=None) -> Analyzer` | construct the action-state consistency analyzer without a component-name string; omitting `baselines` self-calibrates (leave-one-out consensus outlier detection) |
 | `kuration.gameplay.load_baselines_from_reference` | `(reference, *, controls=None) -> dict` | validate an action-state reference report and derive checker baselines, optionally for a control subset |
 | `kuration.gameplay.compare_videos` | `(left, right, *, labels=None, provider=None) -> VideoComparison` | create a synchronized notebook/HTML gameplay review without eagerly importing PyAV or Matplotlib |
+| `kuration.selection.BalancedSelector` | `(feature, of, kind="std", bins=8, count=100)` | frozen dataclass; `.apply(pipeline) -> Pipeline` and `.describe() -> str` compile to the `kuration/balanced-selector` chain |
+| `kuration.selection.RareEventCoverage` | `(of, feature="event_rate", count=100, weight=1.0)` | frozen dataclass; `.apply(pipeline) -> Pipeline` and `.describe() -> str` compile to the `kuration/rare-event-coverage` chain |
+| `kuration.selection.DiverseSubset` | `(features, count=100, n_clusters=32, dedup_threshold=None)` | frozen dataclass; `.apply(pipeline) -> Pipeline` and `.describe() -> str` compile to the `kuration/diverse-subset` chain (`[methods]`) |
+| `kuration.selection.run` | `(pipeline, operations) -> Pipeline` | chain `Operation` instances or `{"type": "ClassName", ...}` config dicts over a pipeline |
+| `kuration.selection.plan` | `(operations) -> list` | resolve config dicts into `Operation` instances without applying them |
+| `kuration.selection.describe` | `(operations) -> str` | multi-line human summary of a resolved plan, naming each operation's compiled SDK chain |
+| `kuration.selection.register_operation_type` | `(name, operation_class) -> None` | register a user `Operation` class for `{"type": name, ...}` config-dict use |
 
 Shared kwargs: `group_of(source_id) -> key` sets each segment/track's `group` (for the group
 cap and stratified splits); `tags_of(segment) -> iterable` overrides declarative tags;
@@ -64,11 +71,14 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.window` | `(window, stride=None, unit="steps") -> Pipeline` | set the `Segmenter` |
 | `Pipeline.join_video` | `(videos, *, column="frame", on="timestamp", tolerance=None, mismatch="error", provider=None) -> Pipeline` | attach a strictly aligned lazy video media column |
 | `Pipeline.pixel_shift` | `(*, controls=None, boundary="exclude") -> Pipeline` | registered by `kuration.gameplay` as `aintropy/pixel-shift`; add the DIAMOND action/pixel-motion features (`[pixel-shift]` when frames are measured) |
-| `Pipeline.action_state_consistency` | `(*, baselines=None, anomaly_type="action_state", controls=None, calibration=None, boundary="exclude", mode=None, inputs=None, batch_size=None, frames=None, actions=None, color_space=None, verify=None, metadata_key="action_state_consistency", replace=False) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/action-state-consistency`; run the existing analyzer once and attach its verdict under `metadata["gameplay"][metadata_key]`. `baselines=` checks against external calibration; `controls=` alone self-calibrates (leave-one-out consensus, knobs via `calibration=`) |
+| `Pipeline.action_state_consistency` | `(*, baselines=None, anomaly_type="action_state", controls=None, calibration=None, boundary="exclude", frames=None, actions=None, color_space=None, verify=None, metadata_key="action_state_consistency", replace=False) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/action-state-consistency`; dataset-mode only (audits an already-written dataset), runs the analyzer once and attaches its per-clip verdict under `metadata["gameplay"][metadata_key]`. For a live pipeline, use the `aintropy/action-state-consistency` scorer via `.score(...)` instead. `baselines=` checks against external calibration; `controls=` alone self-calibrates (leave-one-out consensus, knobs via `calibration=`) |
 | `Pipeline.collision` | `(*, map_for_source, map_registry, dist_path, disk_cache_dir=".kuration_collision_cache", min_score=2.0, proximity=40.0, min_approach=250.0, max_residual=20.0, slide_angle=75.0, max_slide_speed=400.0, min_release_accel=100.0, max_release_vn=100.0) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/collision`; add per-window CS2 wall-collision count/anomaly features raycast against map geometry (`[collision]` for trimesh/rtree) |
 | `Pipeline.collision_directional` | `(*, map_registry, ramp_models_path, map_for_source=None, default_map=None, fallback_ramp=None, disk_cache_dir=None, proximity=None, min_missing_speed=None, concentration_ratio=None, inputs=None, batch_size=None, metadata_key="directional_collision", replace=False) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/collision-directional`; run the tick-stream analyzer once and attach its verdict (including `flagged_ticks` in source coordinates) under `metadata["gameplay"][metadata_key]` |
 | `Pipeline.slam_motion_diversity` | `(*, axis="slam_path_length", bins=8) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/slam-motion-diversity`; add SLAM motion features and bin one diversity axis |
 | `Pipeline.slam_quality` | `(*, min_score=None, min_tracking_confidence=0.5, translation_ratio=10.0, translation_mad_multiplier=8.0, max_translation_step=None, max_turn_degrees=90.0) -> Pipeline` | registered by `kuration.gameplay` as `aintropy/slam-quality`; add SLAM quality features and optionally filter weak windows |
+| `Pipeline.balanced_selector` | `(feature, of, kind="std", bins=8, count=100) -> Pipeline` | registered by `kuration.selection` as `kuration/balanced-selector`; measure a feature, quantile-bin it, and sample equally across bins |
+| `Pipeline.rare_event_coverage` | `(of, feature="event_rate", count=100, weight=1.0) -> Pipeline` | registered by `kuration.selection` as `kuration/rare-event-coverage`; measure a boolean/0-1 field's per-window rate and weighted-sample toward it |
+| `Pipeline.diverse_subset` | `(features, count=100, n_clusters=32, dedup_threshold=None) -> Pipeline` | registered by `kuration.selection` as `kuration/diverse-subset`; optional dedup then cluster-balanced sampling over pre-measured features (`[methods]`) |
 | `Pipeline.transform` | `(name, *, using=None, inputs=None, batch_size=None, device="cpu", **params) -> Pipeline` | add a registered bounded scalar-feature transform |
 | `Pipeline.using` | `(registry) -> Pipeline` | resolve adapters, analyzers, containers, encoders, filters, methods, metrics, operators, presets, scorers, and transforms through one explicit `Registry` overlay |
 | `Pipeline.metadata` | read-only `dict` property | defensive deep copy of namespaced caller/enrichment metadata carried by the pipeline |
@@ -377,7 +387,7 @@ The facade itself also exports four registration modules and its idempotent regi
 | name | signature | does |
 |---|---|---|
 | `kuration.gameplay.pixel_shift` | module | pixel-shift transform, operator, and report facade |
-| `kuration.gameplay.action_state_consistency` | module | action-state analyzer and pipeline-operator facade |
+| `kuration.gameplay.action_state_consistency` | module | action-state scorer (live pipeline), dataset-mode analyzer, and pipeline-operator facade |
 | `kuration.gameplay.collision` | module | CS2 wall-collision transform/operator, directional tick-stream analyzer, adapters, and ramp-fit helpers |
 | `kuration.gameplay.slam` | module | SLAM reconstruction, trajectory, and point-cloud facade |
 | `kuration.gameplay.register` | `() -> None` | idempotently register every maintained gameplay component and stats enricher |
@@ -387,9 +397,10 @@ The facade itself also exports four registration modules and its idempotent regi
 | `kuration.gameplay.pixel_shift.pixel_shift` | `(pipeline, *, controls=None, boundary="exclude") -> Pipeline` | compositional `aintropy/pixel-shift` operator backed by the transform of the same name (`[pixel-shift]` for OpenCV execution) |
 | `PixelShift` | `(*, controls=None, boundary="exclude")` | bounded batch transform producing per-control shift min/max/mean/measured/count/requested features |
 | `PixelShiftReport` | `()`; `.add_segment(...)`, `.print_report()` | user-owned cross-segment instance report |
-| `kuration.gameplay.action_state_consistency.action_state_consistency` | `(*, anomaly_type, baselines=None, calibration=None) -> ActionStateConsistencyChecker` | factory registered as analyzer `aintropy/action-state-consistency`; `baselines=None` self-calibrates |
-| `kuration.gameplay.action_state_consistency.attach_action_state_consistency` | `(pipeline, *, baselines=None, anomaly_type="action_state", controls=None, calibration=None, boundary="exclude", mode=None, inputs=None, batch_size=None, frames=None, actions=None, color_space=None, verify=None, metadata_key="action_state_consistency", replace=False) -> Pipeline` | handler registered as the direct pipeline operator of the same stable name; requires `baselines=` or `controls=` |
-| `ActionStateConsistencyChecker` | `(config)`; `.add_segment(...)`, `.clip_verdict(source_id)`, `.summary()`, `.print_report()` | classify clips against pixel-shift baselines (`[action-state]` for frame measurement) |
+| `kuration.gameplay.action_state_consistency.ActionStateAnomalyScorer` | `(*, baselines=None, controls=None, calibration=None)`; `.score(segments, ctx) -> ndarray` | `SegmentScorer` registered as `aintropy/action-state-consistency`, reached through `.score(...)` on a live pipeline; per-segment count of `Segment.records["aintropy/pixel-shift"]` instances inconsistent with the baseline |
+| `kuration.gameplay.action_state_consistency.action_state_consistency` | `(*, anomaly_type, baselines=None, calibration=None) -> ActionStateConsistencyChecker` | factory registered as the dataset-mode-only analyzer `aintropy/action-state-consistency`; `baselines=None` self-calibrates |
+| `kuration.gameplay.action_state_consistency.attach_action_state_consistency` | `(pipeline, *, baselines=None, anomaly_type="action_state", controls=None, calibration=None, boundary="exclude", frames=None, actions=None, color_space=None, verify=None, metadata_key="action_state_consistency", replace=False) -> Pipeline` | dataset-mode-only handler registered as the direct pipeline operator of the same stable name; requires `baselines=` or `controls=` |
+| `ActionStateConsistencyChecker` | `(config)`; `.add_segment(...)`, `.clip_verdict(source_id)`, `.summary()`, `.print_report()`, `.resolved_baselines_for_clip(source_id)`, `.is_instance_consistent(source_id, control, cell_key, shift)` | classify clips against pixel-shift baselines (`[action-state]` for frame measurement) |
 | `AnomalyChecker` | `(validated_config)` | measurement-agnostic tuple aggregation used by the action-state adapter |
 | `kuration.gameplay.collision.CollisionMechanics` | `(*, map_for_source, map_registry, dist_path, **thresholds)` | bounded batch transform registered as `aintropy/collision`: per-window collision counts/anomaly score raycast against map geometry (`[collision]`) |
 | `kuration.gameplay.collision.attach_directional_collision` | `(pipeline, *, map_registry, ramp_models_path, map_for_source=None, default_map=None, fallback_ramp=None, disk_cache_dir=None, proximity=None, min_missing_speed=None, concentration_ratio=None, inputs=None, batch_size=None, metadata_key="directional_collision", replace=False) -> Pipeline` | handler registered as the direct pipeline operator `aintropy/collision-directional`; runs the tick-stream analyzer once and attaches its verdict |
@@ -411,6 +422,19 @@ The facade itself also exports four registration modules and its idempotent regi
 The associated validation and decoding helpers are documented in
 [pixel-shift.md](pixel-shift.md), [collision.md](collision.md), and
 [action-state-consistency.md](action-state-consistency.md).
+
+## Built-in selection recipes
+
+The `kuration.selection` domain ships in the SDK wheel: three general-purpose curation recipes
+with no gameplay/video assumptions, plus a config-driven `run`/`plan`/`describe` runner. See
+[selection.md](selection.md).
+
+| name | signature | does |
+|---|---|---|
+| `kuration.selection.operations` | module | `BalancedSelector`, `RareEventCoverage`, `DiverseSubset` dataclasses |
+| `kuration.selection.operators` | module | fluent-operator wrappers (`balanced_selector`, `rare_event_coverage`, `diverse_subset`) and their JSON-Schema parameter descriptors |
+| `kuration.selection.plan` | module | `Operation` protocol and the `run`/`plan`/`describe`/`register_operation_type` config runner |
+| `kuration.selection.register` | `() -> None` | idempotently register the three selection operators |
 
 ## SLAM reconstruction and curation
 

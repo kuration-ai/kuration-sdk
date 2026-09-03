@@ -24,7 +24,7 @@ from .collision import (
     load_ramp_models,
     save_ramp_models,
 )
-from .convenience import action_state_checker, slam_pipeline
+from .convenience import action_state_checker, slam_reconstruct
 from .pixel_shift import PixelShift, PixelShiftReport
 from .slam import (
     SLAMReconstructor,
@@ -90,5 +90,5 @@ __all__ = [
     "register",
     "save_ramp_models",
     "slam",
-    "slam_pipeline",
+    "slam_reconstruct",
 ]

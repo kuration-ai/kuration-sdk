@@ -83,7 +83,7 @@ def _h5py():
         import h5py
     except ImportError as exc:
         raise ImportError(
-            "the TeaPearce example needs h5py: python -m pip install -e '.[array]'") from exc
+            "the TeaPearce example needs h5py: pip install \"kuration-sdk[array]\"") from exc
     return h5py
 
 

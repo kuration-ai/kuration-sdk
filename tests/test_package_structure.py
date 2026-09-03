@@ -36,7 +36,7 @@ def test_kuration_implementation_is_split_into_explicit_domains() -> None:
     }
 
     assert implementation_modules == set()
-    assert domains == {"core", "gameplay"}
+    assert domains == {"core", "gameplay", "sample_data", "selection"}
 
 
 def test_removed_root_compatibility_packages_are_not_importable() -> None:
@@ -60,8 +60,8 @@ def test_slam_reconstruction_and_curation_pipeline_boundaries_are_explicit() -> 
     assert not hasattr(kuration.gameplay, "as_gameplay")
     assert not hasattr(kuration.gameplay, "input")
     assert not issubclass(kuration.gameplay.SLAMReconstructor, kuration.Pipeline)
-    assert callable(kuration.gameplay.slam_pipeline)
-    assert not isinstance(kuration.gameplay.slam_pipeline, type)
+    assert callable(kuration.gameplay.slam_reconstruct)
+    assert not isinstance(kuration.gameplay.slam_reconstruct, type)
 
 
 def test_vendored_slam_runtime_is_outside_first_party_coverage() -> None:

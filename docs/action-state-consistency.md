@@ -2,8 +2,9 @@
 
 A generic clip-level anomaly-detection core, plus one concrete anomaly type built on top
 of it: **action_state**, which checks Kuration's pixel-shift operator's per-instance pixel
-shift measurements against baselines you supply, and classifies every clip in your dataset
-as **CONSISTENT**, **INCONSISTENT**, or **INCONCLUSIVE**.
+shift measurements against baselines you supply. In a live pipeline this is a per-window
+anomaly count (see [Usage](#usage)); auditing an already-written dataset classifies every
+clip as **CONSISTENT**, **INCONSISTENT**, or **INCONCLUSIVE**.
 
 `kuration.gameplay.pixel_shift` measures what pixel motion happened for every isolated
 key/mouse press — deliberately making no judgment about whether that motion was
@@ -15,11 +16,10 @@ Only `action_state` composes with the built-in pixel-shift measurement API.
 ## Install
 
 ```bash
-python -m pip install -e ".[action-state]"
+pip install "kuration-sdk[action-state]"
 ```
 
-Run this from the repository root. Use `.[gameplay]` to install this analyzer together with
-Pixel Shift and SLAM.
+Use `[gameplay]` to install this analyzer together with Pixel Shift and SLAM.
 The analyzer, validation, and aggregation code ships in the base SDK. The extra installs
 OpenCV for measurements made from frames. For repository development:
 
@@ -30,30 +30,40 @@ python -m pytest tests/test_action_state_consistency.py tests/test_anomaly_check
 
 ## What gets registered with kuration-sdk
 
-The SDK registers `aintropy/action-state-consistency` twice through distinct registry kinds:
+The SDK registers `aintropy/action-state-consistency` three times, through distinct registry
+kinds, split by what each one is actually for:
 
-- as the stateful analyzer that owns cross-segment accumulation and both execution hooks; and
-- as the direct `.action_state_consistency(...)` operator that drives that analyzer once and
-  returns a pipeline carrying the result.
+- as a **scorer** (`ActionStateAnomalyScorer`) — the live-pipeline path. Reachable through
+  `.score("aintropy/action-state-consistency", out=..., baselines=..., controls=...)` like any
+  other registered scorer, or fluently as `pipeline.pixel_shift(...).score(...)`. It reads each
+  window's own `Segment.records["aintropy/pixel-shift"]` (populated by the pixel-shift
+  transform) rather than re-deriving isolated presses from raw frames, so pixel-shift and
+  action-state consistency actually share computation. Its output is one anomaly count per
+  *window*, not a per-clip verdict — see [Usage](#usage) below.
+- as the stateful **analyzer** — dataset-mode only now. It audits an already-written, curated
+  dataset's shards (`check_dataset`, identical to what `run_dataset_analyzer()`/`kur-check`
+  drive). It never shared computation with a live pixel-shift transform in the first place, so
+  it is unaffected by the scorer above and keeps the full per-clip
+  CONSISTENT/INCONSISTENT/INCONCLUSIVE verdict. The tick-stream-driven mode (`add_batch` over a
+  live pipeline, redundantly re-deriving pixel-shift's own measurements from raw frames) is
+  retired; the scorer is its replacement.
+- as the direct `.action_state_consistency(...)` **operator** — dataset-mode only, wrapping the
+  analyzer above and attaching its per-clip verdict to pipeline metadata. Calling it on a
+  live (non-written) pipeline raises the same "artifact-backed pipeline" error `.check()` gives
+  under the same circumstance.
 
-The operator is the normal input-backed API. The analyzer remains the single implementation and
-the explicit escape hatch: `.analyze()` returns its detached result,
-`run_dataset_analyzer()`/`kur-check` drive written artifacts, and a caller-owned checker can
-still receive `add_segment()` calls. The analyzer descriptor advertises both driven modes
-(`capabilities: {"stateful", "cross_segment", "tick_stream", "dataset"}`); the operator
-advertises that it contributes pipeline metadata.
-
-Discover it without reading a dataset:
+Discover any of the three without reading a dataset:
 
 ```bash
+kur-list scorers
 kur-list analyzers
+kur-describe scorer aintropy/action-state-consistency --json
 kur-describe analyzer aintropy/action-state-consistency --json
 kur-describe operator aintropy/action-state-consistency --json
 ```
 
-Registration only stores dependency-light analyzer/operator callables; it does not run optical
-flow.
-Discovery and analyzer construction therefore work without OpenCV.
+Registration only stores dependency-light scorer/analyzer/operator callables; it does not run
+optical flow. Discovery and construction therefore work without OpenCV.
 
 ## Structure
 
@@ -172,37 +182,27 @@ instances is `inconclusive`, not blessed.
 
 ## Usage
 
-### Keep the result on the pipeline
+### Score each window in a live pipeline
 
-Importing `kuration.gameplay` registers the direct method on the ordinary core `Pipeline`.
-It decodes frames through the SDK's bounded media path, drives the analyzer once, and returns an
-immutable pipeline carrying the verdict:
+Importing `kuration.gameplay` registers `.pixel_shift(...)` and the
+`aintropy/action-state-consistency` scorer on the ordinary core `Pipeline`. Measure pixel-shift
+first, so each window's own presses are available in `Segment.records`, then score:
 
 The download-free runnable companion is
 `examples/07_action_state_consistency.py`;
 it injects an in-memory media provider, exercises real optical flow, and shows both verdicts.
 
 ```python
-import kuration.gameplay  # registers the direct method
+import kuration.gameplay  # registers pixel-shift and the scorer
 from kuration import input
 
-pipeline = (
+dataset = (
     input({"clip1": rows}, schema=schema, fields={"action": action_columns}, time="t")
     .join_video({"clip1": "clip1.mp4"})            # lazy frames
     .window(64, stride=32)
-    .options(streaming=True)
-    .action_state_consistency(baselines=baselines, controls=["W"])
-)
-
-result = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
-result["passed"]       # False if any clip is inconsistent
-result["summary"]      # {"consistent": [...], "inconsistent": [...], "inconclusive": [...]}
-result["frame_space"]  # "source" -- real source frames (see below)
-
-# Keep working with the same value.
-dataset = (
-    pipeline
     .pixel_shift(controls=["W"])
+    .score("aintropy/action-state-consistency", out="action_state_anomaly",
+          baselines=baselines, controls=["W"])
     .filter("w_shift_measured", ">=", 1)
     .bin("w_shift_mean", bins=8)
     .sample("equal", n=100)
@@ -210,36 +210,42 @@ dataset = (
 )
 ```
 
-The metadata entry also records the analyzer descriptor, invocation, resolved mode, and a digest
-of the input basis it describes. Later selection and output calls preserve it. Changing the
-schema, video join, window, or registry after materialization fails loudly instead of leaving a
-stale verdict attached. Use `metadata_key=` to retain multiple labeled checks and
-`replace=True` only for an explicit overwrite.
+Every selected segment carries `action_state_anomaly` — the count of that window's OWN
+pixel-shift instances that violate the baseline (0 if none do, or if the window has no
+recorded presses to judge). This is scored per window, not per clip: two overlapping windows
+that both contain the same physical press are each scored independently from their own
+content, since a window's score should reflect what that window itself contains. Reducing
+this back up to a whole-clip verdict (the pre-scorer analyzer's CONSISTENT/INCONSISTENT/
+INCONCLUSIVE) is not yet a built-in capability; for that, either audit an already-written
+dataset (next section) or construct `ActionStateConsistencyChecker` directly (see
+[Own the detailed checker](#own-the-detailed-checker)).
 
-The analyzer declares the same input contract as the pixel-shift transform
-(`inputs=("media:frame", "field:action")`, one lookbehind action row, three lookahead rows,
-`media_requirements={"kind": "video-frame", "layout": "HWC"}`), because instances are discovered
-through the same measurement API. Consequences worth knowing:
+Self-calibration (omitting `baselines=` in favor of `controls=` + optional `calibration=`)
+still needs the whole pool to derive its leave-one-out consensus, which `.score()` sees in one
+call — the per-window judgment above is unaffected either way.
 
-- **Positions are real source frames.** `segment_ids` carry `(source_id, start_idx, end_idx)` of
-  the source window, so the documented `(source_id, control, cell_key, frame)` de-duplication
-  holds: one physical press seen by two overlapping windows is recorded once
-  (`cross_window_dedup: true`). This is exactly the guarantee dataset mode has to give up.
-- **One bounded pass.** Only a batch of windows and its halo are resident, so `streaming=True`
-  and long clips are fine. `batch_size=` sizes the batch; `inputs=` remaps the tokens if your
-  schema names its frames/actions differently.
-- **Options are the `add_segment` options.** `controls` and `boundary` pass through per batch;
-  `color_space` is read from the declared media column instead of assuming BGR.
+Baseline validation happens at scorer construction (schema/`resolve_controls` checks), so a bad
+config fails when `.score(...)` is called, not partway through execution.
 
-An artifact-backed pipeline (`input(adapter="curated", ...)`) instead resolves to dataset mode
-and attaches exactly what `run_dataset_analyzer()` returns. Pass `frames=`/`actions=` for
-non-default modality names or `mode="stream"`/`mode="dataset"` to choose explicitly.
+### Audit an already-written dataset
 
-### Return the result directly
-
-`.analyze()` uses the same analyzer driver but is intentionally terminal:
+`.action_state_consistency(...)` and `.analyze("aintropy/action-state-consistency", ...)` are
+dataset-mode only: they audit an already-written, curated dataset's shards and attach (or
+return) the same per-clip verdict `check_dataset`/`run_dataset_analyzer()` produce. Calling
+either on a live, non-written pipeline raises the same "artifact-backed pipeline" error
+`.check()` gives under the same circumstance — use the scorer above for a live pipeline instead.
 
 ```python
+adapter = CuratedDatasetAdapter("out/gameplay")
+pipeline = input(adapter=adapter, schema=adapter.schema, sources=adapter.sources())
+
+enriched = pipeline.action_state_consistency(baselines=baselines, controls=["W"])
+result = enriched.metadata["gameplay"]["action_state_consistency"]["result"]
+result["passed"]       # False if any clip is inconsistent
+result["summary"]      # {"consistent": [...], "inconsistent": [...], "inconclusive": [...]}
+result["frame_space"]  # "shard-concatenation" -- see below
+
+# Or get the result directly, without attaching it:
 result = pipeline.analyze(
     "aintropy/action-state-consistency",
     {"anomaly_type": "action_state", "baselines": baselines},
@@ -247,7 +253,10 @@ result = pipeline.analyze(
 )
 ```
 
-Use it when the result itself is the goal and no later pipeline work needs to retain it.
+The metadata entry also records the analyzer descriptor, invocation, resolved mode, and a digest
+of the input basis it describes. Later selection and output calls preserve it. Use
+`metadata_key=` to retain multiple labeled checks and `replace=True` only for an explicit
+overwrite. Pass `frames=`/`actions=` for non-default modality names.
 
 ### Own the detailed checker
 
@@ -338,6 +347,12 @@ records = checker.to_records()
 ```
 
 ## Verdict rule
+
+This section covers the per-clip verdict (`check_dataset`/`.analyze()`/`.action_state_consistency(...)`,
+dataset-mode audit and the direct checker). The live-pipeline scorer scores per window instead
+(see [Score each window in a live pipeline](#score-each-window-in-a-live-pipeline)); its
+per-instance judgment uses the same consistency rule, just without the clip-level aggregation
+below.
 
 For each clip (segments grouped by `segment_id`'s `source_id`):
 

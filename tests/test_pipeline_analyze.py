@@ -4,7 +4,11 @@ Every capability must be reachable without a JSON job spec or a CLI, so these te
 tick-stream analyzer path (`Pipeline.analyze` driving `add_batch` over segmented raw sources
 with lazy media), the artifact path (`check_dataset`, identical to `run_dataset_analyzer`),
 `.stats()` delegation, and `.check()` quality gates — plus the loud errors that keep an
-unsupported mode from silently doing nothing.
+unsupported mode from silently doing nothing. The built-in gameplay action-state-consistency
+coverage near the end of this file is dataset-mode only: its tick-stream mode was retired in
+favor of `ActionStateAnomalyScorer`, a `SegmentScorer` that reads pixel-shift's own
+per-instance `Segment.records` instead of redundantly re-deriving them from raw frames (see
+tests/test_action_state_consistency.py for the checker's own unit coverage of that scorer).
 """
 from __future__ import annotations
 
@@ -568,68 +572,74 @@ def _gameplay_pipeline(*, press_at=3, n_frames=8, window=4, stride=2, **options)
     return pipeline
 
 
-def test_action_state_analyzer_runs_on_a_tick_stream_pipeline():
-    checker = asc.action_state_consistency(anomaly_type="action_state", baselines=BASELINES)
-    result = _gameplay_pipeline().analyze(asc.ANALYZER_NAME, analyzer=checker,
-                                          controls=["W"])
-
-    assert result["passed"] is True
-    assert result["summary"]["consistent"] == ["clip1"]
-    assert result["segments_analyzed"] == 3
-    assert result["inputs"] == ["media:frame", "field:action"]
-    # Tick-stream mode measures in real source frames, so the documented cross-window
-    # de-duplication holds: overlapping windows [0,4) and [2,6) both see the press at
-    # source frame 3 and it is recorded exactly once, at that frame.
-    assert result["frame_space"] == "source"
-    assert result["cross_window_dedup"] is True
-    assert [record["frame"] for record in checker._clip_records["clip1"]] == [3]
+def _scored_gameplay_pipeline(baselines=None, *, controls=("W",), calibration=None, **kwargs):
+    pipeline = _gameplay_pipeline(**kwargs).pixel_shift(controls=list(controls))
+    return pipeline.score(asc.SCORER_NAME, out="action_state_anomaly",
+                          baselines=baselines, controls=list(controls),
+                          **({"calibration": calibration} if calibration is not None else {}))
 
 
-def test_action_state_direct_method_keeps_the_verdict_on_the_pipeline():
-    base = _gameplay_pipeline()
-    enriched = base.action_state_consistency(
-        baselines=BASELINES,
-        controls=["W"],
-    )
-    detached = base.analyze(
-        asc.ANALYZER_NAME,
-        {"anomaly_type": "action_state", "baselines": BASELINES},
-        controls=["W"],
-    )
+def test_action_state_scorer_counts_inconsistent_presses_per_window():
+    scored = _scored_gameplay_pipeline(BASELINES)
+    result = scored.curate(n=3, weights={"action_state_anomaly": 0.0}).options(
+        mode="strict", seed=1).collect()
 
-    assert base.metadata == {}
-    assert type(enriched) is type(base)
-    attachment = enriched.metadata["gameplay"]["action_state_consistency"]
-    assert attachment["result"] == detached
-    assert attachment["result"]["passed"] is True
-    assert attachment["result"]["summary"]["consistent"] == ["clip1"]
-    assert attachment["component"]["name"] == asc.ANALYZER_NAME
-    assert enriched.options(seed=11).metadata == enriched.metadata
-    assert enriched._ops[-1]["op"] == "apply"
-    assert enriched._ops[-1]["args"] == [asc.OPERATOR_NAME]
-    assert [item["op"] for item in enriched._ops[-1]["expansion"]] == ["enrich"]
+    by_window = {(seg.start_idx, seg.end_idx): seg.features["action_state_anomaly"]
+                 for seg in result.selected}
+    # press_at=3, window=4, stride=2 -> only [2,6) owns the press; it is consistent with
+    # BASELINES (expected_sign=1), so every window scores 0.
+    assert by_window == {(0, 4): 0.0, (2, 6): 0.0, (4, 8): 0.0}
+
+    flipped = {"W": {"1": {"expected_sign": -1, "min": 0.0, "max": 1e9}}}
+    scored_flipped = _scored_gameplay_pipeline(flipped)
+    inconsistent = scored_flipped.curate(n=3, weights={"action_state_anomaly": 0.0}).options(
+        mode="strict", seed=1).collect()
+    by_window_flipped = {(seg.start_idx, seg.end_idx): seg.features["action_state_anomaly"]
+                         for seg in inconsistent.selected}
+    # Same evidence, opposite expected sign: the one window that owns the press now scores 1;
+    # windows with no pixel-shift records of their own still score 0 (nothing to judge).
+    assert by_window_flipped == {(0, 4): 0.0, (2, 6): 1.0, (4, 8): 0.0}
 
 
-def test_action_state_direct_method_supports_labels_and_loud_replacement():
-    pipeline = _gameplay_pipeline().action_state_consistency(
-        baselines=BASELINES,
-        controls=["W"],
-        metadata_key="reference",
-    )
-    assert pipeline.metadata["gameplay"]["reference"]["result"]["passed"] is True
-    with pytest.raises(ValueError, match="already exists"):
-        pipeline.action_state_consistency(
-            baselines=BASELINES,
-            controls=["W"],
-            metadata_key="reference",
-        )
-    replaced = pipeline.action_state_consistency(
-        baselines=BASELINES,
-        controls=["W"],
-        metadata_key="reference",
-        replace=True,
-    )
-    assert replaced.metadata["gameplay"]["reference"]["result"]["passed"] is True
+def test_action_state_scorer_requires_baselines_or_controls():
+    with pytest.raises(ValueError, match="needs controls="):
+        asc.ActionStateAnomalyScorer()
+    with pytest.raises(ValueError, match="no baseline configured for control"):
+        asc.ActionStateAnomalyScorer(baselines=BASELINES, controls=["S"])
+
+
+def test_action_state_scorer_self_calibrates_without_baselines():
+    scored = _multi_clip_pipeline().pixel_shift(controls=["W"]).score(
+        asc.SCORER_NAME, out="action_state_anomaly", controls=["W"],
+        calibration=SELF_CALIBRATION)
+    result = scored.curate(n=100, weights={"action_state_anomaly": 0.0}).options(
+        mode="strict", seed=1).collect()
+
+    anomalous_by_clip: dict[str, float] = {}
+    for seg in result.selected:
+        anomalous_by_clip[seg.source_id] = max(
+            anomalous_by_clip.get(seg.source_id, 0.0), seg.features["action_state_anomaly"])
+    # clip5's footage runs backwards, so its press is the self-calibrated outlier.
+    assert anomalous_by_clip["clip5"] > 0
+    assert all(anomalous_by_clip.get(clip, 0.0) == 0.0
+              for clip in ("clip1", "clip2", "clip3", "clip4"))
+
+
+def test_action_state_dataset_operator_requires_an_artifact_backed_pipeline():
+    # The pipeline-attaching operator is dataset-mode only now (see module docstring);
+    # calling it on a live, non-written pipeline is the same loud rejection .check()/.analyze()
+    # already give a stream pipeline asked to run in dataset mode.
+    with pytest.raises(ValueError, match="artifact-backed pipeline"):
+        _gameplay_pipeline().action_state_consistency(baselines=BASELINES, controls=["W"])
+
+
+def test_action_state_dataset_operator_requires_baselines_or_controls():
+    with pytest.raises(ValueError, match="baselines= .*or.*controls="):
+        asc.attach_action_state_consistency(_gameplay_pipeline())
+    with pytest.raises(ValueError, match="self-calibrated"):
+        asc.attach_action_state_consistency(
+            _gameplay_pipeline(), baselines=BASELINES, controls=["W"],
+            calibration=SELF_CALIBRATION)
 
 
 class _MultiVideoProvider:
@@ -686,70 +696,6 @@ def _multi_clip_pipeline(n_clips=5, outlier="clip5", press_at=3, n_frames=8, **o
 SELF_CALIBRATION = {"min_samples": 3, "sign_consensus": 0.7}
 
 
-def test_action_state_self_calibrates_without_baselines():
-    result = _multi_clip_pipeline().analyze(
-        asc.ANALYZER_NAME,
-        {"anomaly_type": "action_state", "calibration": SELF_CALIBRATION},
-        controls=["W"])
-
-    assert result["passed"] is False
-    assert result["summary"]["inconsistent"] == ["clip5"]
-    assert result["summary"]["consistent"] == ["clip1", "clip2", "clip3", "clip4"]
-    calibration = result["calibration"]
-    assert calibration["mode"] == "self-calibrated"
-    assert calibration["min_samples"] == 3
-    assert calibration["derived_baselines"]["W"]["1"]["expected_sign"] == 1
-
-
-def test_action_state_direct_method_self_calibrates_and_records_the_consensus():
-    enriched = _multi_clip_pipeline().action_state_consistency(
-        controls=["W"], calibration=SELF_CALIBRATION)
-
-    attachment = enriched.metadata["gameplay"]["action_state_consistency"]
-    assert attachment["result"]["passed"] is False
-    assert attachment["result"]["summary"]["inconsistent"] == ["clip5"]
-    # The verdict carries the record of what "normal" was inferred to be.
-    assert attachment["result"]["calibration"]["mode"] == "self-calibrated"
-    assert "W" in attachment["result"]["calibration"]["derived_baselines"]
-    assert attachment["request"]["parameters"] == {
-        "anomaly_type": "action_state", "calibration": SELF_CALIBRATION}
-
-
-def test_action_state_requires_baselines_or_controls_and_rejects_stray_calibration():
-    pipeline = _gameplay_pipeline()
-    with pytest.raises(ValueError, match="baselines= .*or.*controls="):
-        pipeline.action_state_consistency()
-    with pytest.raises(ValueError, match="self-calibrated"):
-        pipeline.action_state_consistency(
-            baselines=BASELINES, controls=["W"], calibration=SELF_CALIBRATION)
-    # Without controls there is no configured set to default to: loud at drive time.
-    with pytest.raises(ValueError, match="needs controls="):
-        _multi_clip_pipeline().analyze(
-            asc.ANALYZER_NAME,
-            {"anomaly_type": "action_state", "calibration": SELF_CALIBRATION})
-
-
-def test_action_state_analyzer_reports_an_inconsistent_clip_from_a_tick_stream():
-    result = _gameplay_pipeline().analyze(
-        asc.ANALYZER_NAME,
-        {"anomaly_type": "action_state",
-         "baselines": {"W": {"1": {"expected_sign": -1, "min": 0.0, "max": 1e9}}}},
-        controls=["W"])
-    assert result["passed"] is False
-    assert result["summary"]["inconsistent"] == ["clip1"]
-
-
-def test_action_state_stream_mode_works_under_streaming():
-    streamed = _gameplay_pipeline(streaming=True).analyze(
-        asc.ANALYZER_NAME, {"anomaly_type": "action_state", "baselines": BASELINES},
-        controls=["W"])
-    resident = _gameplay_pipeline().analyze(
-        asc.ANALYZER_NAME, {"anomaly_type": "action_state", "baselines": BASELINES},
-        controls=["W"])
-    assert streamed == resident
-    assert streamed["passed"] is True
-
-
 def test_action_state_analyzer_runs_on_a_written_artifact(tmp_path):
     source = tmp_path / "clip.npz"
     dataset = tmp_path / "dataset"
@@ -780,52 +726,26 @@ def test_action_state_analyzer_runs_on_a_written_artifact(tmp_path):
     assert fluent["cross_shard_dedup"] is False
 
 
-def test_action_state_analyzer_declares_the_pixel_shift_input_contract():
+def test_action_state_analyzer_is_dataset_mode_only():
     from kuration.core.analyzers import analyzer_metadata
 
     meta = analyzer_metadata(asc.ANALYZER_NAME,
                              default_registry.get("analyzer", asc.ANALYZER_NAME))
-    transform = describe_component("transform", "aintropy/pixel-shift")
-    assert meta["inputs"] == ("media:frame", "field:action")
-    assert meta["lookbehind"] == {"field:action": 1}
-    assert meta["lookahead"] == 3
-    assert transform["capabilities"] == {}   # the roles are declared, not the capability set
-    assert describe_component("analyzer", asc.ANALYZER_NAME)["capabilities"][
-        "tick_stream"] is True
+    # No declared inputs/lookbehind/lookahead: the tick-stream path (which redundantly
+    # re-derived pixel-shift's own measurements from raw frames) is retired. check_dataset
+    # remains available -- it never shared computation with a live pixel-shift transform.
+    assert meta["inputs"] == ()
+    assert "tick_stream" not in describe_component(
+        "analyzer", asc.ANALYZER_NAME)["capabilities"]
+    assert describe_component("analyzer", asc.ANALYZER_NAME)["capabilities"]["dataset"] is True
+    with pytest.raises(ValueError, match="declares no field:/media: inputs"):
+        _gameplay_pipeline().analyze(
+            asc.ANALYZER_NAME, {"anomaly_type": "action_state", "baselines": BASELINES},
+            controls=["W"])
 
 
-def test_action_state_stream_mode_does_not_decode_unused_lookbehind_frames():
-    class CountingProvider(FakeVideoProvider):
-        def __init__(self, frames):
-            super().__init__(frames)
-            self.decode_calls: list[list[int]] = []
-
-        def decode_batch(self, refs):
-            refs = list(refs)
-            self.decode_calls.append([ref.frame_index for ref in refs])
-            return super().decode_batch(refs)
-
-    actions = [_action() for _ in range(8)]
-    actions[5] = _action(w=True)
-    rows = [{"t": index, **{column: float(value)
-                            for column, value in zip(ACTION_COLUMNS, actions[index],
-                                                     strict=True)}}
-            for index in range(8)]
-    provider = CountingProvider(_shifting_noise_frames(8))
-    result = (input({"clip1": rows}, schema=GAMEPLAY_SCHEMA,
-                    fields={"action": ACTION_COLUMNS}, time="t")
-              .join_video({"clip1": "fake.mp4"}, provider=provider, on="frame_index")
-              .window(4, stride=4)
-              .options(on_error="raise")
-              .analyze(asc.ANALYZER_NAME,
-                       {"anomaly_type": "action_state", "baselines": BASELINES},
-                       controls=["W"]))
-
-    assert result["passed"] is True
-    assert result["segments_analyzed"] == 2
-    # Owned windows plus each window's declared lookahead frames — and never the [3]
-    # lookbehind frame, which only the action stream declares (matching the pixel-shift
-    # transform's own decode ledger, because it is the same bounded decode path).
-    assert provider.decode_calls == [[0, 1, 2, 3], [4, 5, 6], [4, 5, 6, 7]]
-    assert [3] not in provider.decode_calls
+def test_action_state_scorer_is_registered_with_the_expected_parameter_contract():
+    descriptor = describe_component("scorer", asc.SCORER_NAME)
+    assert set(descriptor["parameters"]["properties"]) == {
+        "baselines", "controls", "calibration"}
     assert dad.ALL_CONTROLS  # the DIAMOND vocabulary stayed importable through this path

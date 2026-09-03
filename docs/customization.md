@@ -163,17 +163,13 @@ array length/uniqueness/`items`, and nested object `properties`, `required`, and
 ## Built-ins and external plugins
 
 First-party standard capabilities such as pixel shift, action-state consistency, and SLAM ship in
-the SDK wheel under `kuration.gameplay`, register when that domain is imported or discovered,
-and keep heavy frameworks in optional extras.
-Use [`plugins/_template`](https://github.com/aintropy-solutions/kuration-sdk/tree/main/plugins/_template)
-for independently versioned or externally distributed behavior. An external plugin owns its
-dependencies, tests, documentation, and `kuration.plugins` entry point.
-
-Run the complete isolated contribution contract locally with:
-
-```bash
-python scripts/check_plugin.py plugins/<plugin-name>
-```
+the SDK wheel under `kuration.gameplay`, and general-purpose curation recipes such as
+`BalancedSelector`, `RareEventCoverage`, and `DiverseSubset` ship under `kuration.selection`
+(see [Selection recipes](selection.md)); both domains register when imported or discovered and
+keep heavy frameworks in optional extras.
+For independently versioned or externally distributed behavior, publish your own package that owns
+its dependencies, tests, documentation, and `kuration.plugins` entry point (see the
+[operator guide](operators.md#6-choose-built-in-or-external-packaging) for the expected layout).
 
 For an already installed distribution, `kur-plugin-check <entry-point-name>` validates loading,
 descriptor package/version/install metadata, closed parameter schemas, namespacing, and transform

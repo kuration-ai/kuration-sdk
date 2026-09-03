@@ -20,7 +20,7 @@ import tempfile
 from kuration import SchemaSpec, Tick, input
 
 if importlib.util.find_spec("sklearn") is None:
-    raise SystemExit("this example needs scikit-learn: pip install -e '.[methods]'")
+    raise SystemExit("this example needs scikit-learn: pip install \"kuration-sdk[methods]\"")
 
 rng = random.Random(0)
 

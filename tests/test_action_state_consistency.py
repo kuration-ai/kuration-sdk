@@ -9,9 +9,10 @@ import pytest
 
 pytest.importorskip("cv2")
 
-from kuration import get_analyzer, import_dataset, run_dataset_analyzer
+from kuration import Segment, get_analyzer, import_dataset, run_dataset_analyzer
 from kuration.gameplay import action_state_consistency as asc
 from kuration.gameplay.action_state_consistency import (
+    ActionStateAnomalyScorer,
     ActionStateConsistencyChecker,
     load_baselines_from_reference,
     validate_action_state_baselines,
@@ -423,3 +424,101 @@ def test_check_dataset_reports_shard_relative_positions_and_no_cross_shard_dedup
     out = capsys.readouterr().out
     assert "frame space: shard-concatenation" in out
     assert "no cross-shard de-duplication in dataset mode" in out
+
+
+# ---------------------------------------------------------------------------------------
+# ActionStateAnomalyScorer: the SegmentScorer rehost, reading Segment.records instead of
+# re-deriving instances from raw frames.
+# ---------------------------------------------------------------------------------------
+
+def _record(control="W", cell_key="1", local_start=0, shift=0.5):
+    return {"control": control, "cell_key": cell_key, "local_start": local_start,
+            "shift": shift}
+
+
+def _segment(source_id, start_idx, end_idx, records=()):
+    seg = Segment(source_id, start_idx, end_idx, (float(start_idx), float(end_idx)))
+    if records:
+        seg.records[asc.PIXEL_SHIFT_RECORDS_KEY] = list(records)
+    return seg
+
+
+CONSISTENT_BASELINE = {"W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1e9}}}
+FLIPPED_BASELINE = {"W": {"1": {"expected_sign": -1, "min": 0.0, "max": 1e9}}}
+
+
+def test_action_state_anomaly_scorer_counts_inconsistent_records_per_segment():
+    scorer = ActionStateAnomalyScorer(baselines=CONSISTENT_BASELINE, controls=["W"])
+    segments = [
+        _segment("clip1", 0, 4, [_record(shift=0.5)]),          # one consistent record
+        _segment("clip1", 4, 8),                                # no records at all
+        _segment("clip1", 8, 12, [_record(shift=0.5), _record(local_start=1, shift=0.6)]),
+    ]
+    scores = scorer.score(segments, {})
+    assert list(scores) == [0.0, 0.0, 0.0]
+
+    flipped_scorer = ActionStateAnomalyScorer(baselines=FLIPPED_BASELINE, controls=["W"])
+    scores = flipped_scorer.score(segments, {})
+    assert list(scores) == [1.0, 0.0, 2.0]
+
+
+def test_action_state_anomaly_scorer_ignores_records_for_unrequested_controls():
+    scorer = ActionStateAnomalyScorer(baselines=FLIPPED_BASELINE, controls=["W"])
+    segments = [_segment("clip1", 0, 4, [_record(control="S", shift=0.5)])]
+    assert list(scorer.score(segments, {})) == [0.0]
+
+
+def test_action_state_anomaly_scorer_needs_controls_when_self_calibrated():
+    with pytest.raises(ValueError, match="needs controls="):
+        ActionStateAnomalyScorer()
+
+
+def test_action_state_anomaly_scorer_rejects_control_without_a_configured_baseline():
+    with pytest.raises(ValueError, match="no baseline configured for control"):
+        ActionStateAnomalyScorer(baselines=CONSISTENT_BASELINE, controls=["S"])
+
+
+def test_action_state_anomaly_scorer_self_calibrates_across_the_whole_pool():
+    # 4 normal clips with a +shift press, one outlier clip with a -shift press: enough
+    # independent evidence (min_samples=3) for the outlier's leave-one-out consensus to flag it.
+    calibration = {"min_samples": 3, "sign_consensus": 0.7}
+    scorer = ActionStateAnomalyScorer(controls=["W"], calibration=calibration)
+    segments = [_segment(f"clip{i}", 0, 4, [_record(shift=0.5)]) for i in range(1, 5)]
+    segments.append(_segment("clip5", 0, 4, [_record(shift=-0.5)]))
+    scores = scorer.score(segments, {})
+    assert list(scores[:4]) == [0.0, 0.0, 0.0, 0.0]
+    assert scores[4] == 1.0
+
+
+def test_resolved_baselines_for_clip_returns_supplied_baselines_verbatim():
+    config = validate_action_state_config(
+        {"anomaly_type": "action_state", "baselines": CONSISTENT_BASELINE})
+    checker = ActionStateConsistencyChecker(config)
+    checker.resolve_segment(("clip1", 0, 4), expected_length=4)
+    assert checker.resolved_baselines_for_clip("clip1") == CONSISTENT_BASELINE
+
+
+def test_resolved_baselines_for_clip_derives_leave_one_out_consensus():
+    config = validate_action_state_config(
+        {"anomaly_type": "action_state", "baselines": None,
+         "calibration": {"min_samples": 3, "sign_consensus": 0.7}})
+    checker = ActionStateConsistencyChecker(config)
+    for i in range(1, 6):
+        source_id = f"clip{i}"
+        checker.resolve_segment((source_id, 0, 4), expected_length=4)
+        checker.record_instance(source_id, "W", "1", 0, 0.5 if source_id != "clip5" else -0.5)
+    # clip5 is excluded from its own consensus: the other 4 clips unanimously agree on +1.
+    assert checker.resolved_baselines_for_clip("clip5")["W"]["1"]["expected_sign"] == 1
+    # A normal clip's consensus pool includes the outlier, diluting but not flipping consensus.
+    assert checker.resolved_baselines_for_clip("clip1")["W"]["1"]["expected_sign"] == 1
+
+
+def test_is_instance_consistent_matches_record_instance_judgment():
+    config = validate_action_state_config(
+        {"anomaly_type": "action_state", "baselines": CONSISTENT_BASELINE})
+    checker = ActionStateConsistencyChecker(config)
+    checker.resolve_segment(("clip1", 0, 4), expected_length=4)
+    assert checker.is_instance_consistent("clip1", "W", "1", 0.5) is True
+    assert checker.is_instance_consistent("clip1", "W", "1", -0.5) is False
+    # No baseline configured for this cell_key -> not checked, matching record_instance.
+    assert checker.is_instance_consistent("clip1", "W", "999", 0.5) is None

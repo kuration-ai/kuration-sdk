@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import sys
-import tomllib
 
 import numpy as np
 import pytest
@@ -216,20 +215,3 @@ def test_component_parameter_schema_validates_nested_arrays_and_objects():
         validate_parameters(descriptor, {"controls": ["mouse"]})
     with pytest.raises(ValueError, match="missing parameter"):
         validate_parameters(descriptor, {"controls": ["W"], "config": {}})
-
-
-def test_every_repository_plugin_is_an_independent_distribution():
-    root = __import__("pathlib").Path(__file__).parents[1] / "plugins"
-    distributions = sorted(path for path in root.iterdir() if (path / "pyproject.toml").exists())
-    assert distributions
-    for distribution in distributions:
-        config = tomllib.loads((distribution / "pyproject.toml").read_text())
-        if (distribution / "package.json").exists():
-            # Browser-facing plugins (e.g. plugins/lab) are UI distributions: they hook in
-            # through Jupyter's own discovery and deliberately register no kuration.plugins
-            # entry point (pinned by their own tests).
-            assert "kuration.plugins" not in config["project"].get("entry-points", {})
-        else:
-            assert config["project"]["entry-points"]["kuration.plugins"]
-        assert (distribution / "tests").is_dir()
-        assert (distribution / "src").is_dir()

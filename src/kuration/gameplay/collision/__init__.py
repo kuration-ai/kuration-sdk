@@ -50,7 +50,7 @@ def register() -> None:
         register_operator,
     )
 
-    from .._registration import needs_registration
+    from ...core._registration import needs_registration
 
     common: dict[str, Any] = {
         "version": "1",

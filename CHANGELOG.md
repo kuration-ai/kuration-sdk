@@ -7,6 +7,34 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 Target release: `0.1.0rc5` (current development identity: `0.1.0rc5.dev0`).
 
+- Every built-in operator is now labeled Selection, Annotation, or Aggregation in
+  `docs/operators.md` and `docs/operator-inventory.md`, by its primary effect on the segment
+  pool. No built-in operator is Aggregation yet — a confirmed gap (reducing a per-window
+  feature to a per-group rollup), not an oversight; see `action-state-consistency.md`.
+- Renamed `gameplay.slam_pipeline` to `gameplay.slam_reconstruct` (groups with
+  `slam_quality`/`slam_motion_diversity` under one `slam_` prefix for discoverability). Clean
+  rename, no compatibility alias. Extracted `CollisionMechanics`'s per-tick velocity/turn-rate
+  derivation from a private, untested function into a public, directly tested
+  `kuration.gameplay.collision.kinematics.extract_kinematics` — the one part of its fused
+  per-tick scan/classify loop that is independently reusable; the gating and raycast
+  classification stages remain fused, as does `DirectionalCollisionAnalyzer`'s unrelated
+  expected-velocity-from-ramp-model computation.
+- Added `Segment.records: dict[str, list]`, a non-scalar counterpart to `Segment.features` for
+  transforms measuring several discrete per-instance events within a window. `PixelShift` now
+  emits its per-press instances there instead of discarding them after collapsing to scalars.
+  `action_state_consistency` is rehosted as `ActionStateAnomalyScorer`, a `SegmentScorer`
+  reading pixel-shift's own records instead of redundantly re-deriving them from raw frames —
+  it scores per window, not per whole clip, since no built-in aggregation operator exists yet
+  to reconstruct the old per-clip verdict (see above). Dataset-mode auditing (`check_dataset`)
+  never shared computation with a live pixel-shift transform and is unaffected; only the
+  tick-stream-driven analyzer path (the actual redundant-computation bug) is retired.
+- Eliminated the standalone `kuration-ai` package. Its three curation recipes
+  (`BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) and config-driven
+  `run`/`plan`/`describe`/`register_operation_type` runner are now first-class SDK
+  components under `kuration.selection`, each also registered as a fluent `Pipeline`
+  operator (`kuration/balanced-selector`, `kuration/rare-event-coverage`,
+  `kuration/diverse-subset`). `kuration-ai` is preserved, unmodified, on the
+  `feature/kuration-ai-legacy` branch.
 - Development builds now use the distinct `0.1.0rc5.dev0` identity instead of reusing the
   prior `0.1.0rc4` candidate identity. `ARTIFACT_FORMAT_VERSION` is `1.2` for the corrected
   bounded/materialized uniform-bin ordering, experiment-arm tag isolation, and zero

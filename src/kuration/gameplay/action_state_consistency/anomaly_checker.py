@@ -409,6 +409,58 @@ class AnomalyChecker:
             raise ValueError("baselines were supplied; there are no self-calibration knobs")
         return calibration
 
+    def resolved_baselines_for_clip(self, source_id: str) -> dict:
+        """The baseline dict this clip is actually judged against: the supplied baselines
+        verbatim, or -- in self-calibrated mode -- the leave-one-out consensus derived from
+        every *other* clip's measurements, so a clip never vouches for itself. Enforces the
+        same ``min_clips`` floor as :meth:`summary`/:meth:`clip_verdict`. Exposed as its own
+        method (not just inlined in :meth:`_judged_records`) so a caller that needs to judge
+        something finer-grained than a whole clip -- e.g. one window's own instances -- can
+        resolve the same baseline a clip-level verdict would use, without re-deriving it."""
+        if self.baselines is not None:
+            return self.baselines
+        if source_id not in self._clips_seen:
+            raise KeyError(f"no segments recorded for clip {source_id!r}")
+        min_clips = self._calibration_knobs()["min_clips"]
+        if len(self._clips_seen) < min_clips:
+            raise ValueError(
+                f"self-calibration needs at least {min_clips} clips to define a consensus; "
+                f"saw {len(self._clips_seen)} -- supply baselines= for pools this small"
+            )
+        knobs = {key: self._calibration_knobs()[key]
+                 for key in ("min_samples", "sign_consensus", "tolerance")}
+        samples: dict = {}
+        for other_id, other_records in self._clip_records.items():
+            if other_id == source_id:
+                continue
+            for record in other_records:
+                samples.setdefault(
+                    (record["control"], record["cell_key"]), []
+                ).append(record["shift"])
+        return derive_baselines(samples, **knobs)
+
+    def is_instance_consistent(
+        self, source_id: str, control: str, cell_key: str, shift: float,
+        *, baselines: dict | None = None,
+    ) -> bool | None:
+        """Whether one instance would be judged consistent under this clip's resolved
+        baseline (supplied, or leave-one-out self-calibrated) -- without adding it to the
+        ledger or affecting de-duplication. ``None`` if no baseline is configured/derivable
+        for this exact ``(control, cell_key)``, matching :meth:`record_instance`'s own
+        "not checked" semantics. Use this for judging something finer-grained than a whole
+        clip (e.g. one window's own instances, independent of what other overlapping
+        windows also happen to contain) -- :meth:`record_instance` is the right call
+        instead when the goal is the clip-level ledger itself. Pass an already-resolved
+        ``baselines`` (from :meth:`resolved_baselines_for_clip`) to judge several instances
+        of the same clip without re-deriving self-calibrated consensus each time -- that
+        derivation pools every other clip's records, so it is not free."""
+        if baselines is None:
+            baselines = self.resolved_baselines_for_clip(source_id)
+        baseline = baselines.get(control, {}).get(cell_key)
+        if baseline is None:
+            return None
+        return _is_consistent(shift, baseline)
+
     def _judged_records(self) -> dict:
         """Per-clip records with ``consistent`` resolved.
 
@@ -428,23 +480,13 @@ class AnomalyChecker:
                 f"self-calibration needs at least {min_clips} clips to define a consensus; "
                 f"saw {len(self._clips_seen)} -- supply baselines= for pools this small"
             )
-        knobs = {key: self._calibration_knobs()[key]
-                 for key in ("min_samples", "sign_consensus", "tolerance")}
         judged: dict = {}
         for source_id in self._clips_seen:
             records = self._clip_records.get(source_id, [])
             if not records:
                 judged[source_id] = []
                 continue
-            samples: dict = {}
-            for other_id, other_records in self._clip_records.items():
-                if other_id == source_id:
-                    continue
-                for record in other_records:
-                    samples.setdefault(
-                        (record["control"], record["cell_key"]), []
-                    ).append(record["shift"])
-            baselines = derive_baselines(samples, **knobs)
+            baselines = self.resolved_baselines_for_clip(source_id)
             resolved = []
             for record in records:
                 baseline = baselines.get(record["control"], {}).get(record["cell_key"])

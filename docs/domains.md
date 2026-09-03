@@ -13,16 +13,21 @@ src/kuration/
 │   ├── dsl/
 │   ├── output/
 │   └── ...
-└── gameplay/               # maintained gameplay implementation
-    ├── action_state_consistency/
-    ├── collision/
-    ├── pixel_shift/
-    └── slam/
-        └── _vendor/        # private SLAM runtime dependencies
+├── gameplay/               # maintained gameplay implementation
+│   ├── action_state_consistency/
+│   ├── collision/
+│   ├── pixel_shift/
+│   └── slam/
+│       └── _vendor/        # private SLAM runtime dependencies
+├── selection/              # general-purpose curation recipes
+│   ├── operations.py       # BalancedSelector, RareEventCoverage, DiverseSubset
+│   ├── operators.py        # their fluent-operator wrappers
+│   └── plan.py             # config-driven run/plan/describe runner
+└── sample_data/            # bundled sample datasets for docs and quickstarts
 ```
 
-No implementation modules or domain compatibility packages live beside `core/` and
-`gameplay/`. Third-party code used only by SLAM is private to that domain.
+No implementation modules live beside `core/`, `gameplay/`, `selection/`, and `sample_data/`.
+Third-party code used only by SLAM is private to that domain.
 
 The `_vendor/` subtree is an attributed upstream source snapshot, not Kuration-owned
 implementation. CI validates its packaging, imports, configuration resolution, and integration
@@ -38,6 +43,7 @@ vendored snapshot require the focused SLAM regression suite and preserved licens
 | `kuration.gameplay.collision` | CS2 wall-collision detection/classification against map geometry | `[collision]` |
 | `kuration.gameplay.slam` | reconstruction, trajectory quality/diversity, point clouds | `[slam]`, `[slam-viz]` |
 | `kuration.gameplay` stats/video review | automatic action, media, and SLAM summaries; synchronized comparisons | `[stats]` for plots, `[video]` for probing |
+| `kuration.selection` | balanced coverage, rare-event weighting, cluster-balanced diversity; see [Selection recipes](selection.md) | NumPy; `[methods]` for `DiverseSubset` |
 
 The concise package-level core API remains supported through exports from `kuration.core`:
 
@@ -54,7 +60,7 @@ import kuration.gameplay as gameplay
 from kuration import Pipeline
 
 pipeline = (
-    gameplay.slam_pipeline("slam-export/manifest.json")
+    gameplay.slam_reconstruct("slam-export/manifest.json")
     .window(32, stride=16)
     .slam_motion_diversity()
     .slam_quality(min_score=0.6)
@@ -66,7 +72,7 @@ report.plot()
 report.examples(metric="slam_quality_score", compare="selected-vs-rejected")
 ```
 
-The lowercase `gameplay.slam_pipeline(...)` is a convenience function, not a class. It performs
+The lowercase `gameplay.slam_reconstruct(...)` is a convenience function, not a class. It performs
 or reuses reconstruction and returns the ordinary `Pipeline`.
 `gameplay.SLAMReconstructor` coordinates the global, artifact-producing
 video-to-reconstruction workflow, then hands its manifest to `Pipeline` for bounded curation.
@@ -81,10 +87,11 @@ pipeline = pipeline.slam_quality(min_score=0.6)
 pipeline = pipeline.action_state_consistency(baselines=baselines, controls=["W"])
 ```
 
-Input enrichments keep their result on the derived pipeline. For action-state consistency it is
-available at
+Input enrichments keep their result on the derived pipeline. For action-state consistency (a
+dataset-mode-only audit -- `pipeline` above must be artifact-backed) it is available at
 `pipeline.metadata["gameplay"]["action_state_consistency"]["result"]`; `.analyze(...)` remains
-the generic detached-result alternative.
+the generic detached-result alternative. For a live pipeline, `.pixel_shift(...).score(...)` is
+the equivalent per-window path -- see [action-state-consistency.md](action-state-consistency.md).
 
 For a custom name such as `acme/signal-diversity`, use
 `pipeline.signal_diversity(...)`. The namespace-qualified
@@ -111,17 +118,16 @@ evidence result. `compare_videos()` remains the explicit whole-video tool.
 ## Installation
 
 ```bash
-pip install -e .
-pip install -e ".[gameplay]"
+pip install kuration-sdk
+pip install "kuration-sdk[gameplay]"
 ```
 
 Granular extras remain available:
 
 ```bash
-pip install -e ".[pixel-shift]"
-pip install -e ".[action-state]"
-pip install -e ".[slam]"
+pip install "kuration-sdk[pixel-shift]"
+pip install "kuration-sdk[action-state]"
+pip install "kuration-sdk[slam]"
 ```
 
-Run these commands from a source checkout until the public PyPI launch. The
-`standard-operators` extra remains a compatibility alias for `gameplay`.
+The `standard-operators` extra remains a compatibility alias for `gameplay`.

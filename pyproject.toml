@@ -169,6 +169,7 @@ kur-slam = "kuration.gameplay.slam.cli:main"
 
 [project.entry-points."kuration.plugins"]
 gameplay = "kuration.gameplay:register"
+selection = "kuration.selection:register"
 
 [build-system]
 requires = ["setuptools>=80,<84"]
@@ -181,6 +182,7 @@ include = ["kuration", "kuration.*"]
 [tool.setuptools.package-data]
 kuration = ["py.typed"]
 "kuration.core" = ["schemas/*.json"]
+"kuration.sample_data" = ["sessions/*.parquet"]
 "kuration.gameplay.slam._vendor.depth_anything_3" = [
     "configs/*.yaml",
     "LICENSE",

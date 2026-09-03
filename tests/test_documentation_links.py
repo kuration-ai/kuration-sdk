@@ -23,12 +23,9 @@ def _public_markdown_files() -> list[Path]:
     """Return version-controlled documentation surfaces, excluding the private agent guide."""
 
     files = [path for path in REPOSITORY_ROOT.glob("*.md") if path.name != "CLAUDE.md"]
-    for directory in ("docs", "examples", "plugins"):
+    for directory in ("docs", "examples"):
         files.extend((REPOSITORY_ROOT / directory).rglob("*.md"))
-    # Vendored/built frontend trees (gitignored) carry third-party READMEs that are not
-    # repository documentation.
-    ignored = {"node_modules", "lib", "labextension"}
-    return sorted({path for path in files if ignored.isdisjoint(path.parts)})
+    return sorted(set(files))
 
 
 def _link_target(raw_target: str) -> str:

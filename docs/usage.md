@@ -387,7 +387,7 @@ written = selected.output("out/curated")
 emitted = written.stats()
 
 print(uncurated.render())
-curated.plot("speed")                # from the repo root: pip install -e '.[stats]'
+curated.plot("speed")                # pip install "kuration-sdk[stats]"
 curated.available()                  # plots, evidence modes, comparisons, media
 curated.examples(metric="speed", compare="selected-vs-rejected")
 emitted.save("out/curated-stats.html")
@@ -412,7 +412,7 @@ Importing a maintained domain unlocks relevant sections and plots without changi
 ```python
 import kuration.gameplay as gameplay
 
-report = gameplay.slam_pipeline("slam-export/manifest.json").window(32).slam_quality().stats()
+report = gameplay.slam_reconstruct("slam-export/manifest.json").window(32).slam_quality().stats()
 report.plot()                         # gameplay is the automatic default
 evidence = report.examples(
     metric="slam_quality_score",
@@ -542,7 +542,7 @@ dataset. The ones you're most likely to meet, and what they mean:
 | `span_steps=... < shard_length=... with short_policy='drop'` | every admitted span would chunk to zero shards while consuming the hours budget | raise `span_steps`, lower `shard_length`, or use `short_policy: "keep"/"pad"` |
 | `binning axis '...': N NaN feature value(s)` | a registered metric or scorer produced NaN on some window; NaN would poison the quantile edges | make the metric total (return 0.0 for degenerate windows), or drop those segments with a pre-pass filter |
 | `dataset ... lacks modalities [...]` | mixing curated datasets with different modalities under a schema derived from the first | pass an explicit `schema=` covering only the shared modalities |
-| `needs fsspec` / `needs h5py` / `needs pyarrow` / `needs zarr` | an optional capability was reached without its extra installed | install the named extra, e.g. `pip install -e '.[s3]'` from a checkout before public launch |
+| `needs fsspec` / `needs h5py` / `needs pyarrow` / `needs zarr` | an optional capability was reached without its extra installed | install the named extra, e.g. `pip install "kuration-sdk[s3]"` |
 | `write_dataset needs sample_hz ... for the hours budget` | fluent-pipeline `.sample(hours=...).output(...)` on a source whose schema has no `sample_hz` (inference found no numeric time column, or duplicate/no-gap timestamps) | pass `hz=` to `input()`, or `.options(sample_hz=...)` before `.output(...)` |
 | `workers>1 is not supported for in-memory sources` | `.options(workers=2)` on a `Pipeline` built from in-memory rows/ticks/DataFrame — parallel workers rebuild adapters by name per process and can't see in-process data | keep `workers=1` for in-memory input, or write the data to files first and `input()` the paths |
 

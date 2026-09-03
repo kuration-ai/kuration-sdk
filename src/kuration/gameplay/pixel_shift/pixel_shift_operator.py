@@ -5,7 +5,7 @@ happened -- makes NO judgment about whether it's "consistent." That is the actio
 analyzer's job: a separate, genuinely data-agnostic outlier-finding layer built on top of
 this operator's output, kept deliberately out of this file.
 
-Two things this operator produces:
+Three things this operator produces:
 
 1. Per-segment scalar features (so it composes inside a real kuration pipeline --
    .bin()/.filter()/.sample() on the results): for each of the 8 controls, 6 numbers --
@@ -14,7 +14,7 @@ Two things this operator produces:
    collapsing across whatever press-lengths (W/S/A/D) or delta
    magnitudes (mouse controls) were found for that control in that segment. min/max are
    the true worst-case/best-case signed shift among however many instances were found (NOT
-   an average that could hide one bad instance among several good ones) -- see the second
+   an average that could hide one bad instance among several good ones) -- see the third
    deliverable below for the full per-instance detail these numbers are compressed from.
 
 2. A console report (`PixelShiftReport.print_report()`, NOT a written file) -- for every
@@ -23,14 +23,21 @@ Two things this operator produces:
    came from. Same style as docs/batch_results_sensitivity_w.md /
    batch_job_sensitivity_w.py's own report(), just clip-traceable.
 
+3. `Segment.records["aintropy/pixel-shift"]` -- the raw per-instance
+   `{"control", "cell_key", "local_start", "shift"}` dicts the scalars above collapse away,
+   one list per segment, attached by the transform runner from `transform_batch`'s
+   `"records"` output. This is the supported channel for a downstream operator (e.g.
+   action-state consistency) that needs the individual presses rather than a per-segment
+   summary -- unlike `PixelShiftReport` below, it is per-segment state carried on the
+   `Segment` the runner already owns, not process-global accumulation.
+
 `PixelShiftReport` is a plain, explicitly-instantiated object -- deliberately NOT wired
 into `PixelShift.transform_batch`. An earlier version accumulated instance detail into a
-module-level dict as a transform side effect. Transform execution has no supported channel
-for arbitrary per-instance side data, and execution placement may change across plans, so
-process-global accumulation is not a valid contract. `transform_batch` therefore does exactly
-one thing: compute the 6 declared scalars per control. Build a
-`PixelShiftReport` yourself, by calling `add_segment()` directly over your own segments,
-entirely outside pipeline execution, if you want the fuller per-instance report.
+module-level dict as a transform side effect; process-global accumulation is not a valid
+contract regardless of what channel is available, since execution placement (worker,
+process, spawn strategy) may change across plans. Build a `PixelShiftReport` yourself, by
+calling `add_segment()` directly over your own segments, entirely outside pipeline
+execution, if you want the whole-dataset report.
 """
 
 from __future__ import annotations
@@ -247,14 +254,20 @@ def segment_scalars(
     lookahead_frames=None,
     owned_length: int | None = None,
     boundary: str = "exclude",
+    records_out: list | None = None,
 ) -> dict:
     """The 6-number-per-control summary for ONE segment -- true to the data (no reference,
     no consistency judgment): the actual worst/best/mean signed shift and how many
     instances were found, collapsed across whatever press-lengths/deltas occurred for each
-    control in this segment. Pure function, no side effects -- safe under any execution
-    model. `color_space` defaults to BGR (raw ASG/DIAMOND HDF5 arrays);
-    PixelShift.transform_batch passes the real declared color_space of the SDK media
-    column instead (see diamond_action_decode._prep_gray)."""
+    control in this segment. Pure function with one optional side effect: pass a list as
+    `records_out` to also collect the raw per-instance
+    `{"control", "cell_key", "local_start", "shift"}` dicts this scalar summary collapses
+    away -- e.g. for ``Segment.records``, so a downstream consumer (like action-state
+    consistency) can judge each press directly instead of re-deriving them from raw frames.
+    Leave `records_out` as `None` (the default) for the original side-effect-free behavior.
+    `color_space` defaults to BGR (raw ASG/DIAMOND HDF5 arrays); PixelShift.transform_batch
+    passes the real declared color_space of the SDK media column instead (see
+    diamond_action_decode._prep_gray)."""
     controls = _validated_controls(controls)
     boundary = validate_boundary(boundary)
     color_space = validate_color_space(color_space)
@@ -282,21 +295,26 @@ def segment_scalars(
             out[f"{prefix}_n_instances"] = 0.0
             out[f"{prefix}_requested"] = 0.0
             continue
-        shifts = [
-            shift
-            for _, local_start, shift in iter_instances(
-                frames,
-                actions,
-                control,
-                color_space,
-                lookbehind_actions=before,
-                lookahead_actions=after_actions,
-                lookahead_frames=after_frames,
-                boundary=boundary,
-                validated=True,
-            )
-            if local_start < owned_length
-        ]
+        shifts = []
+        for cell_key, local_start, shift in iter_instances(
+            frames,
+            actions,
+            control,
+            color_space,
+            lookbehind_actions=before,
+            lookahead_actions=after_actions,
+            lookahead_frames=after_frames,
+            boundary=boundary,
+            validated=True,
+        ):
+            if local_start >= owned_length:
+                continue
+            shifts.append(shift)
+            if records_out is not None:
+                records_out.append({
+                    "control": control, "cell_key": cell_key,
+                    "local_start": local_start, "shift": shift,
+                })
         if shifts:
             out[f"{prefix}_shift_min"] = float(min(shifts))
             out[f"{prefix}_shift_max"] = float(max(shifts))
@@ -589,6 +607,7 @@ class PixelShift:
             for value in after_actions_batch)
         if owned_lengths is None:
             owned_lengths = [len(actions) for actions in actions_batch]
+        records: list[list[dict]] = [[] for _ in range(count)]
         rows = [
             segment_scalars(
                 frames,
@@ -600,12 +619,15 @@ class PixelShift:
                 lookahead_frames=after_frames,
                 owned_length=int(owned_length),
                 boundary=self.boundary,
+                records_out=row_records,
             )
-            for frames, actions, before, after_actions, after_frames, owned_length in zip(
-                frames_batch, actions_batch, before_batch, after_actions_batch,
-                after_frames_batch, owned_lengths, strict=True)
+            for frames, actions, before, after_actions, after_frames, owned_length, row_records
+            in zip(frames_batch, actions_batch, before_batch, after_actions_batch,
+                   after_frames_batch, owned_lengths, records, strict=True)
         ]
-        return {key: np.array([row[key] for row in rows], dtype=np.float64) for key in OUTPUT_KEYS}
+        result = {key: np.array([row[key] for row in rows], dtype=np.float64) for key in OUTPUT_KEYS}
+        result["records"] = records
+        return result
 
 
 def pixel_shift(pipeline, *, controls=None, boundary: str = "exclude"):

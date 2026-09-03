@@ -272,7 +272,7 @@ minimum sources/shards, full verification, budget utilization, and skipped-sourc
 **PyTorch.**
 
 ```python
-from kuration.core.torch import ShardDataset            # from repo root: pip install -e '.[torch]'
+from kuration.core.torch import ShardDataset            # pip install "kuration-sdk[torch]"
 from torch.utils.data import DataLoader
 
 ds = ShardDataset("out/", split="train")           # one shard = one item, modalities -> tensors

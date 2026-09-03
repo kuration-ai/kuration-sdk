@@ -71,7 +71,9 @@ nav:
       - Outputs and integrity: output.md
   - Extend:
       - Operators: operators.md
+      - Operator inventory: operator-inventory.md
       - Customization and discovery: customization.md
+      - Selection recipes: selection.md
       - Pixel shift: pixel-shift.md
       - Action-state consistency: action-state-consistency.md
       - Collision detection: collision.md
@@ -80,7 +82,6 @@ nav:
       - Architecture: architecture.md
   - Operate:
       - Jobs and CLI: jobs.md
-      - JupyterLab extension: lab.md
       - Compatibility: compatibility.md
       - Release notes: releases.md
       - Community and support: community.md

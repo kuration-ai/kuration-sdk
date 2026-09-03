@@ -3,6 +3,10 @@
 Windows are expressed in steps, or in seconds when the schema declares `sample_hz` (the SDK
 converts). `Segment` carries generic per-window state — `features` / `bin` / `tags` — keyed
 by name, so adding a metric never touches this dataclass (the malleability the registry buys).
+`records` is the non-scalar counterpart to `features`: a transform that measures several
+discrete per-instance events within a window (e.g. isolated key presses) can attach the raw
+per-instance list under its own name, for a downstream Scorer to consume directly instead of
+re-deriving them from raw ticks.
 
 `segments()` is the in-memory path (random-access over a materialized list); `stream()` is the
 out-of-core path — a sliding `deque` over a lazy tick iterator that never holds more than one
@@ -26,6 +30,7 @@ class Segment:
     end_idx: int                 # exclusive
     time_range: tuple            # (start_time, end_time) from the ticks
     features: dict[str, float] = field(default_factory=dict)
+    records: dict[str, list] = field(default_factory=dict)
     bin: tuple = ()
     tags: frozenset = frozenset()       # categorical labels for tag-coverage (was CS2 "objects")
     group: Any = None                   # grouping key for the cap (was CS2 "map_name")

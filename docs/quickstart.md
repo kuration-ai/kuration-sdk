@@ -6,25 +6,23 @@ shards, and read one shard back. The example is deterministic, needs no download
 the SDK's NumPy core.
 
 Expected time: under ten minutes including installation, and normally under one minute once the
-repository is available locally.
+package is installed.
 
 ## 1. Install
 
-Clone the repository and install the NumPy-only core in a Python 3.11 or newer environment:
+Install the NumPy-only core in a Python 3.11 or newer environment:
 
 ```bash
-git clone https://github.com/aintropy-solutions/kuration-sdk.git
-cd kuration-sdk
-python -m pip install -e .
+pip install kuration-sdk
 ```
 
-The quick start needs no optional extras. Public PyPI installation remains a release-readiness
-gate, so this guide does not assume that package name is published yet.
+The quick start needs no optional extras.
 
 ## 2. Run the pipeline
 
 ```bash
-python examples/quickstart.py --out quickstart-out
+curl -O https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/quickstart.py
+python quickstart.py --out quickstart-out
 ```
 
 You should see output shaped like this:

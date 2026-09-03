@@ -53,16 +53,3 @@ release must use a new version if the original upload succeeded.
 Documentation deployment is independent of package publication. Merges to `main` build the site
 strictly and deploy the `main` documentation. Release tags remain the authoritative source for
 version-specific documentation until a multi-version documentation policy is adopted.
-
-## Plugin releases
-
-Each `plugins/<name>` directory versions and publishes independently. After its isolated CI checks
-pass, create a tag `plugin-<name>-v<version>` whose version exactly matches that plugin's
-`pyproject.toml`, then publish the corresponding GitHub release. The separate
-`.github/workflows/publish-plugin.yml` workflow downloads that revision's exact CI-built
-distribution, verifies its hashes, metadata, wheel contents, dependency installation, and entry
-point, then publishes through the `pypi-plugins` trusted-publisher environment. GitHub prereleases
-validate artifacts without publishing; a manual workflow run builds the selected plugin as a dry
-run. Configure the PyPI trusted publisher for this workflow/environment and the relevant project
-name before the first release. The approved root `LICENSE` and plugin `project.license` metadata
-are mandatory release gates; underscore-prefixed templates cannot be released.
