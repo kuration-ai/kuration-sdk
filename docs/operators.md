@@ -291,6 +291,30 @@ call styles — fluent method, direct dataclass, config dict — are guaranteed 
 results; extend the config-dict vocabulary with your own `.apply(pipeline) -> pipeline` class via
 `kuration.selection.register_operation_type("MyRecipe", MyRecipeClass)`.
 
+Core itself registers every built-in selection method, pre-selection filter, and whole-pool
+scorer as a named operator too — no separate import needed, these are always available. Each
+wraps the exact same `.curate()`/`.filter()`/`.score()` call the string-keyed form uses (see
+[strategies.md](strategies.md)), so both spellings produce identical results by construction.
+
+| registered operator | category | fluent method | expands to | execution dependency |
+|---|---|---|---|---|
+| `top-k` | Selection | `.top_k(weights, normalize=None, n=None, hours=None, ...)` | `.curate("top-k", weights=..., ...)` | none (NumPy core) |
+| `weighted` | Selection | `.weighted(weights, normalize=None, n=None, hours=None, ...)` | `.curate("weighted", weights=..., ...)` | none (NumPy core) |
+| `uniform-bins` | Selection | `.uniform_bins(n=None, hours=None, ...)` | `.curate("uniform-bins", ...)`; needs `.bin(...)` axes declared first | none (NumPy core) |
+| `target-distribution` | Selection | `.target_distribution(target=None, n=None, hours=None, ...)` | `.curate("target-distribution", target=..., ...)`; needs `.bin(...)` axes declared first | none (NumPy core) |
+| `cluster-balanced` / `k-center` / `facility-location` | Selection | `.cluster_balanced(feature_space, clusters=None, ...)` (same shape for the other two) | `.curate(<name>, feature_space=..., ...)` | scikit-learn via `[methods]` |
+| `dsir` | Selection | `.dsir(feature_space, dsir_bins=None, target=None, ...)` | `.curate("dsir", feature_space=..., ...)` | none (NumPy core) |
+| `rare` / `typical` | Selection | `.rare(feature_space, knn_k=None, rare_sample=None, ...)` (same shape for `typical`) | `.curate(<name>, feature_space=..., ...)` | scikit-learn via `[methods]` |
+| `anomaly` | Annotation | `.anomaly(contamination=None, normalize=None)` | `.filter("anomaly", ...)` | scikit-learn via `[methods]` |
+| `dedup` | Annotation | `.dedup(feature_space, threshold=None, n_clusters=None, normalize=None)` | `.filter("dedup", ...)` | scikit-learn via `[methods]` |
+| `action-residual` | Annotation | `.action_residual(obs, action, k=None, out="action_residual")` | `.score("action_residual", out=..., ...)` | scikit-learn via `[methods]` |
+
+`cluster-balanced`/`k-center`/`facility-location`/`dsir`/`rare`/`typical` translate a few
+kwargs before forwarding to `.curate()`'s `**method_params` (`clusters`→`n_clusters`,
+`feature_normalize`→`normalize`, `dsir_bins`→`n_bins`, `knn_k`→`k`, `rare_sample`→`sample`) —
+see [`docs/operator-inventory.md`](operator-inventory.md#operators) for the full parameter
+tables and why the translation exists.
+
 ## 6. Choose built-in or external packaging
 
 First-party gameplay operators accepted into the SDK live under `src/kuration/gameplay/`, register

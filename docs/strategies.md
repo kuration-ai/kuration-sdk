@@ -6,6 +6,15 @@ knobs. It is pure data, so the resolved strategy lands in `config.json` as part 
 self-describing run contract. Replay also requires the same immutable/content-addressed sources
 and compatible component implementations.
 
+This page documents the declarative JSON contract — `"selection": {"method": ...}`,
+`"filters": [...]`, `"scorers": [...]` are the real keys written to and read back from
+`config.json`, so they're named that way here regardless of how you reach the same capability in
+Python. Every method/filter/scorer below is *also* directly callable as a named fluent operator
+(`pipeline.top_k(...)`, `pipeline.anomaly(...)`, `pipeline.action_residual(...)`) — see
+[operators.md](operators.md) and [operator-inventory.md](operator-inventory.md) for that surface.
+Both forms compile to the exact same strategy underneath, so pick whichever fits the caller:
+Python code reaches for the named operator, a config file or CLI flag reaches for the JSON key.
+
 ```python
 from kuration import load_strategy
 strategy = load_strategy(spec_dict_or_path_or_name, schema)

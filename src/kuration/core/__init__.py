@@ -56,6 +56,8 @@ from .html_report import render_html_report, write_html_report
 from .manifest import build_config, dump_segment_manifest, write_config
 from .methods import apply_filters, method_priorities, register_filter
 from .pipeline import Pipeline, input
+from . import builtin_operators  # noqa: F401 -- registers every built-in Method/Filter/Scorer
+                                 # as a named fluent operator; see builtin_operators.py
 from .plugins import load_plugins, loaded_plugin_modules, plugin_failures, plugin_provenance
 from .plugin_validation import PluginCheckResult, check_plugins
 from .progress import (ProgressCallback, ProgressSpec, cli_progress, notebook_progress,

@@ -401,34 +401,34 @@ def segment_priorities(segments: list[Segment], strategy: Strategy, *, seed: int
     return prio
 
 
-def _raw_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
-                    workers: int) -> np.ndarray:
+def _filter_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
+                       workers: int) -> np.ndarray:
+    """Passing clips share one priority; failing clips are excluded from any budget fill."""
+    return np.array([0.0 if _passes(s, strategy.predicates) else float("-inf")
+                     for s in segments], dtype=np.float64)
+
+
+def _top_k_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
+                      workers: int) -> np.ndarray:
+    return _weighted_score(segments, strategy.weights, strategy.normalize)
+
+
+def _weighted_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
+                         workers: int) -> np.ndarray:
+    """Gumbel-top-k: sample without replacement, proportional to the weighted score."""
     n = len(segments)
-    if strategy.method in _METHOD_MODULE_METHODS:
-        from .methods import method_priorities
-        return method_priorities(segments, strategy, seed=seed, workers=workers)
-    if strategy.method not in _BASE_METHODS:
-        from .registry import default_registry
-        registry = strategy.registry or default_registry
-        values = registry.get("method", strategy.method)(
-            segments, strategy, seed=seed, workers=workers)
-        out = np.asarray(values, dtype=np.float64)
-        if out.shape != (n,) or not np.isfinite(out).all():
-            raise ValueError(f"method {strategy.method!r} must return {n} finite priorities; "
-                             f"got shape {out.shape}")
-        return out
-    if strategy.method == "filter":
-        # passing clips share one priority; failing clips are excluded from any budget fill.
-        return np.array([0.0 if _passes(s, strategy.predicates) else float("-inf")
-                         for s in segments], dtype=np.float64)
-    if strategy.method in ("weighted", "top-k"):
-        score = _weighted_score(segments, strategy.weights, strategy.normalize)
-        if strategy.method == "top-k":
-            return score
-        rng = np.random.default_rng(seed)            # weighted: Gumbel-top-k (sample w/o replacement ∝ score)
-        w = score - score.min() + 1e-9
-        return np.log(w) + (-np.log(-np.log(rng.random(n))))
-    # bin-based: rare-bin round-robin (take the 1st of every bin, then 2nd, ...)
+    score = _weighted_score(segments, strategy.weights, strategy.normalize)
+    rng = np.random.default_rng(seed)
+    w = score - score.min() + 1e-9
+    return np.log(w) + (-np.log(-np.log(rng.random(n))))
+
+
+def _bin_round_robin_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
+                                workers: int) -> np.ndarray:
+    """Shared by uniform-bins/target-distribution: rare-bin round-robin (take the 1st of
+    every bin, then 2nd, ...), weighted by the target metric's per-bin sum when
+    target-distribution names one."""
+    n = len(segments)
     py_rng = random.Random(seed)
     bins: dict[tuple, list[int]] = {}
     for i, s in enumerate(segments):
@@ -447,6 +447,39 @@ def _raw_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
         for rank, i in enumerate(order):
             prio[i] = -(rank + 1) / w
     return prio
+
+
+#: One dispatch table entry per base method, every entry sharing the exact
+#: `(segments, strategy, *, seed, workers) -> ndarray` signature the module-method and
+#: custom-registry-method branches below already use -- previously these 5 were computed
+#: inline in `_raw_priorities` with no real function call at all, a third, inconsistent shape.
+_BASE_METHOD_PRIORITIES = {
+    "filter": _filter_priorities,
+    "top-k": _top_k_priorities,
+    "weighted": _weighted_priorities,
+    "uniform-bins": _bin_round_robin_priorities,
+    "target-distribution": _bin_round_robin_priorities,
+}
+
+
+def _raw_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
+                    workers: int) -> np.ndarray:
+    n = len(segments)
+    if strategy.method in _METHOD_MODULE_METHODS:
+        from .methods import method_priorities
+        return method_priorities(segments, strategy, seed=seed, workers=workers)
+    if strategy.method not in _BASE_METHODS:
+        from .registry import default_registry
+        registry = strategy.registry or default_registry
+        values = registry.get("method", strategy.method)(
+            segments, strategy, seed=seed, workers=workers)
+        out = np.asarray(values, dtype=np.float64)
+        if out.shape != (n,) or not np.isfinite(out).all():
+            raise ValueError(f"method {strategy.method!r} must return {n} finite priorities; "
+                             f"got shape {out.shape}")
+        return out
+    return _BASE_METHOD_PRIORITIES[strategy.method](segments, strategy, seed=seed,
+                                                     workers=workers)
 
 
 # ---- set-based selection ----------------------------------------------------

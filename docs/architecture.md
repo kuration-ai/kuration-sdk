@@ -164,6 +164,16 @@ together and writes `dataset_manifest.json` + `config.json`.
 
 ## Extension points
 
+Every row below is a real, distinct registration contract — building a genuinely new selection
+algorithm, filter, or scorer still means implementing one of these, not writing a `Pipeline`
+combinator (`register_operator`'s own contract is a pipeline-DAG macro, one layer above these,
+and forcing a new algorithm through it means "branching in selection core" exactly as the table
+says not to). But every *built-in* Method/Filter/Scorer is additionally exposed as a named
+`register_operator` wrapper (`src/kuration/core/builtin_operators.py`) purely for discoverability
+— see [operators.md](operators.md)/[operator-inventory.md](operator-inventory.md) — so a user
+never needs to learn "Method" vs. "Filter" vs. "Scorer" as vocabulary to find or call a built-in
+by name; only someone *implementing* a new one needs the distinction below.
+
 | to support… | implement / register | not |
 |---|---|---|
 | a new dataset's fields | a `SchemaSpec` (data) | any code |
