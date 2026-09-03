@@ -211,18 +211,37 @@ silently choosing one.
 
 ## 5. Built-in operator catalog
 
+Every built-in operator falls into one of three categories, by its primary effect on the
+segment pool:
+
+- **Selection** — chooses which windows survive, or their sampling weight (`.sample(...)`/
+  `.filter(...)`-driven recipes). A user reaching for "give me N good windows" wants one of
+  these.
+- **Annotation** — measures or labels windows (adds `Segment.features`/`Segment.records`)
+  without deciding which survive; or, for a few built-ins, runs a stateful audit and attaches
+  its result to pipeline metadata rather than pretending it is a per-segment feature. Some
+  annotation operators optionally filter too (`slam-quality`'s `min_score=`) — that's still
+  annotation-primary, since the filter is a secondary, opt-in step on top of the measurement.
+- **Aggregation** — reduces a per-window feature up to a per-group (e.g. per-source) rollup.
+  **No built-in operator does this yet.** It surfaced as a real, confirmed gap while rehosting
+  `action_state_consistency` as a per-window `SegmentScorer` (see
+  [action-state-consistency.md](action-state-consistency.md)): reconstructing that scorer's old
+  per-clip verdict from its new per-window score needs a group-by-source-then-reduce operator
+  that doesn't exist in the SDK today. Building one is future work, not something force-fit into
+  an existing operator to make this table look complete.
+
 Importing `kuration.gameplay` registers every maintained gameplay operator on the ordinary core
 pipeline. Importing the domain remains dependency-light; optional frameworks load only when an
 operator's execution path needs them.
 
-| registered operator | fluent method | expands to | execution dependency |
-|---|---|---|---|
-| `aintropy/pixel-shift` | `.pixel_shift(controls=None, boundary="exclude")` | the bounded transform of the same name | OpenCV via `[pixel-shift]` |
-| `aintropy/action-state-consistency` | `.action_state_consistency(baselines=..., controls=None, ...)` | dataset-mode-only: the analyzer of the same name plus pipeline metadata attachment. For a live pipeline, `.score("aintropy/action-state-consistency", out=..., baselines=..., controls=...)` reads pixel-shift's own `Segment.records` instead | OpenCV via `[action-state]` |
-| `aintropy/collision` | `.collision(map_for_source=..., map_registry=..., dist_path=..., **thresholds)` | the bounded transform of the same name | trimesh/rtree via `[collision]` |
-| `aintropy/collision-directional` | `.collision_directional(map_registry=..., ramp_models_path=..., ...)` | the tick-stream analyzer of the same name plus pipeline metadata attachment | trimesh/rtree via `[collision]` |
-| `aintropy/slam-motion-diversity` | `.slam_motion_diversity(axis="slam_path_length", bins=8)` | `aintropy/slam-motion` plus a bin axis | NumPy for a precomputed trajectory |
-| `aintropy/slam-quality` | `.slam_quality(min_score=None, **quality_options)` | `aintropy/slam-quality` plus an optional predicate | NumPy for a precomputed trajectory |
+| registered operator | category | fluent method | expands to | execution dependency |
+|---|---|---|---|---|
+| `aintropy/pixel-shift` | Annotation | `.pixel_shift(controls=None, boundary="exclude")` | the bounded transform of the same name | OpenCV via `[pixel-shift]` |
+| `aintropy/action-state-consistency` | Annotation | `.action_state_consistency(baselines=..., controls=None, ...)` | dataset-mode-only: the analyzer of the same name plus pipeline metadata attachment. For a live pipeline, `.score("aintropy/action-state-consistency", out=..., baselines=..., controls=...)` reads pixel-shift's own `Segment.records` instead | OpenCV via `[action-state]` |
+| `aintropy/collision` | Annotation | `.collision(map_for_source=..., map_registry=..., dist_path=..., **thresholds)` | the bounded transform of the same name | trimesh/rtree via `[collision]` |
+| `aintropy/collision-directional` | Annotation | `.collision_directional(map_registry=..., ramp_models_path=..., ...)` | the tick-stream analyzer of the same name plus pipeline metadata attachment | trimesh/rtree via `[collision]` |
+| `aintropy/slam-motion-diversity` | Annotation | `.slam_motion_diversity(axis="slam_path_length", bins=8)` | `aintropy/slam-motion` plus a bin axis | NumPy for a precomputed trajectory |
+| `aintropy/slam-quality` | Annotation | `.slam_quality(min_score=None, **quality_options)` | `aintropy/slam-quality` plus an optional predicate | NumPy for a precomputed trajectory |
 
 ```python
 import kuration.gameplay  # registers the methods
@@ -257,11 +276,11 @@ Importing `kuration.selection` registers three general-purpose curation recipes 
 core pipeline — no gameplay/video assumptions, no heavy runtime dependency except
 `diverse-subset`'s scikit-learn requirement.
 
-| registered operator | fluent method | expands to | execution dependency |
-|---|---|---|---|
-| `kuration/balanced-selector` | `.balanced_selector(feature, of, kind="std", bins=8, count=100)` | `.measure(...).bin(...).sample("equal", ...)` | none (NumPy core) |
-| `kuration/rare-event-coverage` | `.rare_event_coverage(of, feature="event_rate", count=100, weight=1.0)` | `.measure(..., "rate", ...).sample("weighted", ...)` | none (NumPy core) |
-| `kuration/diverse-subset` | `.diverse_subset(features, count=100, n_clusters=32, dedup_threshold=None)` | optional `.filter("dedup", ...)` then `.sample("cluster-balanced", ...)` | scikit-learn via `[methods]` |
+| registered operator | category | fluent method | expands to | execution dependency |
+|---|---|---|---|---|
+| `kuration/balanced-selector` | Selection | `.balanced_selector(feature, of, kind="std", bins=8, count=100)` | `.measure(...).bin(...).sample("equal", ...)` | none (NumPy core) |
+| `kuration/rare-event-coverage` | Selection | `.rare_event_coverage(of, feature="event_rate", count=100, weight=1.0)` | `.measure(..., "rate", ...).sample("weighted", ...)` | none (NumPy core) |
+| `kuration/diverse-subset` | Selection | `.diverse_subset(features, count=100, n_clusters=32, dedup_threshold=None)` | optional `.filter("dedup", ...)` then `.sample("cluster-balanced", ...)` | scikit-learn via `[methods]` |
 
 Each is also available as a standalone, configurable dataclass
 (`kuration.selection.BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) for direct use, or
