@@ -32,7 +32,7 @@ curation with the base SDK.
 ```python
 import kuration.gameplay as gameplay
 
-pipeline = gameplay.slam_pipeline(
+pipeline = gameplay.slam_reconstruct(
     {
         "match-001": "/data/match-001.mp4",
         "match-002": "/data/match-002.mp4",
@@ -58,7 +58,7 @@ result = (
 )
 ```
 
-`slam_pipeline()` returns the immutable core `Pipeline`. Its gameplay methods resolve through the
+`slam_reconstruct()` returns the immutable core `Pipeline`. Its gameplay methods resolve through the
 same registered operators used by declarative jobs, so provenance retains stable component names.
 Raw input requires the `slam` extra and an output directory. Passing an existing manifest does
 not load the model runtime.
@@ -67,7 +67,7 @@ not load the model runtime.
 
 The names describe different layers:
 
-- `gameplay.slam_pipeline(...)` is a convenience function returning the ordinary `Pipeline`.
+- `gameplay.slam_reconstruct(...)` is a convenience function returning the ordinary `Pipeline`.
 - `gameplay.SLAMReconstructor` is the separate global reconstruction coordinator.
   Reconstruction compares whole clips and writes a reusable artifact, so it does not satisfy the
   immutable, bounded curation-operator contract.
@@ -117,7 +117,7 @@ object with `trajectories` and `poses` mappings plus optional `points` and `colo
 import kuration.gameplay as gameplay
 
 pipeline = (
-    gameplay.slam_pipeline("slam-export/manifest.json")
+    gameplay.slam_reconstruct("slam-export/manifest.json")
     .window(32, stride=16)
     .slam_motion_diversity(axis="slam_path_length", bins=8)
     .slam_quality(min_score=0.6)
@@ -172,7 +172,7 @@ For custom runtimes, use `--runtime-factory module:callable` instead of `--depth
 factory returns `run_slam_reconstruction()` options and should honor `preflight=True` without allocating
 models. The preparation APIs emit structured `slam-preflight`, `slam-decode`,
 `slam-reconstruction`, `slam-export`, `slam-cache`, and `slam-prepare` progress events.
-Pass `progress="auto"` through `gameplay.slam_pipeline(...)` to get compact updating rows in
+Pass `progress="auto"` through `gameplay.slam_reconstruct(...)` to get compact updating rows in
 JupyterLab and terminal progress in scripts; direct lower-level APIs continue to accept the
 structured callback returned by `progress_callback("auto")`.
 

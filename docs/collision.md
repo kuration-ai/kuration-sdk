@@ -116,6 +116,23 @@ steps outside the SDK). A baseline is calibrated against the player population i
 fit on -- reusing an ASG-fit baseline against TeaPearce data proves pipeline mechanics
 but is not a calibrated anomaly detector for that population.
 
+## Kinematics extraction
+
+`kinematics.extract_kinematics(pm2, pm1, p0)` derives one tick's local-frame
+forward/right/up velocity, turn rate, and constant-velocity pose-error features from itself
+and its two predecessors. It is the one genuinely reusable seam inside the fused
+scan-then-classify per-tick loop: no dependency on the learned baseline, map geometry, or
+raycast classification that consume its output downstream, so anything else needing
+frame-relative velocity/turn features from raw position+angle telemetry can call it directly.
+The anomaly-gating and raycast-classification stages that follow remain fused in
+`collision_operator.py` -- gating is a threshold immediately consumed by classification a few
+lines later on the same tick, and splitting either into its own component would only invent an
+artificial `Segment`-shaped handoff with no independent use.
+
+`aintropy/collision-directional` (below) computes a conceptually similar but *different*
+kinematics quantity -- an *expected* velocity from a fitted acceleration-ramp model, not a
+frame-relative velocity from raw position deltas -- so it does not share `extract_kinematics`.
+
 ## Map geometry caching
 
 Parsing raw `.bsp`/`.glb`/`.nav` files (Source-engine lump tables, displacement

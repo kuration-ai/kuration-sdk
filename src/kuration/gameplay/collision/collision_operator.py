@@ -26,6 +26,7 @@ import math
 
 import numpy as np
 
+from .kinematics import extract_kinematics
 from .mesh_cache import cast_proximity_rays, load_mesh_cached, wall_stopped
 from .physics import (
     BIT_A,
@@ -38,9 +39,6 @@ from .physics import (
     MOVE_BITS,
     condition_key,
     is_skip_flags,
-    to_local,
-    wrap_angle,
-    yaw_average,
     z_score,
 )
 
@@ -138,47 +136,6 @@ _DEFAULTS = dict(
 )
 
 
-def _extract_features(pm2, pm1, p0) -> dict:
-    """Ported from action_state_analyzer.py's _extract_features. pm2/pm1/p0 are
-    (pos: np.ndarray(3,), yaw, pitch, hp, btn_mask, flags) tuples for t-2, t-1, t."""
-    pos0, pos1, pos2 = p0[0], pm1[0], pm2[0]
-    yaw0, yaw1, yaw2 = p0[1], pm1[1], pm2[1]
-    pitch0, pitch1 = p0[2], pm1[2]
-
-    dx10, dy10, dz10 = pos0[0] - pos1[0], pos0[1] - pos1[1], pos0[2] - pos1[2]
-    dx21, dy21, dz21 = pos1[0] - pos2[0], pos1[1] - pos2[1], pos1[2] - pos2[2]
-
-    dyaw10 = abs(wrap_angle(yaw0 - yaw1))
-    dyaw21 = abs(wrap_angle(yaw1 - yaw2))
-
-    yaw10 = yaw_average(yaw1, yaw0)
-    yaw21 = yaw_average(yaw2, yaw1)
-
-    vf0, vr0, vu0 = to_local(dx10, dy10, dz10, yaw10)
-    vf1, vr1, vu1 = to_local(dx21, dy21, dz21, yaw21)
-
-    spd0 = math.sqrt(vf0 ** 2 + vr0 ** 2)
-
-    d_yaw = wrap_angle(yaw0 - yaw1)
-    d_pitch = wrap_angle(pitch0 - pitch1)
-    delta_hp = float(p0[3] - pm1[3])
-
-    exp_x, exp_y, exp_z = pos1[0] + dx21, pos1[1] + dy21, pos1[2] + dz21
-    pos_error = math.sqrt(
-        (pos0[0] - exp_x) ** 2 + (pos0[1] - exp_y) ** 2 + (pos0[2] - exp_z) ** 2
-    )
-
-    return {
-        "v_fwd": vf0, "v_right": vr0, "v_up": vu0,
-        "speed_2d": spd0,
-        "dv_fwd": vf0 - vf1, "dv_right": vr0 - vr1, "dv_up": vu0 - vu1,
-        "d_yaw": d_yaw, "d_pitch": d_pitch,
-        "delta_hp": delta_hp,
-        "pos_error": pos_error,
-        "_dyaw10": dyaw10, "_dyaw21": dyaw21,
-    }
-
-
 def _score_and_classify_window(
     pos, yaw, pitch, hp, btn, flags, vel,
     pos_before, yaw_before, pitch_before, hp_before, btn_before, flags_before, vel_before,
@@ -239,7 +196,7 @@ def _score_and_classify_window(
         if is_skip_flags(flags0) or is_skip_flags(flags1) or is_skip_flags(flags2):
             continue
 
-        f = _extract_features(pm2, pm1, p0)
+        f = extract_kinematics(pm2, pm1, p0)
 
         mb0 = btn0 & MOVE_BITS
         og0 = bool(flags0 & FL_ONGROUND)
@@ -251,7 +208,7 @@ def _score_and_classify_window(
         if st is None:
             continue
 
-        fast_turn = f["_dyaw10"] > MAX_DYAW_LEARN
+        fast_turn = f["dyaw10"] > MAX_DYAW_LEARN
         z_scores = {}
         for feat in FEATURES:
             if fast_turn and feat in ("v_fwd", "v_right", "dv_fwd", "dv_right"):

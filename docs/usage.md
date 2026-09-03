@@ -412,7 +412,7 @@ Importing a maintained domain unlocks relevant sections and plots without changi
 ```python
 import kuration.gameplay as gameplay
 
-report = gameplay.slam_pipeline("slam-export/manifest.json").window(32).slam_quality().stats()
+report = gameplay.slam_reconstruct("slam-export/manifest.json").window(32).slam_quality().stats()
 report.plot()                         # gameplay is the automatic default
 evidence = report.examples(
     metric="slam_quality_score",

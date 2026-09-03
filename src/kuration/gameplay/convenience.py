@@ -33,7 +33,7 @@ def action_state_checker(
     return get_analyzer("aintropy/action-state-consistency", **params)
 
 
-def slam_pipeline(
+def slam_reconstruct(
     source: Any,
     output: str | Path | None = None,
     *,

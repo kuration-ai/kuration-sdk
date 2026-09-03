@@ -31,7 +31,7 @@ The SDK is built around **operators** — named pipeline steps that measure a pe
   `collision` finds and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`,
   `slide_end`, `slide_constrained`) so they can be oversampled relative to their natural,
   very low, base rate.
-- **Most gameplay footage has no sense of place.** `slam_pipeline` reconstructs a camera's
+- **Most gameplay footage has no sense of place.** `slam_reconstruct` reconstructs a camera's
   3D path from raw video with loop closure. `slam_quality` scores each window for gaps,
   impossible motion, and scale. `slam_motion_diversity` bins windows by path length,
   turning, and climb.
@@ -125,7 +125,7 @@ dataset. The provider-specific cloud extras are `s3`, `gcs`, and `azure`; `cloud
 the backend-neutral fsspec layer for environments that manage provider packages separately.
 
 `kuration.gameplay` ships seven gameplay operators: `join_video`, `pixel_shift`,
-`action_state_consistency`, `slam_pipeline`, `slam_quality`, `slam_motion_diversity`,
+`action_state_consistency`, `slam_reconstruct`, `slam_quality`, `slam_motion_diversity`,
 and `collision`. Importing the module registers them on the standard `Pipeline`
 class, so an ordinary pipeline can call them as methods:
 
@@ -133,7 +133,7 @@ class, so an ordinary pipeline can call them as methods:
 import kuration.gameplay as gameplay
 
 pipeline = (
-    gameplay.slam_pipeline("slam-export/manifest.json")
+    gameplay.slam_reconstruct("slam-export/manifest.json")
     .window(32, stride=16)
     .slam_motion_diversity()
     .slam_quality(min_score=0.6)
@@ -303,13 +303,13 @@ and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`, `slide_end
 
 ### SLAM motion diversity and quality (gameplay)
 
-Most gameplay footage has no sense of place. `slam_pipeline` reconstructs a camera's 3D path from
+Most gameplay footage has no sense of place. `slam_reconstruct` reconstructs a camera's 3D path from
 raw video with loop closure. `slam_quality` scores each window for gaps, impossible motion, and
 scale. `slam_motion_diversity` bins windows by path length, turning, and climb:
 
 ```python
 pipeline = (
-    gameplay.slam_pipeline("slam-export/manifest.json")
+    gameplay.slam_reconstruct("slam-export/manifest.json")
     .window(32, stride=16)
     .slam_motion_diversity()
     .slam_quality(min_score=0.6)

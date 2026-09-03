@@ -242,7 +242,7 @@ Pixel Shift and action-state consistency need DIAMOND-compatible action rows and
 frames. Action-state remains stateful internally: its direct operator explicitly drives the
 registered analyzer once and attaches the verdict rather than pretending it is a segment
 feature. The SLAM operators expect the trajectory schema produced by
-`gameplay.slam_pipeline(...)` or `gameplay.input_slam(...)`. The collision operators expect
+`gameplay.slam_reconstruct(...)` or `gameplay.input_slam(...)`. The collision operators expect
 canonical position/angle/button telemetry plus map geometry files. See
 [Pixel Shift](pixel-shift.md), [Action-state consistency](action-state-consistency.md),
 [Collision detection](collision.md), and [SLAM](slam.md) for those input contracts.

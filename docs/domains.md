@@ -60,7 +60,7 @@ import kuration.gameplay as gameplay
 from kuration import Pipeline
 
 pipeline = (
-    gameplay.slam_pipeline("slam-export/manifest.json")
+    gameplay.slam_reconstruct("slam-export/manifest.json")
     .window(32, stride=16)
     .slam_motion_diversity()
     .slam_quality(min_score=0.6)
@@ -72,7 +72,7 @@ report.plot()
 report.examples(metric="slam_quality_score", compare="selected-vs-rejected")
 ```
 
-The lowercase `gameplay.slam_pipeline(...)` is a convenience function, not a class. It performs
+The lowercase `gameplay.slam_reconstruct(...)` is a convenience function, not a class. It performs
 or reuses reconstruction and returns the ordinary `Pipeline`.
 `gameplay.SLAMReconstructor` coordinates the global, artifact-producing
 video-to-reconstruction workflow, then hands its manifest to `Pipeline` for bounded curation.
