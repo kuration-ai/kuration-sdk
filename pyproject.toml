@@ -172,7 +172,7 @@ gameplay = "kuration.gameplay:register"
 selection = "kuration.selection:register"
 
 [build-system]
-requires = ["setuptools>=80,<84"]
+requires = ["setuptools>=80,<85"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
