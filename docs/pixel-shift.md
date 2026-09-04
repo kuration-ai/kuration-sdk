@@ -72,7 +72,7 @@ import kuration.gameplay as gameplay
 from kuration import input
 
 pipeline = (
-    input(telemetry, fields={"action": action_columns}, time="t")
+    input(telemetry, schema=schema, fields={"action": action_columns}, time="t")
     .join_video({"my_source": "clip.mp4"}, on="frame_index")
     .window(32, stride=32)
     .pixel_shift(controls=["W", "S", "A", "D"], boundary="exclude")
@@ -82,10 +82,9 @@ pipeline = (
 result = pipeline.collect()
 ```
 
-Registered under `aintropy/pixel-shift` for both the batch transform (`kur-describe
-transform aintropy/pixel-shift`) and the compositional operator (`kur-describe operator
-aintropy/pixel-shift`). The method delegates to that registered operator, so serialized
-jobs and provenance retain the stable component name. The lower-level Python API lives at
+Registered under `aintropy/pixel-shift` for both the batch transform and the compositional
+operator kinds. The method delegates to that registered operator, so serialized jobs and
+provenance retain the stable component name. The lower-level Python API lives at
 `kuration.gameplay.pixel_shift`.
 
 **For the fuller per-instance report** — `PixelShiftReport` is a plain object you build
@@ -252,6 +251,13 @@ action-vector layout, and (unlike `examples/02_robotics_action_aware.py`) it has
 synthetic self-contained demo mode; it's meant to run against real recorded gameplay.
 
 The implementation lives under `src/kuration/gameplay/pixel_shift` and is included in the
-`kuration-sdk` wheel. Importing `kuration.gameplay` registers it for `Registry.snapshot()`,
-`kur-list`, and `kur-describe`; the generic core remains free of gameplay component names.
+`kuration-sdk` wheel. Importing `kuration.gameplay` registers it for `Registry.snapshot()`
+and programmatic discovery; the generic core remains free of gameplay component names.
 OpenCV remains isolated in the `pixel-shift` extra.
+
+## Command-line interface
+
+Once `kuration.gameplay` is imported, both registered components are discoverable from the
+command line: `kur-describe transform aintropy/pixel-shift` and `kur-describe operator
+aintropy/pixel-shift` show each one's parameter contract; `kur-list operators` and
+`kur-list transforms` list them alongside every other registered component.

@@ -31,7 +31,7 @@ Target release: `0.1.0rc5` (current development identity: `0.1.0rc5.dev0`).
 - Eliminated the standalone `kuration-ai` package. Its three curation recipes
   (`BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) and config-driven
   `run`/`plan`/`describe`/`register_operation_type` runner are now first-class SDK
-  components under `kuration.selection`, each also registered as a fluent `Pipeline`
+  components under `kuration.selection`, each also registered as a `Pipeline`
   operator (`kuration/balanced-selector`, `kuration/rare-event-coverage`,
   `kuration/diverse-subset`). `kuration-ai` is preserved, unmodified, on the
   `feature/kuration-ai-legacy` branch.
@@ -42,7 +42,7 @@ Target release: `0.1.0rc5` (current development identity: `0.1.0rc5.dev0`).
 - Raised the minimum versions of scikit-learn, PyArrow, protobuf, PyTorch/TorchVision, Ray,
   tqdm, and Pillow past known-vulnerable historical floors; the minimum-dependency CI lane now
   exercises those security-supported baselines.
-- Dataset publication is no-clobber by default across fluent, classic, job/CLI, and import
+- Dataset publication is no-clobber by default across pipeline, classic, job/CLI, and import
   paths. `force=True` (or `kur-curate --force`) explicitly replaces a destination; `resume=True`
   remains a separate, fingerprint-matched hours-run intent. Selection, source-contract,
   container-dependency, and output-memory preflights finish before invalidating an old commit;
@@ -71,7 +71,7 @@ Target release: `0.1.0rc5` (current development identity: `0.1.0rc5.dev0`).
 - Tightened validation at the boundary: `speed` requires a declared sample rate, numeric filter
   literals must be finite, bitmask values must be positive exact integers, and mixed-case
   `.parquet` suffixes follow one detection/preflight/read path.
-- **Analyzers are fluent pipeline operations.** New `Pipeline.analyze(name, parameters=None, *,
+- **Analyzers are pipeline operations.** New `Pipeline.analyze(name, parameters=None, *,
   mode=None, inputs=None, batch_size=None, analyzer=None, **options)` terminal drives a
   registered stateful analyzer with no job spec and no CLI. On any `input(...)` pipeline it
   drives a new optional `add_batch(batch, ctx)` hook (`StreamAnalyzer`) over the segmented tick
@@ -83,14 +83,14 @@ Target release: `0.1.0rc5` (current development identity: `0.1.0rc5.dev0`).
   optional per-input boundary counts) at registration, validated there and by
   `kur-plugin-check`; unknown analyzers, a missing hook for the resolved mode, and a pool that
   measured zero segments all raise. `run_stream_analyzer()` and `StreamAnalyzer` are exported for
-  callers driving an analyzer outside the fluent API.
+  callers driving an analyzer outside the pipeline API.
 - The built-in `aintropy/action-state-consistency` analyzer now runs on both modes. Its
   tick-stream path declares the same input contract as `aintropy/pixel-shift` and measures in
   **real source frames**, so the documented `(source_id, control, cell_key, frame)`
   de-duplication of one press seen by overlapping windows holds (`cross_window_dedup: true`) —
   the guarantee dataset mode has to give up (`frame_space: "shard-concatenation"`).
-- New `Pipeline.check(policy=None, *, verify=False, **expectations)` — the fluent
-  `kur-check --policy`: it merges `.expect(...)`, a policy mapping, and keywords, then evaluates
+- New `Pipeline.check(policy=None, *, verify=False, **expectations)` — the pipeline-API
+  equivalent of `kur-check --policy`: it merges `.expect(...)`, a policy mapping, and keywords, then evaluates
   them without raising against an artifact inspection (artifact-backed pipelines) or a bounded
   input preview. `CuratedDatasetAdapter.datasets()` is the new adapter seam that lets a pipeline
   reach artifact-level hooks at all.
@@ -134,18 +134,18 @@ Target release: `0.1.0rc5` (current development identity: `0.1.0rc5.dev0`).
   Both change *which segments get selected* on 3D-position or per-entity-categorical data, so
   `kur-migrate` now prints the notes for the versions a document has not seen while it migrates
   it. `migration_notes()`/`document_migration_notes()` expose the same table programmatically.
-- Registering a compositional operator whose fluent method name is already a real `Pipeline`
+- Registering a compositional operator whose method name is already a real `Pipeline`
   attribute (`report`, `window`, `filter`, `schema`, ...) now fails loudly at registration and in
   `kur-plugin-check`, naming the collision and asking for a rename. Python resolves the attribute
   before `__getattr__`, so such an operator was silently shadowed and unreachable. The reserved
   set is derived from the `Pipeline` class itself.
-- An un-namespaced operator now keeps its own fluent spelling when a plugin registers the same
+- An un-namespaced operator now keeps its own method spelling when a plugin registers the same
   local name: a spelling that is a component's complete name outranks the same spelling used as a
   namespaced component's shorthand (`smooth` vs `acme/smooth`, still `acme__smooth()`). An
   ambiguity error now only suggests spellings that actually resolve, falling back to
   `apply("<name>")` when a component has no unique method spelling left.
-- Added two fluent-only public-data walkthroughs. `examples/public_data/ett_fluent.py` curates
-  real hourly electricity-transformer telemetry, and `person_activity_fluent.py` curates 25 real
+- Added two pipeline-only public-data walkthroughs. `examples/public_data/ett.py` curates
+  real hourly electricity-transformer telemetry, and `person_activity.py` curates 25 real
   wearable-sensor recordings with four tags as the entity axis, a tag-coverage floor that keeps
   rare activities, and source-level splits stratified by person. Both take a local path, fetch
   the data with `--download`, or run offline against synthetic stand-ins with `--demo`; each
@@ -299,5 +299,5 @@ Target release: `0.1.0rc5` (current development identity: `0.1.0rc5.dev0`).
 
 ## 0.1.0rc1
 
-- Initial release candidate for the schema-driven curation SDK, fluent pipeline, job/CLI layer,
+- Initial release candidate for the schema-driven curation SDK, pipeline, job/CLI layer,
   versioned artifacts, extension registries, bounded execution, and optional integrations.

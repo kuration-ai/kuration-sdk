@@ -35,7 +35,10 @@ operate on written artifacts. This separation lets a team answer three different
 |---|---|
 | Is the source data usable? | `pipeline.preview()` |
 | Did selection change the distribution as intended? | `pipeline.review()` |
-| Is the delivered artifact intact and acceptable? | `kur-inspect`, `kur-diff`, `kur-check` |
+| Is the delivered artifact intact and acceptable? | `inspect_dataset()`, `compare_datasets()`, `evaluate_quality()` |
+
+Each of those three also has a `kur-*` CLI counterpart (`kur-inspect`, `kur-diff`, `kur-check`) for
+scripting and CI — see the [job and CLI reference](jobs.md).
 
 ## Two selection outcomes
 

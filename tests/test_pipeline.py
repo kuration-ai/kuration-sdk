@@ -1,4 +1,4 @@
-"""Fluent pipeline facade: input() -> operators -> terminals (src/kuration/core/pipeline.py).
+"""Pipeline facade: input() -> operators -> terminals (src/kuration/core/pipeline.py).
 
 Data is synthesized in-memory with a controlled distribution: source s{i} has hp ~ 25*i
 (+ a small j%5 ripple), so filter/bin assertions are checkable. Every test that should
@@ -439,6 +439,18 @@ def test_output_count_path_end_to_end(tmp_path):
         assert arrays["hp"].shape == (16,)          # window-sized sub-track, scalar modality
         assert arrays["hp"].dtype == np.float32
         assert arrays["action"].shape == (16,)
+
+
+def test_output_accepts_a_trailing_slash(tmp_path):
+    out_dir = str(tmp_path / "ds") + "/"
+    p = (_pipe().window(16).measure("hp").organize("hp", bins=4).curate(n=4)
+         .options(on_error="raise"))
+    out = p.output(out_dir)
+    assert out["selected"] == 4 and out["shards"]
+    assert all("//" not in shard["path"] for shard in out["shards"])
+
+    man = json.loads((tmp_path / "ds" / "dataset_manifest.json").read_text())
+    assert man["count"] == len(man["shards"]) > 0
 
 
 def test_output_publishes_pipeline_metadata_with_private_paths_redacted(tmp_path):

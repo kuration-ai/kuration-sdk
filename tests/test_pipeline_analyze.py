@@ -1,4 +1,4 @@
-"""Fluent analyzer, stats, and quality-gate terminals on `Pipeline`.
+"""Analyzer, stats, and quality-gate terminals on `Pipeline`.
 
 Every capability must be reachable without a JSON job spec or a CLI, so these tests pin the
 tick-stream analyzer path (`Pipeline.analyze` driving `add_batch` over segmented raw sources

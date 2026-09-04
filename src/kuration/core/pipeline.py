@@ -1,4 +1,4 @@
-"""Fluent pipeline facade — `input(...)` -> chained operators -> terminals.
+"""Pipeline facade — `input(...)` -> chained operators -> terminals.
 
 `input(src)` sniffs the source (file/glob/dir/DataFrame/rows/ticks/columnar dict), infers a
 `SchemaSpec` (via `kuration.core.infer`) unless one is given, and builds the right adapter — all
@@ -1891,7 +1891,8 @@ class Pipeline:
         if (not isinstance(force, bool) or not isinstance(dry_run, bool)
                 or not isinstance(inspect_sources, bool)):
             raise ValueError("force, dry_run, and inspect_sources must be true or false")
-        path = str(path)
+        from .io import _normalize_explicit_path
+        path = _normalize_explicit_path(path, label="path")
         if spec is not None and (preset is not None or modalities is not None or include is not None
                                  or exclude is not None or container is not None
                                  or shard_length != 64 or short_policy != "keep"

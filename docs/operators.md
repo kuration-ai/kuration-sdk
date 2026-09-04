@@ -114,9 +114,14 @@ from kuration import register_batch_transform, register_operator
 )
 class WindowRange:
     def transform_batch(self, batch, ctx):
-        values = np.asarray(batch["field:signal"], dtype=np.float64)
-        axes = tuple(range(1, values.ndim))
-        return {"window_range": np.ptp(values, axis=axes)}
+        # ctx.input_token() resolves a per-use remap; hardcoding "field:signal" here would
+        # break the moment a caller passes a different field (see below).
+        values = np.asarray(batch[ctx.input_token("field:signal")], dtype=np.float64)
+        valid_steps = batch["valid_steps"]  # each row's real length; the rest is NaN padding
+        ranges = np.empty(values.shape[0], dtype=np.float64)
+        for i, steps in enumerate(valid_steps):
+            ranges[i] = np.ptp(values[i, :steps])
+        return {"window_range": ranges}
 
 @register_operator(
     "acme/range-diversity",
@@ -184,11 +189,8 @@ Also cover:
 
 ## 4. Discover and inspect
 
-```bash
-kur-list operators
-kur-describe operator acme/signal-diversity --json
-kur-describe transform acme/window-range --json
-```
+The same components are discoverable from the CLI (see
+[Command-line interface](#command-line-interface)) or from Python:
 
 Python callers use `list_components("operator")` and
 `describe_component("operator", "acme/signal-diversity")`. Descriptors include parameter
@@ -269,8 +271,9 @@ canonical position/angle/button telemetry plus map geometry files. See
 The ordinary core operations—`.window()`, `.measure()`, `.transform()`, `.filter()`, `.bin()`,
 `.score()`, `.tag()`, `.sample()`, and the rest—are listed with exact signatures in the
 [Pipeline operator reference](pipeline.md#operator-reference). At runtime,
-`kur-list operators` and `list_components("operator")` are the authoritative catalogs for the
-currently installed and imported environment.
+`list_components("operator")` is the authoritative catalog for the currently installed and
+imported environment (the CLI has an equivalent — see
+[Command-line interface](#command-line-interface)).
 
 Importing `kuration.selection` registers three general-purpose curation recipes on the ordinary
 core pipeline — no gameplay/video assumptions, no heavy runtime dependency except
@@ -342,8 +345,8 @@ avoid collisions. Keep dataset-specific assumptions visible in the descriptor, R
 schema, and tests. The [customization guide](customization.md) covers registry overlays and the
 other extension types.
 
-Once your package is installed, `kur-plugin-check acme --json` validates its descriptors and
-discovery transactionally.
+Once your package is installed, validate its descriptors and discovery transactionally (see
+[Command-line interface](#command-line-interface)).
 
 ## Complete runnable examples
 
@@ -370,3 +373,16 @@ python examples/06_gameplay_operator_methods.py
 ```python
 --8<-- "examples/06_gameplay_operator_methods.py"
 ```
+
+## Command-line interface
+
+Discover and inspect any registered operator or transform:
+
+```bash
+kur-list operators
+kur-describe operator acme/signal-diversity --json
+kur-describe transform acme/window-range --json
+```
+
+Validate a plugin package's descriptors and discovery after installing it: `kur-plugin-check
+acme --json` checks its descriptors and discovery transactionally.

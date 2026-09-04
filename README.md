@@ -77,30 +77,28 @@ the manifest, so resume and verification are safe.
 
 1. [Getting started](#getting-started)
 2. [Optional extras](#optional-extras)
-3. [What's in a written dataset](#whats-in-a-written-dataset)
-4. [Choose your path](#choose-your-path)
-5. [Use cases](#use-cases)
+3. [Choose your path](#choose-your-path)
+4. [Use cases](#use-cases)
     - [Action-state consistency (gameplay)](#action-state-consistency-gameplay)
     - [Collision awareness (gameplay)](#collision-awareness-gameplay)
     - [SLAM motion diversity and quality (gameplay)](#slam-motion-diversity-and-quality-gameplay)
     - [Spatial coverage (general)](#spatial-coverage-general)
     - [Rare-event coverage (general)](#rare-event-coverage-general)
     - [Diversity sampling (general)](#diversity-sampling-general)
-6. [Examples](#examples)
-7. [Beyond the gallery](#beyond-the-gallery)
+5. [Examples](#examples)
+6. [Beyond the gallery](#beyond-the-gallery)
     - [Sampling methods](#sampling-methods)
     - [Data source adapters](#data-source-adapters)
     - [Output formats and presets](#output-formats-and-presets)
     - [Pre-selection filters](#pre-selection-filters)
     - [Pipeline methods](#pipeline-methods)
-8. [Reproducibility](#reproducibility)
-9. [Writing your own operation](#writing-your-own-operation)
-10. [Coming next](#coming-next)
-11. [Reference](#reference)
+7. [Reproducibility](#reproducibility)
+8. [Writing your own operation](#writing-your-own-operation)
+9. [Reference](#reference)
     - [CLI reference](#cli-reference)
-12. [Read more](#read-more)
-13. [Project status](#project-status)
-14. [Contributing](#contributing)
+10. [Read more](#read-more)
+11. [Project status](#project-status)
+12. [Contributing](#contributing)
 
 <p align="center">
   <img src="docs/assets/curation-flow.svg" alt="Sources are cut into windows, scored and filtered, and the selected windows become training shards" width="95%">
@@ -126,107 +124,9 @@ the backend-neutral fsspec layer for environments that manage provider packages 
 
 `kuration.gameplay` ships seven gameplay operators: `join_video`, `pixel_shift`,
 `action_state_consistency`, `slam_reconstruct`, `slam_quality`, `slam_motion_diversity`,
-and `collision`. Importing the module registers them on the standard `Pipeline`
-class, so an ordinary pipeline can call them as methods:
-
-```python
-import kuration.gameplay as gameplay
-
-pipeline = (
-    gameplay.slam_reconstruct("slam-export/manifest.json")
-    .window(32, stride=16)
-    .slam_motion_diversity()
-    .slam_quality(min_score=0.6)
-    .options(progress="auto")
-)
-
-report = pipeline.stats()                 # rich HTML in Jupyter
-report.plot()                             # automatically chooses the gameplay plot
-evidence = report.examples(
-    metric="slam_quality_score",
-    compare="selected-vs-rejected",
-)
-```
-
-`kuration.gameplay` doesn't create a separate Pipeline class. Importing it adds gameplay
-methods and stats to the standard `kuration.Pipeline`. `report.available()` lists the
-plots and evidence modes for a given report. On a live video pipeline, the evidence panel
-shows real frames and the action stream around each example. `gameplay.compare_videos(
-before, after)` renders synchronized players and can save the comparison as a standalone
-HTML file.
-
-<p align="center">
-  <img src="assets/diamond-world-model-blur.gif" alt="DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall)." width="100%">
-  <br>
-  <sub><em>DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall).</em></sub>
-</p>
-
-Stateful checks like action-state consistency also return a pipeline, so you keep working
-with the same object:
-
-```python
-pipeline = pipeline.action_state_consistency(baselines=baselines, controls=["W"])
-verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
-```
-
-The pipeline you get back is the same immutable pipeline. You can keep chaining
-`.sample()`, `.output()`, or any other operator from it. Use `.analyze(...)` instead if
-you just want the analyzer result on its own, without the pipeline.
-
-<p align="center">
-  <img src="assets/hojepa-collision-flagged.gif" alt="The clip is flagged by the model as it has two instances where the player collides with the wall." width="100%">
-  <br>
-  <sub><em>The clip is flagged by the model as it has two instances where the player collides with the wall.</em></sub>
-</p>
-
-## What's in a written dataset
-
-```text
-out/training-v1/
-├── config.json                 # resolved job, pipeline, versions, and provenance
-├── dataset_manifest.json       # shard index, splits, shapes, sizes, and SHA-256
-├── dataset.commit.json         # final publication state and metadata checksums
-├── train/
-│   └── <source>_<entity>_<hash>_shard0000.npz
-└── test/
-    └── <source>_<entity>_<hash>_shard0000.npz
-```
-
-```bash
-kur-inspect out/training-v1 --verify
-kur-stats out/training-v1 --html stats.html
-kur-diff out/training-v0 out/training-v1
-kur-check out/training-v1 --policy quality.json
-kur-export out/training-v1 --out arrays/ --format parquet
-```
-
-If you don't have a job spec yet, you can infer a schema, scaffold a job, and inspect the
-data before running anything:
-
-```bash
-kur-infer   telemetry.csv --out schema.json
-kur-init    telemetry.csv --out job.json --dataset-out out/training-v1
-kur-preview job.json
-kur-curate  job.json --review
-```
-
-Every command is also a `kur` subcommand (`kur curate job.json`); `kur --help` lists them and
-`kur completion zsh` prints a completion script.
-
-If you already have a dataset in a supported format, you can import it directly. The adapter
-is auto-detected and no strategy or selection is needed:
-
-```bash
-kur-import gameplay.npz --out out/gameplay
-kur-import telemetry.csv --out out/telemetry
-kur-inspect out/gameplay --verify
-```
-
-Selection is deterministic regardless of worker count or executor. `resume=True` reuses
-a shard only when both its byte size and SHA-256 checksum still match. Jobs, artifact
-formats, and installed components carry version identifiers, and incompatible combinations
-raise clear errors instead of proceeding silently. Every optional integration stays
-outside the NumPy-only core.
+and `collision`. Importing the module registers them on the standard `Pipeline` class, so
+an ordinary pipeline can call them as methods — it doesn't create a separate `Pipeline`
+class. See each operator's worked example and clip in [Use cases](#use-cases) below.
 
 ## Choose your path
 

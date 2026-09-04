@@ -129,7 +129,7 @@ train and test **hour budgets** in descending priority. Properties:
   first (bounded by `min_tag_frac` of the budget) so a rare label survives the cut;
 - budget honored to within one track.
 
-`results.budget` and the manifest's `budget` block report requested, candidate, admitted, and
+`result["results"]["budget"]` and the manifest's `budget` block report requested, candidate, admitted, and
 emitted seconds per split, plus underfill, dropped-tail emission loss, non-finite exclusions,
 and group-cap exclusions.
 

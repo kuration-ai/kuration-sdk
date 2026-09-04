@@ -676,6 +676,8 @@ def write_dataset(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapter,
                   approximation: str = "exact",
                   max_in_flight: int = 2) -> DatasetWriteResult:
     """Write the best spans for an hours budget as one committed dataset artifact."""
+    from ..io import _normalize_explicit_path
+    out_dir = _normalize_explicit_path(out_dir, label="out_dir")
     sources = list(sources)
     from ..manifest import dataset_writer_lease, validate_source_destination_separation
     validate_source_destination_separation(out_dir, sources, adapter=adapter)

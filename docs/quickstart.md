@@ -129,13 +129,6 @@ The `_present` mask distinguishes real steps from padding. This example has fixe
 windows and therefore needs no padding, but consumers can use the same field for variable-length
 data.
 
-For a concise artifact summary, then a full integrity check:
-
-```bash
-kur-inspect quickstart-out
-kur-inspect quickstart-out --verify
-```
-
 ## 5. Apply it to your data
 
 For a CSV with `t`, `device`, `signal`, `temperature`, and `fault` columns, replace the in-memory
@@ -164,6 +157,17 @@ Use `pipeline.preview()` to inspect bounded raw-input quality before scoring and
 `pipeline.review()` to compare the complete candidate pool with a count selection. Both return
 JSON-safe typed results with concise `.render()` output; combine them into a shareable page with
 `write_html_report("review.html", preview, review)`.
+
+## Command-line equivalent
+
+Every step above has a `kur-*` CLI counterpart for scripting and CI, once you have a job spec
+(see the [job and CLI reference](jobs.md)). For a quick summary of the artifact this quick start
+just produced, then a full integrity check:
+
+```bash
+kur-inspect quickstart-out
+kur-inspect quickstart-out --verify
+```
 
 Next:
 
