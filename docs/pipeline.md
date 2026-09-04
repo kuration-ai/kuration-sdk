@@ -114,7 +114,7 @@ same core type; custom domains and plugins follow the same registered-operator m
 | `.group` | `(fn)` | `group_of(source_id) -> key` (group cap + stratified splits) |
 | `.options` | `(mode=, executor=, workers=, on_error=, seed=, streaming=, resume=, sample_hz=, progress=)` | execution kwargs passed to the terminal; executor is `"local"` or `"ray"` |
 | `.sample` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params)` | `selection.method` + knobs; exactly one of `n=`/`hours=`; `.curate` is a compatibility alias |
-| `.semantic` | `(field, "position"|"angular"|"bitmask", **metadata)` | a new validated `SchemaSpec` |
+| `.semantic` | `(field, "position"|"angular"|"bitmask", *, dims=None, bits=None, max_rate=None)` | a new validated `SchemaSpec` |
 | `.as_position/.as_angular/.as_bitmask` | semantic convenience wrappers | `.semantic(...)` |
 | `.at_rate` | `(hz)` | `SchemaSpec.sample_hz` |
 | `.using` | `(Registry)` | explicit component-resolution overlay |
@@ -261,7 +261,7 @@ retain the compatible reference implementation and appear as materialization war
 |---|---|---|
 | `.collect` | `(n=None)` | `curate()` — count-path selection → `CurateResult` |
 | `.review` | `(n=None, *, path=None, examples=10, hist_bins=10, **output_options)` | count selection review; hours selection writes to `path=` and reviews admission/budget decisions without rescoring |
-| `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, force=False, dry_run=False, inspect_sources=False)` | validate/estimate with `dry_run=True`, otherwise write through the ordinary no-clobber `OutputSpec` path; `force=True` explicitly replaces an existing destination |
+| `.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, preset_params=None, force=False, dry_run=False, inspect_sources=False)` | validate/estimate with `dry_run=True`, otherwise write through the ordinary no-clobber `OutputSpec` path; `force=True` explicitly replaces an existing destination |
 | `.report` | `(**kw)` | feature pass only (no selection) → `dataset_report` |
 | `.stats` | `(**kwargs)` | `kuration.stats(pipeline, **kwargs)` — lifecycle statistics for the pipeline's current stage |
 | `.analyze` | `(name, parameters=None, *, mode=None, inputs=None, batch_size=None, analyzer=None, **options)` | a registered stateful analyzer: `run_stream_analyzer` over the tick stream, or `run_dataset_analyzer`'s `check_dataset` hook for an artifact-backed pipeline |

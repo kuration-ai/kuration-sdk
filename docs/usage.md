@@ -12,7 +12,7 @@ Choose the shortest entry point:
 | need | use |
 |---|---|
 | First dataset or ordinary files/rows | [Quick start](quickstart.md), then the [pipeline guide](pipeline.md#worked-example) |
-| Exact schema, adapter, or strategy control | Recipes 1–15 below |
+| Exact schema, adapter, or strategy control | Recipes 1–14 below |
 | Reproducible configuration without Python code | [JSON jobs](jobs.md) |
 | Validate a written dataset | [`inspect_dataset` / `kur-inspect`](output.md#reading-a-dataset-back) |
 
@@ -52,7 +52,7 @@ CuratedDatasetAdapter("out/run1")                                              #
 ```
 Sources may be local paths or cloud URLs (`gs://…`, `s3://…`) — see recipe 13. Bespoke formats:
 recipe 14. Tabular sources must be time-ordered; unordered or duplicate `(time, entity)` rows
-raise (see recipe 16).
+raise (see recipe 15).
 
 ---
 
@@ -161,7 +161,7 @@ split = assign_splits({s: adapter.dataset_of[s] for s in sources}, test_frac=0.2
 # or look *inside* them for matching clips, then re-emit
 res = curate(schema=adapter.schema, adapter=adapter, sources=sources,
              strategy=load_strategy({"name": "hot",
-                 "define": {"speed": {"source": "e.pos0", "reduce": "mean"}},  # modalities -> fields
+                 "define": {"speed": {"source": "e.pos.pos0", "reduce": "mean"}},  # modalities -> fields
                  "selection": {"method": "filter",
                                "predicates": [{"metric": "speed", "op": ">", "value": 5}]}},
                  adapter.schema),
@@ -310,32 +310,7 @@ with a modality whose source is `media:frame`; no custom encoder is required.
 
 ---
 
-## 15 · Run it all from one JSON job (CLIs)
-
-`job.json`:
-```json
-{
-  "schema": {"name": "demo", "entity_axis": "agent", "sample_hz": 20,
-             "fields": {"pos": {"kind": "vector", "dims": ["x","y","z"], "semantics": "position"}}},
-  "adapter": {"type": "timeseries", "fields": {"pos": ["x","y","z"]}, "time_column": "t",
-              "entity_column": "agent_id"},
-  "sources": ["a.csv", "b.csv"],
-  "segmenter": {"window": 4, "stride": 2, "unit": "seconds"},
-  "strategy": {"define": {"speed": {"source": "agent.pos", "map": "speed", "reduce": "mean"}},
-               "selection": {"method": "top-k", "weights": {"speed": 1.0}}},
-  "output": {"shard_length": 64, "container": "npz",
-             "modalities": {"pos": {"dtype": "float32", "shape": [3], "source": "field:pos"}}},
-  "train_hours": 10, "test_hours": 1, "workers": 8, "out": "out/run1"
-}
-```
-```bash
-kur-curate     job.json                  # sources -> hours-budget shards
-kur-experiment job.json --out cmp.json   # add "arms": [...] + "target_size" to compare strategies
-kur-report     job.json --out rep.json   # profile metric distributions (no selection)
-kur-import     SOURCE --out out/raw       # detected-adapter conversion, with no selection
-```
-
-## 16 · Curate a CSV/JSON in one chain (pipeline, no explicit schema)
+## 15 · Curate a CSV/JSON in one chain (pipeline, no explicit schema)
 
 For the common case, skip `SchemaSpec`/`TimeseriesAdapter`/`load_strategy` entirely — `input()`
 infers the schema and every operator validates against it. Full reference: [pipeline.md](pipeline.md).
@@ -365,7 +340,7 @@ provenance).
 
 ---
 
-## 17 · Generate stats before selection, after selection, and from output
+## 16 · Generate stats before selection, after selection, and from output
 
 `stats()` is a terminal over the current immutable pipeline stage. Branch a pipeline to compare
 the uncurated corpus with a count-selected set, then inspect the actual emitted artifact:
@@ -376,7 +351,7 @@ from kuration import input, stats
 source = (
     input("logs/*.parquet", time="t", entity="agent")
     .window(64)
-    .measure("speed", "mean", of="position", map="speed")
+    .measure("speed", "mean", of="speed")
 )
 
 uncurated = source.stats()
@@ -441,7 +416,7 @@ uses synthetic trajectories and needs no model or GPU.
 
 ---
 
-## 18 · Review input, selection, and artifact changes
+## 17 · Review input, selection, and artifact changes
 
 ```python
 from kuration import compare_datasets, render_html_report, write_html_report
@@ -457,13 +432,8 @@ write_html_report("review.html", preview, review, comparison,
 ```
 
 The review includes selection configuration, metric shifts, bin/tag/group/source coverage,
-split balance, and stable selected examples with priorities. For artifact-only automation:
-
-```bash
-kur-diff out/baseline out/candidate --verify --json
-kur-diff out/baseline out/candidate --html review.html
-kur-inspect out/candidate --html inspection.html
-```
+split balance, and stable selected examples with priorities. For artifact-only automation, see
+[Command-line interface](#19-command-line-interface).
 
 For an hours budget, `review(path=...)` writes the dataset and reuses the writer's admission
 decisions—there is no second scoring pass. It reports requested/candidate/admitted/emitted
@@ -517,14 +487,12 @@ Written artifacts use a JSON policy and a CI-friendly exit code (`0` pass, `2` g
 }
 ```
 
-```bash
-kur-check out/candidate --policy quality.json --json
-kur-check out/candidate --policy quality.json --html quality.html
-```
+Run this from the command line — see [Command-line interface](#19-command-line-interface) — or
+drive it from Python.
 
 ---
 
-## 19 · Troubleshooting — common loud failures
+## 18 · Troubleshooting — common loud failures
 
 The SDK fails loudly by design: a raised error at load or preflight beats a silently wrong
 dataset. The ones you're most likely to meet, and what they mean:
@@ -549,3 +517,59 @@ dataset. The ones you're most likely to meet, and what they mean:
 Two habits keep runs debuggable: **`kur-validate job.json` before every CLI run** (all of the
 load-time errors above surface in milliseconds, before any data is read), and
 **`on_error="raise"` in tests/CI** so a skipped source can't quietly shrink the pool.
+
+---
+
+## 19 · Command-line interface
+
+Everything above is expressed in Python, but the same operations are reachable from the shell —
+useful for reproducible, no-code configuration and for CI. This section collects every `kur-*`
+command in one place.
+
+### Run it all from one JSON job
+
+A single `job.json` document captures schema, adapter, sources, segmenter, strategy, and output —
+enough to drive curation, experiments, reporting, or import without writing Python:
+
+`job.json`:
+```json
+{
+  "schema": {"name": "demo", "entity_axis": "agent", "sample_hz": 20,
+             "fields": {"pos": {"kind": "vector", "dims": ["x","y","z"], "semantics": "position"}}},
+  "adapter": {"type": "timeseries", "fields": {"pos": ["x","y","z"]}, "time_column": "t",
+              "entity_column": "agent_id"},
+  "sources": ["a.csv", "b.csv"],
+  "segmenter": {"window": 4, "stride": 2, "unit": "seconds"},
+  "strategy": {"define": {"speed": {"source": "agent.pos", "map": "speed", "reduce": "mean"}},
+               "selection": {"method": "top-k", "weights": {"speed": 1.0}}},
+  "output": {"shard_length": 64, "container": "npz",
+             "modalities": {"pos": {"dtype": "float32", "shape": [3], "source": "field:pos"}}},
+  "train_hours": 10, "test_hours": 1, "workers": 8, "out": "out/run1"
+}
+```
+```bash
+kur-curate     job.json                  # sources -> hours-budget shards
+kur-experiment job.json --out cmp.json   # add "arms": [...] + "target_size" to compare strategies
+kur-report     job.json --out rep.json   # profile metric distributions (no selection)
+kur-import     SOURCE --out out/raw       # detected-adapter conversion, with no selection
+```
+
+### Artifact-only automation
+
+Diff two written datasets or inspect one, without re-running the pipeline that produced them:
+
+```bash
+kur-diff out/baseline out/candidate --verify --json
+kur-diff out/baseline out/candidate --html review.html
+kur-inspect out/candidate --html inspection.html
+```
+
+### Written-artifact quality gates
+
+Evaluate a written artifact's quality gate against a JSON policy (see recipe 17 for the policy
+document itself) with a CI-friendly exit code (`0` pass, `2` gate failure):
+
+```bash
+kur-check out/candidate --policy quality.json --json
+kur-check out/candidate --policy quality.json --html quality.html
+```

@@ -52,15 +52,8 @@ kinds, split by what each one is actually for:
   live (non-written) pipeline raises the same "artifact-backed pipeline" error `.check()` gives
   under the same circumstance.
 
-Discover any of the three without reading a dataset:
-
-```bash
-kur-list scorers
-kur-list analyzers
-kur-describe scorer aintropy/action-state-consistency --json
-kur-describe analyzer aintropy/action-state-consistency --json
-kur-describe operator aintropy/action-state-consistency --json
-```
+All three are also discoverable without reading a dataset, from the CLI (see
+[Command-line interface](#command-line-interface)).
 
 Registration only stores dependency-light scorer/analyzer/operator callables; it does not run
 optical flow. Discovery and construction therefore work without OpenCV.
@@ -117,7 +110,7 @@ config = {
 
 `load_baselines_from_reference(reference)` builds a baselines dict directly from a
 reference JSON shaped like this repo's own `scripts/build_action_consistency_reference.py`
-output (`{control_lower: {cell_key: {"reliable", "floor", "ceiling", "expected_sign"}}}`):
+output (`{"cells": {control_lower: {cell_key: {"reliable", "floor", "ceiling", "expected_sign"}}}}`):
 `floor`/`ceiling` become `min`/`max`, and any cell marked `reliable: false` (not enough
 reference samples to trust) is skipped entirely, rather than being checked against an
 untrustworthy value. This function is part of `action_state` (it needs
@@ -281,38 +274,6 @@ Each record uses the shared `source_id`/`control`/`cell_key`/`frame`/`shift` sch
 `frame_space_note` prevent dataset-mode shard offsets from being mistaken for source frames.
 A source with no measured instance still emits one inconclusive row.
 
-### Running on a curated dataset from the CLI
-
-If a written dataset contains frame and DIAMOND-action modalities, the same analyzer can be
-driven by `kur-check`. Put the analyzer parameters shown above in `action-state.json`:
-
-```bash
-kur-check out/gameplay \
-  --analyzer aintropy/action-state-consistency \
-  --analyzer-config action-state.json \
-  --json
-```
-
-The default modality names are `frames` and `actions`. For different names, create an input
-options file such as `{"frames": "video", "actions": "input", "controls": ["W", "S"]}` and pass
-it with `--analyzer-options`. Each shard is measured independently so selected spans are not
-silently joined; verdicts are still aggregated by the manifest's `source_id`. An inconsistent
-clip makes the analyzer check fail with exit code 2, while inconclusive clips remain visible in
-the result without being treated as inconsistent.
-
-**Dataset-mode positions are not source frames.** A manifest entry records
-path/`source_id`/`entity_id`/`split`/`shard_index`/`n_steps` and no source start offset, so a
-real source position cannot be recovered from the artifact. `check_dataset` therefore places each
-shard of a clip after the previous one and reports `frame_space: "shard-concatenation"` plus a
-`shard_ranges` list mapping every shard path to the `[start, end)` it occupies; the printed report
-carries the same caveat and labels positions `@shard-concatenation-offset<N>`. The consequence is
-stated explicitly rather than implied: `add_segment()` de-duplicates one physical press seen by two
-overlapping windows through its `(source_id, control, cell_key, frame)` key, and dataset mode
-**cannot** (`cross_shard_dedup: false`) — two curated shards covering overlapping source spans land
-at different concatenation offsets, so such a press is judged once per shard. Verdicts are
-unaffected (one violation already condemns a clip); instance counts and positions are
-shard-relative evidence.
-
 `action_state_checker()` delegates to the registered
 `aintropy/action-state-consistency` analyzer, preserving discovery and parameter validation.
 `kuration.get_analyzer("aintropy/action-state-consistency", **config)` remains available for
@@ -375,3 +336,48 @@ The generic verdict-aggregation logic (`anomaly_checker.py`) remains independent
 pixel-shift-specific instance-discovery logic (`action_state.py`). They ship in the same SDK
 wheel, but the separation still lets other analyzers
 reuse tuple aggregation without depending on the DIAMOND vocabulary or OpenCV runtime.
+
+## Command-line interface
+
+Discover any of the three registered kinds (scorer, analyzer, operator) without reading a
+dataset:
+
+```bash
+kur-list scorers
+kur-list analyzers
+kur-describe scorer aintropy/action-state-consistency --json
+kur-describe analyzer aintropy/action-state-consistency --json
+kur-describe operator aintropy/action-state-consistency --json
+```
+
+### Running on a curated dataset from the CLI
+
+If a written dataset contains frame and DIAMOND-action modalities, the same analyzer can be
+driven by `kur-check`. Put the analyzer parameters shown above in `action-state.json`:
+
+```bash
+kur-check out/gameplay \
+  --analyzer aintropy/action-state-consistency \
+  --analyzer-config action-state.json \
+  --json
+```
+
+The default modality names are `frames` and `actions`. For different names, create an input
+options file such as `{"frames": "video", "actions": "input", "controls": ["W", "S"]}` and pass
+it with `--analyzer-options`. Each shard is measured independently so selected spans are not
+silently joined; verdicts are still aggregated by the manifest's `source_id`. An inconsistent
+clip makes the analyzer check fail with exit code 2, while inconclusive clips remain visible in
+the result without being treated as inconsistent.
+
+**Dataset-mode positions are not source frames.** A manifest entry records
+path/`source_id`/`entity_id`/`split`/`shard_index`/`n_steps` and no source start offset, so a
+real source position cannot be recovered from the artifact. `check_dataset` therefore places each
+shard of a clip after the previous one and reports `frame_space: "shard-concatenation"` plus a
+`shard_ranges` list mapping every shard path to the `[start, end)` it occupies; the printed report
+carries the same caveat and labels positions `@shard-concatenation-offset<N>`. The consequence is
+stated explicitly rather than implied: `add_segment()` de-duplicates one physical press seen by two
+overlapping windows through its `(source_id, control, cell_key, frame)` key, and dataset mode
+**cannot** (`cross_shard_dedup: false`) — two curated shards covering overlapping source spans land
+at different concatenation offsets, so such a press is judged once per shard. Verdicts are
+unaffected (one violation already condemns a clip); instance counts and positions are
+shard-relative evidence.

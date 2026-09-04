@@ -140,7 +140,7 @@ are grouped below by user task.
 A documentation coverage check should compare the reference inventory to `kuration.__all__` so
 an added or removed export cannot drift unnoticed.
 
-### Fluent pipeline
+### Pipeline
 
 All non-underscore methods intentionally exposed by `Pipeline` are public:
 

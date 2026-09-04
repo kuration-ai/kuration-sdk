@@ -2,8 +2,10 @@
 
 `kuration.gameplay` registers `aintropy/action-state-consistency` as both the stateful analyzer
 and a direct pipeline operator. `.action_state_consistency(...)` drives the analyzer once and
-returns an ordinary `Pipeline` carrying the verdict in `.metadata`. No CLI, detached side
-object, or separate analyzer construction is required.
+returns an ordinary `Pipeline` carrying the verdict in `.metadata`. The operator is dataset-mode
+only: it audits an already-written, curated dataset's shards, so this writes one before reading
+it back through `CuratedDatasetAdapter`. No CLI, detached side object, or separate analyzer
+construction is required.
 
 Frames come from a fake in-memory video provider (real per-frame pixel shift, no PyAV/codec
 needed), so this runs anywhere.
@@ -12,14 +14,24 @@ needed), so this runs anywhere.
 """
 from __future__ import annotations
 
+import tempfile
+
 import numpy as np
 
 import kuration.gameplay  # noqa: F401 -- registers the analyzer and pixel-shift on import
-from kuration import FrameRef, SchemaSpec, VideoMetadata, input
+from kuration import (
+    CuratedDatasetAdapter,
+    FrameRef,
+    OutputSpec,
+    SchemaSpec,
+    VideoMetadata,
+    input,
+)
 from kuration.gameplay.pixel_shift import diamond_action_decode as dad
 
 ANALYZER_NAME = "aintropy/action-state-consistency"
 ACTION_DIM = dad.ACTION_WIDTH
+FRAME_SHAPE = (40, 60, 3)
 
 
 class FakeVideoProvider:
@@ -83,11 +95,27 @@ provider = FakeVideoProvider(_shifting_noise_frames(N_FRAMES))
 # magnitude. Get consistent and inconsistent verdicts by flipping expected_sign.
 baselines = {"W": {"1": {"expected_sign": 1, "min": 0.0, "max": 1e9}}}
 
-pipeline = (
+live_pipeline = (
     input({"clip1": rows}, schema=SCHEMA, fields={"action": ACTION_COLUMNS}, time="t")
     .join_video({"clip1": "fake.mp4"}, provider=provider, on="frame_index")
     .window(4, stride=2)
+    .measure("a0_mean", "mean", of="action.a0")
 )
+
+# The dataset-mode operator audits written shards, so write frames+actions first.
+out_dir = tempfile.mkdtemp(prefix="kuration_ex07_")
+spec = OutputSpec.from_dict({
+    "shard_length": 4,
+    "container": "npz",
+    "modalities": {
+        "frames": {"dtype": "uint8", "shape": list(FRAME_SHAPE), "source": "media:frame"},
+        "actions": {"dtype": "float64", "shape": [ACTION_DIM], "source": "field:action"},
+    },
+})
+live_pipeline.sample("top-k", weights={"a0_mean": 1.0}, n=10).output(out_dir, spec=spec)
+
+adapter = CuratedDatasetAdapter(out_dir)
+pipeline = input(adapter=adapter, schema=adapter.schema, sources=adapter.sources())
 
 checked = pipeline.action_state_consistency(
     baselines=baselines,
@@ -98,7 +126,7 @@ result = checked.metadata["gameplay"]["action_state_consistency"]["result"]
 print(f"analyzer: {ANALYZER_NAME}")
 print(f"passed:   {result['passed']}")
 print(f"summary:  {result['summary']}")
-print(f"frame_space: {result['frame_space']} (cross_window_dedup={result['cross_window_dedup']})")
+print(f"frame_space: {result['frame_space']} (cross_shard_dedup={result['cross_shard_dedup']})")
 assert result["passed"] is True
 assert result["summary"]["consistent"] == ["clip1"]
 

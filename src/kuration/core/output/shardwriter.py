@@ -222,7 +222,9 @@ def write_track(out_dir: str, track: Track, spec: OutputSpec, *,
     match; missing, legacy, or modified shards are encoded again. ``name_suffix`` disambiguates
     shard filenames across sub-track spans of one track.
     """
+    from ..io import _normalize_explicit_path
     from ..io import exists as _exists, file_integrity
+    out_dir = _normalize_explicit_path(out_dir, label="out_dir")
     split = _safe_split(split)
     if any(m.src_kind in {"field", "media", "vocab"} for m in spec.modalities):
         if schema is None:

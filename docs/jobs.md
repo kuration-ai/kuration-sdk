@@ -275,7 +275,7 @@ stays clean; pass `--quiet` to suppress interactive progress explicitly.
 | `approximation` | no (`"exact"`) | `"exact"` or `"approximate"`; unsupported approximate plans fail rather than changing semantics |
 
 **Python-API-only knobs:** arbitrary `group_of` / `tags_of` callables and encoder instances.
-Fluent `.join_video()` and `.transform()` calls are likewise recorded in Python pipeline
+`.join_video()` and `.transform()` calls are likewise recorded in Python pipeline
 provenance but are not serialized as job keys; declarative jobs can still use plugin adapters,
 scorers, and encoders.
 Registered/data-defined equivalents use names plus parameters. If you need arbitrary code, call

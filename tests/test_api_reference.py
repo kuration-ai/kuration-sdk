@@ -29,7 +29,7 @@ def test_api_reference_covers_every_top_level_export():
 
 def test_documentation_contract_inventories_every_top_level_export():
     text = DOCUMENTATION_CONTRACT.read_text()
-    inventory = text.split("### Top-level Python API", 1)[1].split("### Fluent pipeline", 1)[0]
+    inventory = text.split("### Top-level Python API", 1)[1].split("### Pipeline", 1)[0]
     missing = [
         name for name in kuration.__all__
         if re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", inventory) is None
@@ -62,7 +62,7 @@ def test_api_reference_covers_every_public_pipeline_method():
     assert not missing, f"docs/api.md is missing Pipeline methods: {missing}"
 
     contract = DOCUMENTATION_CONTRACT.read_text()
-    inventory = contract.split("### Fluent pipeline", 1)[1].split(
+    inventory = contract.split("### Pipeline", 1)[1].split(
         "### Framework integration", 1)[0]
     contract_missing = [
         name for name in methods

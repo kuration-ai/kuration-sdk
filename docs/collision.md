@@ -62,11 +62,8 @@ distribution):
   it and attaches the verdict to pipeline metadata), mirroring
   [action-state consistency](action-state-consistency.md).
 
-```bash
-kur-list operators
-kur-describe operator aintropy/collision --json
-kur-describe analyzer aintropy/collision-directional --json
-```
+All three are discoverable and inspectable from the CLI; see
+[Command-line interface](#command-line-interface) at the end of this document.
 
 ## Usage
 
@@ -264,3 +261,13 @@ large.
   classification (that is the windowed operator's job).
 - The windowed operator's `ray_cache` is scoped per window call rather than per whole
   source (performance-only, not correctness).
+
+## Command-line interface
+
+Discover the registered components without reading a dataset:
+
+```bash
+kur-list operators
+kur-describe operator aintropy/collision --json
+kur-describe analyzer aintropy/collision-directional --json
+```

@@ -144,49 +144,17 @@ remote URI such as `gs://bucket/clip.mp4` remains an external dependency and is 
 URIs containing embedded credentials, query/path parameters, or fragments are rejected. Configure
 remote credentials through the media provider instead of recording them in an artifact.
 
-## Preflight, progress, and CLI
+## Preflight and progress
 
 `preflight_slam()` checks input shape, manifest contents, decoder availability, output
 permissions, model/factory configuration, and optional CUDA requirements without decoding video
 or constructing models.
 
-```bash
-kur-slam preflight \
-  --video match-001=/data/match-001.mp4 \
-  --out slam-work \
-  --depth-model da3-base \
-  --depth-model-id depth-anything/da3-base@MODEL_REVISION \
-  --frame-skip 4 \
-  --require-gpu
-
-kur-slam run \
-  --video match-001=/data/match-001.mp4 \
-  --out slam-work \
-  --depth-model da3-base \
-  --depth-model-id depth-anything/da3-base@MODEL_REVISION \
-  --frame-skip 4 \
-  --window 32 --stride 16 --count 2000 --min-quality 0.6
-```
-
-For custom runtimes, use `--runtime-factory module:callable` instead of `--depth-model`. The
-factory returns `run_slam_reconstruction()` options and should honor `preflight=True` without allocating
-models. The preparation APIs emit structured `slam-preflight`, `slam-decode`,
+The preparation APIs emit structured `slam-preflight`, `slam-decode`,
 `slam-reconstruction`, `slam-export`, `slam-cache`, and `slam-prepare` progress events.
 Pass `progress="auto"` through `gameplay.slam_reconstruct(...)` to get compact updating rows in
 JupyterLab and terminal progress in scripts; direct lower-level APIs continue to accept the
 structured callback returned by `progress_callback("auto")`.
-
-For a model-free end-to-end smoke test:
-
-```bash
-kur-slam demo --out slam-demo
-```
-
-`kur-slam run` and `kur-slam demo` refuse a non-empty output by default. Use `--resume` on `run`
-to reuse a matching reconstruction, or `--force` to update only the files owned by the command;
-`--force` does not delete unrelated files. Output roots that overlap an input manifest or local
-video are rejected before decoding or reconstruction starts. Add `--debug` to any subcommand when
-a full traceback is needed; ordinary failures are a single `error:` line.
 
 ## Registered trajectory components
 
@@ -229,3 +197,39 @@ video comparison.
 Place recognition can connect multiple clips to one physical scene. Assign scene-connected clips
 to a split before reconstruction, or treat the connected scene as one atomic group. Do not
 reconstruct a shared scene and then randomly split its clips across train and test.
+
+## Command-line interface
+
+```bash
+kur-slam preflight \
+  --video match-001=/data/match-001.mp4 \
+  --out slam-work \
+  --depth-model da3-base \
+  --depth-model-id depth-anything/da3-base@MODEL_REVISION \
+  --frame-skip 4 \
+  --require-gpu
+
+kur-slam run \
+  --video match-001=/data/match-001.mp4 \
+  --out slam-work \
+  --depth-model da3-base \
+  --depth-model-id depth-anything/da3-base@MODEL_REVISION \
+  --frame-skip 4 \
+  --window 32 --stride 16 --count 2000 --min-quality 0.6
+```
+
+For custom runtimes, use `--runtime-factory module:callable` instead of `--depth-model`. The
+factory returns `run_slam_reconstruction()` options and should honor `preflight=True` without allocating
+models.
+
+For a model-free end-to-end smoke test:
+
+```bash
+kur-slam demo --out slam-demo
+```
+
+`kur-slam run` and `kur-slam demo` refuse a non-empty output by default. Use `--resume` on `run`
+to reuse a matching reconstruction, or `--force` to update only the files owned by the command;
+`--force` does not delete unrelated files. Output roots that overlap an input manifest or local
+video are rejected before decoding or reconstruction starts. Add `--debug` to any subcommand when
+a full traceback is needed; ordinary failures are a single `error:` line.

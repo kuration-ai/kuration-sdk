@@ -61,7 +61,7 @@ nav:
   - Start:
       - Core concepts: overview.md
       - Quickstart: quickstart.md
-      - Fluent pipeline: pipeline.md
+      - Pipeline: pipeline.md
       - Cookbook: usage.md
   - Build datasets:
       - Schemas: schema.md

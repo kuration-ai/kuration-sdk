@@ -25,7 +25,7 @@ flat-export convention).
 
 Two ways to drive it:
 
-* **Fluent (pipeline-first)**: the analyzer implements the tick-stream contract
+* **Pipeline-first**: the analyzer implements the tick-stream contract
   (`add_batch`), so ``pipeline.enrich("aintropy/collision-directional", {...})`` -- or the
   registered ``.collision_directional(...)`` operator wrapping it -- streams the declared
   canonical fields through it in one bounded pass. Windows arrive per source, in order,

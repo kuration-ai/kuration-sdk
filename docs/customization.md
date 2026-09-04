@@ -48,17 +48,11 @@ never averaged into a measurement by accident. A pipeline invokes the transform 
 for direct lookup. Accelerator libraries must be imported inside the factory or execution method
 so discovery and `import kuration` remain dependency-light.
 
-Discover components without materializing a dataset:
-
-```bash
-kur-list methods --json
-kur-describe method acme/quality-v2 --json
-```
-
-Python equivalents are `list_components()` and `describe_component()`. Descriptors include a
-parameter JSON Schema, capability flags, dependency/install hints, package/version metadata,
-documentation/stability fields, module identity, and a code fingerprint. Resolved extension
-descriptors and parameters are included in run provenance.
+Discover components without materializing a dataset using `list_components()` and
+`describe_component()` (see [Command-line interface](#command-line-interface) for the CLI
+equivalents). Descriptors include a parameter JSON Schema, capability flags, dependency/install
+hints, package/version metadata, documentation/stability fields, module identity, and a code
+fingerprint. Resolved extension descriptors and parameters are included in run provenance.
 
 ## Stateful analyzers
 
@@ -80,8 +74,8 @@ for segment in segments:
 result = checker.summary()
 ```
 
-Analyzers are discoverable with `kur-list analyzers` and `kur-describe analyzer ...`, but are
-not implicit selection stages. Keeping lifecycle ownership explicit prevents worker-local state
+Analyzers are discoverable like any other component (see
+[Command-line interface](#command-line-interface)), but are not implicit selection stages. Keeping lifecycle ownership explicit prevents worker-local state
 from being mistaken for a dataset-wide result. Two optional hooks make an analyzer drivable, and
 declaring one is what `Pipeline.enrich()` and `Pipeline.analyze()` dispatch on:
 
@@ -171,9 +165,10 @@ For independently versioned or externally distributed behavior, publish your own
 its dependencies, tests, documentation, and `kuration.plugins` entry point (see the
 [operator guide](operators.md#6-choose-built-in-or-external-packaging) for the expected layout).
 
-For an already installed distribution, `kur-plugin-check <entry-point-name>` validates loading,
-descriptor package/version/install metadata, closed parameter schemas, namespacing, and transform
-declarations without retaining its registry mutations. Python callers use `check_plugins()`.
+Validate an already-installed distribution's loading, descriptor package/version/install
+metadata, closed parameter schemas, namespacing, and transform declarations with
+`check_plugins()` (see [Command-line interface](#command-line-interface) for the CLI form),
+without retaining its registry mutations.
 
 ## Compositional operators
 
@@ -191,3 +186,16 @@ Unversioned documents are legacy `0.0`. The current artifact format is `1.2` and
 schema is `1.0`; documents newer than the corresponding supported version are rejected, including
 future minor versions. Use `migrate()` or `kur-migrate` for deterministic upgrades where a
 migration is available.
+
+## Command-line interface
+
+Discover components without materializing a dataset:
+
+```bash
+kur-list methods --json
+kur-describe method acme/quality-v2 --json
+```
+
+For an already installed distribution, `kur-plugin-check <entry-point-name>` validates loading,
+descriptor package/version/install metadata, closed parameter schemas, namespacing, and transform
+declarations without retaining its registry mutations.

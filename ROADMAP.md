@@ -13,7 +13,7 @@ Status labels:
 ## Shipped — first SDK foundation
 
 - Schema-driven time-series ingestion and closed metric grammar.
-- Fluent immutable pipelines with schema inference, inspection, and loud validation.
+- Immutable pipelines with schema inference, inspection, and loud validation.
 - Count- and hours-based selection, diversity binning, filters, learned scorers, tags, splits,
   reports, and multi-arm experiments.
 - Local, cloud, streaming, parallel, resumable, and deterministic execution paths.
