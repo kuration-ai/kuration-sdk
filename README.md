@@ -109,13 +109,13 @@ the manifest, so resume and verification are safe.
 Kuration's core has NumPy-only dependencies and handles in-memory, CSV, JSON, and NPZ workflows. Add only the integrations a pipeline needs:
 
 ```bash
-pip install 'kuration-sdk[methods,parquet]'  # selection methods + Parquet
-pip install 'kuration-sdk[video]'            # PyAV video frames
-pip install 'kuration-sdk[stats]'            # Matplotlib stats plots
-pip install 'kuration-sdk[gameplay]'         # all gameplay operators (pixel_shift, action_state_consistency, slam_*, collision)
-pip install 'kuration-sdk[ray]'              # distributed source execution
-pip install 'kuration-sdk[s3]'               # fsspec + the S3 backend
-pip install 'kuration-sdk[all]'              # every runtime integration/backend
+pip install "kuration-sdk[methods,parquet]"  # selection methods + Parquet
+pip install "kuration-sdk[video]"            # PyAV video frames
+pip install "kuration-sdk[stats]"            # Matplotlib stats plots
+pip install "kuration-sdk[gameplay]"         # all gameplay operators (pixel_shift, action_state_consistency, slam_*, collision)
+pip install "kuration-sdk[ray]"              # distributed source execution
+pip install "kuration-sdk[s3]"               # fsspec + the S3 backend
+pip install "kuration-sdk[all]"              # every runtime integration/backend
 ```
 
 `pipeline.explain()` reports the extras required by a planned run before it reads the full
@@ -430,7 +430,7 @@ Contributions to the core SDK or the maintained gameplay module should follow
 The gameplay operators ship inside this repo.
 
 ```bash
-python -m pip install -e '.[dev,methods,parquet,array,s3,gcs,azure,p2p]'
+python -m pip install -e ".[dev,methods,parquet,array,s3,gcs,azure,p2p]"
 python -m pytest tests/ -q
 python -m ruff check src tests examples
 python -m mypy
