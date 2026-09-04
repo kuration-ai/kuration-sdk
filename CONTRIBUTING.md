@@ -16,14 +16,14 @@ then install the package in editable mode:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e '.[dev]'
+python -m pip install -e ".[dev]"
 ```
 
 Install every optional runtime integration when working across adapters, containers, learned
 methods, or framework support:
 
 ```bash
-python -m pip install -e '.[all,dev]'
+python -m pip install -e ".[all,dev]"
 ```
 
 Optional dependencies must remain optional. The base install depends only on NumPy; imports of
