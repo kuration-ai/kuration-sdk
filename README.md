@@ -16,7 +16,7 @@
 [![Issues](https://img.shields.io/badge/issues-open-blue?style=flat)](https://github.com/aintropy-solutions/kuration-sdk/issues)
 
 **Kuration curates large Physical AI datasets into training-ready data for world
-models.** Point it at time-series data or video and Kuration picks the windows worth
+models.** Point it at raw gameplay clips or time-series data or video and Kuration picks the windows worth
 training on, writes them as shards, and drops a config alongside so the same run can
 be rebuilt.
 
