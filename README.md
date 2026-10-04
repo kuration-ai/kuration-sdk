@@ -175,6 +175,10 @@ inconclusive. Continuing from any existing windowed pipeline, once
 `import kuration.gameplay as gameplay` has registered the operator:
 
 ```python
+import kuration.gameplay as gameplay  # registers .action_state_consistency(...)
+
+# `pipeline`: any already-windowed Pipeline (e.g. from the quickstart above).
+# `baselines`: a percentile-pooled baseline, typically built from gameplay.pixel_shift(...).
 pipeline = pipeline.action_state_consistency(baselines=baselines, controls=["W"])
 verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
 ```
@@ -208,6 +212,8 @@ raw video with loop closure. `slam_quality` scores each window for gaps, impossi
 scale. `slam_motion_diversity` bins windows by path length, turning, and climb:
 
 ```python
+import kuration.gameplay as gameplay  # registers the slam_* operators
+
 pipeline = (
     gameplay.slam_reconstruct("slam-export/manifest.json")
     .window(32, stride=16)
@@ -317,6 +323,10 @@ Every run of Kuration SDK is deterministic. Commit a config file alongside your 
 Same operation, three equivalent invocation styles. The three are guaranteed to produce identical results, enforced by test.
 
 ```python
+from kuration.selection import run, BalancedSelector, RareEventCoverage
+
+# `pipeline`: any already-windowed Pipeline with "turn_rate" and "collision" measured.
+
 # 1. Direct: one operation, one line
 result = BalancedSelector(feature="motion", of="turn_rate").apply(pipeline).collect()
 
@@ -353,7 +363,8 @@ class OnlyActiveWindows:
                 .measure("turn_activity", "std", of="turn_rate")
                 .filter("turn_activity", ">", self.threshold))
 
-# Compose it with the shipped operations
+# Compose it with the shipped operations.
+# `pipeline`: any already-windowed Pipeline with "turn_rate" measured.
 result = run(pipeline, [
     OnlyActiveWindows(threshold=0.15),
     BalancedSelector(feature="motion", of="turn_rate", bins=4, count=20),

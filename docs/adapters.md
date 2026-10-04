@@ -41,6 +41,19 @@ Tick(time, entities, events={}, globals={}, media={})
 Building the `(T,E,D)` `WindowBuffer` from a window of ticks (`build_window(schema, ticks)`)
 is generic SDK code — so an adapter only does parse + group-by-timestep, nothing numeric.
 
+Reading one back (e.g. while debugging a custom adapter, or inside code that walks ticks
+directly instead of through a `WindowBuffer`) is plain dict access:
+
+```python
+value = tick.entities[entity_id][field_name]   # a single entity's field at this timestep
+one_entity = tick.entities[entity_id]           # that entity's whole {field_name: value} dict
+global_value = tick.globals.get("battery_pct")  # entity-independent scalar, may be absent
+```
+
+A missing field for an entity present at this tick is simply absent from its dict (`.get(...)`
+or a `KeyError` on indexing); `build_window` treats that the same as the entity being absent
+from the tick entirely.
+
 ## Video and synchronized media
 
 `input("clips/*.mp4")` recognizes MP4/M4V/MOV sources and constructs a `VideoAdapter` using

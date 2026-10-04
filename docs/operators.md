@@ -211,6 +211,16 @@ pipeline = pipeline.signal_diversity(field="signal")
 `acme__signal_diversity`. Ambiguous short names fail with the qualified alternatives instead of
 silently choosing one.
 
+**`kur-list`/`kur-describe` run as a separate process** from whatever script imported and
+registered your operator. Importing a registration module is enough for *your own* process —
+`pipeline.signal_diversity(...)` above works the moment that import runs — but it does nothing
+for the CLI's process, which never imports your module at all. For your operator to show up in
+`kur-list operators`, it must be discoverable without your script running first: either an
+installed `kuration.plugins` entry point (see
+[§6 Choose built-in or external packaging](#6-choose-built-in-or-external-packaging)), or a
+module path passed to `load_plugins(modules=[...])` if you're calling `list_components`/
+`describe_component` from Python yourself rather than through the CLI.
+
 ## 5. Built-in operator catalog
 
 Every built-in operator falls into one of three categories, by its primary effect on the
