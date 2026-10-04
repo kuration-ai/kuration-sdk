@@ -54,6 +54,28 @@ def test_explain_does_not_read_sources_unless_inspection_is_requested():
     assert calls == 2
 
 
+def test_shard_filenames_are_content_derived_not_rank_derived(tmp_path):
+    """F1: two curations over the same source that each select a different window at the same
+    output rank must not alias one shard filename. Previously both would have hashed
+    (source_id, entity_id, "_seg0000") regardless of which window was actually selected."""
+    rows = [{"t": float(i), "x": float(i)} for i in range(20)]
+
+    def _pipe(weight_sign):
+        return (input({"s0": rows}, time="t").window(4, stride=4)
+                .measure("x_mean", "mean", of="x")
+                .sample("top-k", n=1, weights={"x_mean": weight_sign})
+                .options(seed=0))
+
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    _pipe(1.0).output(first, container="npz", categorical="omit", shard_length=4)
+    _pipe(-1.0).output(second, container="npz", categorical="omit", shard_length=4)
+
+    first_shard = next((first / "train").glob("*.npz")).name
+    second_shard = next((second / "train").glob("*.npz")).name
+    assert first_shard != second_shard
+
+
 def test_inspect_dataset_summarizes_and_verifies_written_artifact(tmp_path):
     destination = tmp_path / "dataset"
     _pipeline().output(destination, container="npz", categorical="omit", shard_length=4)

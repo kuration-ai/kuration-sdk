@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-ARTIFACT_FORMAT_VERSION = "1.2"
+ARTIFACT_FORMAT_VERSION = "1.3"
 JOB_SCHEMA_VERSION = "1.0"
 LEGACY_VERSION = "0.0"
 
@@ -37,6 +37,15 @@ ARTIFACT_SEMANTIC_CHANGES: dict[str, tuple[str, ...]] = {
         "group/tag identity semantics: disk-backed hours fills now use Python hash/equality "
         "like the in-memory path, so values such as 1, true, and '1' no longer diverge by "
         "execution mode",
+    ),
+    "1.3": (
+        "shard naming: output shard filenames are now derived from each span's own "
+        "(start_idx, end_idx) instead of its rank among selected/admitted spans for that "
+        "source; two curations that each pick a different span at the same rank no longer "
+        "alias each other's filenames. Resuming an in-progress 1.2 write under 1.3 will not "
+        "recognize already-written shards by name and will write new ones alongside them "
+        "rather than corrupting the dataset -- start a fresh output directory instead of "
+        "resuming across this version boundary.",
     ),
 }
 JOB_SEMANTIC_CHANGES: dict[str, tuple[str, ...]] = {}

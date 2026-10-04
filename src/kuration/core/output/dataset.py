@@ -543,7 +543,10 @@ def _write_dataset_impl(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapt
         by_source.setdefault(src, []).append((eid, k))
     emit(progress, "writing", "start", total=len(by_source))
     for source_i, src in enumerate(sorted(by_source), 1):
-        suffix = lambda k: "" if span_len is None else f"_span{k:03d}"
+        # Content-derived, not rank-derived (F1): two curations that each admit a different
+        # span at the same rank must not alias one filename.
+        suffix = lambda start, end: (
+            "" if span_len is None else f"_span{start:08d}_{end:08d}")
         expected_track_rows = list(source_tracks.get(src, ()))
         expected_entities = [entity_id for entity_id, _ in expected_track_rows]
         expected_lengths = {int(length) for _, length in expected_track_rows}
@@ -557,7 +560,9 @@ def _write_dataset_impl(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapt
                      "start": admitted_details[(src, eid, k)]["start"],
                      "end": admitted_details[(src, eid, k)]["end"],
                      "split": split.get(src, "train"),
-                     "name_suffix": suffix(k), "group": group_of(src) if group_of else None,
+                     "name_suffix": suffix(admitted_details[(src, eid, k)]["start"],
+                                          admitted_details[(src, eid, k)]["end"]),
+                     "group": group_of(src) if group_of else None,
                      "meta": admitted_details[(src, eid, k)]["meta"]}
                     for (eid, k) in by_source[src]]
             # A budgeted output limits concurrent shard accumulators and replays a source for
@@ -605,7 +610,7 @@ def _write_dataset_impl(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapt
             sub.meta["group"] = group_of(src) if group_of else None
             entries += write_track(out_dir, sub, spec, encoder=encoder, schema=schema,
                                    split=split.get(src, "train"), resume=resume,
-                                   name_suffix=suffix(k),
+                                   name_suffix=suffix(start, end),
                                    media_provider=getattr(adapter, "provider", None),
                                    resume_entries=resume_entries,
                                    registry=registry or strategy.registry)

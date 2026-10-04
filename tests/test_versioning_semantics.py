@@ -30,13 +30,14 @@ def _config(version="1.0"):
 
 
 def test_artifact_format_version_records_the_dsl_semantic_changes():
-    assert ARTIFACT_FORMAT_VERSION == "1.2"
-    assert set(ARTIFACT_SEMANTIC_CHANGES) == {"1.1", "1.2"}
+    assert ARTIFACT_FORMAT_VERSION == "1.3"
+    assert set(ARTIFACT_SEMANTIC_CHANGES) == {"1.1", "1.2", "1.3"}
 
     notes = migration_notes("1.0")
-    assert len(notes) == 6
+    assert len(notes) == 7
     assert sum(note.startswith("1.1: ") for note in notes) == 2
     assert sum(note.startswith("1.2: ") for note in notes) == 4
+    assert sum(note.startswith("1.3: ") for note in notes) == 1
     joined = " ".join(notes)
     assert "dispersion" in joined and "min_pair_dist" in joined and "dimension" in joined
     assert "per_entity_mean" in joined and "categorical" in joined
@@ -44,6 +45,7 @@ def test_artifact_format_version_records_the_dsl_semantic_changes():
     assert "each arm" in joined and "min_tag_frac=0" in joined
     assert "round up" in joined and "predicate-failing" in joined
     assert "Python hash/equality" in joined
+    assert "shard naming" in joined and "rank among selected" in joined
 
     # A legacy (unversioned) artifact predates the change too; a current one has nothing to say.
     assert migration_notes(None) == notes
@@ -55,7 +57,7 @@ def test_artifact_format_version_records_the_dsl_semantic_changes():
 
 def test_migrate_config_bumps_to_the_new_version_and_stays_idempotent():
     migrated = migrate_config(_config("1.0"))
-    assert migrated["artifact_format_version"] == "1.2"
+    assert migrated["artifact_format_version"] == "1.3"
     assert migrate_config(migrated) == migrated
     assert document_migration_notes(_config("1.0")) == migration_notes("1.0")
     assert document_migration_notes(_config(ARTIFACT_FORMAT_VERSION)) == []
@@ -75,7 +77,7 @@ def test_version_parser_rejects_noncanonical_or_partial_versions(malformed):
 
 @pytest.mark.parametrize(
     ("version", "kind"),
-    [("1.3", "artifact"), ("1.999", "artifact"), ("1.1", "job"), ("2.0", "job")],
+    [("1.4", "artifact"), ("1.999", "artifact"), ("1.1", "job"), ("2.0", "job")],
 )
 def test_version_gate_rejects_every_future_minor_or_major(version, kind):
     with pytest.raises(ValueError, match=rf"unsupported future {kind} format {version}"):
