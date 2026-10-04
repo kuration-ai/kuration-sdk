@@ -103,7 +103,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.expect` | `(**expectations) -> Pipeline` | attach closed-grammar quality gates evaluated by `preview()` or `review()` |
 | `Pipeline.sample` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | configure selection; exactly one of `n=`/`hours=` (`curate` remains as a compatibility alias) |
 | `Pipeline.curate` | `(method=None, *, n=None, hours=None, test_hours=None, weights=None, target=None, normalize=None, group_cap=None, **method_params) -> Pipeline` | compatibility alias for `Pipeline.sample` |
-| `Pipeline.collect` | `(n=None) -> CurateResult` | terminal — count-path selection |
+| `Pipeline.collect` | `(n=...) -> CurateResult` | terminal — count-path selection. `n` defaults to whatever `.sample(n=...)` configured; pass `n=None` explicitly for every scored and filtered segment, with no selection method/weights/bins required |
 | `Pipeline.output` | `(path, *, preset=None, spec=None, container=None, shard_length=64, short_policy="keep", modalities=None, include=None, exclude=None, encoder=None, span_steps=None, span_seconds=None, categorical=None, preset_params=None, force=False, dry_run=False, inspect_sources=False) -> DatasetWriteResult \| ExecutionPlan` | terminal — write shards + manifests + `config.json`; existing artifacts require `force=True`, while `dry_run=True` validates and estimates without writing |
 | `Pipeline.report` | `(**kw) -> DatasetReport` | terminal — feature pass only → `dataset_report` |
 | `Pipeline.stats` | `(**kwargs) -> StatsReport` | terminal — thin sugar for `stats(pipeline, **kwargs)`: input/candidate statistics before selection, candidate-versus-selected statistics after `sample(n=...)`, or a planned-hours report before output |
@@ -114,7 +114,7 @@ required; see [pipeline.md](pipeline.md) for the full operator reference.
 | `Pipeline.head` | `(k=5) -> list[Tick]` | inspector — first `k` ticks of the first source |
 | `Pipeline.describe` | `() -> dict` | inspector — resolved `{schema, strategy, output, segmenter, options, sources, expectations, metadata}`, no data touched |
 | `Pipeline.preview` | `(*, max_sources=3, max_ticks_per_source=10000, examples=5) -> DatasetPreview` | inspector — bounded field quality, source shape, and representative tick sample |
-| `Pipeline.review` | `(n=None, *, path=None, examples=10, hist_bins=10, **output_options) -> SelectionReview \| HoursSelectionReview` | terminal — compare a complete count-selection pool, or write/review an hours selection when `path=` is supplied |
+| `Pipeline.review` | `(n=..., *, path=None, examples=10, hist_bins=10, **output_options) -> SelectionReview \| HoursSelectionReview` | terminal — compare a complete count-selection pool, or write/review an hours selection when `path=` is supplied. `n` defaults to whatever `.sample(n=...)` configured; pass `n=None` explicitly to review every scored and filtered segment |
 | `Pipeline.explain` | `(*, inspect_sources=False) -> ExecutionPlan` | inspector — typed stage plan, requirements, implicit choices, and warnings; optionally preflight source metadata |
 
 All operators are immutable: each returns a new pipeline. `semantic` fails if a semantic is

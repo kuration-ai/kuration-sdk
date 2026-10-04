@@ -31,23 +31,35 @@ from .registry import default_registry as _default_registry
 # Feature-space methods live in methods.py (optional scikit-learn), dispatched from here.
 _METHOD_MODULE_METHODS = {"cluster-balanced", "k-center", "facility-location",
                          "dsir", "rare", "typical"}
-_BASE_METHODS = {"uniform-bins", "weighted", "target-distribution", "top-k", "filter"}
+_BASE_METHODS = {"uniform-bins", "weighted", "target-distribution", "top-k", "filter", "none"}
 _METHODS = _BASE_METHODS | _METHOD_MODULE_METHODS
 _FILTER_TYPES = {"anomaly", "dedup"}
 _PRED_OPS = {">", ">=", "<", "<=", "==", "!="}
-_NORMALIZATIONS = {"quantile", "minmax", "zscore"}
+_NORMALIZATIONS = {"quantile", "minmax", "zscore", "none"}
 _FILTER_KEYS = {
     "anomaly": {"type", "feature_space", "per_group", "contamination", "normalize"},
     "dedup": {"type", "feature_space", "per_group", "threshold", "n_clusters", "normalize"},
 }
 
 
-def validate_target_size(target_size: int) -> int:
-    """Return a positive integer selection count; reject bools and lossy coercions."""
+def validate_target_size(target_size: Optional[int]) -> Optional[int]:
+    """Return a positive integer selection count, or None (meaning "every scored and
+    filtered segment, no selection method applied"); reject bools and lossy coercions."""
+    if target_size is None:
+        return None
     if (not isinstance(target_size, int) or isinstance(target_size, bool)
             or target_size < 1):
-        raise ValueError(f"target_size must be a positive integer, got {target_size!r}")
+        raise ValueError(f"target_size must be a positive integer or None, got {target_size!r}")
     return target_size
+
+
+def require_target_size(target_size: int) -> int:
+    """Like `validate_target_size`, for callers (`select`, `run_experiment`,
+    `Pipeline.experiment`) that have no "every segment" mode and always need a real count."""
+    validated = validate_target_size(target_size)
+    if validated is None:
+        raise ValueError("target_size must be a positive integer, got None")
+    return validated
 
 
 def _resolve_filters(raw, registry=None) -> list:
@@ -265,7 +277,8 @@ def _resolve(spec: dict, registry=None) -> Strategy:
         raise ValueError(f"scorer output feature(s) {collisions} also appear in 'define'")
     _KNOWN_SEL = {"method", "weights", "normalize", "target", "tag_coverage", "group_cap",
                   "predicates"}
-    _KNOWN_PARAMS = {"feature_normalize", "dsir_bins", "knn_k", "rare_sample", "clusters"}
+    _KNOWN_PARAMS = {"feature_normalize", "dsir_bins", "knn_k", "rare_sample", "clusters",
+                     "floor"}
     method_params = {k: v for k, v in sel.items() if k not in _KNOWN_SEL}
     unknown = set(method_params) - _KNOWN_PARAMS
     if method not in _METHODS:
@@ -283,6 +296,11 @@ def _resolve(spec: dict, registry=None) -> Strategy:
     if "feature_normalize" in method_params and method_params["feature_normalize"] not in {
             "zscore", "quantile", "none"}:
         raise ValueError("selection.feature_normalize must be zscore/quantile/none")
+    if "floor" in method_params:
+        floor_value = method_params["floor"]
+        if (not isinstance(floor_value, (int, float)) or isinstance(floor_value, bool)
+                or not math.isfinite(floor_value) or floor_value < 0):
+            raise ValueError("selection.floor must be a finite number >= 0")
 
     resolved = {
         "name": spec.get("name", "unnamed"),
@@ -352,6 +370,9 @@ def _normalize(arr: np.ndarray, method: str) -> np.ndarray:
     n = arr.size
     if not np.isfinite(arr).all():
         raise ValueError("selection features must be finite before normalization")
+    if method == "none":
+        # Raw scale, no transform -- unlike the other methods, well-defined for n<=1 too.
+        return arr.astype(np.float64, copy=True)
     if n <= 1:
         return np.zeros(n, dtype=np.float64)
     if method == "minmax":
@@ -408,6 +429,14 @@ def _filter_priorities(segments: list[Segment], strategy: Strategy, *, seed: int
                      for s in segments], dtype=np.float64)
 
 
+def _none_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
+                     workers: int) -> np.ndarray:
+    """No real ranking signal: every segment shares one priority. Unlike "filter", this
+    carries no implicit predicate requirement, so `segment_priorities()` applies the
+    universal predicate pre-filter on top, same as every other non-"filter" method."""
+    return np.zeros(len(segments), dtype=np.float64)
+
+
 def _top_k_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
                       workers: int) -> np.ndarray:
     return _weighted_score(segments, strategy.weights, strategy.normalize)
@@ -415,11 +444,19 @@ def _top_k_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
 
 def _weighted_priorities(segments: list[Segment], strategy: Strategy, *, seed: int,
                          workers: int) -> np.ndarray:
-    """Gumbel-top-k: sample without replacement, proportional to the weighted score."""
+    """Gumbel-top-k: sample without replacement, proportional to the weighted score.
+
+    Shifting by the pool's own minimum so every weight is non-negative means the single
+    lowest-scoring segment always gets a weight near ``floor`` -- a near-zero chance of
+    being picked, by construction, regardless of how close its real score was to the rest
+    of the pool. ``floor`` (``selection.floor``, default ``1e-9``) exists so a caller who
+    wants the lowest scorer to keep a real, non-negligible relative chance can raise it
+    (scaled to the weighted score's own spread); it does not change behavior unset."""
     n = len(segments)
     score = _weighted_score(segments, strategy.weights, strategy.normalize)
     rng = np.random.default_rng(seed)
-    w = score - score.min() + 1e-9
+    floor = (strategy.method_params or {}).get("floor", 1e-9)
+    w = score - score.min() + floor
     return np.log(w) + (-np.log(-np.log(rng.random(n))))
 
 
@@ -455,6 +492,7 @@ def _bin_round_robin_priorities(segments: list[Segment], strategy: Strategy, *, 
 #: inline in `_raw_priorities` with no real function call at all, a third, inconsistent shape.
 _BASE_METHOD_PRIORITIES = {
     "filter": _filter_priorities,
+    "none": _none_priorities,
     "top-k": _top_k_priorities,
     "weighted": _weighted_priorities,
     "uniform-bins": _bin_round_robin_priorities,
@@ -489,13 +527,14 @@ def _select_top_k(segments, *, weights, normalize, target_size) -> list[Segment]
     return [segments[i] for i in order]
 
 
-def _select_weighted(segments, *, weights, normalize, target_size, np_rng) -> list[Segment]:
+def _select_weighted(segments, *, weights, normalize, target_size, np_rng,
+                     floor: float = 1e-9) -> list[Segment]:
     n = len(segments)
     k = min(target_size, n)
     if k <= 0:
         return []
     score = _weighted_score(segments, weights, normalize)
-    probs = score - score.min() + 1e-9
+    probs = score - score.min() + floor
     probs = probs / probs.sum()
     idx = np_rng.choice(n, size=k, replace=False, p=probs)
     return [segments[i] for i in idx]
@@ -544,7 +583,7 @@ def select(segments: list[Segment], strategy: Strategy, *, target_size: int,
     """Run the strategy's method, then its enabled post-passes (tag coverage, group cap).
     Callers pre-sort `segments` by (source_id, start_idx) so seeded RNGs are
     worker-count-independent."""
-    target_size = validate_target_size(target_size)
+    target_size = require_target_size(target_size)
     if not segments:
         return []
     if strategy.predicates:
@@ -561,7 +600,7 @@ def select(segments: list[Segment], strategy: Strategy, *, target_size: int,
         k = min(target_size, len(segments))
         order = np.argsort(-prio, kind="stable")[:k]
         selected = [segments[i] for i in order]
-    elif strategy.method == "filter":
+    elif strategy.method in ("filter", "none"):
         selected = list(segments)
     elif strategy.method == "uniform-bins":
         selected = sample_uniform_bins(segments, target_size=target_size, rng=py_rng)
@@ -571,7 +610,8 @@ def select(segments: list[Segment], strategy: Strategy, *, target_size: int,
     elif strategy.method == "weighted":
         selected = _select_weighted(segments, weights=strategy.weights,
                                     normalize=strategy.normalize, target_size=target_size,
-                                    np_rng=np_rng)
+                                    np_rng=np_rng,
+                                    floor=(strategy.method_params or {}).get("floor", 1e-9))
     else:  # target-distribution
         selected = _select_target_distribution(segments, target=strategy.target,
                                                target_size=target_size, py_rng=py_rng)

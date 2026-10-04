@@ -193,7 +193,8 @@
               "properties": {
                 "method": {"type": "string", "description": "Built-in or registered method name."},
                 "weights": {"type": "object", "additionalProperties": {"type": "number"}},
-                "normalize": {"enum": ["quantile", "minmax", "zscore"]},
+                "normalize": {"enum": ["quantile", "minmax", "zscore", "none"]},
+                "floor": {"type": "number", "minimum": 0},
                 "target": {},
                 "tag_coverage": {"type": ["object", "null"]},
                 "group_cap": {"type": ["object", "null"]},

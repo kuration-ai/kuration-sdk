@@ -18,7 +18,7 @@ from .schema import SchemaSpec
 from .scoring import score_sources
 from .segment import Segment, Segmenter
 from .select import assign_splits
-from .strategy import Strategy, select
+from .strategy import Strategy, _passes, select
 
 
 @dataclass
@@ -41,7 +41,7 @@ class CurateResult:
 
 
 def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
-           strategy: Strategy, segmenter: Segmenter, target_size: int, seed: int = 0,
+           strategy: Strategy, segmenter: Segmenter, target_size: Optional[int], seed: int = 0,
            group_of: Optional[Callable[[str], object]] = None,
            tags_of: Optional[Callable[[Segment], Iterable]] = None,
            test_frac: float = 0.0, workers: int = 1, on_error: str = "skip",
@@ -55,6 +55,9 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
     tags_of(segment) -> tags (sets Segment.tags for tag coverage). Both optional.
     `workers>1` parallelizes the feature pass; `on_error='skip'` logs + skips a bad source;
     `streaming=True` scores each source out-of-core with a streaming-capable adapter.
+    ``target_size=None`` skips selection entirely: ``selected`` becomes every segment that
+    passed the strategy's predicates/filters, in canonical sorted order — no binning method,
+    weights, or axes required.
     """
     from .strategy import validate_target_size
     target_size = validate_target_size(target_size)
@@ -105,9 +108,13 @@ def curate(*, schema: SchemaSpec, adapter: InputAdapter, sources: Iterable[str],
         from .methods import apply_filters
         pool = apply_filters(all_segments, strategy, seed=seed, workers=workers)
     bin_segments(pool, strategy.axes)
-    tag_vocab = sorted({t for s in pool for t in s.tags}, key=str)
-    selected = select(pool, strategy, target_size=target_size, tag_vocab=tag_vocab,
-                      seed=seed, workers=workers)
+    if target_size is None:
+        selected = [s for s in pool if _passes(s, strategy.predicates)] \
+            if strategy.predicates else list(pool)
+    else:
+        tag_vocab = sorted({t for s in pool for t in s.tags}, key=str)
+        selected = select(pool, strategy, target_size=target_size, tag_vocab=tag_vocab,
+                          seed=seed, workers=workers)
     emit(progress, "selection", "complete", current=len(selected), total=len(pool),
          detail=f"{len(selected)} selected")
 

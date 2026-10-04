@@ -66,8 +66,8 @@ def run_experiment(*, schema: SchemaSpec, adapter, sources, arms: list[Arm], seg
     and per-arm counts/distribution comparisons. Empty or duplicate arms, conflicting metric or
     scorer definitions, an unknown baseline, and ordinary scoring errors raise ``ValueError``.
     """
-    from .strategy import validate_target_size
-    target_size = validate_target_size(target_size)
+    from .strategy import require_target_size
+    target_size = require_target_size(target_size)
     if not arms:
         raise ValueError("run_experiment needs at least one arm")
     names = [a.name for a in arms]

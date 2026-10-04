@@ -51,6 +51,43 @@ def test_weighted_methods_match_string_keyed_form(pool, weights_method):
     assert _ids(via_pipeline.options(seed=3).collect()) == _ids(string_keyed.options(seed=3).collect())
 
 
+@pytest.mark.parametrize("weights_method", ["top_k", "weighted"])
+def test_weighted_methods_accept_normalize_none(pool, weights_method):
+    """normalize="none" (raw, unnormalized scale) was previously only accepted by filters
+    (anomaly/dedup) and the classic curate()/write_dataset() functions -- not by .sample()/
+    the fluent top_k/weighted operators -- even though the underlying _normalize() already
+    implements it. Both call styles should accept it identically."""
+    via_pipeline = getattr(pool, weights_method)(weights={"x_mean": 1.0}, normalize="none", n=8)
+    string_keyed = pool.sample(weights_method.replace("_", "-"), weights={"x_mean": 1.0},
+                               normalize="none", n=8)
+    assert _ids(via_pipeline.options(seed=3).collect()) == _ids(string_keyed.options(seed=3).collect())
+
+
+def test_weighted_floor_raises_the_lowest_scorers_selection_odds():
+    """``floor`` shifts the Gumbel-top-k sampler's non-negativity offset (default ``1e-9``),
+    which otherwise gives the single lowest-scoring segment in the pool a near-zero chance of
+    selection by construction, regardless of how close its real score was to the rest."""
+    # Two low-scoring segments (score 0) and eight high-scoring segments (score 10).
+    sources = {name: [{"t": float(i), "x": 0.0} for i in range(16)] for name in ("low0", "low1")}
+    sources.update({f"high{k}": [{"t": float(i), "x": 10.0} for i in range(16)]
+                    for k in range(8)})
+    pool = input(sources, time="t").window(16).measure("x_mean", "mean", of="x")
+
+    def _low_selected(seeds, **kwargs):
+        count = 0
+        for seed in seeds:
+            result = pool.weighted(weights={"x_mean": 1.0}, n=1, **kwargs).options(
+                seed=seed).collect()
+            if result.selected[0].source_id.startswith("low"):
+                count += 1
+        return count
+
+    seeds = range(300)
+    default_count = _low_selected(seeds)
+    raised_count = _low_selected(seeds, floor=5.0)
+    assert raised_count > default_count + 2
+
+
 def test_uniform_bins_matches_string_keyed_form(binned_pool):
     via_pipeline = binned_pool.uniform_bins(n=8)
     string_keyed = binned_pool.sample("uniform-bins", n=8)
