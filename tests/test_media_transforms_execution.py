@@ -210,6 +210,72 @@ def test_ragged_field_batches_expose_their_valid_step_counts():
     assert [segment.features["valid_mean"] for segment in segments] == [1.5, 4.5]
 
 
+@register_batch_transform("tests/field-echo-a", outputs=("echo_a",), inputs=("field:x",))
+class FieldEchoA:
+    def transform_batch(self, batch, ctx):
+        values = np.asarray(batch["field:x"], dtype=np.float64)
+        return {"echo_a": np.asarray(
+            [values[row, :steps].mean() for row, steps in enumerate(ctx.valid_steps)])}
+
+
+@register_batch_transform("tests/field-echo-b", outputs=("echo_b",), inputs=("field:x",))
+class FieldEchoB:
+    def transform_batch(self, batch, ctx):
+        values = np.asarray(batch["field:x"], dtype=np.float64)
+        return {"echo_b": np.asarray(
+            [values[row, :steps].mean() for row, steps in enumerate(ctx.valid_steps)])}
+
+
+def test_multiple_transforms_sharing_a_field_build_the_window_buffer_once(monkeypatch):
+    """F12: ``build_window`` is documented as "the amortization point: one buffer per segment,
+    shared by all of a profile's metrics" -- but the transform runner rebuilt the whole-schema
+    buffer once per transform per window even when two transforms read the same field, so wall
+    time scaled with the number of transforms rather than the work they did. One
+    `build_window` per window, shared across every transform in the same batch pass, fixes
+    that."""
+    from kuration import Registry, Segment, Tick
+    from kuration.core import buffer as buffer_module
+    from kuration.core.transforms import apply_transforms
+
+    schema = SchemaSpec.from_dict({"name": "shared", "fields": {"x": {"kind": "scalar"}}})
+
+    class Adapter:
+        def ticks(self, source):
+            return [Tick(index, {0: {"x": float(index)}}) for index in range(6)]
+
+    Adapter.schema = schema
+    registry = Registry()
+    registry.register_transform("tests/field-echo-a", FieldEchoA)
+    registry.register_transform("tests/field-echo-b", FieldEchoB)
+    calls = [
+        {"name": "tests/field-echo-a", "implementation": "tests/field-echo-a",
+         "outputs": ["echo_a"], "inputs": ["field:x"], "batch_size": 2, "device": "cpu",
+         "params": {}},
+        {"name": "tests/field-echo-b", "implementation": "tests/field-echo-b",
+         "outputs": ["echo_b"], "inputs": ["field:x"], "batch_size": 2, "device": "cpu",
+         "params": {}},
+    ]
+    segments = [Segment("a", 0, 2, (0, 1)), Segment("a", 2, 4, (2, 3)),
+               Segment("a", 4, 6, (4, 5))]
+
+    build_calls = []
+    real_build_window = buffer_module.build_window
+
+    def counting_build_window(schema_arg, ticks_arg):
+        build_calls.append(ticks_arg)
+        return real_build_window(schema_arg, ticks_arg)
+
+    monkeypatch.setattr(buffer_module, "build_window", counting_build_window)
+
+    apply_transforms(calls, segments, adapter=Adapter(), registry=registry)
+
+    # 3 windows, 2 transforms both reading field:x -- one build_window call per window, not
+    # one per (window, transform) pair.
+    assert len(build_calls) == 3
+    assert [segment.features["echo_a"] for segment in segments] == [0.5, 2.5, 4.5]
+    assert [segment.features["echo_b"] for segment in segments] == [0.5, 2.5, 4.5]
+
+
 def test_media_only_schema_round_trip():
     schema = SchemaSpec.from_dict({
         "name": "video", "fields": {},
