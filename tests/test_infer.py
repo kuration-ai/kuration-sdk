@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 
 import numpy as np
 import pytest
@@ -64,8 +65,27 @@ def test_hz_from_repeated_multi_entity_times():
 
 
 def test_explicit_hz_wins():
-    schema, _ = infer_schema(_rows(), hz=64.0)
+    with pytest.warns(UserWarning, match="does not match the sample's own timestamps"):
+        schema, _ = infer_schema(_rows(), hz=64.0)
     assert schema.sample_hz == 64.0
+
+
+def test_explicit_hz_matching_timestamps_does_not_warn():
+    # _rows() timestamps are 0.5s apart (2Hz) -- a declared hz of 2.0 should raise no warning.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        schema, _ = infer_schema(_rows(), hz=2.0)
+    assert schema.sample_hz == 2.0
+
+
+def test_explicit_hz_mismatch_warning_names_the_observed_rate():
+    """F18: a declared hz= that contradicts the actual timestamp deltas was accepted
+    silently -- 25Hz data declared as 1Hz ran clean and threw off any hours budget by 25x.
+    The warning now names both rates and the relative gap."""
+    rows = [{"time": i * 0.04, "x": float(i)} for i in range(10)]  # 0.04s apart == 25Hz
+    with pytest.warns(UserWarning, match=r"declared hz=1 does not match.*~25") as record:
+        infer_schema(rows, hz=1.0)
+    assert len(record) == 1
 
 
 def test_hz_none_without_time_column():
@@ -320,7 +340,8 @@ def test_ticks_sample():
 
 def test_ticks_explicit_hz_and_conflict():
     ticks = [Tick(time=i, entities={0: {"x": float(i)}}) for i in range(4)]
-    schema, _ = infer_schema(ticks, hz=100.0)
+    with pytest.warns(UserWarning, match="does not match the sample's own timestamps"):
+        schema, _ = infer_schema(ticks, hz=100.0)
     assert schema.sample_hz == 100.0
     bad = [Tick(time=0, entities={0: {"x": 1.0}}), Tick(time=1, entities={0: {"x": "s"}})]
     with pytest.raises(ValueError) as e:
