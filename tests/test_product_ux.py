@@ -37,6 +37,33 @@ def test_output_dry_run_resolves_output_and_estimates_without_writing(tmp_path):
     assert "categorical-fields-omitted" in rendered
 
 
+def test_output_warns_when_shard_length_does_not_evenly_divide_the_window(tmp_path):
+    """F7: a window=4 split into shard_length=3 shards silently became 3+1 shards with no
+    mention in `explain()`/the dry-run preview or the written config.json's warnings. Both now
+    carry a `shard-length-chops-windows` warning naming the resulting shard split."""
+    pipeline = _pipeline()  # window(4, stride=2)
+    destination = tmp_path / "dataset"
+
+    plan = pipeline.output(destination, container="hdf5", categorical="omit",
+                           shard_length=3, dry_run=True)
+    codes = [w["code"] for w in plan.warnings]
+    assert "shard-length-chops-windows" in codes
+    warning = next(w for w in plan.warnings if w["code"] == "shard-length-chops-windows")
+    assert "shard_length=3" in warning["message"] and "window length (4)" in warning["message"]
+
+    written = pipeline.output(destination, container="hdf5", categorical="omit", shard_length=3)
+    cfg = json.loads((destination / "config.json").read_text())
+    assert "shard-length-chops-windows" in [w["code"] for w in cfg["warnings"]]
+    assert written is not None
+
+
+def test_output_does_not_warn_when_shard_length_evenly_divides_the_window(tmp_path):
+    destination = tmp_path / "dataset"
+    plan = _pipeline().output(destination, container="hdf5", categorical="omit",
+                              shard_length=4, dry_run=True)
+    assert "shard-length-chops-windows" not in [w["code"] for w in plan.warnings]
+
+
 def test_explain_does_not_read_sources_unless_inspection_is_requested():
     pipeline = _pipeline()
     calls = 0
