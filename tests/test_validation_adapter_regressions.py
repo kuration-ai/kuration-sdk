@@ -110,3 +110,17 @@ def test_mixed_case_parquet_suffix_is_consistent_across_adapter_paths(tmp_path):
 
     assert [tick.time for tick in ticks] == [0, 1]
     assert [tick.entities[0]["value"] for tick in ticks] == [1.5, 2.5]
+
+
+def test_nonnumeric_time_column_warns_once():
+    """F22: a text time column (e.g. ISO timestamps) was silently accepted and used for plain
+    string grouping/ordering -- hz-based or seconds-unit windowing then fails far from here, or
+    silently misorders non-zero-padded strings. Warn once per ticks() call instead."""
+    schema = SchemaSpec.from_dict({"name": "s", "fields": {"value": {"kind": "scalar"}}})
+    adapter = TimeseriesAdapter(schema, fields={"value": "value"}, time_column="time")
+    rows = [{"time": f"2026-07-0{i}T00:00:00", "value": float(i)} for i in range(1, 4)]
+
+    with pytest.warns(UserWarning, match="time column 'time' is not numeric") as record:
+        ticks = list(adapter.from_rows(rows))
+    assert len(record) == 1  # one warning per ticks() call, not once per row
+    assert [tick.time for tick in ticks] == [row["time"] for row in rows]

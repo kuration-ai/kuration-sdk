@@ -1049,6 +1049,10 @@ class Pipeline:
         bins = bins if bins is not None else 4
         if not isinstance(bins, int) or isinstance(bins, bool) or bins < 1:
             raise ValueError(f"{operator}(): bins must be a positive integer, got {bins!r}")
+        if bins == 1:
+            import warnings
+            warnings.warn(f"{operator}({metric!r}, bins=1): every segment lands in one bin; "
+                          "the axis adds no selection signal", stacklevel=2)
         p = self._next(operator, metric, bins=bins)
         p._axes.append((metric, bins))
         return p
