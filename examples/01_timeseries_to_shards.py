@@ -62,7 +62,7 @@ result = pipeline.output(out_dir, include=["x", "y", "temp"], categorical="omit"
 summary = result["results"]
 print(f"inferred fields: {', '.join(pipeline.describe()['schema']['fields'])}")
 print(f"wrote {summary['shards']} shards "
-      f"({summary['n_train']} train / {summary['n_test']} test devices)")
+      f"({summary['n_train_sources']} train / {summary['n_test_sources']} test devices)")
 
 # 3. Read one back as ordinary numpy arrays.
 arrays = next(iter(iter_shards(out_dir)))

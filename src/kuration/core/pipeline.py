@@ -1501,8 +1501,12 @@ class Pipeline:
                              "hint": "Pass categorical='omit', 'integer-vocab', or 'encoder' "
                                      "to output()."})
         if self._options["on_error"] == "skip":
+            # F2: worded prospectively ("configured to", not "were") -- this fires on every
+            # pipeline using the default policy, including a totally clean run with nothing
+            # to report, and read as "something already went wrong" at a skim.
             warnings.append({"code": "source-errors-skipped", "message":
-                             "source errors will be skipped and reported",
+                             "on_error='skip' (the default): a source error during this run "
+                             "would be silently admitted as a data gap instead of stopping it",
                              "hint": "Use .options(mode='strict') while developing to fail fast."})
         if self._method is None and not self._axes and not self._weights:
             warnings.append({"code": "selection-unresolved", "message":
@@ -2538,10 +2542,10 @@ class Pipeline:
         results = {"shards": len(entries), "selected": len(result.selected),
                    "segments_total": len(result.all_segments),
                    "sources_skipped": len(result.errors),
-                   "n_train": len({entry["source_id"] for entry in entries
-                                   if entry["split"] == "train"}),
-                   "n_test": len({entry["source_id"] for entry in entries
-                                  if entry["split"] == "test"})}
+                   "n_train_sources": len({entry["source_id"] for entry in entries
+                                           if entry["split"] == "train"}),
+                   "n_test_sources": len({entry["source_id"] for entry in entries
+                                          if entry["split"] == "test"})}
         cfg = build_config(self.schema, result.strategy, results=results, seed=seed)
         cfg["output"] = spec.to_dict()
         cfg["provenance"] = signature
