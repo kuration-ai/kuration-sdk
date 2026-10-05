@@ -249,18 +249,21 @@ def test_full_pipeline_input_window_apply_collect_end_to_end(tmp_path):
     dist_path = _dist_path(tmp_path)
     source = _write_asg_match(tmp_path)
 
-    pipeline = (
-        kuration_input(adapter=AsgCollisionAdapter(), sources=[source],
-                       schema=AsgCollisionAdapter.schema)
-        .window(3, stride=3)
-        .apply(COMPONENT_NAME,
-               map_for_source={source: "de_dust2"},
-               map_registry={"de_dust2": [glb_path]},
-               dist_path=dist_path,
-               disk_cache_dir=str(tmp_path / "cache"),
-               min_score=1.0, proximity=60.0, min_approach=100.0, max_residual=20.0)
-        .organize("collision_count", bins=1)
-    )
+    # bins=1 is a deliberate no-op binning axis here (this test isn't exercising binning),
+    # which F20 now warns on -- expected, not a bug.
+    with pytest.warns(UserWarning, match="bins=1"):
+        pipeline = (
+            kuration_input(adapter=AsgCollisionAdapter(), sources=[source],
+                           schema=AsgCollisionAdapter.schema)
+            .window(3, stride=3)
+            .apply(COMPONENT_NAME,
+                   map_for_source={source: "de_dust2"},
+                   map_registry={"de_dust2": [glb_path]},
+                   dist_path=dist_path,
+                   disk_cache_dir=str(tmp_path / "cache"),
+                   min_score=1.0, proximity=60.0, min_approach=100.0, max_residual=20.0)
+            .organize("collision_count", bins=1)
+        )
     result = pipeline.collect(n=1)
 
     assert not result.errors
@@ -299,18 +302,21 @@ def test_overlapping_windows_count_each_collision_tick_once(tmp_path):
     path.write_text(json.dumps(data))
     source = f"{path}::111"
 
-    pipeline = (
-        kuration_input(adapter=AsgCollisionAdapter(), sources=[source],
-                       schema=AsgCollisionAdapter.schema)
-        .window(4, stride=2)   # windows [0:4) and [2:6) both contain tick index 2
-        .apply(COMPONENT_NAME,
-               map_for_source={source: "de_dust2"},
-               map_registry={"de_dust2": [glb_path]},
-               dist_path=dist_path,
-               disk_cache_dir=str(tmp_path / "cache"),
-               min_score=1.0, proximity=60.0, min_approach=100.0, max_residual=20.0)
-        .organize("collision_count", bins=1)
-    )
+    # bins=1 is a deliberate no-op binning axis here (this test isn't exercising binning),
+    # which F20 now warns on -- expected, not a bug.
+    with pytest.warns(UserWarning, match="bins=1"):
+        pipeline = (
+            kuration_input(adapter=AsgCollisionAdapter(), sources=[source],
+                           schema=AsgCollisionAdapter.schema)
+            .window(4, stride=2)   # windows [0:4) and [2:6) both contain tick index 2
+            .apply(COMPONENT_NAME,
+                   map_for_source={source: "de_dust2"},
+                   map_registry={"de_dust2": [glb_path]},
+                   dist_path=dist_path,
+                   disk_cache_dir=str(tmp_path / "cache"),
+                   min_score=1.0, proximity=60.0, min_approach=100.0, max_residual=20.0)
+            .organize("collision_count", bins=1)
+        )
     result = pipeline.collect(n=10)
 
     assert not result.errors

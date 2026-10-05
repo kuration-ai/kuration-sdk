@@ -15,7 +15,7 @@ def _pipeline():
                        for tick in range(8)]
         for source in range(2)
     }
-    return (input(sessions, time="t", entity="entity", hz=2)
+    return (input(sessions, time="t", entity="entity", hz=1)
             .window(4, stride=2).measure("level", "mean", of="x")
             .sample("top-k", n=3, weights={"level": 1.0})
             .options(mode="strict", seed=4))

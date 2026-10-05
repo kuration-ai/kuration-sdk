@@ -46,7 +46,7 @@ def base_pipeline():
     Yields 36 windows per session x 3 sessions = 108 windows total, well above
     any count= value used below.
     """
-    return kuration_input(_sessions(), time="t", hz=10.0).window(8, stride=4)
+    return kuration_input(_sessions(), time="t", hz=1.0).window(8, stride=4)
 
 
 @pytest.fixture

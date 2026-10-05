@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from examples.public_data import ett, person_activity
 from kuration import iter_shards
 
@@ -16,7 +18,11 @@ from kuration import iter_shards
 def test_ett_demo_curates_days_through_the_pipeline_api_only(tmp_path, capsys):
     source = ett.write_demo(tmp_path / "ETTh1-demo.csv", days=30)
     out = tmp_path / "out"
-    result = ett.run(str(source), str(out), n=12)
+    # The real ETT dataset's `date` column is an ISO datetime string, not numeric epoch time --
+    # expected to trip the non-numeric-time-column warning (F22); this pins that it's still
+    # just a warning, not a failure, on real-shaped data.
+    with pytest.warns(UserWarning, match="time column 'date' is not numeric"):
+        result = ett.run(str(source), str(out), n=12)
 
     assert len(result["shards"]) == 12
     # A window is one day of hourly readings, and shards are written at that length.
@@ -42,7 +48,10 @@ def test_ett_pipeline_needs_no_schema_adapter_or_strategy(tmp_path):
 def test_ett_demo_data_varies_enough_to_bin(tmp_path):
     """A perfectly periodic generator makes every window identical and the axes useless."""
     source = ett.write_demo(tmp_path / "demo.csv", days=30)
-    result = ett.build(str(source), n=10).collect()
+    # ETT's real `date` column is an ISO datetime string, not numeric epoch time -- expected
+    # to trip the non-numeric-time-column warning (F22).
+    with pytest.warns(UserWarning, match="time column 'date' is not numeric"):
+        result = ett.build(str(source), n=10).collect()
     loads = {round(segment.features["load"], 6) for segment in result.all_segments}
     assert len(loads) > 5, f"demo days are too uniform to bin: {sorted(loads)}"
 

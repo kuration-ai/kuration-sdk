@@ -812,13 +812,16 @@ def test_full_pipeline_with_fake_video_provider():
             "fields": {"action": {"kind": "vector", "dims": action_cols}},
         }
     )
-    pipeline = (
-        input(rows, schema=schema, fields={"action": action_cols}, time="t")
-        .join_video({"mem": "fake.mp4"}, provider=provider, on="frame_index")
-        .window(n_frames, stride=n_frames)
-        .pixel_shift(controls=["W"])
-        .organize("w_n_instances", bins=1)
-    )
+    # bins=1 is a deliberate no-op binning axis here (this test isn't exercising binning),
+    # which F20 now warns on -- expected, not a bug.
+    with pytest.warns(UserWarning, match="bins=1"):
+        pipeline = (
+            input(rows, schema=schema, fields={"action": action_cols}, time="t")
+            .join_video({"mem": "fake.mp4"}, provider=provider, on="frame_index")
+            .window(n_frames, stride=n_frames)
+            .pixel_shift(controls=["W"])
+            .organize("w_n_instances", bins=1)
+        )
     result = pipeline.collect(n=10)
     assert not result.errors
     assert len(result.all_segments) == 1
@@ -867,11 +870,14 @@ def test_pixel_shift_transform_runs_on_remapped_input_tokens():
         "fields": {"controls": {"kind": "vector", "dims": action_cols}},
     })
 
-    result = (_pixel_shift_pipeline(
-        rows, schema, provider, media_column="frames2", action_field="controls",
-        inputs=("media:frames2", "field:controls"))
-        .organize("w_n_instances", bins=1)
-        .collect(n=10))
+    # bins=1 is a deliberate no-op binning axis here (this test isn't exercising binning),
+    # which F20 now warns on -- expected, not a bug.
+    with pytest.warns(UserWarning, match="bins=1"):
+        result = (_pixel_shift_pipeline(
+            rows, schema, provider, media_column="frames2", action_field="controls",
+            inputs=("media:frames2", "field:controls"))
+            .organize("w_n_instances", bins=1)
+            .collect(n=10))
 
     assert not result.errors
     features = result.all_segments[0].features
@@ -912,10 +918,13 @@ def test_pixel_shift_does_not_decode_an_unused_lookbehind_frame():
         "fields": {"action": {"kind": "vector", "dims": action_cols}},
     })
 
-    result = (_pixel_shift_pipeline(rows, schema, provider, media_column="frame",
-                                   action_field="action", window=4)
-              .organize("w_n_instances", bins=1)
-              .collect(n=10))
+    # bins=1 is a deliberate no-op binning axis here (this test isn't exercising binning),
+    # which F20 now warns on -- expected, not a bug.
+    with pytest.warns(UserWarning, match="bins=1"):
+        result = (_pixel_shift_pipeline(rows, schema, provider, media_column="frame",
+                                       action_field="action", window=4)
+                  .organize("w_n_instances", bins=1)
+                  .collect(n=10))
 
     assert not result.errors
     # Owned windows plus the first window's three lookahead frames. The second window would
@@ -950,12 +959,15 @@ def test_pipeline_halo_counts_boundary_press_once(
         "name": "pixel_shift_boundary_test",
         "fields": {"action": {"kind": "vector", "dims": action_cols}},
     })
-    result = (input(rows, schema=schema, fields={"action": action_cols}, time="t")
-              .join_video({"mem": "fake.mp4"}, provider=provider, on="frame_index")
-              .window(window, stride=stride)
-              .pixel_shift(controls=["W"])
-              .organize("w_n_instances", bins=1)
-              .collect(n=10))
+    # bins=1 is a deliberate no-op binning axis here (this test isn't exercising binning),
+    # which F20 now warns on -- expected, not a bug.
+    with pytest.warns(UserWarning, match="bins=1"):
+        result = (input(rows, schema=schema, fields={"action": action_cols}, time="t")
+                  .join_video({"mem": "fake.mp4"}, provider=provider, on="frame_index")
+                  .window(window, stride=stride)
+                  .pixel_shift(controls=["W"])
+                  .organize("w_n_instances", bins=1)
+                  .collect(n=10))
 
     assert {segment.start_idx: segment.features["w_n_instances"]
             for segment in result.all_segments} == expected_by_start

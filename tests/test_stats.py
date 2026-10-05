@@ -21,7 +21,7 @@ def _pipeline(*, selected: int | None = None):
         ],
     }
     pipeline = (
-        input(sessions, time="t", entity="entity", hz=2)
+        input(sessions, time="t", entity="entity", hz=1)
         .window(4, stride=2)
         .measure("level", "mean", of="x")
         .options(mode="strict", seed=5)
@@ -185,7 +185,7 @@ def _sparse_entity_dataset(path, *, presence_mask: bool = True, shard_length: in
         "kind": {"dtype": "U8", "shape": [], "source": "field:kind"},
     }
     pipeline = (
-        input({"s": rows}, time="t", entity="entity", hz=2)
+        input({"s": rows}, time="t", entity="entity", hz=1)
         .window(8, stride=8)
         .measure("level", "mean", of="x")
         .options(mode="strict", seed=1)
@@ -306,7 +306,7 @@ def _nonfinite_dataset(path):
         for step in range(8)
     ]
     return (
-        input({"s": rows}, time="t", entity="entity", hz=2)
+        input({"s": rows}, time="t", entity="entity", hz=1)
         .window(8, stride=8)
         .measure("level", "mean", of="y")
         .options(mode="strict", seed=1)
@@ -368,7 +368,7 @@ def _hours_write_result(path):
         for index in range(4)
     }
     return (
-        input(sessions, time="t", entity="entity", hz=2)
+        input(sessions, time="t", entity="entity", hz=1)
         .window(8, stride=8)
         .measure("level", "mean", of="x")
         .options(mode="strict", seed=3)
@@ -398,7 +398,7 @@ def _two_shard_dataset(path):
         "high": [{"t": step, "entity": "e", "x": 100.0 + step} for step in range(8)],
     }
     return (
-        input(sessions, time="t", entity="entity", hz=2)
+        input(sessions, time="t", entity="entity", hz=1)
         .window(8, stride=8)
         .measure("level", "mean", of="x")
         .options(mode="strict", seed=1)
@@ -415,7 +415,7 @@ def _four_shard_dataset(path):
         for index in range(4)
     }
     return (
-        input(sessions, time="t", entity="entity", hz=2)
+        input(sessions, time="t", entity="entity", hz=1)
         .window(8, stride=8)
         .measure("level", "mean", of="x")
         .options(mode="strict", seed=1)

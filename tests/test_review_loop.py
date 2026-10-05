@@ -16,7 +16,7 @@ def _pipeline(n: int = 3):
         "beta": [{"t": i, "entity": "b", "x": float(i + 10),
                   "kind": "late" if i >= 4 else "early"} for i in range(8)],
     }
-    return (input(sessions, time="t", entity="entity", hz=2)
+    return (input(sessions, time="t", entity="entity", hz=1)
             .window(4, stride=2).measure("level", "mean", of="x")
             .bin("level", bins=3).sample("top-k", n=n, weights={"level": 1.0})
             .options(mode="strict", seed=5))
