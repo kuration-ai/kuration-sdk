@@ -99,8 +99,8 @@ def test_curate_review_json_is_not_published_on_nonfinite_evidence(
             "tracks_admitted": 1,
             "tracks_total": 1,
             "shards": 1,
-            "n_train": 1,
-            "n_test": 0,
+            "n_train_sources": 1,
+            "n_test_sources": 0,
             "sources_skipped": 0,
         },
     }

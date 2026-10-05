@@ -537,8 +537,10 @@ def test_output_hours_path_end_to_end(tmp_path):
 
 
 def test_config_split_counts_are_emitting_sources_not_assigned_sources(tmp_path):
-    """`n_train`/`n_test` in config.json count sources that actually emitted shards, not sources
-    that were assigned a split — pinned on both write paths so the meaning can't drift back."""
+    """`n_train_sources`/`n_test_sources` in config.json count sources that actually emitted
+    shards, not sources that were assigned a split — pinned on both write paths so the meaning
+    can't drift back. (F4: these were previously named `n_train`/`n_test`, which read as a
+    window count sitting next to `selected: N`; renamed for clarity, same values.)"""
     def emitters(out_dir):
         man = json.loads((out_dir / "dataset_manifest.json").read_text())
         by_split = {}
@@ -557,9 +559,9 @@ def test_config_split_counts_are_emitting_sources_not_assigned_sources(tmp_path)
     results = out["results"]
     written = emitters(count_dir)
     assert sum(len(sources) for sources in written.values()) == 1
-    assert results["n_train"] == len(written.get("train", ()))
-    assert results["n_test"] == len(written.get("test", ()))
-    assert results["n_train"] + results["n_test"] == 1      # not the 4 assigned sources
+    assert results["n_train_sources"] == len(written.get("train", ()))
+    assert results["n_test_sources"] == len(written.get("test", ()))
+    assert results["n_train_sources"] + results["n_test_sources"] == 1  # not the 4 assigned
     assert json.loads((count_dir / "config.json").read_text())["results"] == results
 
     # ---- hours path (write_dataset): the budget admits fewer sources than it assigns
@@ -569,11 +571,11 @@ def test_config_split_counts_are_emitting_sources_not_assigned_sources(tmp_path)
     hout = hp.output(str(hours_dir))
     hresults, hwritten = hout["results"], emitters(hours_dir)
     assert len(hout["split"]) == N_SOURCES
-    assert hresults["n_train"] == len(hwritten.get("train", ()))
-    assert hresults["n_test"] == len(hwritten.get("test", ()))
+    assert hresults["n_train_sources"] == len(hwritten.get("train", ()))
+    assert hresults["n_test_sources"] == len(hwritten.get("test", ()))
     for split in ("train", "test"):
         assigned_count = len({s for s, sp in hout["split"].items() if sp == split})
-        assert hresults[f"n_{split}"] < assigned_count      # assigned sources that emitted nothing
+        assert hresults[f"n_{split}_sources"] < assigned_count  # assigned, emitted nothing
 
 
 def test_output_hours_path_split(tmp_path):

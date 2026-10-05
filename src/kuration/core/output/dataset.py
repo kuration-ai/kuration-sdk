@@ -638,10 +638,10 @@ def _write_dataset_impl(out_dir: str, *, schema: SchemaSpec, adapter: InputAdapt
     results = {"shards": len(entries), "tracks_admitted": len(admitted),
                "tracks_total": n_tracks, "segments_total": segment_count,
                "sources_skipped": len(errors),
-               "n_train": len({entry["source_id"] for entry in entries
-                               if entry["split"] == "train"}),
-               "n_test": len({entry["source_id"] for entry in entries
-                              if entry["split"] == "test"}),
+               "n_train_sources": len({entry["source_id"] for entry in entries
+                                       if entry["split"] == "train"}),
+               "n_test_sources": len({entry["source_id"] for entry in entries
+                                      if entry["split"] == "test"}),
                "budget": budget}
     ended = datetime.now(timezone.utc).isoformat()
     cfg = build_config(schema, strategy, results=results, seed=seed, started=started, ended=ended)
