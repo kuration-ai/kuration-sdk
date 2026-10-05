@@ -187,6 +187,30 @@ def _hz_from_times(times) -> Optional[float]:
     return 1.0 / float(np.median(diffs))
 
 
+_HZ_MISMATCH_THRESHOLD = 0.2
+
+
+def _warn_if_hz_mismatches_times(hz: Optional[float], times, *, source: str) -> None:
+    """A declared ``hz=`` is taken on faith -- nothing compares it to the data's own
+    timestamps. 25Hz data declared as 1Hz runs clean, then throws off any hours budget by
+    25x with no signal anything is wrong. Warn once the declared rate and the rate implied
+    by the median timestamp delta disagree past a relative 20%."""
+    if hz is None:
+        return
+    observed = _hz_from_times(times)
+    if observed is None or observed <= 0:
+        return
+    relative_gap = abs(observed - hz) / max(observed, hz)
+    if relative_gap <= _HZ_MISMATCH_THRESHOLD:
+        return
+    import warnings
+    warnings.warn(
+        f"{source}: declared hz={hz:g} does not match the sample's own timestamps "
+        f"(median delta implies ~{observed:.3g}Hz, a {relative_gap:.0%} relative gap) — "
+        "an hours budget or time-unit window would be off by roughly that factor",
+        stacklevel=3)
+
+
 # ---- cell classification ----------------------------------------------------
 def _classify_column(col: str, vals: list) -> tuple[str, Optional[int]]:
     """(kind, vector_length) from a column's non-None cells; ambiguity raises."""
@@ -303,8 +327,12 @@ def _infer_rows(rows: list, *, name, time, entity, hz, kinds) -> tuple[SchemaSpe
             fields_spec[col] = {"kind": kind}
             hints_fields[col] = col
 
-    if hz is None and time_col is not None:
-        hz = _hz_from_times([r.get(time_col) for r in rows])
+    if time_col is not None:
+        times = [r.get(time_col) for r in rows]
+        if hz is None:
+            hz = _hz_from_times(times)
+        else:
+            _warn_if_hz_mismatches_times(hz, times, source="input()")
     schema = SchemaSpec.from_dict({
         "name": name, "entity_axis": entity_col or "entity", "sample_hz": hz,
         "fields": fields_spec})
@@ -361,6 +389,8 @@ def _infer_ticks(ticks: list, *, name, hz) -> tuple[SchemaSpec, dict]:
             fields_spec[fname] = {"kind": kind}
     if hz is None:
         hz = _hz_from_times([tk.time for tk in ticks])
+    else:
+        _warn_if_hz_mismatches_times(hz, [tk.time for tk in ticks], source="input()")
     schema = SchemaSpec.from_dict({
         "name": name, "entity_axis": "entity", "sample_hz": hz, "fields": fields_spec})
     return schema, _mk_hints({f: f for f in per_field}, None, None, {})
