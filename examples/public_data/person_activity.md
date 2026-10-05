@@ -28,10 +28,14 @@ python examples/public_data/person_activity.py 'data/person_activity/*.csv' --ou
 python examples/public_data/person_activity.py --demo --out activity-out
 ```
 
-`--download` fetches the archive (~2 MB) and performs one preparation step: the upstream file
+`--download` fetches the archive (~2 MB) and performs two preparation steps: the upstream file
 is a single headerless table holding all 25 recordings, so it is given a header row and split
-into one CSV per recording. That is ordinary data preparation rather than pipeline logic, and
-it is what turns the corpus into real multi-source input. To do it by hand:
+into one CSV per recording; and its `timestamp` column — a raw .NET tick count (100ns units),
+not seconds — is rewritten to real, recording-relative seconds, so it agrees with the `hz=37.0`
+declared below instead of being off by a factor of 1e7 (the SDK's own declared-hz-vs-timestamp
+check would otherwise flag this). Both are ordinary data preparation rather than pipeline logic,
+and together they turn the corpus into real multi-source, seconds-denominated input. To do it by
+hand:
 
 ```bash
 unzip localization+data+for+person+activity.zip           # -> ConfLongDemo_JSI.txt
@@ -44,6 +48,9 @@ for row in csv.reader(open("ConfLongDemo_JSI.txt")):
 out = pathlib.Path("data/person_activity"); out.mkdir(parents=True, exist_ok=True)
 for name, group in rows.items():
     group.sort(key=lambda r: int(r[2]))
+    origin = int(group[0][2])
+    for row in group:
+        row[2] = f"{(int(row[2]) - origin) / 1e7:.7f}"    # ticks (100ns) -> relative seconds
     with (out / f"{name}.csv").open("w", newline="") as fh:
         w = csv.writer(fh); w.writerow(cols); w.writerows(group)
 PY

@@ -33,6 +33,7 @@ SOURCE_URL = ("https://archive.ics.uci.edu/static/public/196/"
               "localization+data+for+person+activity.zip")
 COLUMNS = ["sequence", "tag_id", "timestamp", "datetime", "x", "y", "z", "activity"]
 TICK_HZ = 37.0        # four tags reporting at ~9.25 Hz each
+TICKS_PER_SECOND = 1e7  # upstream `timestamp` is a .NET tick count (100ns units)
 ACTIVITIES = ["walking", "sitting", "lying", "standing up from lying", "falling"]
 
 
@@ -84,6 +85,14 @@ def download(dest_dir: Path) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     for sequence, rows in recordings.items():
         rows.sort(key=lambda r: int(r[2]))               # tags interleave; order by time
+        # Upstream `timestamp` is a .NET tick count (100ns units, TICKS_PER_SECOND below) --
+        # not seconds. Declaring hz=TICK_HZ (readings/second) against a column in 100ns units
+        # is a ~1e7x unit mismatch the SDK's own declared-hz-vs-timestamp check correctly
+        # flags. Rewrite it to real, recording-relative seconds here, as ordinary data prep,
+        # so the time column and hz agree like any other seconds-denominated time column.
+        origin = int(rows[0][2])
+        for row in rows:
+            row[2] = f"{(int(row[2]) - origin) / TICKS_PER_SECOND:.7f}"
         with (dest_dir / f"{sequence}.csv").open("w", newline="") as handle:
             writer = csv.writer(handle)
             writer.writerow(COLUMNS)
@@ -116,7 +125,10 @@ def write_demo(dest_dir: Path, *, recordings: int = 6, seconds: int = 40) -> Pat
                     for offset, tag in enumerate(tags):
                         tick += 1
                         writer.writerow([
-                            name, tag, 633790226051280329 + tick * 270296,
+                            # Recording-relative seconds, same 270296-tick (~0.027s) real
+                            # per-row cadence as the upstream file -- not raw ticks, so
+                            # hz=TICK_HZ agrees with the time column (see download()).
+                            name, tag, f"{tick * 270296 / TICKS_PER_SECOND:.7f}",
                             f"27.05.2009 14:{second // 60:02d}:{second % 60:02d}:000",
                             round(3 + math.cos(phase + offset) + rng.gauss(0, 0.05), 4),
                             round(2 + math.sin(phase + offset) + rng.gauss(0, 0.05), 4),
