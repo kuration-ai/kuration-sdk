@@ -365,8 +365,16 @@ def _invoke(transform, batch, ctx):
     )
 
 
-def _field_window(ticks, field, schema):
-    """Build one schema-shaped transform input without roster-dependent rank changes."""
+def _field_window(ticks, field, schema, *, buffer_cache=None):
+    """Build one schema-shaped transform input without roster-dependent rank changes.
+
+    ``build_window`` builds every schema field for the whole window, not just ``field`` --
+    it's documented as "the amortization point: one buffer per segment, shared by all of a
+    profile's metrics". Measures already get that amortization; transforms didn't, so a job
+    with N transforms reading fields rebuilt the same whole-window buffer N times per window.
+    ``buffer_cache``, keyed by the window's identity, lets `build_batch` share one build across
+    every transform in the same batch pass.
+    """
     if field in schema.globals:
         return np.asarray(
             [tick.globals.get(field, np.nan) for tick in ticks], dtype=np.float64)
@@ -377,7 +385,14 @@ def _field_window(ticks, field, schema):
     if spec.kind != "categorical":
         from .buffer import build_window
         # Numeric entity fields always use (T,E,D), including a one-entity scalar field.
-        return build_window(schema, list(ticks)).numeric_field(field)
+        if buffer_cache is None:
+            return build_window(schema, list(ticks)).numeric_field(field)
+        key = id(ticks)
+        buf = buffer_cache.get(key)
+        if buf is None:
+            buf = build_window(schema, list(ticks))
+            buffer_cache[key] = buf
+        return buf.numeric_field(field)
 
     roster: dict[Any, int] = {}
     for tick in ticks:
@@ -555,7 +570,7 @@ def apply_transforms_to_windows(calls, segments, windows, *, adapter, registry, 
         segments, windows, contexts=contexts, progress=progress)
 
 
-def build_batch(call, segments, windows, contexts, *, adapter, provider):
+def build_batch(call, segments, windows, contexts, *, adapter, provider, buffer_cache=None):
     """Build one bounded input batch and its typed context for a resolved component call.
 
     The single place ``field:``/``feature:``/``media:`` tokens become arrays: field windows are
@@ -564,6 +579,10 @@ def build_batch(call, segments, windows, contexts, *, adapter, provider):
     lookbehind/lookahead context is extracted only for the roles that asked for it. Both the
     transform runner and the analyzer stream driver go through here, so there is exactly one
     decode path.
+
+    ``buffer_cache``, when the caller is applying more than one component to the same windows
+    (`_TransformRunner.apply`), lets every component's ``field:`` tokens share one
+    `build_window` per window instead of rebuilding it per component.
     """
     label = call.get("label") or f"transform {call['name']!r}"
     lookbehind_inputs: dict[str, tuple[Any | None, ...]] = {}
@@ -583,7 +602,8 @@ def build_batch(call, segments, windows, contexts, *, adapter, provider):
         kind, arg = token.split(":", 1)
         if kind == "field":
             batch[token] = _stack_field_windows(
-                [_field_window(window, arg, adapter.schema) for window in windows])
+                [_field_window(window, arg, adapter.schema, buffer_cache=buffer_cache)
+                 for window in windows])
         elif kind == "feature":
             batch[token] = np.asarray([s.features[arg] for s in segments])
         else:
@@ -665,6 +685,12 @@ class _TransformRunner:
         adapter = self.adapter
         from .progress import emit
         emit(progress, "transforms", "start", total=len(self.calls))
+        # Scoped to this one `apply()` invocation (the same bounded `windows` batch every call
+        # below shares), not to the whole source -- `build_window` is expensive enough that
+        # rebuilding it per call made cost scale with the number of transforms regardless of
+        # what they computed, but caching it across the WHOLE source would defeat the bounded-
+        # memory point of batching in the first place.
+        buffer_cache: dict[int, Any] = {}
         for call_i, (call, transform) in enumerate(self.resolved, 1):
             size = call["batch_size"]
             for offset in range(0, len(segments), size):
@@ -672,7 +698,8 @@ class _TransformRunner:
                 chunk_windows = windows[offset:offset + size]
                 chunk_contexts = contexts[offset:offset + size]
                 batch, ctx = build_batch(call, chunk, chunk_windows, chunk_contexts,
-                                         adapter=adapter, provider=provider)
+                                         adapter=adapter, provider=provider,
+                                         buffer_cache=buffer_cache)
                 result = _invoke(transform, batch, ctx)
                 if not isinstance(result, Mapping):
                     if len(call["outputs"]) != 1:
