@@ -2027,6 +2027,30 @@ class Pipeline:
         spec.validate_schema(self.schema)
         from .output.containers import validate_container_availability
         validate_container_availability(spec.container, registry=self._registry)
+        # Count-mode windows are a fixed, statically-known length, so this is checkable up
+        # front; an hours-budget span's length depends on runtime budget/group_of resolution
+        # inside _write_dataset_impl, so it isn't covered here.
+        shard_chop_warning = None
+        if self._hours is None:
+            window = self._segmenter_or_default().window
+            if window % spec.shard_length != 0:
+                full, remainder = divmod(window, spec.shard_length)
+                if spec.short_policy == "drop":
+                    tail = f"its trailing {remainder} steps are dropped (short_policy='drop')"
+                elif spec.short_policy == "pad":
+                    tail = (f"plus one padded to length {spec.shard_length} for the trailing "
+                            f"{remainder} real steps (short_policy='pad')")
+                else:
+                    tail = f"plus one of length {remainder} (short_policy='keep')"
+                shard_chop_warning = {
+                    "code": "shard-length-chops-windows",
+                    "message": (
+                        f"shard_length={spec.shard_length} does not evenly divide the "
+                        f"window length ({window}); each window writes {full} full shard"
+                        f"{'s' if full != 1 else ''} of length {spec.shard_length}, {tail}"),
+                    "hint": "Pass shard_length=<window length> (or a divisor of it) to "
+                            "output() for one shard per window.",
+                }
         output_op = {"op": "output", "args": [_describe_src(path)], "kwargs": {
             "preset": preset, "spec": spec.to_dict(), "categorical": categorical,
             "force": force}}
@@ -2142,6 +2166,8 @@ class Pipeline:
                                  "message": f"categorical fields {omitted} are not in output",
                                  "hint": "Pass explicit modalities or an output preset with "
                                          "categorical='integer-vocab' or 'encoder' to retain them."})
+            if shard_chop_warning:
+                warnings.append(shard_chop_warning)
             return replace(plan, output=output_plan, options=plan_options,
                            warnings=tuple(warnings))
 
@@ -2294,6 +2320,8 @@ class Pipeline:
             cfg["output_preset"] = preset_resolution
         cfg["mode"] = {"name": self._mode, "resolved": self.describe()["options"]}
         cfg["warnings"] = [dict(w) for w in self.explain().warnings]
+        if shard_chop_warning:
+            cfg["warnings"].append(shard_chop_warning)
         if self._metadata:
             cfg["metadata"] = _jsonable(self._metadata)
         if getattr(result, "execution", None):
