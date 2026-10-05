@@ -40,6 +40,13 @@ pipeline.rare_event_coverage(of="fault", feature="event_rate", count=100, weight
 
 Compiles to `.measure(feature, "rate", of=of).sample("weighted", n=count, weights={feature: weight})`.
 
+`.sample("weighted", ...)` has no bounded/streaming execution path yet — it materializes the
+whole scored candidate pool in memory, not just the `count` selected (`explain()` flags this as
+`unbounded-operator`). Fine whenever that candidate pool fits in memory; for a run that needs a
+bounded path (`memory_budget=`/`streaming=True`), there isn't a weighted equivalent today —
+`BalancedSelector` (bounded) is the nearest sibling recipe if rarity-weighting specifically isn't
+required, or narrow the pool with an earlier `.filter()`.
+
 ## DiverseSubset — compress without losing coverage
 
 Registered as the operator `kuration/diverse-subset`.
