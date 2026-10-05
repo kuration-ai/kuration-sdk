@@ -2493,8 +2493,10 @@ class Pipeline:
             jobs = [
                 {"eid": entity_id, "span_index": segment_index,
                  "start": segment.start_idx, "end": segment.end_idx, "split": split,
-                 "name_suffix": f"_seg{segment_index:04d}", "group": segment.group,
-                 "meta": dict(segment.features)}
+                 # Content-derived, not rank-derived (F1): two curations that each pick a
+                 # different span at the same selection rank must not alias one filename.
+                 "name_suffix": f"_seg{segment.start_idx:08d}_{segment.end_idx:08d}",
+                 "group": segment.group, "meta": dict(segment.features)}
                 for segment_index, segment in enumerate(segs) for entity_id in entity_ids]
             jobs_per_pass = len(jobs) or 1
             if self._options["memory_budget"] is not None:
