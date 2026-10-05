@@ -119,7 +119,7 @@ def _run(args) -> None:
     tracks_desc = (f"{n_items}/{r['tracks_total']} tracks" if n_items == n_admitted_tracks
                    else f"{n_items} span items from {n_admitted_tracks}/{r['tracks_total']} tracks")
     print(f"wrote {r['shards']} shards from {tracks_desc} "
-          f"({r['n_train']} train / {r['n_test']} test sources, "
+          f"({r['n_train_sources']} train / {r['n_test_sources']} test sources, "
           f"{r['sources_skipped']} skipped; emitted "
           f"{emitted['train'] / 3600:.3f}/{requested['train'] / 3600:.3f} train h, "
           f"{emitted['test'] / 3600:.3f}/{requested['test'] / 3600:.3f} test h) → {job['out']}")
