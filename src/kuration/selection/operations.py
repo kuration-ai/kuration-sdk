@@ -96,6 +96,15 @@ class RareEventCoverage:
     on the Kuration SDK pipeline. See `describe()` for the exact chain a given
     instance produces.
 
+    `.sample("weighted", ...)` has no bounded/streaming execution path yet (unlike
+    `top-k`/`uniform-bins`): it materializes the whole scored candidate pool in memory before
+    sampling, not just the `count` selected. Fine for a candidate pool that fits in memory —
+    the common case this SDK targets — but there's currently no `memory_budget=`/`streaming=True`
+    equivalent for it. For a run that genuinely needs a bounded weighted path, there isn't one
+    yet; `BalancedSelector` (`.sample("equal", ...)`, bounded) is the nearest sibling recipe if
+    rarity-weighting specifically isn't required, or narrow the candidate pool with an earlier
+    `.filter()` first.
+
     Args:
         of: source field whose rate to measure. Expected to be a boolean or
             0/1 column (e.g. 'fault' or 'alarm').
