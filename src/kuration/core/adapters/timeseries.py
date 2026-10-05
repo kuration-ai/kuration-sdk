@@ -130,9 +130,21 @@ class TimeseriesAdapter:
             return
         cur = None
         group: list[dict] = []
+        warned_nonnumeric = False
         for row in rows:
             tv = row[self.time_column]
             ordered = _num_time(tv)
+            if isinstance(ordered, str) and not warned_nonnumeric:
+                # _num_time() falls back to the raw string when it isn't integer/float-parseable
+                # (e.g. an ISO timestamp) -- rows still group/order by plain string comparison,
+                # but sample_hz/seconds-unit windowing needs real epoch arithmetic and will fail
+                # far from here (or silently misorder non-zero-padded strings) if that's assumed.
+                import warnings
+                warnings.warn(
+                    f"time column {self.time_column!r} is not numeric (e.g. {tv!r}) -- rows "
+                    "are grouped/ordered by plain string comparison; hz-based or seconds-unit "
+                    "windowing needs a numeric (epoch) time column", stacklevel=3)
+                warned_nonnumeric = True
             if isinstance(ordered, float) and not math.isfinite(ordered):
                 raise ValueError(f"time column {self.time_column!r} contains non-finite {tv!r}")
             if group and ordered != cur:

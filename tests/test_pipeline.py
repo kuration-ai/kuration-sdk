@@ -288,6 +288,19 @@ def test_bin_and_sample_are_preferred_compatible_names():
     assert [op["op"] for op in new._ops[-2:]] == ["bin", "sample"]
 
 
+def test_bin_warns_on_bins_equal_one():
+    """F20: bins=1 was silently accepted even though it makes equal-per-bin selection
+    meaningless -- every segment lands in the single bin, same as the already-warned
+    constant-axis case."""
+    import warnings
+    with pytest.warns(UserWarning, match="every segment lands in one bin"):
+        p = _pipe().measure("hp").bin("hp", bins=1)
+    assert p._axes == [("hp", 1)]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _pipe().measure("hp").bin("hp", bins=2)  # bins=2 raises no warning
+
+
 def test_organize_unknown_metric_loud():
     with pytest.raises(ValueError) as e:
         _pipe().organize("nope", bins=2)
