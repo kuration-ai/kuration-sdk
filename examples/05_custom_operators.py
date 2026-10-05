@@ -65,7 +65,7 @@ sessions = {
                           for step in range(24)]
     for source in range(1, 4)
 }
-base = input(sessions, time="t", hz=10).window(8, stride=4)
+base = input(sessions, time="t", hz=1).window(8, stride=4)
 
 # Registering generated two spellings: a short method, and a namespace-qualified one for when
 # two packages would otherwise collide. They compile to the same strategy.
