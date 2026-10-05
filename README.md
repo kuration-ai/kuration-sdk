@@ -31,12 +31,39 @@ The SDK is built around **operators** — named pipeline steps that measure a pe
   `collision` finds and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`,
   `slide_end`, `slide_constrained`) so they can be oversampled relative to their natural,
   very low, base rate.
-- **Most gameplay footage has no sense of place.** `slam_reconstruct` reconstructs a camera's
-  3D path from raw video with loop closure. `slam_quality` scores each window for gaps,
-  impossible motion, and scale. `slam_motion_diversity` bins windows by path length,
-  turning, and climb.
+- **The footage captures motion, but not reliably where that motion occurs in the world.**
+  `slam_reconstruct` reconstructs a camera's 3D path from raw video with loop closure.
+  `slam_quality` scores each window for gaps, impossible motion, and scale.
+  `slam_motion_diversity` bins windows by path length, turning, and climb.
 
 `join_video` (core, always available) pairs an action log with a video, frame by frame.
+
+## Contents
+
+1. [Getting started](#getting-started)
+2. [Optional extras](#optional-extras)
+3. [Choose your path](#choose-your-path)
+4. [Use cases](#use-cases)
+    - [Action-state consistency (gameplay)](#action-state-consistency-gameplay)
+    - [Collision awareness (gameplay)](#collision-awareness-gameplay)
+    - [SLAM motion diversity and quality (gameplay)](#slam-motion-diversity-and-quality-gameplay)
+    - [Spatial coverage (general)](#spatial-coverage-general)
+    - [Rare-event coverage (general)](#rare-event-coverage-general)
+    - [Diversity sampling (general)](#diversity-sampling-general)
+5. [Examples](#examples)
+6. [Beyond the gallery](#beyond-the-gallery)
+    - [Sampling methods](#sampling-methods)
+    - [Data source adapters](#data-source-adapters)
+    - [Output formats and presets](#output-formats-and-presets)
+    - [Pre-selection filters](#pre-selection-filters)
+    - [Pipeline methods](#pipeline-methods)
+7. [Reproducibility](#reproducibility)
+8. [Writing your own operation](#writing-your-own-operation)
+9. [Reference](#reference)
+    - [CLI reference](#cli-reference)
+10. [Research blogs](#research-blogs)
+11. [Project status](#project-status)
+12. [Contributing](#contributing)
 
 ## Getting started
 
@@ -72,33 +99,6 @@ dataset.output("out/quickstart-out")
 The result is a train/test set of shards plus a `config.json` recording the schema
 and pipeline so the same run can be rebuilt. Every shard has a SHA-256 checksum in
 the manifest, so resume and verification are safe.
-
-## Contents
-
-1. [Getting started](#getting-started)
-2. [Optional extras](#optional-extras)
-3. [Choose your path](#choose-your-path)
-4. [Use cases](#use-cases)
-    - [Action-state consistency (gameplay)](#action-state-consistency-gameplay)
-    - [Collision awareness (gameplay)](#collision-awareness-gameplay)
-    - [SLAM motion diversity and quality (gameplay)](#slam-motion-diversity-and-quality-gameplay)
-    - [Spatial coverage (general)](#spatial-coverage-general)
-    - [Rare-event coverage (general)](#rare-event-coverage-general)
-    - [Diversity sampling (general)](#diversity-sampling-general)
-5. [Examples](#examples)
-6. [Beyond the gallery](#beyond-the-gallery)
-    - [Sampling methods](#sampling-methods)
-    - [Data source adapters](#data-source-adapters)
-    - [Output formats and presets](#output-formats-and-presets)
-    - [Pre-selection filters](#pre-selection-filters)
-    - [Pipeline methods](#pipeline-methods)
-7. [Reproducibility](#reproducibility)
-8. [Writing your own operation](#writing-your-own-operation)
-9. [Reference](#reference)
-    - [CLI reference](#cli-reference)
-10. [Read more](#read-more)
-11. [Project status](#project-status)
-12. [Contributing](#contributing)
 
 <p align="center">
   <img src="docs/assets/curation-flow.svg" alt="Sources are cut into windows, scored and filtered, and the selected windows become training shards" width="95%">
@@ -156,18 +156,26 @@ selection recipes built into the SDK (`kuration.selection`).
 Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
 only needed by `action-state-consistency` and `collision-aware`.
 
-| Use case | Category | What it does | Runnable | Notebook |
-|---|---|---|---|---|
-| [Action-state consistency](#action-state-consistency-gameplay) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | — |
-| [Collision awareness](#collision-awareness-gameplay) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | — |
-| [SLAM motion diversity and quality](#slam-motion-diversity-and-quality-gameplay) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
-| [Spatial coverage](#spatial-coverage-general) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | `pipeline.balanced_selector(feature=..., of=..., bins=..., count=...)` | — |
-| [Rare-event coverage](#rare-event-coverage-general) | General | Oversamples rare events (like collisions) relative to their natural base rate. | `pipeline.rare_event_coverage(of=..., count=...)` | — |
-| [Diversity sampling](#diversity-sampling-general) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | `pipeline.diverse_subset(features=..., count=...)` | — |
+#### Gameplay
+
+| Use case | What it does | Runnable | Notebook |
+|---|---|---|---|
+| [Action-state consistency](#action-state-consistency-gameplay) | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | — |
+| [Collision awareness](#collision-awareness-gameplay) | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | — |
+| [SLAM motion diversity and quality](#slam-motion-diversity-and-quality-gameplay) | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
+
+#### General
+
+| Use case | What it does | Runnable | Notebook |
+|---|---|---|---|
+| [Spatial coverage](#spatial-coverage-general) | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | `pipeline.balanced_selector(feature=..., of=..., bins=..., count=...)` | — |
+| [Rare-event coverage](#rare-event-coverage-general) | Oversamples rare events (like collisions) relative to their natural base rate. | `pipeline.rare_event_coverage(of=..., count=...)` | — |
+| [Diversity sampling](#diversity-sampling-general) | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | `pipeline.diverse_subset(features=..., count=...)` | — |
 
 ### Action-state consistency (gameplay)
 
-The action doesn't reliably cause the state change. `pixel_shift` measures the actual screen
+If "W" was pressed but the camera barely moved, we wouldn't want the model learning that
+behavior. The action doesn't reliably cause the state change. `pixel_shift` measures the actual screen
 motion behind every isolated key or mouse press (Farneback optical flow projected onto the axis
 that control should move the camera on). `action_state_consistency` compares those measurements
 against a percentile-pooled baseline and issues a per-clip verdict — consistent, inconsistent, or
@@ -191,7 +199,9 @@ analyzer result on its own, without the pipeline.
 
 ### Collision awareness (gameplay)
 
-The interaction moments a world model needs are the ones good players avoid. `collision` finds
+A player bumps into a wall and the camera just stops — if that moment is rare in the training
+data, the model never learns that walls are solid. The interaction moments a world model needs
+are the ones good players avoid. `collision` finds
 and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`, `slide_end`,
 `slide_constrained`) so they can be oversampled relative to their natural, very low, base rate.
 
@@ -203,7 +213,9 @@ and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`, `slide_end
 
 ### SLAM motion diversity and quality (gameplay)
 
-Most gameplay footage has no sense of place. `slam_reconstruct` reconstructs a camera's 3D path from
+Two clips can look nearly identical frame-by-frame — a tight corridor crawl and a wide-open
+sprint — and without knowing where the camera actually went, a model can't tell them apart. The
+footage captures motion, but not reliably where that motion occurs in the world. `slam_reconstruct` reconstructs a camera's 3D path from
 raw video with loop closure. `slam_quality` scores each window for gaps, impossible motion, and
 scale. `slam_motion_diversity` bins windows by path length, turning, and climb:
 
@@ -233,19 +245,24 @@ above all build on it.
 
 ### Spatial coverage (general)
 
-Most gameplay is one kind of movement — walking forward, standard turns, level ground. Sample naively on that and your training set barely touches the harder motions: tight turns, sharp climbs, high-speed segments. The Intro blog puts the fix plainly: **coverage has to be measured on the axis you actually care about.**
+If most of your clips are the character walking forward on flat ground, that's what the model
+will think the world mostly is. Most gameplay is one kind of movement — walking forward, standard turns, level ground. Sample naively on that and your training set barely touches the harder motions: tight turns, sharp climbs, high-speed segments. The Intro blog puts the fix plainly: **coverage has to be measured on the axis you actually care about.**
 
 `BalancedSelector` does exactly that. It measures a per-window metric on your chosen axis (turning, path length, whatever), bins the values across the observed range, and samples an equal count from every bin. It's the SDK's `slam_motion_diversity` pattern (default axis `slam_path_length`; the Intro blog example switches to `slam_turn_degrees`), generalized to any per-window column.
 
 ### Rare-event coverage (general)
 
-A world model only learns the physics that show up consistently in its training data. And the interactions it most needs — a moving object hitting a solid one, a player-object contact — are the exact ones good players avoid. That's why DIAMOND's CS:GO world model lets a player double- and triple-jump against a wall: successive jumps simply don't appear often enough in the training data for the model to learn that they shouldn't be possible.
+A player crashing into another object might happen once every few hundred clips — sample your
+data evenly and the model barely ever sees it, so it never learns the event is even possible. A
+world model only learns the physics that show up consistently in its training data. And the interactions it most needs — a moving object hitting a solid one, a player-object contact — are the exact ones good players avoid. That's why DIAMOND's CS:GO world model lets a player double- and triple-jump against a wall: successive jumps simply don't appear often enough in the training data for the model to learn that they shouldn't be possible.
 
 The fix isn't collecting more footage. It's finding the events already buried in the footage you have and oversampling them relative to their natural, very low, base rate. `RareEventCoverage` measures the rare event's per-window rate and weights the sampler so those windows show up far more often than they do in the wild.
 
 ### Diversity sampling (general)
 
-Most activity-based metrics move together. A chaotic firefight is high on every axis at once; an idle stretch is low on all of them. Pick one axis to sample on and you inherit whatever the other axes happen to correlate with.
+A frantic firefight and a slow walk look nothing alike, but if you only sample on one feature you
+can end up with a training set that's accidentally all firefights or all walks. Most
+activity-based metrics move together. A chaotic firefight is high on every axis at once; an idle stretch is low on all of them. Pick one axis to sample on and you inherit whatever the other axes happen to correlate with.
 
 Cluster the windows in a multi-axis feature space and sample equally from each cluster, and the redundant part of the corpus stops crowding out the parts that actually differ. The Intro blog names this "diversity sampling" — one of the checks that "all get easier on a dataset that previously had no notion of space." `DiverseSubset` clusters over any set of pre-measured features and takes an equal share from every cluster. An optional dedup pre-pass filters near-duplicates first.
 
@@ -399,9 +416,10 @@ kur-describe operator kuration/balanced-selector
 
 Shows one component's docstring and parameter contract.
 
-## Read more
+## Research blogs
 
-Long-form blog posts on physical-AI data curation:
+Long-form blog posts on physical-AI data curation — these are external writing, not additional
+SDK documentation:
 
 - **[Why raw gameplays don't make good world models — and how to fix the Virtual2Real gap](https://aintropy.ai/blog)**. The failure modes that make raw gameplay footage a poor training corpus for a world model — actions that don't produce a consistent state change, state changes with no action, rare player-object contact, missing pose or location, eval metrics that look fine when the physics is visibly wrong.
 - **[Quickly convert raw corpus into high-quality world-model training sets](https://aintropy.ai/blog)**. A line-by-line walkthrough of the Pipeline API — `input`, `window`, `measure`, `filter`, `bin`, `split`, `sample`, `output` — on a small runner-telemetry example.
@@ -410,7 +428,10 @@ Long-form blog posts on physical-AI data curation:
 
 ## Project status
 
-Kuration currently targets Python 3.11 through 3.14. Optional integrations are tested at
+Kuration currently targets Python 3.11 through 3.14 — this range tracks CI's version matrix
+(`.github/workflows/ci-versions.yml`) and moves forward as new interpreter versions are
+qualified there, so treat it as a living statement rather than a hard ceiling. Optional
+integrations are tested at
 both their declared minimum versions and their current releases. CI runs over 1,500 test
 functions across 97 test files, including property-based invariants, wheel installation,
 every CLI entry point, and integration paths for Zarr, PyTorch, Hugging Face, PyAV, and Ray.
