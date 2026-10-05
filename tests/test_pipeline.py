@@ -399,6 +399,24 @@ def test_collect_n_overrides_and_requires_a_count():
         p.collect()
 
 
+def test_collect_n_none_returns_every_scored_and_filtered_segment():
+    # No bin axes, weights, or named method configured at all -- n=None needs none of them.
+    p = _pipe().window(16).measure("hp").options(on_error="raise")
+    res = p.collect(n=None)
+    assert res.selected == res.all_segments
+    assert len(res.selected) == N_SOURCES * (N_STEPS // 16)
+    # The universal predicate pre-filter still applies under n=None.
+    filtered = p.filter("hp", ">=", 0).collect(n=None)
+    assert len(filtered.selected) <= len(filtered.all_segments)
+    # An explicit n=None overrides a pipeline-level n set via .sample()/.curate().
+    sampled = p.organize("hp", bins=2).curate(n=3)
+    overridden = sampled.collect(n=None)
+    assert overridden.selected == overridden.all_segments
+    assert len(overridden.selected) != 3
+    # .stats() works the same way it does for a real selection.
+    res.stats()
+
+
 def test_split_on_count_path():
     p = (_pipe().window(16).measure("hp").organize("hp", bins=2).split(test=0.5)
          .curate(n=8).options(on_error="raise"))

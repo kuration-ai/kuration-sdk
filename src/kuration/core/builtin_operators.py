@@ -44,12 +44,26 @@ _N_OR_HOURS_PROPERTIES = {
     },
 }
 
+_WEIGHTS_BASE_PROPERTIES = {
+    "weights": {"type": "object", "additionalProperties": {"type": "number"}},
+    "normalize": {"type": "string", "enum": ["quantile", "minmax", "zscore", "none"]},
+    **_N_OR_HOURS_PROPERTIES,
+}
+
 WEIGHTS_PARAMETERS = {
     "type": "object",
+    "properties": {**_WEIGHTS_BASE_PROPERTIES},
+    "required": ["weights"],
+    "additionalProperties": False,
+}
+
+#: "weighted" only -- `floor` tunes the Gumbel-top-k sampler's non-negativity shift, which
+#: `top-k` (a deterministic rank, no sampling) has no use for.
+WEIGHTED_PARAMETERS = {
+    "type": "object",
     "properties": {
-        "weights": {"type": "object", "additionalProperties": {"type": "number"}},
-        "normalize": {"type": "string", "enum": ["quantile", "minmax", "zscore"]},
-        **_N_OR_HOURS_PROPERTIES,
+        **_WEIGHTS_BASE_PROPERTIES,
+        "floor": {"type": "number", "minimum": 0},
     },
     "required": ["weights"],
     "additionalProperties": False,
@@ -88,7 +102,7 @@ TARGET_DISTRIBUTION_PARAMETERS = {
 _FEATURE_SPACE_BASE_PROPERTIES = {
     "feature_space": {"type": "array", "items": {"type": "string"}, "minItems": 1},
     "clusters": {"type": "integer", "minimum": 1},
-    "feature_normalize": {"type": "string", "enum": ["quantile", "minmax", "zscore"]},
+    "feature_normalize": {"type": "string", "enum": ["quantile", "minmax", "zscore", "none"]},
     **_N_OR_HOURS_PROPERTIES,
 }
 
@@ -125,7 +139,7 @@ ANOMALY_FILTER_PARAMETERS = {
     "type": "object",
     "properties": {
         "contamination": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
-        "normalize": {"type": "string", "enum": ["quantile", "minmax", "zscore"]},
+        "normalize": {"type": "string", "enum": ["quantile", "minmax", "zscore", "none"]},
     },
     "additionalProperties": False,
 }
@@ -136,7 +150,7 @@ DEDUP_FILTER_PARAMETERS = {
         "feature_space": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         "threshold": {"type": "number", "minimum": -1, "maximum": 1},
         "n_clusters": {"type": "integer", "minimum": 1},
-        "normalize": {"type": "string", "enum": ["quantile", "minmax", "zscore"]},
+        "normalize": {"type": "string", "enum": ["quantile", "minmax", "zscore", "none"]},
     },
     "required": ["feature_space"],
     "additionalProperties": False,
@@ -163,11 +177,17 @@ def top_k(pipeline, *, weights, normalize=None, n=None, hours=None, test_hours=N
                            test_hours=test_hours, group_cap=group_cap)
 
 
-def weighted(pipeline, *, weights, normalize=None, n=None, hours=None, test_hours=None,
-            group_cap=None):
-    """Gumbel-top-k: sample without replacement, proportional to a weighted score."""
+def weighted(pipeline, *, weights, normalize=None, floor=None, n=None, hours=None,
+            test_hours=None, group_cap=None):
+    """Gumbel-top-k: sample without replacement, proportional to a weighted score.
+
+    ``floor`` raises the non-negativity shift applied to the weighted score (default ``1e-9``)
+    so the lowest-scoring segment in the pool keeps a real, non-negligible relative chance of
+    selection instead of one near zero by construction.
+    """
+    extras = _method_params(floor=floor)
     return pipeline.curate("weighted", weights=weights, normalize=normalize, n=n, hours=hours,
-                           test_hours=test_hours, group_cap=group_cap)
+                           test_hours=test_hours, group_cap=group_cap, **extras)
 
 
 def uniform_bins(pipeline, *, n=None, hours=None, test_hours=None, group_cap=None):
@@ -290,7 +310,7 @@ def action_residual(pipeline, *, obs, action, k=None, out="action_residual"):
 _BUILTIN_OPERATORS: dict[str, tuple[Callable[..., Any], dict, str]] = {
     "top-k": (top_k, WEIGHTS_PARAMETERS,
              "Rank by a weighted score and take the highest priorities"),
-    "weighted": (weighted, WEIGHTS_PARAMETERS,
+    "weighted": (weighted, WEIGHTED_PARAMETERS,
                 "Sample without replacement, proportional to a weighted score"),
     "uniform-bins": (uniform_bins, UNIFORM_BINS_PARAMETERS,
                     "Round-robin declared bins for coverage-first selection"),
@@ -341,6 +361,7 @@ __all__ = [
     "TARGET_DISTRIBUTION_PARAMETERS",
     "UNIFORM_BINS_PARAMETERS",
     "WEIGHTS_PARAMETERS",
+    "WEIGHTED_PARAMETERS",
     "action_residual",
     "anomaly",
     "cluster_balanced",

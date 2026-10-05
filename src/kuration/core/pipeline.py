@@ -57,6 +57,16 @@ from ._pipeline_support import (
 
 __all__ = ["Pipeline", "input"]
 
+class _Unset:
+    """Sentinel distinguishing "argument not passed" from an explicit ``None``, with a stable
+    repr (unlike a bare ``object()``) so it can appear in a reproducible signature string."""
+
+    def __repr__(self) -> str:
+        return "..."
+
+
+_UNSET = _Unset()
+
 
 def _leased_output(method):
     """Serialize publication to one destination while preserving the public signature."""
@@ -1203,8 +1213,8 @@ class Pipeline:
                 if (not isinstance(weight, (int, float)) or isinstance(weight, bool)
                         or not math.isfinite(weight)):
                     raise ValueError(f"curate weight for {metric!r} must be finite")
-        if normalize is not None and normalize not in {"quantile", "minmax", "zscore"}:
-            raise ValueError("curate normalize must be quantile, minmax, or zscore")
+        if normalize is not None and normalize not in {"quantile", "minmax", "zscore", "none"}:
+            raise ValueError("curate normalize must be quantile, minmax, zscore, or none")
         if isinstance(target, dict):
             target_metrics: set[str] = set()
             for key in ("metric", "anchor_metric"):
@@ -1445,17 +1455,19 @@ class Pipeline:
             report["quality"] = check_quality(report, self._expectations).to_dict()
         return report
 
-    def review(self, n: Optional[int] = None, *, path=None, examples: int = 10,
+    def review(self, n: Any = _UNSET, *, path=None, examples: int = 10,
                hist_bins: int = 10, **output_options):
         """Review count selection, or write and review an hours-budget selection.
 
         Count review intentionally uses the reference ``collect`` path so it can expose the
         complete candidate pool. Hours review needs ``path=`` because spans are defined by the
-        output declaration; it reuses the resulting writer decisions without rescoring.
+        output declaration; it reuses the resulting writer decisions without rescoring. Pass
+        ``n=None`` explicitly to review every scored and filtered segment, same as
+        ``collect(n=None)``; leaving ``n`` unset uses whatever ``.sample(n=...)` configured.
         """
         report: Any
         if self._hours is not None:
-            if n is not None:
+            if n is not _UNSET:
                 raise ValueError("hours review does not accept n")
             if path is None:
                 raise ValueError("hours review needs path= plus any output options")
@@ -1520,19 +1532,37 @@ class Pipeline:
                              warnings=tuple(warnings), physical_plan=physical.to_dict())
 
     # ---- terminals -----------------------------------------------------------------------
-    def collect(self, n: Optional[int] = None):
-        """Count-path selection -> CurateResult."""
-        if n is None:
+    def collect(self, n: Any = _UNSET):
+        """Count-path selection -> CurateResult. Pass ``n=None`` explicitly for every scored
+        and filtered segment, with no selection method/weights/bins required — the count-path
+        equivalent of `.report()`'s scored pool, but returned as a `CurateResult` so
+        `.selected`/`.all_segments` and `.stats()` work the same way they do for a real
+        selection."""
+        if n is _UNSET:
             n = self._n
-        if n is None:
-            hint = (" (.sample(hours=...) routes to .output())"
-                    if self._hours is not None else "")
-            raise ValueError(f"collect() needs a count: pass n= or call .sample(n=...) "
-                             f"first{hint}")
-        from .strategy import validate_target_size
+            if n is None:
+                hint = (" (.sample(hours=...) routes to .output())"
+                        if self._hours is not None else "")
+                raise ValueError(
+                    f"collect() needs a count: pass n=, call .sample(n=...) first, "
+                    f"or pass n=None explicitly for every scored and filtered segment{hint}")
+        from .strategy import load_strategy, validate_target_size
         n = validate_target_size(n)
         self._check_exec()
-        strategy = self._compile()
+        if n is None:
+            raw = self._raw_strategy(require_method=False)
+            # No selection is run when target_size=None (curate() bypasses it entirely), but
+            # load_strategy() still defaults a missing "selection" block to "uniform-bins",
+            # which then fails validation for want of binning.axes. "none" needs neither axes,
+            # weights, nor predicates, and means exactly this: no selection method, return
+            # every segment the universal predicate pre-filter admits.
+            if "method" not in raw.get("selection", {}):
+                raw.setdefault("selection", {})["method"] = "none"
+            transform_outputs = {o for t in self._transforms for o in t["outputs"]}
+            strategy = load_strategy(raw, self.schema, registry=self._registry,
+                                     available_metrics=transform_outputs)
+        else:
+            strategy = self._compile()
         from .curate import curate as _curate
         return _curate(schema=self.schema, adapter=self.adapter, sources=self.sources,
                        strategy=strategy, segmenter=self._segmenter_or_default(),
@@ -1831,8 +1861,8 @@ class Pipeline:
     ) -> ExperimentResult:
         """Multi-arm comparison over THIS pipeline's sources. `arms` maps name ->
         Pipeline (its compiled strategy) or raw strategy dict."""
-        from .strategy import validate_target_size
-        n = validate_target_size(n)
+        from .strategy import require_target_size
+        n = require_target_size(n)
         self._check_exec()
         from .experiment import Arm, run_experiment
         from .strategy import load_strategy
