@@ -38,40 +38,7 @@ The SDK is built around **operators** — named pipeline steps that measure a pe
 
 `join_video` (core, always available) pairs an action log with a video, frame by frame.
 
-## Getting started
 
-Install with pip:
-
-```bash
-pip install "kuration-sdk[parquet]"
-```
-
-Runnable quickstart against a small sample dataset bundled with the package — no downloads,
-no data of your own required:
-
-```python
-from kuration import input
-from kuration.sample_data import sample_sessions_path
-
-dataset = (
-    input(sample_sessions_path(), time="t", entity="device", hz=1)
-    .window(12, stride=6)
-    .measure("activity", "std", of="signal")
-    .measure("fault_rate", "rate", of="fault")
-    .bin("activity", bins=3)
-    .bin("fault_rate", bins=2)
-    .split(test=1/3)
-    .sample("equal", n=12)
-    .options(seed=7)
-)
-
-print(dataset.explain().render())
-dataset.output("out/quickstart-out")
-```
-
-The result is a train/test set of shards plus a `config.json` recording the schema
-and pipeline so the same run can be rebuilt. Every shard has a SHA-256 checksum in
-the manifest, so resume and verification are safe.
 
 ## Contents
 
@@ -371,6 +338,41 @@ For the fuller extension model — compositional vs. transform-backed operators,
 contract testing — see [`docs/operators.md`](docs/operators.md) and
 [`docs/customization.md`](docs/customization.md); for the config-driven runner shown above, see
 [`docs/selection.md`](docs/selection.md).
+
+## Getting started
+
+Install with pip:
+
+```bash
+pip install "kuration-sdk[parquet]"
+```
+
+Runnable quickstart against a small sample dataset bundled with the package — no downloads,
+no data of your own required:
+
+```python
+from kuration import input
+from kuration.sample_data import sample_sessions_path
+
+dataset = (
+    input(sample_sessions_path(), time="t", entity="device", hz=1)
+    .window(12, stride=6)
+    .measure("activity", "std", of="signal")
+    .measure("fault_rate", "rate", of="fault")
+    .bin("activity", bins=3)
+    .bin("fault_rate", bins=2)
+    .split(test=1/3)
+    .sample("equal", n=12)
+    .options(seed=7)
+)
+
+print(dataset.explain().render())
+dataset.output("out/quickstart-out")
+```
+
+The result is a train/test set of shards plus a `config.json` recording the schema
+and pipeline so the same run can be rebuilt. Every shard has a SHA-256 checksum in
+the manifest, so resume and verification are safe.
 
 ## Reference
 
