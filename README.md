@@ -42,24 +42,7 @@ The SDK is built around **operators** — named pipeline steps that measure a pe
 
 
 
-## Use cases
 
-An **operator** is a named, discoverable pipeline step (an analyzer, a transform, a
-scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
-[Operators](docs/operators.md) for the full registry. The six use cases below are ready-made
-curation jobs built from those operators — three gameplay/video-specific, three general-purpose
-selection recipes for Physical AI videos, built into the SDK (`kuration.selection`).
-Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
-only needed by `action-state-consistency` and `collision-aware`.
-
-| Use case | Category | What it does | Runnable | Notebook |
-|---|---|---|---|---|
-| [Action-state consistency](#action-state-consistency-gameplay) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | — |
-| [Collision awareness](#collision-awareness-gameplay) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | — |
-| [SLAM motion diversity and quality](#slam-motion-diversity-and-quality-gameplay) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
-| [Spatial coverage](#spatial-coverage-general) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | `pipeline.balanced_selector(feature=..., of=..., bins=..., count=...)` | — |
-| [Rare-event coverage](#rare-event-coverage-general) | General | Oversamples rare events (like collisions) relative to their natural base rate. | `pipeline.rare_event_coverage(of=..., count=...)` | — |
-| [Diversity sampling](#diversity-sampling-general) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | `pipeline.diverse_subset(features=..., count=...)` | — |
 
 ### Action-state consistency (gameplay)
 
@@ -382,6 +365,25 @@ class. See each operator's worked example and clip in [Use cases](#use-cases) be
 
 The **[documentation home](https://aintropy-solutions.github.io/kuration-sdk/)** groups the complete documentation by getting
 started, guides, extensions, operations, and reference.
+
+## Use cases
+
+An **operator** is a named, discoverable pipeline step (an analyzer, a transform, a
+scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
+[Operators](docs/operators.md) for the full registry. The six use cases below are ready-made
+curation jobs built from those operators — three gameplay/video-specific, three general-purpose
+selection recipes for Physical AI videos, built into the SDK (`kuration.selection`).
+Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
+only needed by `action-state-consistency` and `collision-aware`.
+
+| Use case | Category | What it does | Runnable | Notebook |
+|---|---|---|---|---|
+| [Action-state consistency](#action-state-consistency-gameplay) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | — |
+| [Collision awareness](#collision-awareness-gameplay) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | — |
+| [SLAM motion diversity and quality](#slam-motion-diversity-and-quality-gameplay) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
+| [Spatial coverage](#spatial-coverage-general) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | `pipeline.balanced_selector(feature=..., of=..., bins=..., count=...)` | — |
+| [Rare-event coverage](#rare-event-coverage-general) | General | Oversamples rare events (like collisions) relative to their natural base rate. | `pipeline.rare_event_coverage(of=..., count=...)` | — |
+| [Diversity sampling](#diversity-sampling-general) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | `pipeline.diverse_subset(features=..., count=...)` | — |
 
 
 ## Reference
