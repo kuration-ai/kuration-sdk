@@ -40,78 +40,7 @@ The SDK is built around **operators** — named pipeline steps that measure a pe
 
 
 
-## Contents
 
-1. [Getting started](#getting-started)
-2. [Optional extras](#optional-extras)
-3. [Choose your path](#choose-your-path)
-4. [Use cases](#use-cases)
-    - [Action-state consistency (gameplay)](#action-state-consistency-gameplay)
-    - [Collision awareness (gameplay)](#collision-awareness-gameplay)
-    - [SLAM motion diversity and quality (gameplay)](#slam-motion-diversity-and-quality-gameplay)
-    - [Spatial coverage (general)](#spatial-coverage-general)
-    - [Rare-event coverage (general)](#rare-event-coverage-general)
-    - [Diversity sampling (general)](#diversity-sampling-general)
-5. [Examples](#examples)
-6. [Beyond the gallery](#beyond-the-gallery)
-    - [Sampling methods](#sampling-methods)
-    - [Data source adapters](#data-source-adapters)
-    - [Output formats and presets](#output-formats-and-presets)
-    - [Pre-selection filters](#pre-selection-filters)
-    - [Pipeline methods](#pipeline-methods)
-7. [Reproducibility](#reproducibility)
-8. [Writing your own operation](#writing-your-own-operation)
-9. [Reference](#reference)
-    - [CLI reference](#cli-reference)
-10. [Read more](#read-more)
-11. [Project status](#project-status)
-12. [Contributing](#contributing)
-
-<p align="center">
-  <img src="docs/assets/curation-flow.svg" alt="Sources are cut into windows, scored and filtered, and the selected windows become training shards" width="95%">
-</p>
-
-## Optional extras
-
-Kuration's core has NumPy-only dependencies and handles in-memory, CSV, JSON, and NPZ workflows. Add only the integrations a pipeline needs:
-
-```bash
-pip install "kuration-sdk[methods,parquet]"  # selection methods + Parquet
-pip install "kuration-sdk[video]"            # PyAV video frames
-pip install "kuration-sdk[stats]"            # Matplotlib stats plots
-pip install "kuration-sdk[gameplay]"         # all gameplay operators (pixel_shift, action_state_consistency, slam_*, collision)
-pip install "kuration-sdk[ray]"              # distributed source execution
-pip install "kuration-sdk[s3]"               # fsspec + the S3 backend
-pip install "kuration-sdk[all]"              # every runtime integration/backend
-```
-
-`pipeline.explain()` reports the extras required by a planned run before it reads the full
-dataset. The provider-specific cloud extras are `s3`, `gcs`, and `azure`; `cloud` installs only
-the backend-neutral fsspec layer for environments that manage provider packages separately.
-
-`kuration.gameplay` ships seven gameplay operators: `join_video`, `pixel_shift`,
-`action_state_consistency`, `slam_reconstruct`, `slam_quality`, `slam_motion_diversity`,
-and `collision`. Importing the module registers them on the standard `Pipeline` class, so
-an ordinary pipeline can call them as methods — it doesn't create a separate `Pipeline`
-class. See each operator's worked example and clip in [Use cases](#use-cases) below.
-
-## Choose your path
-
-| I want to… | Start here |
-|---|---|
-| Build my first curated dataset | [Quickstart](https://aintropy-solutions.github.io/kuration-sdk/quickstart/) |
-| Understand the product and its data model | [Core concepts](https://aintropy-solutions.github.io/kuration-sdk/overview/) |
-| Find the right pipeline operation | [Pipeline guide](https://aintropy-solutions.github.io/kuration-sdk/pipeline/) |
-| Solve a task such as streaming, cloud output, or comparison | [Recipe cookbook](https://aintropy-solutions.github.io/kuration-sdk/usage/) |
-| Integrate a data format | [Adapters](https://aintropy-solutions.github.io/kuration-sdk/adapters/) |
-| Build a reusable operator or transform | [Operators](https://aintropy-solutions.github.io/kuration-sdk/operators/) |
-| Run checked JSON jobs and CLIs | [Job and CLI reference](https://aintropy-solutions.github.io/kuration-sdk/jobs/) |
-| Operate or audit generated artifacts | [Output and integrity](https://aintropy-solutions.github.io/kuration-sdk/output/) |
-| Look up an exact Python signature | [API reference](https://aintropy-solutions.github.io/kuration-sdk/api/) |
-| Understand internals and extension boundaries | [Architecture](https://aintropy-solutions.github.io/kuration-sdk/architecture/) |
-
-The **[documentation home](https://aintropy-solutions.github.io/kuration-sdk/)** groups the complete documentation by getting
-started, guides, extensions, operations, and reference.
 
 ## Use cases
 
@@ -119,7 +48,7 @@ An **operator** is a named, discoverable pipeline step (an analyzer, a transform
 scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
 [Operators](docs/operators.md) for the full registry. The six use cases below are ready-made
 curation jobs built from those operators — three gameplay/video-specific, three general-purpose
-selection recipes built into the SDK (`kuration.selection`).
+selection recipes for Physical AI videos, built into the SDK (`kuration.selection`).
 Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
 only needed by `action-state-consistency` and `collision-aware`.
 
@@ -339,6 +268,11 @@ contract testing — see [`docs/operators.md`](docs/operators.md) and
 [`docs/customization.md`](docs/customization.md); for the config-driven runner shown above, see
 [`docs/selection.md`](docs/selection.md).
 
+
+
+
+
+
 ## Getting started
 
 Install with pip:
@@ -373,6 +307,82 @@ dataset.output("out/quickstart-out")
 The result is a train/test set of shards plus a `config.json` recording the schema
 and pipeline so the same run can be rebuilt. Every shard has a SHA-256 checksum in
 the manifest, so resume and verification are safe.
+
+
+
+## Contents
+
+1. [Getting started](#getting-started)
+2. [Optional extras](#optional-extras)
+3. [Choose your path](#choose-your-path)
+4. [Use cases](#use-cases)
+    - [Action-state consistency (gameplay)](#action-state-consistency-gameplay)
+    - [Collision awareness (gameplay)](#collision-awareness-gameplay)
+    - [SLAM motion diversity and quality (gameplay)](#slam-motion-diversity-and-quality-gameplay)
+    - [Spatial coverage (general)](#spatial-coverage-general)
+    - [Rare-event coverage (general)](#rare-event-coverage-general)
+    - [Diversity sampling (general)](#diversity-sampling-general)
+5. [Examples](#examples)
+6. [Beyond the gallery](#beyond-the-gallery)
+    - [Sampling methods](#sampling-methods)
+    - [Data source adapters](#data-source-adapters)
+    - [Output formats and presets](#output-formats-and-presets)
+    - [Pre-selection filters](#pre-selection-filters)
+    - [Pipeline methods](#pipeline-methods)
+7. [Reproducibility](#reproducibility)
+8. [Writing your own operation](#writing-your-own-operation)
+9. [Reference](#reference)
+    - [CLI reference](#cli-reference)
+10. [Read more](#read-more)
+11. [Project status](#project-status)
+12. [Contributing](#contributing)
+
+<p align="center">
+  <img src="docs/assets/curation-flow.svg" alt="Sources are cut into windows, scored and filtered, and the selected windows become training shards" width="95%">
+</p>
+
+## Optional extras
+
+Kuration's core has NumPy-only dependencies and handles in-memory, CSV, JSON, and NPZ workflows. Add only the integrations a pipeline needs:
+
+```bash
+pip install "kuration-sdk[methods,parquet]"  # selection methods + Parquet
+pip install "kuration-sdk[video]"            # PyAV video frames
+pip install "kuration-sdk[stats]"            # Matplotlib stats plots
+pip install "kuration-sdk[gameplay]"         # all gameplay operators (pixel_shift, action_state_consistency, slam_*, collision)
+pip install "kuration-sdk[ray]"              # distributed source execution
+pip install "kuration-sdk[s3]"               # fsspec + the S3 backend
+pip install "kuration-sdk[all]"              # every runtime integration/backend
+```
+
+`pipeline.explain()` reports the extras required by a planned run before it reads the full
+dataset. The provider-specific cloud extras are `s3`, `gcs`, and `azure`; `cloud` installs only
+the backend-neutral fsspec layer for environments that manage provider packages separately.
+
+`kuration.gameplay` ships seven gameplay operators: `join_video`, `pixel_shift`,
+`action_state_consistency`, `slam_reconstruct`, `slam_quality`, `slam_motion_diversity`,
+and `collision`. Importing the module registers them on the standard `Pipeline` class, so
+an ordinary pipeline can call them as methods — it doesn't create a separate `Pipeline`
+class. See each operator's worked example and clip in [Use cases](#use-cases) below.
+
+## Choose your path
+
+| I want to… | Start here |
+|---|---|
+| Build my first curated dataset | [Quickstart](https://aintropy-solutions.github.io/kuration-sdk/quickstart/) |
+| Understand the product and its data model | [Core concepts](https://aintropy-solutions.github.io/kuration-sdk/overview/) |
+| Find the right pipeline operation | [Pipeline guide](https://aintropy-solutions.github.io/kuration-sdk/pipeline/) |
+| Solve a task such as streaming, cloud output, or comparison | [Recipe cookbook](https://aintropy-solutions.github.io/kuration-sdk/usage/) |
+| Integrate a data format | [Adapters](https://aintropy-solutions.github.io/kuration-sdk/adapters/) |
+| Build a reusable operator or transform | [Operators](https://aintropy-solutions.github.io/kuration-sdk/operators/) |
+| Run checked JSON jobs and CLIs | [Job and CLI reference](https://aintropy-solutions.github.io/kuration-sdk/jobs/) |
+| Operate or audit generated artifacts | [Output and integrity](https://aintropy-solutions.github.io/kuration-sdk/output/) |
+| Look up an exact Python signature | [API reference](https://aintropy-solutions.github.io/kuration-sdk/api/) |
+| Understand internals and extension boundaries | [Architecture](https://aintropy-solutions.github.io/kuration-sdk/architecture/) |
+
+The **[documentation home](https://aintropy-solutions.github.io/kuration-sdk/)** groups the complete documentation by getting
+started, guides, extensions, operations, and reference.
+
 
 ## Reference
 
