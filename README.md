@@ -20,6 +20,11 @@ models.** Point it at raw gameplay clips or time-series data or video and Kurati
 training on, writes them as shards, and drops a config alongside so the same run can
 be rebuilt.
 
+Our papers on the field 
+1. LeCuration: A Tiny World Model as a Data Curation Multi-Tool (https://arxiv.org/abs/2610.09285v1)
+
+2. Kuration SDK: Addressing the Virtual2Real Gap via Data Curation (https://arxiv.org/abs/2610.09305v1)
+
 The SDK is built around **operators** — named pipeline steps that measure a per-window feature, filter windows out, or select which windows to keep. The gameplay operators target three failure modes that recur when training a world model from gameplay:
 
 - **The action doesn't reliably cause the state change.** `pixel_shift` measures the
