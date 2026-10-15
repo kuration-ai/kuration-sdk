@@ -20,6 +20,8 @@ Physical AI has a sample efficiency problem. The field is drowning in data and s
 - **[Kuration SDK: Addressing the Virtual2Real Gap via Data Curation](https://arxiv.org/abs/2610.09305)**
 - **[LeCuration: A Tiny World Model as a Data Curation Multi-Tool](https://arxiv.org/abs/2610.09285v1)**
 
+## Kuration SDK  
+
 **Kuration SDK curates large Physical AI datasets into training-ready data for world
 models.** Point it at raw gameplay clips or time-series data or video and Kuration picks the windows worth
 training on, writes them as shards, and drops a config alongside so the same run can
@@ -32,7 +34,9 @@ scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
 curation jobs built from those operators — three gameplay/video-specific, three general-purpose
 selection recipes for Physical AI videos, built into the SDK (`kuration.selection`).
 Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
-only needed by `action-state-consistency` and `collision-aware`. The three shipped selection recipes are curated shortcuts. The Kuration SDK itself is a
+only needed by `action-state-consistency` and `collision-aware`. The three shipped selection recipes are curated shortcuts. 
+
+- The Kuration SDK itself is a
 broader pipeline library with 48 registered components, and you can drop into the raw pipeline API
 for anything the gallery doesn't cover.
 
@@ -44,7 +48,7 @@ The gameplay operators target three failure modes that recur when training a wor
   projected onto the axis that control should move the camera on). `action_state_consistency`
   compares those measurements against a percentile-pooled baseline and issues a per-clip
   verdict — consistent, inconsistent, or inconclusive.
-- **2. The interaction moments a world model needs are the ones good players avoid.**
+-  **2. The interaction moments a world model needs are the ones good players avoid.**
   `collision` finds and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`,
   `slide_end`, `slide_constrained`) so they can be oversampled relative to their natural,
   very low, base rate.
