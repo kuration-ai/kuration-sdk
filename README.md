@@ -15,12 +15,12 @@
 [![Design notes](https://img.shields.io/badge/design-notes-lightgrey?style=flat)](./DESIGN.md)
 [![Issues](https://img.shields.io/badge/issues-open-blue?style=flat)](https://github.com/aintropy-solutions/kuration-sdk/issues)
 
-Physical AI has a sample efficiency problem. The field is drowing in data but starving for it same time. It is generating millions of hours of videos, to find a small sample of training ready sets. This requires ETL or curation operators designed from first principles to address the challenge unique to the world model training. Raw gameplay clips is often considered a gold mine to train model but is often garbage in absence of sophisticated curation. Kuration SDK is open source repo built by our team while training world models. References papers
+Physical AI has a sample efficiency problem. The field is drowning in data and starving for it same time. It is generating millions of hours of videos, to find a small sample of training ready sets. Missing piece is ETL or curation operators designed from first principles to address the challenge unique to the world model training. Raw gameplay video clips is often considered a gold mine to train world models but is often garbage in absence of sophisticated curation. Kuration SDK is open source repo built to solve that problem while training world models. References papers
 
-- [Kuration SDK: Addressing the Virtual2Real Gap via Data Curation] (https://arxiv.org/abs/2610.09305)
-- [LeCuration: A Tiny World Model as a Data Curation Multi-Tool] (https://arxiv.org/abs/2610.09285v1)
+- **[Kuration SDK: Addressing the Virtual2Real Gap via Data Curation](https://arxiv.org/abs/2610.09305)**
+- **[LeCuration: A Tiny World Model as a Data Curation Multi-Tool](https://arxiv.org/abs/2610.09285v1)**
 
-**Kuration curates large Physical AI datasets into training-ready data for world
+**Kuration SDK curates large Physical AI datasets into training-ready data for world
 models.** Point it at raw gameplay clips or time-series data or video and Kuration picks the windows worth
 training on, writes them as shards, and drops a config alongside so the same run can
 be rebuilt. It works on the visual as well as metadata domain data simultaneously. 
@@ -32,21 +32,23 @@ scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
 curation jobs built from those operators — three gameplay/video-specific, three general-purpose
 selection recipes for Physical AI videos, built into the SDK (`kuration.selection`).
 Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
-only needed by `action-state-consistency` and `collision-aware`.
+only needed by `action-state-consistency` and `collision-aware`. The three shipped selection recipes are curated shortcuts. The Kuration SDK itself is a
+broader pipeline library with 48 registered components, and you can drop into the raw pipeline API
+for anything the gallery doesn't cover.
 
 
 The gameplay operators target three failure modes that recur when training a world model from gameplay:
 
-- **The action doesn't reliably cause the state change.** `pixel_shift` measures the
+- **1. The action doesn't reliably cause the state change.** `pixel_shift` measures the
   actual screen motion behind every isolated key or mouse press (Farneback optical flow
   projected onto the axis that control should move the camera on). `action_state_consistency`
   compares those measurements against a percentile-pooled baseline and issues a per-clip
   verdict — consistent, inconsistent, or inconclusive.
-- **The interaction moments a world model needs are the ones good players avoid.**
+- **2. The interaction moments a world model needs are the ones good players avoid.**
   `collision` finds and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`,
   `slide_end`, `slide_constrained`) so they can be oversampled relative to their natural,
   very low, base rate.
-- **Most gameplay footage has no sense of place.** `slam_reconstruct` reconstructs a camera's
+- **3. Most gameplay footage has no sense of place.** `slam_reconstruct` reconstructs a camera's
   3D path from raw video with loop closure. `slam_quality` scores each window for gaps,
   impossible motion, and scale. `slam_motion_diversity` bins windows by path length,
   turning, and climb.
@@ -56,9 +58,9 @@ The gameplay operators target three failure modes that recur when training a wor
 
 
 
+## Out of the box operators in Kuration SDK
 
-
-### Action-state consistency (gameplay)
+### I. Action-state consistency (gameplay)
 
 The action doesn't reliably cause the state change. `pixel_shift` measures the actual screen
 motion behind every isolated key or mouse press (Farneback optical flow projected onto the axis
@@ -82,7 +84,7 @@ analyzer result on its own, without the pipeline.
   <sub><em>The clip is flagged by the model as it has two instances where the player collides with the wall.</em></sub>
 </p>
 
-### Collision awareness (gameplay)
+### II. Collision awareness (gameplay)
 
 The interaction moments a world model needs are the ones good players avoid. `collision` finds
 and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`, `slide_end`,
@@ -94,7 +96,7 @@ and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`, `slide_end
   <sub><em>DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall).</em></sub>
 </p>
 
-### SLAM motion diversity and quality (gameplay)
+### III. SLAM motion diversity and quality (gameplay)
 
 Most gameplay footage has no sense of place. `slam_reconstruct` reconstructs a camera's 3D path from
 raw video with loop closure. `slam_quality` scores each window for gaps, impossible motion, and
@@ -124,19 +126,19 @@ as a standalone HTML file. `join_video` (core, always available) pairs an action
 frame by frame — the primitive `pixel_shift`, `action_state_consistency`, and the SLAM operators
 above all build on it.
 
-### Spatial coverage (general)
+### Iv. Spatial coverage (general)
 
 Most gameplay is one kind of movement — walking forward, standard turns, level ground. Sample naively on that and your training set barely touches the harder motions: tight turns, sharp climbs, high-speed segments. The Intro blog puts the fix plainly: **coverage has to be measured on the axis you actually care about.**
 
 `BalancedSelector` does exactly that. It measures a per-window metric on your chosen axis (turning, path length, whatever), bins the values across the observed range, and samples an equal count from every bin. It's the SDK's `slam_motion_diversity` pattern (default axis `slam_path_length`; the Intro blog example switches to `slam_turn_degrees`), generalized to any per-window column.
 
-### Rare-event coverage (general)
+### V. Rare-event coverage (general)
 
 A world model only learns the physics that show up consistently in its training data. And the interactions it most needs — a moving object hitting a solid one, a player-object contact — are the exact ones good players avoid. That's why DIAMOND's CS:GO world model lets a player double- and triple-jump against a wall: successive jumps simply don't appear often enough in the training data for the model to learn that they shouldn't be possible.
 
 The fix isn't collecting more footage. It's finding the events already buried in the footage you have and oversampling them relative to their natural, very low, base rate. `RareEventCoverage` measures the rare event's per-window rate and weights the sampler so those windows show up far more often than they do in the wild.
 
-### Diversity sampling (general)
+### VI. Diversity sampling (general)
 
 Most activity-based metrics move together. A chaotic firefight is high on every axis at once; an idle stretch is low on all of them. Pick one axis to sample on and you inherit whatever the other axes happen to correlate with.
 
@@ -421,8 +423,8 @@ Shows one component's docstring and parameter contract.
 
 Long-form blog posts on physical-AI data curation:
 
-- **[Why raw gameplays don't make good world models — and how to fix the Virtual2Real gap](https://aintropy.ai/blog)**. The failure modes that make raw gameplay footage a poor training corpus for a world model — actions that don't produce a consistent state change, state changes with no action, rare player-object contact, missing pose or location, eval metrics that look fine when the physics is visibly wrong.
-- **[Quickly convert raw corpus into high-quality world-model training sets](https://aintropy.ai/blog)**. A line-by-line walkthrough of the Pipeline API — `input`, `window`, `measure`, `filter`, `bin`, `split`, `sample`, `output` — on a small runner-telemetry example.
+- **[Why raw gameplays don't make good world models — and how to fix the Virtual2Real gap](https://aintropy.ai/blogs)**. The failure modes that make raw gameplay footage a poor training corpus for a world model — actions that don't produce a consistent state change, state changes with no action, rare player-object contact, missing pose or location, eval metrics that look fine when the physics is visibly wrong.
+- **[Quickly convert raw corpus into high-quality world-model training sets](https://aintropy.ai/blogs)**. A line-by-line walkthrough of the Pipeline API — `input`, `window`, `measure`, `filter`, `bin`, `split`, `sample`, `output` — on a small runner-telemetry example.
 - **[Action-state consistency with Kuration SDK](https://aintropy.ai/blog)**. How the `action_state_consistency` operator uses Farneback optical flow to catch action-state mismatches — wall collisions, coyote time, input buffering, engine glitches — and returns a per-clip verdict (consistent, inconsistent, inconclusive).
 - **[SLAM with Kuration SDK](https://aintropy.ai/blog)**. Adding scene and trajectory reconstruction to any video or image dataset. Built on DepthAnything V3 with plug-and-play VPR support for loop closure; stitches long clips into one 3D map.
 
