@@ -15,12 +15,27 @@
 [![Design notes](https://img.shields.io/badge/design-notes-lightgrey?style=flat)](./DESIGN.md)
 [![Issues](https://img.shields.io/badge/issues-open-blue?style=flat)](https://github.com/aintropy-solutions/kuration-sdk/issues)
 
+Physical AI has a sample efficiency problem. The field is drowing in data but starving for it same time. It is generating millions of hours of videos, to find a small sample of training ready sets. This requires ETL or curation operators designed from first principles to address the challenge unique to the world model training. Raw gameplay clips is often considered a gold mine to train model but is often garbage in absence of sophisticated curation. Kuration SDK is open source repo built by our team while training world models. References papers
+
+- [Kuration SDK: Addressing the Virtual2Real Gap via Data Curation] (https://arxiv.org/abs/2610.09305)
+- [LeCuration: A Tiny World Model as a Data Curation Multi-Tool] (https://arxiv.org/abs/2610.09285v1)
+
 **Kuration curates large Physical AI datasets into training-ready data for world
 models.** Point it at raw gameplay clips or time-series data or video and Kuration picks the windows worth
 training on, writes them as shards, and drops a config alongside so the same run can
-be rebuilt.
+be rebuilt. It works on the visual as well as metadata domain data simultaneously. 
 
-The SDK is built around **operators** — named pipeline steps that measure a per-window feature, filter windows out, or select which windows to keep. The gameplay operators target three failure modes that recur when training a world model from gameplay:
+The SDK is built around **operators** — named pipeline steps that measure a per-window feature, filter windows out, or select which windows to keep. 
+An **operator** is a named, discoverable pipeline step (an analyzer, a transform, a
+scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
+[Operators](docs/operators.md) for the full registry. The six use cases below are ready-made
+curation jobs built from those operators — three gameplay/video-specific, three general-purpose
+selection recipes for Physical AI videos, built into the SDK (`kuration.selection`).
+Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
+only needed by `action-state-consistency` and `collision-aware`.
+
+
+The gameplay operators target three failure modes that recur when training a world model from gameplay:
 
 - **The action doesn't reliably cause the state change.** `pixel_shift` measures the
   actual screen motion behind every isolated key or mouse press (Farneback optical flow
@@ -42,24 +57,6 @@ The SDK is built around **operators** — named pipeline steps that measure a pe
 
 
 
-## Use cases
-
-An **operator** is a named, discoverable pipeline step (an analyzer, a transform, a
-scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
-[Operators](docs/operators.md) for the full registry. The six use cases below are ready-made
-curation jobs built from those operators — three gameplay/video-specific, three general-purpose
-selection recipes for Physical AI videos, built into the SDK (`kuration.selection`).
-Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
-only needed by `action-state-consistency` and `collision-aware`.
-
-| Use case | Category | What it does | Runnable | Notebook |
-|---|---|---|---|---|
-| [Action-state consistency](#action-state-consistency-gameplay) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | — |
-| [Collision awareness](#collision-awareness-gameplay) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | — |
-| [SLAM motion diversity and quality](#slam-motion-diversity-and-quality-gameplay) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
-| [Spatial coverage](#spatial-coverage-general) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | `pipeline.balanced_selector(feature=..., of=..., bins=..., count=...)` | — |
-| [Rare-event coverage](#rare-event-coverage-general) | General | Oversamples rare events (like collisions) relative to their natural base rate. | `pipeline.rare_event_coverage(of=..., count=...)` | — |
-| [Diversity sampling](#diversity-sampling-general) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | `pipeline.diverse_subset(features=..., count=...)` | — |
 
 ### Action-state consistency (gameplay)
 
@@ -269,10 +266,6 @@ contract testing — see [`docs/operators.md`](docs/operators.md) and
 [`docs/selection.md`](docs/selection.md).
 
 
-
-
-
-
 ## Getting started
 
 Install with pip:
@@ -341,6 +334,8 @@ the manifest, so resume and verification are safe.
   <img src="docs/assets/curation-flow.svg" alt="Sources are cut into windows, scored and filtered, and the selected windows become training shards" width="95%">
 </p>
 
+
+
 ## Optional extras
 
 Kuration's core has NumPy-only dependencies and handles in-memory, CSV, JSON, and NPZ workflows. Add only the integrations a pipeline needs:
@@ -364,6 +359,17 @@ the backend-neutral fsspec layer for environments that manage provider packages 
 and `collision`. Importing the module registers them on the standard `Pipeline` class, so
 an ordinary pipeline can call them as methods — it doesn't create a separate `Pipeline`
 class. See each operator's worked example and clip in [Use cases](#use-cases) below.
+
+## Use cases
+
+| Use case | Category | What it does | Runnable | Notebook |
+|---|---|---|---|---|
+| [Action-state consistency](#action-state-consistency-gameplay) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | — |
+| [Collision awareness](#collision-awareness-gameplay) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | — |
+| [SLAM motion diversity and quality](#slam-motion-diversity-and-quality-gameplay) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
+| [Spatial coverage](#spatial-coverage-general) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | `pipeline.balanced_selector(feature=..., of=..., bins=..., count=...)` | — |
+| [Rare-event coverage](#rare-event-coverage-general) | General | Oversamples rare events (like collisions) relative to their natural base rate. | `pipeline.rare_event_coverage(of=..., count=...)` | — |
+| [Diversity sampling](#diversity-sampling-general) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | `pipeline.diverse_subset(features=..., count=...)` | — |
 
 ## Choose your path
 
