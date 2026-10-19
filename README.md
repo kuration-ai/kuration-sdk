@@ -462,3 +462,6 @@ python -m mypy
 
 Read [CONTRIBUTING.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/CONTRIBUTING.md)
 before proposing a component or public contract change.
+
+# Questions
+Wanna get in touch with us? Wanna work on more customized operators for your world model training? You can send the emails to know@aintropy.ai 
