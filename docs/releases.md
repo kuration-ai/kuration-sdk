@@ -4,9 +4,10 @@ These notes highlight user-visible changes in the current release candidate. The
 [changelog](changelog.md) is the authoritative
 history for every release.
 
-## Current `0.1.0rc5` candidate (`0.1.0rc5.dev0` development build)
+## `0.1.0`, the first public release
 
-The changes on this branch target `0.1.0rc5`. The candidate:
+`0.1.0` is the first version published to PyPI. It builds on the earlier `0.1.0rc1` through
+`0.1.0rc5` candidates, which were not published. The release:
 
 - separates the dataset-agnostic implementation into `kuration.core` and ships pixel shift,
   action-state consistency, and SLAM together under the maintained `kuration.gameplay` domain;
@@ -22,10 +23,10 @@ The changes on this branch target `0.1.0rc5`. The candidate:
 
 Dataset writes are no-clobber by default, persisted reuse requires a strong source identity,
 and unsupported future artifact or job versions fail loudly. See the
-[0.1.0rc5 changelog](changelog.md#010rc5)
+[0.1.0 changelog](changelog.md#010)
 for the complete evolving list.
 
-## Prior `0.1.0rc4` candidate
+## Prior `0.1.0rc4` candidate (not published)
 
 The `0.1.0rc4` candidate focused on correctness, artifact integrity, and explicit extension
 contracts. It was not tagged or published to PyPI from this repository.
