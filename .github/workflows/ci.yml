@@ -1,8 +1,7 @@
-# The heavy self-hosted matrices live in sibling workflows (ci-versions.yml,
+# The heavy matrices live in sibling workflows (ci-versions.yml,
 # ci-integrations.yml, ci-integrations-minimum.yml, ci-core.yml) so no single
-# run carries enough jobs for GitHub's /actions/runs/{id}/jobs response to
-# exceed the ACA runner scaler's 3s HTTP timeout. See
-# .github/aca-runner/ci-workflow-split-plan.md.
+# run carries a very large job list. The split dates from the former self-hosted
+# ACA runner's scaler; see .github/aca-runner/ci-workflow-split-plan.md.
 #
 # `build` and `required-ci` deliberately stay here: publish.yml resolves the
 # release artifact by querying this workflow file for a successful run at the
@@ -24,8 +23,6 @@ permissions:
 jobs:
   notebook-ui:
     name: Notebook and browser UX
-    # Stays GitHub-hosted: `playwright install --with-deps` needs sudo apt-get,
-    # and the aca-runner image runs as a non-root user without sudo rights.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -75,7 +72,7 @@ jobs:
     # any sibling workflow failed. The artifact this uploads is only ever
     # consumed from a *successful* ci.yml run, so a red matrix still cannot
     # promote a wheel.
-    runs-on: [self-hosted, aca]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -158,8 +155,8 @@ jobs:
     name: Required CI
     if: ${{ always() }}
     needs: [notebook-ui, platform-smoke, build]
-    # GitHub-hosted on purpose: this job spends most of its life sleeping while
-    # it waits on the sibling workflows, and should not hold an ACA slot.
+    # This job spends most of its life sleeping while it waits on the sibling
+    # workflows.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
