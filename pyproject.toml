@@ -24,7 +24,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/aintropy-solutions/kuration-sdk"
-Documentation = "https://aintropy-solutions.github.io/kuration-sdk/"
+Documentation = "https://kuration-ai.github.io/kuration-sdk/"
 Repository = "https://github.com/aintropy-solutions/kuration-sdk.git"
 Issues = "https://github.com/aintropy-solutions/kuration-sdk/issues"
 Changelog = "https://github.com/aintropy-solutions/kuration-sdk/blob/main/CHANGELOG.md"

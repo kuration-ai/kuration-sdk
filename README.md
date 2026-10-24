@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat)](./LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha-orange?style=flat)](#project-status)
 
-[![Docs](https://img.shields.io/badge/docs-live-brightgreen?style=flat)](https://aintropy-solutions.github.io/kuration-sdk/)
+[![Docs](https://img.shields.io/badge/docs-live-brightgreen?style=flat)](https://kuration-ai.github.io/kuration-sdk/)
 [![Blog](https://img.shields.io/badge/blog-aintropy.ai%2Fblog-0D9488?style=flat)](https://aintropy.ai/blog)
 [![Examples](https://img.shields.io/badge/examples-runnable-blue?style=flat)](./examples/)
 [![Roadmap](https://img.shields.io/badge/roadmap-planned-lightgrey?style=flat)](./ROADMAP.md)
@@ -315,12 +315,12 @@ the manifest, so resume and verification are safe.
 2. [Optional extras](#optional-extras)
 3. [Choose your path](#choose-your-path)
 4. [Use cases](#use-cases)
-    - [Action-state consistency (gameplay)](#action-state-consistency-gameplay)
-    - [Collision awareness (gameplay)](#collision-awareness-gameplay)
-    - [SLAM motion diversity and quality (gameplay)](#slam-motion-diversity-and-quality-gameplay)
-    - [Spatial coverage (general)](#spatial-coverage-general)
-    - [Rare-event coverage (general)](#rare-event-coverage-general)
-    - [Diversity sampling (general)](#diversity-sampling-general)
+    - [Action-state consistency (gameplay)](#i-action-state-consistency-gameplay)
+    - [Collision awareness (gameplay)](#ii-collision-awareness-gameplay)
+    - [SLAM motion diversity and quality (gameplay)](#iii-slam-motion-diversity-and-quality-gameplay)
+    - [Spatial coverage (general)](#iv-spatial-coverage-general)
+    - [Rare-event coverage (general)](#v-rare-event-coverage-general)
+    - [Diversity sampling (general)](#vi-diversity-sampling-general)
 5. [Examples](#examples)
 6. [Beyond the gallery](#beyond-the-gallery)
     - [Sampling methods](#sampling-methods)
@@ -370,29 +370,29 @@ class. See each operator's worked example and clip in [Use cases](#use-cases) be
 
 | Use case | Category | What it does | Runnable | Notebook |
 |---|---|---|---|---|
-| [Action-state consistency](#action-state-consistency-gameplay) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | — |
-| [Collision awareness](#collision-awareness-gameplay) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | — |
-| [SLAM motion diversity and quality](#slam-motion-diversity-and-quality-gameplay) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
-| [Spatial coverage](#spatial-coverage-general) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | `pipeline.balanced_selector(feature=..., of=..., bins=..., count=...)` | — |
-| [Rare-event coverage](#rare-event-coverage-general) | General | Oversamples rare events (like collisions) relative to their natural base rate. | `pipeline.rare_event_coverage(of=..., count=...)` | — |
-| [Diversity sampling](#diversity-sampling-general) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | `pipeline.diverse_subset(features=..., count=...)` | — |
+| [Action-state consistency](https://kuration-ai.github.io/kuration-sdk/action-state-consistency/) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | — |
+| [Collision awareness](https://kuration-ai.github.io/kuration-sdk/collision/) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | — |
+| [SLAM motion diversity and quality](https://kuration-ai.github.io/kuration-sdk/slam/) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
+| [Spatial coverage](https://kuration-ai.github.io/kuration-sdk/selection/#balancedselector-cover-the-whole-range-of-a-signal) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | `pipeline.balanced_selector(feature=..., of=..., bins=..., count=...)` | — |
+| [Rare-event coverage](https://kuration-ai.github.io/kuration-sdk/selection/#rareeventcoverage-dont-let-rare-events-get-diluted) | General | Oversamples rare events (like collisions) relative to their natural base rate. | `pipeline.rare_event_coverage(of=..., count=...)` | — |
+| [Diversity sampling](https://kuration-ai.github.io/kuration-sdk/selection/#diversesubset-compress-without-losing-coverage) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | `pipeline.diverse_subset(features=..., count=...)` | — |
 
 ## Choose your path
 
 | I want to… | Start here |
 |---|---|
-| Build my first curated dataset | [Quickstart](https://aintropy-solutions.github.io/kuration-sdk/quickstart/) |
-| Understand the product and its data model | [Core concepts](https://aintropy-solutions.github.io/kuration-sdk/overview/) |
-| Find the right pipeline operation | [Pipeline guide](https://aintropy-solutions.github.io/kuration-sdk/pipeline/) |
-| Solve a task such as streaming, cloud output, or comparison | [Recipe cookbook](https://aintropy-solutions.github.io/kuration-sdk/usage/) |
-| Integrate a data format | [Adapters](https://aintropy-solutions.github.io/kuration-sdk/adapters/) |
-| Build a reusable operator or transform | [Operators](https://aintropy-solutions.github.io/kuration-sdk/operators/) |
-| Run checked JSON jobs and CLIs | [Job and CLI reference](https://aintropy-solutions.github.io/kuration-sdk/jobs/) |
-| Operate or audit generated artifacts | [Output and integrity](https://aintropy-solutions.github.io/kuration-sdk/output/) |
-| Look up an exact Python signature | [API reference](https://aintropy-solutions.github.io/kuration-sdk/api/) |
-| Understand internals and extension boundaries | [Architecture](https://aintropy-solutions.github.io/kuration-sdk/architecture/) |
+| Build my first curated dataset | [Quickstart](https://kuration-ai.github.io/kuration-sdk/quickstart/) |
+| Understand the product and its data model | [Core concepts](https://kuration-ai.github.io/kuration-sdk/overview/) |
+| Find the right pipeline operation | [Pipeline guide](https://kuration-ai.github.io/kuration-sdk/pipeline/) |
+| Solve a task such as streaming, cloud output, or comparison | [Recipe cookbook](https://kuration-ai.github.io/kuration-sdk/usage/) |
+| Integrate a data format | [Adapters](https://kuration-ai.github.io/kuration-sdk/adapters/) |
+| Build a reusable operator or transform | [Operators](https://kuration-ai.github.io/kuration-sdk/operators/) |
+| Run checked JSON jobs and CLIs | [Job and CLI reference](https://kuration-ai.github.io/kuration-sdk/jobs/) |
+| Operate or audit generated artifacts | [Output and integrity](https://kuration-ai.github.io/kuration-sdk/output/) |
+| Look up an exact Python signature | [API reference](https://kuration-ai.github.io/kuration-sdk/api/) |
+| Understand internals and extension boundaries | [Architecture](https://kuration-ai.github.io/kuration-sdk/architecture/) |
 
-The **[documentation home](https://aintropy-solutions.github.io/kuration-sdk/)** groups the complete documentation by getting
+The **[documentation home](https://kuration-ai.github.io/kuration-sdk/)** groups the complete documentation by getting
 started, guides, extensions, operations, and reference.
 
 
@@ -440,7 +440,7 @@ functions across 97 test files, including property-based invariants, wheel insta
 every CLI entry point, and integration paths for Zarr, PyTorch, Hugging Face, PyAV, and Ray.
 
 The SDK is a `0.x` beta. The supported surface and deprecation rules are documented in the
-**[compatibility policy](https://aintropy-solutions.github.io/kuration-sdk/compatibility/)**. See
+**[compatibility policy](https://kuration-ai.github.io/kuration-sdk/compatibility/)**. See
 [SECURITY.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/SECURITY.md) for private
 reporting and runtime trust boundaries,
 [CHANGELOG.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/CHANGELOG.md) for notable

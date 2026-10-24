@@ -192,7 +192,7 @@ def register() -> None:
         "stability": "experimental",
         "extra": "action-state",
         "install_hint": 'pip install "kuration-sdk[action-state]"',
-        "documentation": "https://aintropy-ai.github.io/kuration-sdk/"
+        "documentation": "https://kuration-ai.github.io/kuration-sdk/"
                          "action-state-consistency/",
     }
     if needs_registration(

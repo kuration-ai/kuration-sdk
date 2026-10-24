@@ -533,7 +533,7 @@ class SplitLeakageAnalyzer:
     description="Audit source and group assignments for train/test split leakage",
     parameters=SPLIT_LEAKAGE_PARAMETERS,
     capabilities={"stateful": True, "cross_segment": True},
-    documentation="https://aintropy-ai.github.io/kuration-sdk/customization/#stateful-analyzers",
+    documentation="https://kuration-ai.github.io/kuration-sdk/customization/#stateful-analyzers",
     version="1",
 )
 def _split_leakage_analyzer(*, check_groups: bool = True) -> SplitLeakageAnalyzer:
