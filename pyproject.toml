@@ -6,8 +6,15 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.24"]
 keywords = ["dataset", "curation", "time-series", "data-selection", "shards", "training-data"]
-# license / authors: pending the corporate decision — add `license` + a License classifier
-# (and LICENSE file) before any public release or PyPI upload.
+license = "Apache-2.0"            # SPDX expression (PEP 639); the License classifier is superseded
+license-files = ["LICENSE"]
+authors = [
+    { name = "Nirmit Desai", email = "nirmit.desai@aintropy.ai" },
+    { name = "Eric Song", email = "eric.song@aintropy.ai" },
+]
+maintainers = [
+    { name = "Nirmit Desai", email = "nirmit.desai@aintropy.ai" },
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

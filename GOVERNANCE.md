@@ -4,8 +4,10 @@
 
 Repository maintainers merge changes, manage releases, and steward the documented compatibility
 boundary. Maintainer access is granted or removed by the sponsoring organization through its
-normal repository-administration process. A named ownership roster and CODEOWNERS team should be
-added once the organization designates those roles.
+normal repository-administration process. The maintainer and security owner is Nirmit Desai
+(`@nirmit-desai-aintropy`), who is also the sole entry in
+[`.github/CODEOWNERS`](.github/CODEOWNERS). Additional maintainers are recorded there and in this
+section when they are added.
 
 ## Decisions
 

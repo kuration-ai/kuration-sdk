@@ -14,16 +14,19 @@ Connect. It never rebuilds a release artifact. No long-lived PyPI API token is s
 
 ## One-time setup
 
-1. Confirm the public package name `kuration-sdk` in PyPI.
-2. Add a PyPI trusted publisher for this GitHub repository, workflow `publish.yml`, and
-   environment `pypi`.
-3. Protect the GitHub `pypi` environment if releases require approval.
+These are one-time. The first four are configured; this list records what a fork or a successor
+repository must repeat.
+
+1. Reserve the public package name `kuration-sdk` on PyPI.
+2. Add a PyPI trusted publisher (a pending publisher before the first upload) for this GitHub
+   repository, workflow `publish.yml`, and environment `pypi`.
+3. Create the GitHub `pypi` environment with a required reviewer, limited to `main` and `v*` tags.
 4. Enable GitHub Pages with **GitHub Actions** as its source; `.github/workflows/docs.yml` deploys
    the strict MkDocs build from `main`.
-5. Resolve the pending corporate license and author metadata in `pyproject.toml`, and add the
-   matching `LICENSE` file before the first public release.
-6. Designate security and maintenance owners so the repository can publish a private contact,
-   response targets, and a `CODEOWNERS` file.
+5. Keep `project.license`, `project.authors`, and the root `LICENSE` file in `pyproject.toml`; the
+   release workflow refuses to publish without them.
+6. Keep `.github/CODEOWNERS` and the private vulnerability-reporting setting current (see
+   `SECURITY.md`).
 
 ## Release
 
@@ -45,7 +48,7 @@ Connect. It never rebuilds a release artifact. No long-lived PyPI API token is s
 The publishing job runs only for a non-prerelease GitHub release and verifies that its tag matches
 `project.version`; a PEP 440 pre-release version also fails if the GitHub release is accidentally
 marked final. Release events fail closed until both approved `project.license` metadata and a root
-`LICENSE` file exist; manual dry runs remain available while that corporate decision is pending. A
+`LICENSE` file exist; manual dry runs never publish. A
 release created before exact-commit CI succeeds will fail safely; re-run the workflow after CI
 completes. PyPI rejects a filename/version that was already uploaded, so a retry after a partial
 release must use a new version if the original upload succeeded.

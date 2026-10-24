@@ -33,9 +33,9 @@ Status labels:
 
 ## Next — public `0.1` release readiness
 
-- Resolve corporate license and author metadata and add the matching `LICENSE` file.
-- Confirm the public `kuration-sdk` project name and configure the PyPI trusted publisher.
-- Perform the final release-candidate smoke test and tag the accepted build.
+- Tag the accepted `0.1.0` build and publish the GitHub release; the CI-built wheel is promoted
+  to PyPI by the trusted publisher.
+- Verify `pip install kuration-sdk` from public PyPI in a clean environment.
 These items gate public publishing. Pipeline execution optimization does not gate `0.1`.
 
 ## Delivered — product usability and artifact handoff
