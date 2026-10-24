@@ -1,6 +1,6 @@
 [project]
 name = "kuration-sdk"
-version = "0.1.0"
+version = "0.1.1.dev0"
 description = "Dataset-agnostic curation SDK: raw source -> curated subset -> training shards."
 readme = "README.md"
 requires-python = ">=3.11"

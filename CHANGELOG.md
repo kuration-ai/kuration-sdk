@@ -3,6 +3,14 @@
 This project follows semantic versioning after `1.0`. During the `0.x` beta, minor releases may
 change documented APIs with the notice and deprecation process in `docs/compatibility.md`.
 
+## Unreleased
+
+- Fixed the release workflow's final step, which attaches the distributions and `SHA256SUMS` to
+  the GitHub release: `gh release upload` now names the repository, because the publish job has
+  no checkout. The `0.1.0` upload to PyPI itself was unaffected.
+- Made the README's links and images absolute so the PyPI project page renders, and added a test
+  that rejects relative README targets.
+
 ## 0.1.0
 
 First public release. It includes everything in the earlier release candidates `0.1.0rc1`
