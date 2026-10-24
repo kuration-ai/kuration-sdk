@@ -37,7 +37,7 @@ ACA_ENV="${ACA_ENV:-kurious-cicd-env}"
 ACR="${ACR:-kuriouscr001}"
 IMAGE_TAG="${IMAGE_TAG:-kurious-ns/kuration-runner:latest}"
 RUNNER_IMAGE="${ACR}.azurecr.io/${IMAGE_TAG}"
-REPO="${REPO:-aintropy-ai/kuration-sdk}"
+REPO="${REPO:-kuration-ai/kuration-sdk}"
 JOB_NAME="${JOB_NAME:-github-runner-kuration-sdk}"
 
 # 4 CPU / 8Gi is the Consumption-profile ceiling. ci.yml queues ~30

@@ -37,7 +37,7 @@ def register() -> None:
         "package": "kuration-sdk",
         "stability": "experimental",
         "install_hint": "pip install kuration-sdk",
-        "documentation": "https://aintropy-solutions.github.io/kuration-sdk/operators/",
+        "documentation": "https://kuration-ai.github.io/kuration-sdk/operators/",
     }
     if needs_registration(default_registry, "operator", BALANCED_SELECTOR_NAME,
                            balanced_selector):

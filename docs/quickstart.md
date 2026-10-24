@@ -21,7 +21,7 @@ The quick start needs no optional extras.
 ## 2. Run the pipeline
 
 ```bash
-curl -O https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/quickstart.py
+curl -O https://raw.githubusercontent.com/kuration-ai/kuration-sdk/main/examples/quickstart.py
 python quickstart.py --out quickstart-out
 ```
 

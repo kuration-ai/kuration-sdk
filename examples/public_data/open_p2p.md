@@ -16,9 +16,9 @@ the official toy dataset is the bounded starting point.
 ```bash
 pip install "kuration-sdk[p2p]"
 mkdir -p adapters
-curl -O https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/open_p2p.py
-curl -o adapters/open_p2p.py https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/adapters/open_p2p.py
-curl -o adapters/__init__.py https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/adapters/__init__.py
+curl -O https://raw.githubusercontent.com/kuration-ai/kuration-sdk/main/examples/public_data/open_p2p.py
+curl -o adapters/open_p2p.py https://raw.githubusercontent.com/kuration-ai/kuration-sdk/main/examples/public_data/adapters/open_p2p.py
+curl -o adapters/__init__.py https://raw.githubusercontent.com/kuration-ai/kuration-sdk/main/examples/public_data/adapters/__init__.py
 python open_p2p.py --demo --out open-p2p-out
 ```
 

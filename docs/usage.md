@@ -411,7 +411,7 @@ the scored count-selection pool; serialized reports retain bounded copies, while
 can rank any available metric exactly. Whole videos and large frame tensors are never embedded
 in the JSON report.
 The runnable
-[gameplay stats notebook](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb)
+[gameplay stats notebook](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb)
 uses synthetic trajectories and needs no model or GPU.
 
 ---

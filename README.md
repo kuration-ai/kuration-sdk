@@ -4,8 +4,8 @@
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat)](./LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha-orange?style=flat)](#project-status)
 
-[![Docs](https://img.shields.io/badge/docs-live-brightgreen?style=flat)](https://aintropy-solutions.github.io/kuration-sdk/)
-[![Blog](https://img.shields.io/badge/blog-aintropy.ai%2Fblog-0D9488?style=flat)](https://aintropy.ai/blog)
+[![Docs](https://img.shields.io/badge/docs-live-brightgreen?style=flat)](https://kuration-ai.github.io/kuration-sdk/)
+[![Blog](https://img.shields.io/badge/blog-aintropy.ai%2Fresearch-0D9488?style=flat)](https://aintropy.ai/research)
 [![Examples](https://img.shields.io/badge/examples-runnable-blue?style=flat)](./examples/)
 [![Roadmap](https://img.shields.io/badge/roadmap-planned-lightgrey?style=flat)](./ROADMAP.md)
 [![Changelog](https://img.shields.io/badge/changelog-latest-blue?style=flat)](./CHANGELOG.md)
@@ -13,7 +13,7 @@
 [![Support](https://img.shields.io/badge/support-help-blue?style=flat)](./SUPPORT.md)
 [![Security](https://img.shields.io/badge/security-policy-red?style=flat)](./SECURITY.md)
 [![Design notes](https://img.shields.io/badge/design-notes-lightgrey?style=flat)](./DESIGN.md)
-[![Issues](https://img.shields.io/badge/issues-open-blue?style=flat)](https://github.com/aintropy-solutions/kuration-sdk/issues)
+[![Issues](https://img.shields.io/badge/issues-open-blue?style=flat)](https://github.com/kuration-ai/kuration-sdk/issues)
 
 Physical AI has a sample efficiency problem. The field is drowning in data and starving for it same time. It is generating millions of hours of videos, to find a small sample of training ready sets. Missing piece is ETL or curation operators designed from first principles to address the challenge unique to the world model training. Raw gameplay video clips is often considered a gold mine to train world models but is often garbage in absence of sophisticated curation. Kuration SDK is open source repo built to solve that problem while training world models. References papers
 
@@ -55,7 +55,7 @@ The gameplay operators target three failure modes that recur when training a wor
 - **3. Most gameplay footage has no sense of place.** `slam_reconstruct` reconstructs a camera's
   3D path from raw video with loop closure. `slam_quality` scores each window for gaps,
   impossible motion, and scale. `slam_motion_diversity` bins windows by path length,
-  turning, and climb.
+  turning, and spatial extent.
 
 `join_video` (core, always available) pairs an action log with a video, frame by frame.
 
@@ -104,7 +104,7 @@ and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`, `slide_end
 
 Most gameplay footage has no sense of place. `slam_reconstruct` reconstructs a camera's 3D path from
 raw video with loop closure. `slam_quality` scores each window for gaps, impossible motion, and
-scale. `slam_motion_diversity` bins windows by path length, turning, and climb:
+scale. `slam_motion_diversity` bins windows by path length, turning, and spatial extent:
 
 ```python
 pipeline = (
@@ -158,15 +158,15 @@ parameter reference and the config-driven runner.
 
 | Example | What it does |
 |---|---|
-| [`quickstart.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/quickstart.py) | Runs the ten-minute quick start: builds six in-memory sensor sessions, selects 12 diverse windows, writes NumPy shards, reads one back. |
-| [`02_robotics_action_aware.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Robotics: combines a learned action-informativeness score with geometric end-effector-speed coverage, plus coverage across motion phases. Needs the `[methods]` extra. |
-| [`05_custom_operators.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/05_custom_operators.py) | Shows two ways to write your own operator: compositional (a function that chains existing operators) and transform-backed (custom batch code that produces a new feature). |
-| [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py) | Uses the gameplay SLAM trajectory operators on synthetic precomputed camera trajectories. NumPy core only — no video decoder or GPU needed. |
-| [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | Runs `.action_state_consistency(...)` on a synthetic clip via an in-memory fake video provider. Shows the verdict (consistent / inconsistent / inconclusive) attached to the pipeline metadata. |
-| [`gameplay_stats.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb) | JupyterLab notebook: runs `slam_motion_diversity` and `slam_quality` on synthetic camera trajectories, shows candidate stats, plots, and selected-vs-rejected evidence. Optional gameplay-video comparison at the end. |
-| [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | JupyterLab notebook demonstrating the SLAM operators end-to-end: reconstructs a trajectory from raw video, then curates windows by quality and motion diversity. |
-| [TeaPearce Counter-Strike](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | Curates human Counter-Strike gameplay for behavioral-cloning or world-model training. Reads the public TeaPearce HDF5 dataset, covers keyboard/mouse activity, reserves budget for rare kill/death events. |
-| [Open P2P](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Curates Elefant AI's Open P2P dataset across games, action patterns, corrections, and text instructions. Reads Protobuf annotations without decoding video. |
+| [`quickstart.py`](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/quickstart.py) | Runs the ten-minute quick start: builds six in-memory sensor sessions, selects 12 diverse windows, writes NumPy shards, reads one back. |
+| [`02_robotics_action_aware.py`](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/02_robotics_action_aware.py) | Robotics: combines a learned action-informativeness score with geometric end-effector-speed coverage, plus coverage across motion phases. Needs the `[methods]` extra. |
+| [`05_custom_operators.py`](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/05_custom_operators.py) | Shows two ways to write your own operator: compositional (a function that chains existing operators) and transform-backed (custom batch code that produces a new feature). |
+| [`06_gameplay_operator_methods.py`](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py) | Uses the gameplay SLAM trajectory operators on synthetic precomputed camera trajectories. NumPy core only — no video decoder or GPU needed. |
+| [`07_action_state_consistency.py`](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | Runs `.action_state_consistency(...)` on a synthetic clip via an in-memory fake video provider. Shows the verdict (consistent / inconsistent / inconclusive) attached to the pipeline metadata. |
+| [`gameplay_stats.ipynb`](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/notebooks/gameplay_stats.ipynb) | JupyterLab notebook: runs `slam_motion_diversity` and `slam_quality` on synthetic camera trajectories, shows candidate stats, plots, and selected-vs-rejected evidence. Optional gameplay-video comparison at the end. |
+| [`slam_kurious.ipynb`](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | JupyterLab notebook demonstrating the SLAM operators end-to-end: reconstructs a trajectory from raw video, then curates windows by quality and motion diversity. |
+| [TeaPearce Counter-Strike](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/public_data/teapearce_csgo.md) | Curates human Counter-Strike gameplay for behavioral-cloning or world-model training. Reads the public TeaPearce HDF5 dataset, covers keyboard/mouse activity, reserves budget for rare kill/death events. |
+| [Open P2P](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/public_data/open_p2p.md) | Curates Elefant AI's Open P2P dataset across games, action patterns, corrections, and text instructions. Reads Protobuf annotations without decoding video. |
 
 ## Beyond the gallery
 
@@ -315,12 +315,12 @@ the manifest, so resume and verification are safe.
 2. [Optional extras](#optional-extras)
 3. [Choose your path](#choose-your-path)
 4. [Use cases](#use-cases)
-    - [Action-state consistency (gameplay)](#action-state-consistency-gameplay)
-    - [Collision awareness (gameplay)](#collision-awareness-gameplay)
-    - [SLAM motion diversity and quality (gameplay)](#slam-motion-diversity-and-quality-gameplay)
-    - [Spatial coverage (general)](#spatial-coverage-general)
-    - [Rare-event coverage (general)](#rare-event-coverage-general)
-    - [Diversity sampling (general)](#diversity-sampling-general)
+    - [Action-state consistency (gameplay)](#i-action-state-consistency-gameplay)
+    - [Collision awareness (gameplay)](#ii-collision-awareness-gameplay)
+    - [SLAM motion diversity and quality (gameplay)](#iii-slam-motion-diversity-and-quality-gameplay)
+    - [Spatial coverage (general)](#iv-spatial-coverage-general)
+    - [Rare-event coverage (general)](#v-rare-event-coverage-general)
+    - [Diversity sampling (general)](#vi-diversity-sampling-general)
 5. [Examples](#examples)
 6. [Beyond the gallery](#beyond-the-gallery)
     - [Sampling methods](#sampling-methods)
@@ -370,36 +370,36 @@ class. See each operator's worked example and clip in [Use cases](#use-cases) be
 
 | Use case | Category | What it does | Runnable | Notebook |
 |---|---|---|---|---|
-| [Action-state consistency](#action-state-consistency-gameplay) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | — |
-| [Collision awareness](#collision-awareness-gameplay) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | — |
-| [SLAM motion diversity and quality](#slam-motion-diversity-and-quality-gameplay) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and climb. | [`06_gameplay_operator_methods.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
-| [Spatial coverage](#spatial-coverage-general) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | `pipeline.balanced_selector(feature=..., of=..., bins=..., count=...)` | — |
-| [Rare-event coverage](#rare-event-coverage-general) | General | Oversamples rare events (like collisions) relative to their natural base rate. | `pipeline.rare_event_coverage(of=..., count=...)` | — |
-| [Diversity sampling](#diversity-sampling-general) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | `pipeline.diverse_subset(features=..., count=...)` | — |
+| [Action-state consistency](https://kuration-ai.github.io/kuration-sdk/action-state-consistency/) | Gameplay | Verdict on whether a key press produced the state change the training data claims — consistent / inconsistent / inconclusive. | [`07_action_state_consistency.py`](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/07_action_state_consistency.py) | — |
+| [Collision awareness](https://kuration-ai.github.io/kuration-sdk/collision/) | Gameplay | Finds and classifies wall-hits so they can be oversampled relative to their natural, very low base rate. | — | — |
+| [SLAM motion diversity and quality](https://kuration-ai.github.io/kuration-sdk/slam/) | Gameplay | Reconstructs a camera's 3D path from raw video; scores windows for gaps/impossible motion/scale and bins by path length, turning, and spatial extent. | [`06_gameplay_operator_methods.py`](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/06_gameplay_operator_methods.py), [`slam_kurious.ipynb`](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/notebooks/slam_kurious.ipynb) | — |
+| [Spatial coverage](https://kuration-ai.github.io/kuration-sdk/selection/#balancedselector-cover-the-whole-range-of-a-signal) | General | Samples equally across a chosen axis (turning, path length, ...) so harder motions aren't crowded out. | `pipeline.balanced_selector(feature=..., of=..., bins=..., count=...)` | — |
+| [Rare-event coverage](https://kuration-ai.github.io/kuration-sdk/selection/#rareeventcoverage-dont-let-rare-events-get-diluted) | General | Oversamples rare events (like collisions) relative to their natural base rate. | `pipeline.rare_event_coverage(of=..., count=...)` | — |
+| [Diversity sampling](https://kuration-ai.github.io/kuration-sdk/selection/#diversesubset-compress-without-losing-coverage) | General | Clusters in feature space and samples equally from each cluster so redundant windows don't crowd out diverse ones. | `pipeline.diverse_subset(features=..., count=...)` | — |
 
 ## Choose your path
 
 | I want to… | Start here |
 |---|---|
-| Build my first curated dataset | [Quickstart](https://aintropy-solutions.github.io/kuration-sdk/quickstart/) |
-| Understand the product and its data model | [Core concepts](https://aintropy-solutions.github.io/kuration-sdk/overview/) |
-| Find the right pipeline operation | [Pipeline guide](https://aintropy-solutions.github.io/kuration-sdk/pipeline/) |
-| Solve a task such as streaming, cloud output, or comparison | [Recipe cookbook](https://aintropy-solutions.github.io/kuration-sdk/usage/) |
-| Integrate a data format | [Adapters](https://aintropy-solutions.github.io/kuration-sdk/adapters/) |
-| Build a reusable operator or transform | [Operators](https://aintropy-solutions.github.io/kuration-sdk/operators/) |
-| Run checked JSON jobs and CLIs | [Job and CLI reference](https://aintropy-solutions.github.io/kuration-sdk/jobs/) |
-| Operate or audit generated artifacts | [Output and integrity](https://aintropy-solutions.github.io/kuration-sdk/output/) |
-| Look up an exact Python signature | [API reference](https://aintropy-solutions.github.io/kuration-sdk/api/) |
-| Understand internals and extension boundaries | [Architecture](https://aintropy-solutions.github.io/kuration-sdk/architecture/) |
+| Build my first curated dataset | [Quickstart](https://kuration-ai.github.io/kuration-sdk/quickstart/) |
+| Understand the product and its data model | [Core concepts](https://kuration-ai.github.io/kuration-sdk/overview/) |
+| Find the right pipeline operation | [Pipeline guide](https://kuration-ai.github.io/kuration-sdk/pipeline/) |
+| Solve a task such as streaming, cloud output, or comparison | [Recipe cookbook](https://kuration-ai.github.io/kuration-sdk/usage/) |
+| Integrate a data format | [Adapters](https://kuration-ai.github.io/kuration-sdk/adapters/) |
+| Build a reusable operator or transform | [Operators](https://kuration-ai.github.io/kuration-sdk/operators/) |
+| Run checked JSON jobs and CLIs | [Job and CLI reference](https://kuration-ai.github.io/kuration-sdk/jobs/) |
+| Operate or audit generated artifacts | [Output and integrity](https://kuration-ai.github.io/kuration-sdk/output/) |
+| Look up an exact Python signature | [API reference](https://kuration-ai.github.io/kuration-sdk/api/) |
+| Understand internals and extension boundaries | [Architecture](https://kuration-ai.github.io/kuration-sdk/architecture/) |
 
-The **[documentation home](https://aintropy-solutions.github.io/kuration-sdk/)** groups the complete documentation by getting
+The **[documentation home](https://kuration-ai.github.io/kuration-sdk/)** groups the complete documentation by getting
 started, guides, extensions, operations, and reference.
 
 
 ## Reference
 
-- [Issue tracker](https://github.com/aintropy-solutions/kuration-sdk/issues) for feature requests, bug reports, roadmap discussion.
-- [ROADMAP.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/ROADMAP.md) for what's shipped, next, and planned.
+- [Issue tracker](https://github.com/kuration-ai/kuration-sdk/issues) for feature requests, bug reports, roadmap discussion.
+- [ROADMAP.md](https://github.com/kuration-ai/kuration-sdk/blob/main/ROADMAP.md) for what's shipped, next, and planned.
 
 ### CLI reference
 
@@ -427,10 +427,10 @@ Shows one component's docstring and parameter contract.
 
 Long-form blog posts on physical-AI data curation:
 
-- **[Why raw gameplays don't make good world models — and how to fix the Virtual2Real gap](https://aintropy.ai/blogs)**. The failure modes that make raw gameplay footage a poor training corpus for a world model — actions that don't produce a consistent state change, state changes with no action, rare player-object contact, missing pose or location, eval metrics that look fine when the physics is visibly wrong.
-- **[Quickly convert raw corpus into high-quality world-model training sets](https://aintropy.ai/blogs)**. A line-by-line walkthrough of the Pipeline API — `input`, `window`, `measure`, `filter`, `bin`, `split`, `sample`, `output` — on a small runner-telemetry example.
-- **[Action-state consistency with Kuration SDK](https://aintropy.ai/blog)**. How the `action_state_consistency` operator uses Farneback optical flow to catch action-state mismatches — wall collisions, coyote time, input buffering, engine glitches — and returns a per-clip verdict (consistent, inconsistent, inconclusive).
-- **[SLAM with Kuration SDK](https://aintropy.ai/blog)**. Adding scene and trajectory reconstruction to any video or image dataset. Built on DepthAnything V3 with plug-and-play VPR support for loop closure; stitches long clips into one 3D map.
+- **[Why raw gameplays don't make good world models — and how to fix the Virtual2Real gap](https://aintropy.ai/research)**. The failure modes that make raw gameplay footage a poor training corpus for a world model — actions that don't produce a consistent state change, state changes with no action, rare player-object contact, missing pose or location, eval metrics that look fine when the physics is visibly wrong.
+- **[Quickly convert raw corpus into high-quality world-model training sets](https://aintropy.ai/research)**. A line-by-line walkthrough of the Pipeline API — `input`, `window`, `measure`, `filter`, `bin`, `split`, `sample`, `output` — on a small runner-telemetry example.
+- **[Action-state consistency with Kuration SDK](https://aintropy.ai/research)**. How the `action_state_consistency` operator uses Farneback optical flow to catch action-state mismatches — wall collisions, coyote time, input buffering, engine glitches — and returns a per-clip verdict (consistent, inconsistent, inconclusive).
+- **[SLAM with Kuration SDK](https://aintropy.ai/research)**. Adding scene and trajectory reconstruction to any video or image dataset. Built on DepthAnything V3 with plug-and-play VPR support for loop closure; stitches long clips into one 3D map.
 
 ## Project status
 
@@ -440,17 +440,17 @@ functions across 97 test files, including property-based invariants, wheel insta
 every CLI entry point, and integration paths for Zarr, PyTorch, Hugging Face, PyAV, and Ray.
 
 The SDK is a `0.x` beta. The supported surface and deprecation rules are documented in the
-**[compatibility policy](https://aintropy-solutions.github.io/kuration-sdk/compatibility/)**. See
-[SECURITY.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/SECURITY.md) for private
+**[compatibility policy](https://kuration-ai.github.io/kuration-sdk/compatibility/)**. See
+[SECURITY.md](https://github.com/kuration-ai/kuration-sdk/blob/main/SECURITY.md) for private
 reporting and runtime trust boundaries,
-[CHANGELOG.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/CHANGELOG.md) for notable
-changes, and [ROADMAP.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/ROADMAP.md) for the
+[CHANGELOG.md](https://github.com/kuration-ai/kuration-sdk/blob/main/CHANGELOG.md) for notable
+changes, and [ROADMAP.md](https://github.com/kuration-ai/kuration-sdk/blob/main/ROADMAP.md) for the
 remaining public-release gates.
 
 ## Contributing
 
 Contributions to the core SDK or the maintained gameplay module should follow
-[CONTRIBUTING.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/CONTRIBUTING.md).
+[CONTRIBUTING.md](https://github.com/kuration-ai/kuration-sdk/blob/main/CONTRIBUTING.md).
 The gameplay operators ship inside this repo.
 
 ```bash
@@ -460,7 +460,7 @@ python -m ruff check src tests examples
 python -m mypy
 ```
 
-Read [CONTRIBUTING.md](https://github.com/aintropy-solutions/kuration-sdk/blob/main/CONTRIBUTING.md)
+Read [CONTRIBUTING.md](https://github.com/kuration-ai/kuration-sdk/blob/main/CONTRIBUTING.md)
 before proposing a component or public contract change.
 
 # Questions

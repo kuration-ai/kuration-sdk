@@ -37,7 +37,7 @@ def register() -> None:
         "stability": "experimental",
         "extra": "pixel-shift",
         "install_hint": 'pip install "kuration-sdk[pixel-shift]"',
-        "documentation": "https://aintropy-ai.github.io/kuration-sdk/pixel-shift/",
+        "documentation": "https://kuration-ai.github.io/kuration-sdk/pixel-shift/",
     }
     if needs_registration(default_registry, "transform", COMPONENT_NAME, PixelShift):
         register_batch_transform(

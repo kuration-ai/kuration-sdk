@@ -18,9 +18,9 @@ Install the HDF5 extra and run the structural demo:
 ```bash
 pip install "kuration-sdk[array]"
 mkdir -p adapters
-curl -O https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/teapearce_csgo.py
-curl -o adapters/teapearce.py https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/adapters/teapearce.py
-curl -o adapters/__init__.py https://raw.githubusercontent.com/aintropy-solutions/kuration-sdk/main/examples/public_data/adapters/__init__.py
+curl -O https://raw.githubusercontent.com/kuration-ai/kuration-sdk/main/examples/public_data/teapearce_csgo.py
+curl -o adapters/teapearce.py https://raw.githubusercontent.com/kuration-ai/kuration-sdk/main/examples/public_data/adapters/teapearce.py
+curl -o adapters/__init__.py https://raw.githubusercontent.com/kuration-ai/kuration-sdk/main/examples/public_data/adapters/__init__.py
 python teapearce_csgo.py --demo --out teapearce-out
 ```
 

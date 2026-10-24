@@ -58,7 +58,7 @@ def register() -> None:
         "stability": "experimental",
         "extra": "collision",
         "install_hint": 'pip install "kuration-sdk[collision]"',
-        "documentation": "https://aintropy-ai.github.io/kuration-sdk/collision/",
+        "documentation": "https://kuration-ai.github.io/kuration-sdk/collision/",
     }
     if needs_registration(default_registry, "adapter", ADAPTER_NAME, AsgCollisionAdapter):
         register_adapter(
