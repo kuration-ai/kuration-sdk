@@ -18,10 +18,10 @@ If GitHub's private form is unavailable, open a public issue that asks the maint
 a private reporting channel, but include no exploit, reproduction, sensitive log, credential, or
 other vulnerability detail in that issue. Wait for a private channel before sharing the report.
 
-Maintainers will triage reports, coordinate remediation and disclosure, and credit reporters who
-want attribution. Formal acknowledgement and remediation targets require a company-approved
-security owner and private contact channel; those targets are not published yet, so no
-response-time SLA is currently offered.
+The security owner is Nirmit Desai (`@nirmit-desai-aintropy`). Maintainers will triage reports,
+coordinate remediation and disclosure, and credit reporters who want attribution. The private
+GitHub form above is the supported reporting channel. No response-time SLA is offered at this
+time; one will be published here if that changes.
 
 ## Trust boundaries
 

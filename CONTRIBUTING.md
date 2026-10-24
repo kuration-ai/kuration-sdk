@@ -419,4 +419,4 @@ by migration guidance when they affect public APIs, jobs, or stored artifacts.
 
 Contributors should not publish package artifacts. Maintainers release through the trusted PyPI
 workflow described in [docs/releasing.md](https://kuration-ai.github.io/kuration-sdk/releasing/). The project license and author
-metadata must be resolved before the first public release.
+metadata (Apache-2.0, see `LICENSE`) are recorded in `pyproject.toml`.

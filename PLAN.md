@@ -136,8 +136,9 @@ it to *consume* this SDK ("Phase G") is possible future work but **out of scope*
   unreferenced features, ~10× headroom) vs. true disk-external (multi-pass streaming
   binning/selection; feature-space methods can't go external) vs. both. **Deferred** — current
   scale (single-source streaming + parallel) judged "good enough" for now.
-- **Public-release metadata** — LICENSE remains pending the corporate decision. Packaging
-  metadata, `py.typed`, CI, lint, and type-check configuration are complete.
+- **Public-release metadata** — Apache-2.0 license, authors, maintainers, CODEOWNERS, and the
+  private security contact are recorded. Packaging metadata, `py.typed`, CI, lint, and
+  type-check configuration are complete.
 
 ## 8. Decisions settled during the build
 
