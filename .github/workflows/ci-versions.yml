@@ -1,5 +1,6 @@
-# Split out of ci.yml to keep each run's job list small (originally sized for the
-# former self-hosted ACA runner's scaler; see .github/aca-runner/ci-workflow-split-plan.md).
+# Split out of ci.yml to keep each run's job list small (the split was originally sized
+# for a retired self-hosted runner's scaler; hosted runners do not need it, but ci.yml's
+# `required-ci` gate and publish.yml depend on this layout).
 # The aggregate gate lives in ci.yml's `required-ci`, which waits on this workflow's
 # conclusion.
 name: CI - Versions
