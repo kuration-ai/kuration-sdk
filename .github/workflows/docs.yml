@@ -8,6 +8,13 @@ on:
       - examples/**
       - src/kuration/**
       - README.md
+      # Root files embedded into docs/ pages via pymdownx.snippets
+      - CHANGELOG.md
+      - CONTRIBUTING.md
+      - GOVERNANCE.md
+      - ROADMAP.md
+      - SECURITY.md
+      - SUPPORT.md
       - mkdocs.yml
       - pyproject.toml
       - .github/workflows/docs.yml
