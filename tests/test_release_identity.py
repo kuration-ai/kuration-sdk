@@ -19,6 +19,10 @@ def test_development_work_does_not_reuse_a_changelog_release_version():
     current_heading = current_match.group(1)
     current = changelog[current_match.end():].split("\n## ", 1)[0]
     released_versions = set(re.findall(r"^## ([0-9][^\s]*)\s*$", changelog, re.MULTILINE))
+    if current_heading == project_version and ".dev" not in project_version:
+        # The release commit itself: its own section is the version being released, not a
+        # prior release that development work is reusing.
+        released_versions.discard(current_heading)
 
     assert re.search(r"^- ", current, re.MULTILINE), \
         "the current changelog section should record the development branch's changes"

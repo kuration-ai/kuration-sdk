@@ -3,9 +3,10 @@
 This project follows semantic versioning after `1.0`. During the `0.x` beta, minor releases may
 change documented APIs with the notice and deprecation process in `docs/compatibility.md`.
 
-## 0.1.0rc5
+## 0.1.0
 
-Target release: `0.1.0rc5` (current development identity: `0.1.0rc5.dev0`).
+First public release. It includes everything in the earlier release candidates `0.1.0rc1`
+through `0.1.0rc5`, which were not published to PyPI and are kept below as history.
 
 - Every built-in operator is now labeled Selection, Annotation, or Aggregation in
   `docs/operators.md` and `docs/operator-inventory.md`, by its primary effect on the segment
