@@ -1,18 +1,18 @@
 # kuration-sdk
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat)](./LICENSE)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat)](https://github.com/kuration-ai/kuration-sdk/blob/main/LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha-orange?style=flat)](#project-status)
 
 [![Docs](https://img.shields.io/badge/docs-live-brightgreen?style=flat)](https://kuration-ai.github.io/kuration-sdk/)
 [![Blog](https://img.shields.io/badge/blog-aintropy.ai%2Fresearch-0D9488?style=flat)](https://aintropy.ai/research)
-[![Examples](https://img.shields.io/badge/examples-runnable-blue?style=flat)](./examples/)
-[![Roadmap](https://img.shields.io/badge/roadmap-planned-lightgrey?style=flat)](./ROADMAP.md)
-[![Changelog](https://img.shields.io/badge/changelog-latest-blue?style=flat)](./CHANGELOG.md)
-[![Contributing](https://img.shields.io/badge/contributing-welcome-brightgreen?style=flat)](./CONTRIBUTING.md)
-[![Support](https://img.shields.io/badge/support-help-blue?style=flat)](./SUPPORT.md)
-[![Security](https://img.shields.io/badge/security-policy-red?style=flat)](./SECURITY.md)
-[![Design notes](https://img.shields.io/badge/design-notes-lightgrey?style=flat)](./DESIGN.md)
+[![Examples](https://img.shields.io/badge/examples-runnable-blue?style=flat)](https://github.com/kuration-ai/kuration-sdk/tree/main/examples/)
+[![Roadmap](https://img.shields.io/badge/roadmap-planned-lightgrey?style=flat)](https://github.com/kuration-ai/kuration-sdk/blob/main/ROADMAP.md)
+[![Changelog](https://img.shields.io/badge/changelog-latest-blue?style=flat)](https://github.com/kuration-ai/kuration-sdk/blob/main/CHANGELOG.md)
+[![Contributing](https://img.shields.io/badge/contributing-welcome-brightgreen?style=flat)](https://github.com/kuration-ai/kuration-sdk/blob/main/CONTRIBUTING.md)
+[![Support](https://img.shields.io/badge/support-help-blue?style=flat)](https://github.com/kuration-ai/kuration-sdk/blob/main/SUPPORT.md)
+[![Security](https://img.shields.io/badge/security-policy-red?style=flat)](https://github.com/kuration-ai/kuration-sdk/blob/main/SECURITY.md)
+[![Design notes](https://img.shields.io/badge/design-notes-lightgrey?style=flat)](https://github.com/kuration-ai/kuration-sdk/blob/main/DESIGN.md)
 [![Issues](https://img.shields.io/badge/issues-open-blue?style=flat)](https://github.com/kuration-ai/kuration-sdk/issues)
 
 Physical AI has a sample efficiency problem. The field is drowning in data and starving for it same time. It is generating millions of hours of videos, to find a small sample of training ready sets. Missing piece is ETL or curation operators designed from first principles to address the challenge unique to the world model training. Raw gameplay video clips is often considered a gold mine to train world models but is often garbage in absence of sophisticated curation. Kuration SDK is open source repo built to solve that problem while training world models. References papers
@@ -30,7 +30,7 @@ be rebuilt. It works on the visual as well as metadata domain data simultaneousl
 The SDK is built around **operators** — named pipeline steps that measure a per-window feature, filter windows out, or select which windows to keep. 
 An **operator** is a named, discoverable pipeline step (an analyzer, a transform, a
 scorer, a filter, ...) that you chain onto a `kuration.input(...)` pipeline; see
-[Operators](docs/operators.md) for the full registry. The six use cases below are ready-made
+[Operators](https://kuration-ai.github.io/kuration-sdk/operators/) for the full registry. The six use cases below are ready-made
 curation jobs built from those operators — three gameplay/video-specific, three general-purpose
 selection recipes for Physical AI videos, built into the SDK (`kuration.selection`).
 Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
@@ -83,7 +83,7 @@ The pipeline you get back is the same immutable pipeline. You can keep chaining 
 analyzer result on its own, without the pipeline.
 
 <p align="center">
-  <img src="assets/hojepa-collision-flagged.gif" alt="The clip is flagged by the model as it has two instances where the player collides with the wall." width="100%">
+  <img src="https://raw.githubusercontent.com/kuration-ai/kuration-sdk/main/assets/hojepa-collision-flagged.gif" alt="The clip is flagged by the model as it has two instances where the player collides with the wall." width="100%">
   <br>
   <sub><em>The clip is flagged by the model as it has two instances where the player collides with the wall.</em></sub>
 </p>
@@ -95,7 +95,7 @@ and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`, `slide_end
 `slide_constrained`) so they can be oversampled relative to their natural, very low, base rate.
 
 <p align="center">
-  <img src="assets/diamond-world-model-blur.gif" alt="DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall)." width="100%">
+  <img src="https://raw.githubusercontent.com/kuration-ai/kuration-sdk/main/assets/diamond-world-model-blur.gif" alt="DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall)." width="100%">
   <br>
   <sub><em>DIAMOND's CS:GO world model blurring out on contact with solid objects (car, crates, wall).</em></sub>
 </p>
@@ -151,7 +151,7 @@ Cluster the windows in a multi-axis feature space and sample equally from each c
 Each of the three general-purpose recipes above is also available as a direct dataclass
 (`kuration.selection.BalancedSelector`, `RareEventCoverage`, `DiverseSubset`) for standalone use,
 or as a `{"type": "BalancedSelector", ...}`-style config-dict entry for
-`kuration.selection.run(...)` — see [`docs/selection.md`](docs/selection.md) for the full
+`kuration.selection.run(...)` — see [`docs/selection.md`](https://kuration-ai.github.io/kuration-sdk/selection/) for the full
 parameter reference and the config-driven runner.
 
 ## Examples
@@ -205,7 +205,7 @@ Two: `anomaly` (Isolation Forest), `dedup` (SemDeDup).
 
 Core methods used by the shipped operations: `.window()`, `.measure()`, `.filter()`, `.bin()`, `.sample()`, `.split()`, `.output()`, `.options()`, `.describe()`, `.collect()`. Pipeline exposes additional methods for tagging, scoring, video joins, previewing, and lifecycle stats.
 
-Full inventory with parameters, extras, and runtime dependencies at [`docs/operator-inventory.md`](./docs/operator-inventory.md).
+Full inventory with parameters, extras, and runtime dependencies at [`docs/operator-inventory.md`](https://kuration-ai.github.io/kuration-sdk/operator-inventory/).
 
 Every gallery operation is transparent about the primitives it calls. Run `.describe()` on the resulting pipeline and you see the exact chain. Drop the `kuration.selection` imports and your custom pipelines still work. No lock-in.
 
@@ -267,9 +267,9 @@ register_operation_type("OnlyActiveWindows", OnlyActiveWindows)
 ```
 
 For the fuller extension model — compositional vs. transform-backed operators, discovery,
-contract testing — see [`docs/operators.md`](docs/operators.md) and
-[`docs/customization.md`](docs/customization.md); for the config-driven runner shown above, see
-[`docs/selection.md`](docs/selection.md).
+contract testing — see [`docs/operators.md`](https://kuration-ai.github.io/kuration-sdk/operators/) and
+[`docs/customization.md`](https://kuration-ai.github.io/kuration-sdk/customization/); for the config-driven runner shown above, see
+[`docs/selection.md`](https://kuration-ai.github.io/kuration-sdk/selection/).
 
 
 ## Getting started
@@ -337,7 +337,7 @@ the manifest, so resume and verification are safe.
 12. [Contributing](#contributing)
 
 <p align="center">
-  <img src="docs/assets/curation-flow.svg" alt="Sources are cut into windows, scored and filtered, and the selected windows become training shards" width="95%">
+  <img src="https://raw.githubusercontent.com/kuration-ai/kuration-sdk/main/docs/assets/curation-flow.svg" alt="Sources are cut into windows, scored and filtered, and the selected windows become training shards" width="95%">
 </p>
 
 
