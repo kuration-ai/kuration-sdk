@@ -1,7 +1,7 @@
 # Community, support, and project decisions
 
 Kuration is developed in the open. Use the repository's
-[issue tracker](https://github.com/aintropy-solutions/kuration-sdk/issues) for reproducible bugs,
+[issue tracker](https://github.com/kuration-ai/kuration-sdk/issues) for reproducible bugs,
 documentation problems, and scoped feature proposals. Use
 GitHub Discussions only if it is enabled for the repository (it is not at the moment); otherwise start
 with an issue.

@@ -64,7 +64,7 @@ Notes:
 
 `input()` calls `infer_schema(sample, ...)` on a small sample (`sample=200` rows by default)
 pulled by `sample_source`. It is deliberately conservative and loud: an ambiguous column
-raises rather than guessing. Summary (full behavior: [`src/kuration/core/infer.py`](https://github.com/aintropy-solutions/kuration-sdk/blob/main/src/kuration/core/infer.py),
+raises rather than guessing. Summary (full behavior: [`src/kuration/core/infer.py`](https://github.com/kuration-ai/kuration-sdk/blob/main/src/kuration/core/infer.py),
 concepts: [schema.md](schema.md)):
 
 - **Time column** — first case-insensitive match among `t, time, timestamp, ts, step, frame,

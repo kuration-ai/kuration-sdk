@@ -23,11 +23,11 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/aintropy-solutions/kuration-sdk"
+Homepage = "https://github.com/kuration-ai/kuration-sdk"
 Documentation = "https://kuration-ai.github.io/kuration-sdk/"
-Repository = "https://github.com/aintropy-solutions/kuration-sdk.git"
-Issues = "https://github.com/aintropy-solutions/kuration-sdk/issues"
-Changelog = "https://github.com/aintropy-solutions/kuration-sdk/blob/main/CHANGELOG.md"
+Repository = "https://github.com/kuration-ai/kuration-sdk.git"
+Issues = "https://github.com/kuration-ai/kuration-sdk/issues"
+Changelog = "https://github.com/kuration-ai/kuration-sdk/blob/main/CHANGELOG.md"
 
 # This evaluation build includes first-party domain operators in the SDK wheel while
 # keeping their heavy runtime dependencies opt-in, lazy, and loud-on-missing.

@@ -4,7 +4,7 @@
 # container and no state carries between them.
 set -e
 
-REPO="${RUNNER_REPO:-aintropy-ai/kuration-sdk}"
+REPO="${RUNNER_REPO:-kuration-ai/kuration-sdk}"
 API="https://api.github.com/repos/${REPO}/actions/runners/registration-token"
 
 echo "Runner target repo: ${REPO}"
