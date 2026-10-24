@@ -130,12 +130,12 @@ Registered via a loop in `src/kuration/core/output/containers.py` with `capabili
 | `parquet` | `pyarrow>=23.0.1` | adapter `parquet-dataset`, adapter `timeseries` (parquet input), container `parquet`, preset `tabular` |
 | `scale` | `pyarrow>=23.0.1` | (Arrow-IPC feature tables: no registered component references this by name) |
 | `array` | `h5py>=3.10` | adapter `hdf5`, container `hdf5` |
-| `cloud` | `fsspec>=2024.2` | remote source URIs used by `zarr` / any adapter reading `gs://` / `s3://` / `az://` |
-| `s3` | `fsspec>=2024.2`, `s3fs>=2024.2` | `s3://` I/O |
-| `gcs` | `fsspec>=2024.2`, `gcsfs>=2024.2` | `gs://` I/O |
-| `azure` | `fsspec>=2024.2`, `adlfs>=2024.2` | `az://` I/O |
+| `cloud` | `fsspec>=2026.6` | remote source URIs used by `zarr` / any adapter reading `gs://` / `s3://` / `az://` |
+| `s3` | `fsspec>=2026.6`, `s3fs>=2026.6` | `s3://` I/O |
+| `gcs` | `fsspec>=2026.6`, `gcsfs>=2026.6` | `gs://` I/O |
+| `azure` | `fsspec>=2026.6`, `adlfs>=2026.5` | `az://` I/O |
 | `torch` | `torch>=2.13` | `kuration.core.torch.ShardDataset` consumer |
-| `hf` | `datasets>=2.18` | adapter `huggingface` |
+| `hf` | `datasets>=5.0.1` | adapter `huggingface` |
 | `zarr` | `zarr>=2.17` | adapter `zarr` |
 | `video` | `av>=12` | optional CPU MP4 media provider |
 | `ray` | `ray>=2.56.1` | optional distributed execution backend |
@@ -145,7 +145,7 @@ Registered via a loop in `src/kuration/core/output/containers.py` with `capabili
 | `pixel-shift` | `opencv-python>=4.9` | operator + transform `aintropy/pixel-shift` |
 | `action-state` | `opencv-python>=4.9` | operator + analyzer (dataset mode) + scorer (live pipeline) `aintropy/action-state-consistency` |
 | `collision` | `trimesh>=4`, `rtree>=1.0` | operator/transform `aintropy/collision`; operator/analyzer `aintropy/collision-directional`; adapters `aintropy/collision-asg`, `aintropy/collision-teapearce` |
-| `slam` | `av>=12`, `torch>=2.13`, `torchvision>=0.28`, `huggingface_hub>=0.20`, `omegaconf>=2.3`, `addict>=2.4`, `einops>=0.7`, `opencv-python>=4.9`, `imageio>=2.31`, `tqdm>=4.66.3`, `pillow>=12.3`, `safetensors>=0.4`, `faiss-cpu>=1.8` | transforms `aintropy/slam-motion`, `aintropy/slam-quality`; operators `aintropy/slam-motion-diversity`, `aintropy/slam-quality`; adapter `aintropy/slam-trajectory` |
+| `slam` | `av>=12`, `torch>=2.13`, `torchvision>=0.28`, `huggingface_hub>=0.25`, `omegaconf>=2.3`, `addict>=2.4`, `einops>=0.7`, `opencv-python>=4.9`, `imageio>=2.31`, `tqdm>=4.66.3`, `pillow>=13.0`, `safetensors>=0.4`, `faiss-cpu>=1.8` | transforms `aintropy/slam-motion`, `aintropy/slam-quality`; operators `aintropy/slam-motion-diversity`, `aintropy/slam-quality`; adapter `aintropy/slam-trajectory` |
 | `slam-viz` | `trimesh>=4` | SLAM notebook viewer |
 | `gameplay` | union of `[slam]` + `[collision]` (+ friends) | superset covering every built-in gameplay component |
 | `standard-operators` | alias of `[gameplay]` | (same as `gameplay`) |

@@ -1,7 +1,7 @@
-# Split out of ci.yml so each run's job list stays small enough for the ACA
-# runner's KEDA scaler to enumerate within its 3s HTTP timeout. See
-# .github/aca-runner/ci-workflow-split-plan.md. The aggregate gate lives in
-# ci.yml's `required-ci`, which waits on this workflow's conclusion.
+# Split out of ci.yml to keep each run's job list small (originally sized for the
+# former self-hosted ACA runner's scaler; see .github/aca-runner/ci-workflow-split-plan.md).
+# The aggregate gate lives in ci.yml's `required-ci`, which waits on this workflow's
+# conclusion.
 name: CI - Versions
 
 on:
@@ -18,7 +18,7 @@ permissions:
 jobs:
   test:
     name: Python ${{ matrix.python }}
-    runs-on: [self-hosted, aca]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false

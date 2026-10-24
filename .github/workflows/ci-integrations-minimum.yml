@@ -1,7 +1,7 @@
-# Split out of ci.yml so each run's job list stays small enough for the ACA
-# runner's KEDA scaler to enumerate within its 3s HTTP timeout. See
-# .github/aca-runner/ci-workflow-split-plan.md. The aggregate gate lives in
-# ci.yml's `required-ci`, which waits on this workflow's conclusion.
+# Split out of ci.yml to keep each run's job list small (originally sized for the
+# former self-hosted ACA runner's scaler; see .github/aca-runner/ci-workflow-split-plan.md).
+# The aggregate gate lives in ci.yml's `required-ci`, which waits on this workflow's
+# conclusion.
 #
 # The current/minimum halves of the matrix are separate workflows so neither
 # run carries 20 jobs; keep them in sync when adding an extra.
@@ -21,7 +21,7 @@ permissions:
 jobs:
   optional-integrations:
     name: Optional integration (${{ matrix.extra }}, ${{ matrix.dependency_set }})
-    runs-on: [self-hosted, aca]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: "3.11"
       # No `cache: pip`, and --no-cache-dir below: the slam extra pulls torch,
-      # torchvision, faiss and opencv, which already exhaust the ACA replica's
+      # torchvision, faiss and opencv, which are large enough to exhaust a runner's
       # ephemeral disk ("[Errno 28] No space left on device" installing
       # torchvision). A pip cache keeps a second full copy of every wheel.
       - name: Install optional integration
