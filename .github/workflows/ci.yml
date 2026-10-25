@@ -1,7 +1,8 @@
 # The heavy matrices live in sibling workflows (ci-versions.yml,
 # ci-integrations.yml, ci-integrations-minimum.yml, ci-core.yml) so no single
-# run carries a very large job list. The split dates from the former self-hosted
-# ACA runner's scaler; see .github/aca-runner/ci-workflow-split-plan.md.
+# run carries a very large job list. The split dates from a retired self-hosted
+# runner's scaler; hosted runners do not need it, but it is kept so the `required-ci`
+# gate and publish.yml contract stay unchanged.
 #
 # `build` and `required-ci` deliberately stay here: publish.yml resolves the
 # release artifact by querying this workflow file for a successful run at the
