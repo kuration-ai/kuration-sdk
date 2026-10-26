@@ -10,6 +10,11 @@ change documented APIs with the notice and deprecation process in `docs/compatib
   no checkout. The `0.1.0` upload to PyPI itself was unaffected.
 - Made the README's links and images absolute so the PyPI project page renders, and added a test
   that rejects relative README targets.
+- Corrected README and docs code samples that did not run as written: action-state consistency
+  audits a written curated dataset (not any windowed pipeline), the SLAM stats sample needs a
+  selection stage for `selected-vs-rejected` evidence and an explicit `gameplay` import, and the
+  three invocation styles now select the same windows. The README and the SLAM sample in
+  `docs/domains.md` are executed by `tests/test_readme_examples.py`.
 
 ## 0.1.0
 

@@ -64,6 +64,7 @@ pipeline = (
     .window(32, stride=16)
     .slam_motion_diversity()
     .slam_quality(min_score=0.6)
+    .sample("equal", n=100)  # a selection stage is needed for selected-vs-rejected evidence
 )
 
 assert type(pipeline) is Pipeline

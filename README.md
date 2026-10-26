@@ -36,10 +36,6 @@ selection recipes for Physical AI videos, built into the SDK (`kuration.selectio
 Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
 only needed by `action-state-consistency` and `collision-aware`. The three shipped selection recipes are curated shortcuts. 
 
-- The Kuration SDK itself is a
-broader pipeline library with 48 registered components, and you can drop into the raw pipeline API
-for anything the gallery doesn't cover.
-
 
 The gameplay operators target three failure modes that recur when training a world model from gameplay:
 
@@ -70,13 +66,26 @@ The action doesn't reliably cause the state change. `pixel_shift` measures the a
 motion behind every isolated key or mouse press (Farneback optical flow projected onto the axis
 that control should move the camera on). `action_state_consistency` compares those measurements
 against a percentile-pooled baseline and issues a per-clip verdict — consistent, inconsistent, or
-inconclusive. Continuing from any existing windowed pipeline, once
+inconclusive. It audits a written, curated dataset whose shards hold `frames` and `actions`
+modalities, so re-open that dataset as the pipeline input. Once
 `import kuration.gameplay as gameplay` has registered the operator:
 
 ```python
+from kuration import CuratedDatasetAdapter, input
+
+adapter = CuratedDatasetAdapter("out/curated")
+pipeline = input(adapter=adapter, schema=adapter.schema, sources=adapter.sources())
+
 pipeline = pipeline.action_state_consistency(baselines=baselines, controls=["W"])
 verdict = pipeline.metadata["gameplay"]["action_state_consistency"]["result"]
 ```
+
+`baselines` is the supplied reference (see
+[Action-state consistency](https://kuration-ai.github.io/kuration-sdk/action-state-consistency/)
+for its shape and `load_baselines_from_reference`). Omit it and pass `controls=[...]` alone for the
+self-calibrated mode, which flags the clip that disagrees with the rest of the corpus. A
+runnable end-to-end version is
+[`07_action_state_consistency.py`](https://github.com/kuration-ai/kuration-sdk/blob/main/examples/07_action_state_consistency.py).
 
 The pipeline you get back is the same immutable pipeline. You can keep chaining `.sample()`,
 `.output()`, or any other operator from it. Use `.analyze(...)` instead if you just want the
@@ -107,11 +116,14 @@ raw video with loop closure. `slam_quality` scores each window for gaps, impossi
 scale. `slam_motion_diversity` bins windows by path length, turning, and spatial extent:
 
 ```python
+import kuration.gameplay as gameplay
+
 pipeline = (
     gameplay.slam_reconstruct("slam-export/manifest.json")
     .window(32, stride=16)
     .slam_motion_diversity()
     .slam_quality(min_score=0.6)
+    .sample("equal", n=100)
     .options(progress="auto")
 )
 
@@ -171,7 +183,8 @@ parameter reference and the config-driven runner.
 ## Beyond the gallery
 
 The three shipped selection recipes are curated shortcuts. The Kuration SDK itself is a
-broader pipeline library with 48 registered components, and you can drop into the raw pipeline API
+broader pipeline library of registered adapters, sampling methods, filters, scorers, analyzers,
+and operators (`kur-list` shows every installed one), and you can drop into the raw pipeline API
 for anything the gallery doesn't cover.
 
 ### Sampling methods
@@ -216,8 +229,9 @@ Every run of Kuration SDK is deterministic. Commit a config file alongside your 
 Same operation, three equivalent invocation styles. The three are guaranteed to produce identical results, enforced by test.
 
 ```python
-# 1. Direct: one operation, one line
-result = BalancedSelector(feature="motion", of="turn_rate").apply(pipeline).collect()
+# 1. Direct: operations applied one after another
+rare = RareEventCoverage(of="collision").apply(pipeline)
+result = BalancedSelector(feature="motion", of="turn_rate").apply(rare).collect()
 
 # 2. Chained instances: pipeline in code
 result = run(pipeline, [
