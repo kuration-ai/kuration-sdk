@@ -278,6 +278,14 @@ def test_unknown_type_lists_available_when_no_close_match():
     assert "BalancedSelector" in str(exc.value)
 
 
+def test_module_imports_are_not_offered_or_resolved_as_operation_types():
+    # operations.py imports typing.ClassVar; only its __all__ entries are operations.
+    assert "ClassVar" not in _available_operations()
+    with pytest.raises(ValueError, match=r"config item 0: unknown 'type' value 'ClassVar'") as exc:
+        plan([{"type": "ClassVar"}])
+    assert "ClassVar," not in str(exc.value).split("Available:")[1]
+
+
 def test_wrong_kwarg_gets_fuzzy_hint():
     with pytest.raises(ValueError, match=r"Did you mean 'bins'"):
         plan([{"type": "BalancedSelector", "feature": "x", "of": "y", "bin": 4}])

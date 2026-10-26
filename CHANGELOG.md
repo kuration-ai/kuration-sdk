@@ -5,6 +5,9 @@ change documented APIs with the notice and deprecation process in `docs/compatib
 
 ## Unreleased
 
+- Fixed `kuration.selection` offering `ClassVar` (a `typing` import in `operations.py`) as an
+  operation type: the resolver listed it in the `Available:` hint and would resolve
+  `{"type": "ClassVar"}` to `typing.ClassVar`. It now uses the catalog's `__all__`.
 - Fixed the release workflow's final step, which attaches the distributions and `SHA256SUMS` to
   the GitHub release: `gh release upload` now names the repository, because the publish job has
   no checkout. The `0.1.0` upload to PyPI itself was unaffected.
