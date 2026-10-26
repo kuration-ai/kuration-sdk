@@ -99,7 +99,7 @@ returns `SLAMReconstruction`, whose `manifest` field is the path to the portable
 Custom depth or place-recognition runtimes can be injected without changing the artifact format:
 
 ```python
-slam = SLAMReconstructor(
+slam = gameplay.SLAMReconstructor(
     depth_model=my_depth_model,
     depth_model_id="my-depth-model@2026-07-15",
     embedding_model=my_place_model,

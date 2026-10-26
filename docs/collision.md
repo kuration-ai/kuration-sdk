@@ -82,7 +82,8 @@ pipeline = (
     .collision(map_for_source=map_for_source,
                map_registry=map_registry,
                dist_path="action_state_dist.json")
-    .sample("equal", n=200)
+    .bin("collision_count", bins=2)   # equal sampling needs a binned axis
+    .sample("equal", n=200)           # oversamples collision windows vs. their natural rate
 )
 ```
 
@@ -216,6 +217,7 @@ summary = analyzer.summary()
 | `collision` | `True` only when every gate below passed |
 | `reason` | which gate the tick stopped at: `dead_or_skipped`, `not_modeled`, `fast_turn`, `residual_too_small`, `no_wall_hit`, `low_concentration`, or `flagged` |
 | `combo` / `tracking_combo` | the raw held combo this tick vs. the combo still being tracked (differ during a `GRACE_TICKS`-tolerated brief dropout) |
+| `weapon` | the weapon name active on this tick |
 | `residual_mag` | \|expected velocity - actual velocity\|, HU/s (`None` if never computed) |
 | `concentration_ratio` | fraction of the residual aligned with the nearby wall's normal (`None` if no wall hit) |
 | `dist_to_wall_hu` | raycast distance to the nearest wall hit within `proximity` (`None` if none) |
