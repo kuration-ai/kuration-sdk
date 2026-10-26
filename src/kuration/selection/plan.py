@@ -123,17 +123,16 @@ def describe(operations: list[Any]) -> str:
 def _available_operations() -> list[str]:
     """All Operation class names: built-in catalog plus user registry."""
     from kuration.selection import operations as _catalog
-    builtin = [
-        n for n in dir(_catalog)
-        if not n.startswith("_") and n[0].isupper()
-    ]
-    return sorted(set(builtin) | set(_USER_REGISTRY.keys()))
+    # The catalog's public surface is its __all__: scanning dir() would also pick up
+    # capitalized imports such as typing.ClassVar and offer them as operation types.
+    return sorted(set(_catalog.__all__) | set(_USER_REGISTRY.keys()))
 
 
 def _lookup_class(name: str):
     """Look up an Operation class by name (built-in catalog then user registry)."""
     from kuration.selection import operations as _catalog
-    return getattr(_catalog, name, None) or _USER_REGISTRY.get(name)
+    builtin = getattr(_catalog, name, None) if name in _catalog.__all__ else None
+    return builtin or _USER_REGISTRY.get(name)
 
 
 def _resolve(spec: dict, *, index: int) -> Any:
