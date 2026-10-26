@@ -42,7 +42,7 @@ The gameplay operators target three failure modes that recur when training a wor
 - **1. The action doesn't reliably cause the state change.** `pixel_shift` measures the
   actual screen motion behind every isolated key or mouse press (Farneback optical flow
   projected onto the axis that control should move the camera on). `action_state_consistency`
-  compares those measurements against a percentile-pooled baseline and issues a per-clip
+  compares those measurements against baselines you supply (or, with none, percentile baselines derived from the other clips) and issues a per-clip
   verdict — consistent, inconsistent, or inconclusive.
 -  **2. The interaction moments a world model needs are the ones good players avoid.**
   `collision` finds and classifies wall-hits (`head_on`, `angled`, `W_slide`, `WA_slide`,
@@ -65,7 +65,7 @@ The gameplay operators target three failure modes that recur when training a wor
 The action doesn't reliably cause the state change. `pixel_shift` measures the actual screen
 motion behind every isolated key or mouse press (Farneback optical flow projected onto the axis
 that control should move the camera on). `action_state_consistency` compares those measurements
-against a percentile-pooled baseline and issues a per-clip verdict — consistent, inconsistent, or
+against baselines you supply (or, with none, percentile baselines derived from the other clips) and issues a per-clip verdict — consistent, inconsistent, or
 inconclusive. It audits a written, curated dataset whose shards hold `frames` and `actions`
 modalities, so re-open that dataset as the pipeline input. Once
 `import kuration.gameplay as gameplay` has registered the operator:

@@ -149,8 +149,8 @@ Be clear about what this mode means before reaching for it:
   the externally calibrated ground truth; self-calibration is a labeled mode, never a
   silent fallback.
 - **It refuses to guess from noise.** A `(control, press-length)` cell is judged only when
-  enough independent measurements agree on a direction; pools below `min_clips` refuse to
-  issue verdicts at all. The knobs (defaults in `DEFAULT_CALIBRATION`) come in via
+  enough independent measurements agree on a direction; a pool below `min_clips` raises a
+  `ValueError` (supply `baselines=` for pools that small). The knobs (defaults in `DEFAULT_CALIBRATION`) come in via
   `calibration=`:
 
 ```python
@@ -191,7 +191,7 @@ from kuration import input
 
 dataset = (
     input({"clip1": rows}, schema=schema, fields={"action": action_columns}, time="t")
-    .join_video({"clip1": "clip1.mp4"})            # lazy frames
+    .join_video({"clip1": "clip1.mp4"}, on="frame_index")   # lazy frames, one row per frame
     .window(64, stride=32)
     .pixel_shift(controls=["W"])
     .score("aintropy/action-state-consistency", out="action_state_anomaly",
@@ -363,8 +363,8 @@ kur-check out/gameplay \
 ```
 
 The default modality names are `frames` and `actions`. For different names, create an input
-options file such as `{"frames": "video", "actions": "input", "controls": ["W", "S"]}` and pass
-it with `--analyzer-options`. Each shard is measured independently so selected spans are not
+options file such as `{"frames": "video", "actions": "input", "controls": ["W"]}` and pass
+it with `--analyzer-options`; every control it lists needs a baseline in the analyzer config. Each shard is measured independently so selected spans are not
 silently joined; verdicts are still aggregated by the manifest's `source_id`. An inconsistent
 clip makes the analyzer check fail with exit code 2, while inconclusive clips remain visible in
 the result without being treated as inconsistent.

@@ -15,6 +15,11 @@ change documented APIs with the notice and deprecation process in `docs/compatib
   selection stage for `selected-vs-rejected` evidence and an explicit `gameplay` import, and the
   three invocation styles now select the same windows. The README and the SLAM sample in
   `docs/domains.md` are executed by `tests/test_readme_examples.py`.
+- Corrected the code samples linked from the README use-case table: the collision usage sample
+  now bins before `sample("equal")`, the live action-state sample passes
+  `join_video(..., on="frame_index")` (the default timestamp alignment needs a tolerance), the SLAM
+  custom-runtime sample uses `gameplay.SLAMReconstructor`, and the self-calibration and
+  `--analyzer-options` prose matches the code.
 
 ## 0.1.0
 
