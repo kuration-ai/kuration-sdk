@@ -5,7 +5,7 @@
 [![Status](https://img.shields.io/badge/status-alpha-orange?style=flat)](#project-status)
 
 [![Docs](https://img.shields.io/badge/docs-live-brightgreen?style=flat)](https://kuration-ai.github.io/kuration-sdk/)
-[![Blog](https://img.shields.io/badge/blog-aintropy.ai%2Fresearch-0D9488?style=flat)](https://aintropy.ai/research)
+[![Blog](https://img.shields.io/badge/blog-aintropy.ai%2Fblogs-0D9488?style=flat)](https://aintropy.ai/blogs)
 [![Examples](https://img.shields.io/badge/examples-runnable-blue?style=flat)](https://github.com/kuration-ai/kuration-sdk/tree/main/examples/)
 [![Roadmap](https://img.shields.io/badge/roadmap-planned-lightgrey?style=flat)](https://github.com/kuration-ai/kuration-sdk/blob/main/ROADMAP.md)
 [![Changelog](https://img.shields.io/badge/changelog-latest-blue?style=flat)](https://github.com/kuration-ai/kuration-sdk/blob/main/CHANGELOG.md)
@@ -441,10 +441,11 @@ Shows one component's docstring and parameter contract.
 
 Long-form blog posts on physical-AI data curation:
 
-- **[Why raw gameplays don't make good world models — and how to fix the Virtual2Real gap](https://aintropy.ai/research)**. The failure modes that make raw gameplay footage a poor training corpus for a world model — actions that don't produce a consistent state change, state changes with no action, rare player-object contact, missing pose or location, eval metrics that look fine when the physics is visibly wrong.
-- **[Quickly convert raw corpus into high-quality world-model training sets](https://aintropy.ai/research)**. A line-by-line walkthrough of the Pipeline API — `input`, `window`, `measure`, `filter`, `bin`, `split`, `sample`, `output` — on a small runner-telemetry example.
-- **[Action-state consistency with Kuration SDK](https://aintropy.ai/research)**. How the `action_state_consistency` operator uses Farneback optical flow to catch action-state mismatches — wall collisions, coyote time, input buffering, engine glitches — and returns a per-clip verdict (consistent, inconsistent, inconclusive).
-- **[SLAM with Kuration SDK](https://aintropy.ai/research)**. Adding scene and trajectory reconstruction to any video or image dataset. Built on DepthAnything V3 with plug-and-play VPR support for loop closure; stitches long clips into one 3D map.
+- **[Why raw gameplays don't make good world models — and how to fix the Virtual2Real gap](https://aintropy.ai/architecture/world-model-data-curation-blog-v3/)**. The failure modes that make raw gameplay footage a poor training corpus for a world model — actions that don't produce a consistent state change, state changes with no action, rare player-object contact, missing pose or location, eval metrics that look fine when the physics is visibly wrong.
+- **[Quickly convert raw corpus into high-quality world-model training sets](https://aintropy.ai/blogs)**. A line-by-line walkthrough of the Pipeline API — `input`, `window`, `measure`, `filter`, `bin`, `split`, `sample`, `output` — on a small runner-telemetry example.
+- **[Action-state consistency with Kuration SDK](https://aintropy.ai/architecture/action-state-consistency-with-kuration-s/)**. How the `action_state_consistency` operator uses Farneback optical flow to catch action-state mismatches — wall collisions, coyote time, input buffering, engine glitches — and returns a per-clip verdict (consistent, inconsistent, inconclusive).
+- **[SLAM with Kuration SDK](https://aintropy.ai/architecture/slam-with-kurious-sdk/)**. Adding scene and trajectory reconstruction to any video or image dataset. Built on DepthAnything V3 with plug-and-play VPR support for loop closure; stitches long clips into one 3D map.
+- **[Why your world model thinks walls are optional](https://aintropy.ai/architecture/collision-blog/)**. How the collision-awareness operator finds the frames where a forward key press produces less motion than it should because a wall, door or crate was in the way, and why those frames matter for training.
 
 ## Project status
 
