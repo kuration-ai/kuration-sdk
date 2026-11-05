@@ -396,9 +396,12 @@ def test_external_priority_and_span_stream_matches_in_memory_reference(tmp_path)
     expected_priorities = _reference_scores(segments, weights, "quantile")
     prioritized = list(iter_external_top_k_priorities(
         paths, weights=weights, normalize="quantile", spill_dir=str(tmp_path / "spill")))
-    assert [(segment.start_idx, priority) for segment, priority in prioritized] == pytest.approx(
-        [(segment.start_idx, expected_priorities[index])
-         for index, segment in enumerate(segments)])
+    # Indices exactly, priorities approximately: pytest.approx no longer
+    # accepts a list of tuples.
+    assert [segment.start_idx for segment, _ in prioritized] == [
+        segment.start_idx for segment in segments]
+    assert [priority for _, priority in prioritized] == pytest.approx(
+        [expected_priorities[index] for index, _ in enumerate(segments)])
 
     spans = list(iter_external_span_items(
         iter(prioritized), {"a": ((0, 6),)}, sample_hz=2, span_len=3,
