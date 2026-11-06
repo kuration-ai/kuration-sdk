@@ -15,7 +15,7 @@
 [![Design notes](https://img.shields.io/badge/design-notes-lightgrey?style=flat)](https://github.com/kuration-ai/kuration-sdk/blob/main/DESIGN.md)
 [![Issues](https://img.shields.io/badge/issues-open-blue?style=flat)](https://github.com/kuration-ai/kuration-sdk/issues)
 
-Physical AI has a sample efficiency problem. The field is drowning in data and starving for it same time. It is generating millions of hours of videos, to find a small sample of training ready sets. Missing piece is ETL or curation operators designed from first principles to address the challenge unique to the world model training. Raw gameplay video clips is often considered a gold mine to train world models but is often garbage in absence of sophisticated curation. Kuration SDK is open source repo built to solve that problem while training world models. References papers
+Physical AI has a sample efficiency problem. It is generating millions of hours of videos, to find a small sample of training ready sets. Missing piece is ETL or curation operators designed from first principles to address the challenge unique to the world model training. Raw gameplay video clips is often considered a gold mine to train world models but in absence of sophisticated curation it's garbage. Kuration SDK is open source repo built to solve it. 
 
 - **[Kuration SDK: Addressing the Virtual2Real Gap via Data Curation](https://arxiv.org/abs/2610.09305)**
 - **[LeCuration: A Tiny World Model as a Data Curation Multi-Tool](https://arxiv.org/abs/2610.09285v1)**
