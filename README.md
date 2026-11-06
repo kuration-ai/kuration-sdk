@@ -36,11 +36,9 @@ selection recipes for Physical AI videos, built into the SDK (`kuration.selectio
 Each links to a runnable example and, where one exists, a notebook; the `[gameplay]` extra is
 only needed by `action-state-consistency` and `collision-aware`. The three shipped selection recipes are curated shortcuts. 
 
-
 The gameplay operators target three failure modes that recur when training a world model from gameplay:
-
 - **1. The action doesn't reliably cause the state change.** `pixel_shift` measures the
-  actual screen motion behind every isolated key or mouse press (Farneback optical flow
+  actual screen motion behind every isolated key or mouse press (Bareback optical flow
   projected onto the axis that control should move the camera on). `action_state_consistency`
   compares those measurements against baselines you supply (or, with none, percentile baselines derived from the other clips) and issues a per-clip
   verdict — consistent, inconsistent, or inconclusive.
